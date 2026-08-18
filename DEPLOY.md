@@ -10,7 +10,7 @@ Dokumen ini berisi panduan komprehensif langkah demi langkah untuk men-deploy **
                       +-----------------------------+
                       |   Client Web Browser        |
                       +--------------+--------------+
-                                     | (Port 80 / 443 HTTPS)
+                                     | (Port 8080 HTTP / 443 HTTPS)
                                      v
                       +-----------------------------+
                       |       Nginx Web Server      |
@@ -226,5 +226,18 @@ npm run build
 # 4. Restart service
 sudo systemctl restart sap-ai-backend
 ```
+
+## 🌐 Cara Akses Web UI
+
+Akses aplikasi melalui browser:
+```
+http://<IP_SERVER>:8080
+```
+Contoh jika server beralamat `192.168.254.58`:
+👉 **`http://192.168.254.58:8080`**
+
+*(Port default diatur ke **8080** agar tidak bentrok dengan aplikasi lain yang menggunakan Port 80).*
+
+---
 
 Aplikasi SAP AI Assistant Anda sekarang siap digunakan dengan performa tinggi dan reliabilitas level enterprise! 🚀

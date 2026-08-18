@@ -83,16 +83,20 @@ if [ -f "${APP_DIR}/deploy/sap-ai-backend.service" ]; then
 fi
 
 # 8. Setup Nginx Configuration
-echo "🌐 [8/8] Mengonfigurasi Web Server Nginx..."
+echo "🌐 [8/8] Mengonfigurasi Web Server Nginx (Port 8080)..."
 if [ -f "${APP_DIR}/deploy/nginx-sap-ai.conf" ]; then
     cp ${APP_DIR}/deploy/nginx-sap-ai.conf /etc/nginx/sites-available/sap-ai
-    # Nonaktifkan default site jika ada
-    rm -f /etc/nginx/sites-enabled/default
-    # Buat symlink
+    # Buat symlink tanpa menghapus site lain (agar aplikasi di port 80 tidak terganggu)
     ln -sf /etc/nginx/sites-available/sap-ai /etc/nginx/sites-enabled/sap-ai
-    # Uji konfigurasi nginx & restart
+    
+    # Izinkan port 8080 di firewall UFW jika UFW aktif
+    if command -v ufw &> /dev/null; then
+        ufw allow 8080/tcp || true
+    fi
+
+    # Uji konfigurasi nginx & reload
     nginx -t
-    systemctl restart nginx
+    systemctl reload nginx
 fi
 
 echo "=========================================================="
@@ -101,7 +105,8 @@ echo "=========================================================="
 echo "Status Backend Service:"
 systemctl status sap-ai-backend --no-pager || true
 echo ""
-echo "Aplikasi dapat diakses melalui browser pada IP/Domain server Anda."
+echo "Aplikasi dapat diakses melalui browser pada:"
+echo "👉 http://<IP_SERVER>:8080  (Contoh: http://192.168.254.58:8080)"
 echo "Catatan:"
 echo "1. Pastikan API key OpenRouter sudah diisi di: ${APP_DIR}/backend/.env"
 echo "2. Jika menggunakan PostgreSQL, pastikan database sudah siap."
