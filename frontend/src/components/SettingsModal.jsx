@@ -3,6 +3,7 @@ import {
   X, Save, Database, Shield, Lock, KeyRound, CheckCircle2, AlertCircle, 
   Bot, User, Sliders, Cpu
 } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 const SettingsModal = ({ isOpen, onClose, user }) => {
   const [activeTab, setActiveTab] = useState('persona');
@@ -24,7 +25,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
   useEffect(() => {
     if (isOpen && user?.username && user?.username !== 'Guest') {
-      fetch('http://127.0.0.1:8000/api/config', {
+      fetch(`${API_BASE_URL}/api/config`, {
         headers: { 'X-User-Name': user.username }
       })
         .then(res => res.json())
@@ -44,7 +45,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
     setIsSaving(true);
     setSaveStatus('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/config', {
+      const res = await fetch(`${API_BASE_URL}/api/config`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -80,7 +81,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
     setIsChangingPass(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/change-password', {
+      const res = await fetch(`${API_BASE_URL}/api/change-password`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

@@ -4,6 +4,7 @@ import ChatInput from './ChatInput';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import AdminDashboard from './AdminDashboard';
+import { API_BASE_URL } from '../config';
 import { 
   Bot, Settings, Moon, Sun, Database, Server, RefreshCw, MessageSquare, 
   Trash2, Plus, LogIn, LogOut, User, Sparkles, ChevronRight, ShieldAlert,
@@ -50,7 +51,7 @@ const ChatLayout = () => {
 
   const fetchServers = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/mcp/servers');
+      const res = await fetch(`${API_BASE_URL}/api/mcp/servers`);
       if (res.ok) {
         const data = await res.json();
         if (data?.sap?.sub_servers && Array.isArray(data.sap.sub_servers)) {
@@ -116,7 +117,7 @@ const ChatLayout = () => {
 
     setIsSessionsLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sessions', {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
         headers: { 'X-User-Name': user?.username || 'Guest' }
       });
       const data = await res.json();
@@ -148,7 +149,7 @@ const ChatLayout = () => {
     if (!sessionId) return;
     setCurrentSessionId(sessionId);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/history/${sessionId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/history/${sessionId}`, {
         headers: { 'X-User-Name': user?.username || 'Guest' }
       });
       const data = await res.json();
@@ -195,7 +196,7 @@ const ChatLayout = () => {
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sessions', {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -222,7 +223,7 @@ const ChatLayout = () => {
   const deleteSession = async (e, sessionId) => {
     e.stopPropagation();
     try {
-      await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}`, {
+      await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         method: 'DELETE',
         headers: { 'X-User-Name': user?.username || 'Guest' }
       });
@@ -264,7 +265,7 @@ const ChatLayout = () => {
     }
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/chat', {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -290,7 +291,7 @@ const ChatLayout = () => {
       
       // Refresh list session tanpa me-reset chat aktif
       if (user.role !== 'guest') {
-        const sessRes = await fetch('http://127.0.0.1:8000/api/sessions', {
+        const sessRes = await fetch(`${API_BASE_URL}/api/sessions`, {
           headers: { 'X-User-Name': user?.username || 'Guest' }
         });
         const sessData = await sessRes.json();

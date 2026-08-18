@@ -20,6 +20,7 @@ import {
   Search,
   ExternalLink
 } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'mcp' | 'audit'
@@ -54,7 +55,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/admin/stats', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/stats`, {
         headers: { 'X-User-Name': user.username }
       });
       if (res.ok) {
@@ -68,7 +69,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/admin/users', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         headers: { 'X-User-Name': user.username }
       });
       if (res.ok) {
@@ -82,7 +83,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/config', {
+      const res = await fetch(`${API_BASE_URL}/api/config`, {
         headers: { 'X-User-Name': user.username }
       });
       if (res.ok) {
@@ -100,7 +101,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchAuditSessions = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/admin/sessions?limit=100', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/sessions?limit=100`, {
         headers: { 'X-User-Name': user.username }
       });
       if (res.ok) {
@@ -114,7 +115,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchAuditMessages = async (sessionId) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/admin/sessions/${sessionId}/messages`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/sessions/${sessionId}/messages`, {
         headers: { 'X-User-Name': user.username }
       });
       if (res.ok) {
@@ -142,7 +143,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/admin/users', {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,7 +177,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       if (editUserForm.password) {
         payload.password = editUserForm.password;
       }
-      const res = await fetch(`http://127.0.0.1:8000/api/admin/users/${editingUser.username}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${editingUser.username}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -200,7 +201,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/admin/users/${targetUsername}`, {
+      const res = await fetch(`${API_BASE_URL}/api/admin/users/${targetUsername}`, {
         method: 'DELETE',
         headers: { 'X-User-Name': user.username }
       });
@@ -220,7 +221,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/config', {
+      const res = await fetch(`${API_BASE_URL}/api/config`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

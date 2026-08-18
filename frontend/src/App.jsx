@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ChatLayout from './components/ChatLayout';
 import LoginModal from './components/LoginModal';
-
-const API_BASE_URL = 'http://127.0.0.1:8000';
+import { API_BASE_URL } from './config';
 const THEME_KEY = 'sap_assistant_theme';
 const USER_KEY = 'sap_assistant_user';
 const GUEST_DATE_KEY = 'sap_assistant_guest_date';
@@ -102,7 +101,7 @@ function App() {
       return;
     }
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/sessions', {
+      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
         headers: { 'X-User-Name': username }
       });
       if (res.ok) {
@@ -135,7 +134,7 @@ function App() {
     }
     
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${sessionId}/messages`, {
+      const res = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/messages`, {
         headers: { 'X-User-Name': targetUser }
       });
       if (res.ok) {
