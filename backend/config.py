@@ -1,4 +1,4 @@
-import os
+seimport os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -6,10 +6,14 @@ class Settings(BaseSettings):
     Konfigurasi untuk aplikasi Enterprise SAP Chat Assistant.
     Nilai akan diambil dari environment variables atau file .env.
     """
-    openrouter_api_key: str = "your_openrouter_api_key_here"
+    ai_provider: str = "openrouter"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openrouter/auto"
+    openrouter_fallback_model: str = "openrouter/free"
     assistant_persona: str = ""
     mcp_sap_config_json: str = ""
     mcp_rag_config_json: str = ""
+    database_url: str = "postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

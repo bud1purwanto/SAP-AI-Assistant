@@ -168,26 +168,104 @@ class MCPManager:
             self.clients[name] = StreamableHttpClient(name=name, url=url, headers=headers)
         return self.clients[name]
 
-    async def get_all_tools(self) -> list[dict]:
-        tools = []
+    async def check_servers_status(self) -> dict:
+        status = {}
         async with httpx.AsyncClient() as http_client:
-            # SAP Tools
+            # SAP Server status
             try:
                 sap_client = self.get_client("sap")
                 sap_tools = await sap_client.list_tools(http_client)
-                for t in sap_tools:
-                    tools.append({"server": "sap", "tool": t})
-            except Exception as e:
-                logger.error(f"Error fetching SAP tools: {e}")
+                
+                sub_servers = []
+                try:
+                    srv_res = await sap_client.call_tool(http_client, "list_servers", {})
+                    if srv_res and not srv_res.isError and srv_res.content:
+                        txt = srv_res.content[0].text
+                        srv_data = json.loads(txt)
+                        sub_servers = srv_data.get("servers", [])
+                except Exception as ex:
+                    logger.warning(f"Gagal mengambil daftar sub-servers SAP: {ex}")
 
-            # RAG Tools
+                status["sap"] = {
+                    "id": "sap",
+                    "name": "SAP ECC 6.0 Server",
+                    "description": "Live Data, Tabel & ABAP Code SAP",
+                    "online": True,
+                    "tool_count": len(sap_tools),
+                    "sub_servers": sub_servers
+                }
+            except Exception as e:
+                logger.error(f"Error checking SAP server: {e}")
+                status["sap"] = {
+                    "id": "sap",
+                    "name": "SAP ECC 6.0 Server",
+                    "description": "Live Data, Tabel & ABAP Code SAP",
+                    "online": False,
+                    "tool_count": 0,
+                    "sub_servers": [],
+                    "error": str(e)
+                }
+
+            # RAG Server status
             try:
                 rag_client = self.get_client("rag")
                 rag_tools = await rag_client.list_tools(http_client)
-                for t in rag_tools:
-                    tools.append({"server": "rag", "tool": t})
+                status["rag"] = {
+                    "id": "rag",
+                    "name": "Manufacturing RAG",
+                    "description": "Enterprise Document & Knowledge Base",
+                    "online": True,
+                    "tool_count": len(rag_tools)
+                }
             except Exception as e:
-                logger.error(f"Error fetching RAG tools: {e}")
+                logger.error(f"Error checking RAG server: {e}")
+                status["rag"] = {
+                    "id": "rag",
+                    "name": "Manufacturing RAG",
+                    "description": "Enterprise Document & Knowledge Base",
+                    "online": False,
+                    "tool_count": 0,
+                    "error": str(e)
+                }
+
+        return status
+
+    async def get_all_tools(self, server_filter: str = "all") -> list[dict]:
+        tools = []
+        is_sap = True  # SAP selalu aktif
+        is_rag = True  # RAG selalu aktif - kedua server wajib terhubung
+
+        target_sap = None
+        if server_filter.startswith("sap:"):
+            target_sap = server_filter.split(":", 1)[1]
+
+        async with httpx.AsyncClient() as http_client:
+            # SAP Tools
+            if is_sap:
+                try:
+                    sap_client = self.get_client("sap")
+                    if target_sap:
+                        try:
+                            await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
+                            logger.info(f"SAP Active Server diset ke '{target_sap}'")
+                        except Exception as ex:
+                            logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
+
+                    sap_tools = await sap_client.list_tools(http_client)
+                    for t in sap_tools:
+                        tools.append({"server": "sap", "tool": t})
+                except Exception as e:
+                    logger.error(f"Error fetching SAP tools: {e}")
+
+            # RAG Tools
+            if is_rag:
+                try:
+                    rag_client = self.get_client("rag")
+                    rag_tools = await rag_client.list_tools(http_client)
+                    for t in rag_tools:
+                        tools.append({"server": "rag", "tool": t})
+                except Exception as e:
+                    logger.error(f"Error fetching RAG tools: {e}")
 
         return tools
 

@@ -1,31 +1,58 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ThumbsUp, ThumbsDown, Code2, Database, Info, Bot } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Code2, Database, Info, Bot, User, Copy, Check } from 'lucide-react';
 
 const ChatMessage = ({ message }) => {
-  const isUser = message.role === 'user';
+  const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] relative px-4 py-3 rounded-2xl shadow-sm text-[15px] leading-relaxed bg-blue-600 text-white rounded-br-sm">
-          {message.content}
+      <div className="flex justify-end items-start gap-3 my-2">
+        <div className="flex flex-col items-end max-w-[80%]">
+          {/* Label Pengirim User */}
+          <div className="flex items-center gap-1.5 mb-1 mr-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+            <span>Anda (Pertanyaan)</span>
+          </div>
+
+          {/* Bubble Pesan User */}
+          <div className="relative px-4 py-3 rounded-2xl shadow-md text-[15px] leading-relaxed bg-gradient-to-br from-blue-600 to-indigo-600 text-white rounded-tr-none border border-blue-500/30">
+            <p className="whitespace-pre-wrap font-normal">{message.content}</p>
+          </div>
+        </div>
+
+        {/* Avatar User */}
+        <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+          <User className="w-4 h-4" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-950/60 flex items-center justify-center shrink-0 mt-1">
-        <Bot className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+    <div className="flex items-start gap-3 my-4">
+      {/* Avatar AI */}
+      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 dark:from-emerald-600 dark:to-teal-700 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+        <Bot className="w-4 h-4" />
       </div>
       
-      <div className="flex flex-col gap-2 max-w-[85%]">
-        <div className="relative px-4 py-3 rounded-2xl shadow-sm text-[15px] leading-relaxed bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-100 rounded-bl-sm group">
+      <div className="flex flex-col gap-1 max-w-[88%] min-w-0">
+        {/* Label Pengirim AI Assistant */}
+        <div className="flex items-center gap-1.5 mb-1 ml-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+          <span>SAP AI Assistant (Jawaban)</span>
+        </div>
+
+        {/* Bubble Jawaban AI */}
+        <div className="relative px-5 py-4 rounded-2xl shadow-sm text-[15px] leading-relaxed bg-white dark:bg-slate-800/95 border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-100 rounded-tl-none group">
           <div className="text-slate-700 dark:text-slate-200 prose prose-sm max-w-none space-y-2">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
@@ -59,11 +86,11 @@ const ChatMessage = ({ message }) => {
           </div>
           
           {/* Action Footer */}
-          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between opacity-50 group-hover:opacity-100 transition-opacity">
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between opacity-70 group-hover:opacity-100 transition-opacity">
             {message.sources && message.sources.length > 0 ? (
               <button 
                 onClick={() => setShowSources(!showSources)}
-                className="flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded-md transition-colors"
+                className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-md transition-colors"
               >
                 <Code2 className="w-3.5 h-3.5" />
                 {showSources ? 'Hide Source' : 'View Source'}
@@ -73,6 +100,13 @@ const ChatMessage = ({ message }) => {
             )}
             
             <div className="flex items-center gap-1">
+              <button 
+                onClick={handleCopy}
+                className="p-1.5 rounded-md text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                title="Copy jawaban"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
               <button 
                 onClick={() => setFeedback('up')}
                 className={`p-1.5 rounded-md transition-colors ${feedback === 'up' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60' : 'text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
