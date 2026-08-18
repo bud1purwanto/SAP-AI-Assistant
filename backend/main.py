@@ -21,7 +21,13 @@ from database import (
     get_chat_sessions,
     delete_chat_session,
     add_chat_message,
-    get_chat_messages
+    get_chat_messages,
+    list_all_users,
+    create_new_user,
+    update_user_by_admin,
+    delete_user_by_admin,
+    get_admin_system_stats,
+    get_all_sessions_for_audit
 )
 
 app = FastAPI(title="Enterprise SAP Chat Assistant")
@@ -79,8 +85,11 @@ async def change_password_endpoint(request: Request, req: ChangePasswordRequest)
     return res
 
 class ConfigUpdate(BaseModel):
-    mcp_sap_config_json: str = ""
-    mcp_rag_config_json: str = ""
+    mcp_sap_config_json: str = None
+    mcp_rag_config_json: str = None
+    openrouter_model: str = None
+    openrouter_fallback_model: str = None
+    openrouter_api_key: str = None
     assistant_persona: str = ""
 
 @app.get("/api/config")
@@ -92,8 +101,11 @@ async def get_config(request: Request):
         
     sys_cfg = get_system_config()
     return {
-        "mcp_sap_config_json": sys_cfg["mcp_sap_config_json"],
-        "mcp_rag_config_json": sys_cfg["mcp_rag_config_json"],
+        "mcp_sap_config_json": sys_cfg.get("mcp_sap_config_json", ""),
+        "mcp_rag_config_json": sys_cfg.get("mcp_rag_config_json", ""),
+        "openrouter_model": sys_cfg.get("openrouter_model", "openrouter/auto"),
+        "openrouter_fallback_model": sys_cfg.get("openrouter_fallback_model", "openrouter/free"),
+        "openrouter_api_key": sys_cfg.get("openrouter_api_key", ""),
         "assistant_persona": user["assistant_persona"],
         "role": user["role"]
     }
@@ -108,10 +120,17 @@ async def update_config(request: Request, config: ConfigUpdate):
     if not user:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
         
-    update_user_persona(username, config.assistant_persona)
+    if config.assistant_persona is not None:
+        update_user_persona(username, config.assistant_persona)
     
     if user["role"] == "superadmin":
-        update_system_config(config.mcp_sap_config_json, config.mcp_rag_config_json)
+        update_system_config(
+            mcp_sap_json=config.mcp_sap_config_json,
+            mcp_rag_json=config.mcp_rag_config_json,
+            openrouter_model=config.openrouter_model,
+            openrouter_fallback_model=config.openrouter_fallback_model,
+            openrouter_api_key=config.openrouter_api_key
+        )
         
     return {"status": "success"}
 
@@ -146,9 +165,10 @@ async def delete_session_endpoint(session_id: str, request: Request):
     return {"status": "success" if success else "failed"}
 
 @app.get("/api/sessions/{session_id}/messages")
+@app.get("/api/history/{session_id}")
 async def get_session_messages_endpoint(session_id: str, request: Request):
     username = request.headers.get("X-User-Name", "Guest")
-    if username == "Guest":
+    if username == "Guest" or not session_id or session_id == "undefined":
         return []
     return get_chat_messages(session_id)
 
@@ -159,6 +179,105 @@ async def get_mcp_servers():
     """
     status = await mcp_manager.check_servers_status()
     return status
+
+# --- SUPER ADMIN ENDPOINTS ---
+
+def require_superadmin(request: Request):
+    """Dependency helper untuk memvalidasi hak akses superadmin."""
+    username = request.headers.get("X-User-Name", "Guest")
+    if username == "Guest":
+        raise HTTPException(status_code=401, detail="Pengguna belum terautentikasi.")
+    
+    user = get_user_by_username(username)
+    if not user or user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Akses ditolak. Fitur ini hanya untuk Super Admin.")
+    return user
+
+@app.get("/api/admin/stats")
+async def get_admin_stats_endpoint(request: Request):
+    """Mengambil metrik statistik sistem & status live MCP servers."""
+    require_superadmin(request)
+    stats = get_admin_system_stats()
+    mcp_status = await mcp_manager.check_servers_status()
+    stats["mcp_status"] = mcp_status
+    return stats
+
+@app.get("/api/admin/users")
+async def get_admin_users_endpoint(request: Request):
+    """Mendapatkan daftar semua user yang ada di sistem."""
+    require_superadmin(request)
+    return list_all_users()
+
+class AdminCreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "user"
+    assistant_persona: str = ""
+
+@app.post("/api/admin/users")
+async def create_user_endpoint(request: Request, req: AdminCreateUserRequest):
+    """Membuat user baru (oleh Super Admin)."""
+    require_superadmin(request)
+    if not req.username or not req.password:
+        raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
+    
+    res = create_new_user(
+        username=req.username.strip(), 
+        password=req.password, 
+        role=req.role, 
+        persona=req.assistant_persona
+    )
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+class AdminUpdateUserRequest(BaseModel):
+    role: str = None
+    assistant_persona: str = None
+    password: str = None
+
+@app.put("/api/admin/users/{username}")
+async def update_user_endpoint(username: str, request: Request, req: AdminUpdateUserRequest):
+    """Memperbarui user (role, persona, atau reset password)."""
+    current_admin = require_superadmin(request)
+    
+    # Pencegahan Super Admin menghapus hak superadmin dirinya sendiri secara tidak sengaja
+    if current_admin["username"] == username and req.role and req.role != "superadmin":
+        raise HTTPException(status_code=400, detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.")
+        
+    res = update_user_by_admin(
+        username=username, 
+        password=req.password if req.password else None, 
+        role=req.role, 
+        persona=req.assistant_persona
+    )
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+@app.delete("/api/admin/users/{username}")
+async def delete_user_endpoint(username: str, request: Request):
+    """Menghapus user tertentu."""
+    current_admin = require_superadmin(request)
+    if current_admin["username"] == username:
+        raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun Anda sendiri.")
+        
+    res = delete_user_by_admin(username)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+@app.get("/api/admin/sessions")
+async def get_admin_all_sessions_endpoint(request: Request, limit: int = 50):
+    """Audit log: Mengambil seluruh sesi percakapan dari semua user."""
+    require_superadmin(request)
+    return get_all_sessions_for_audit(limit=limit)
+
+@app.get("/api/admin/sessions/{session_id}/messages")
+async def get_admin_session_messages_endpoint(session_id: str, request: Request):
+    """Audit log: Mengambil riwayat pesan percakapan spesifik tanpa batasan user."""
+    require_superadmin(request)
+    return get_chat_messages(session_id)
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat_endpoint(request: Request, chat_req: ChatRequest):

@@ -63,13 +63,7 @@ class StreamableHttpClient:
         self._initialized = True
         logger.info(f"[{self.name}] Streamable HTTP MCP client initialized successfully.")
 
-        # Auto-set active server to sandbox-new for SAP server
-        if self.name == "sap":
-            try:
-                logger.info("[sap] Auto-setting active SAP server to 'sandbox-new'...")
-                await self.call_tool(client, "set_active_server", {"server_ref": "sandbox-new"})
-            except Exception as e:
-                logger.warning(f"[sap] Failed to auto-set active server to sandbox-new: {e}")
+        # Initial handshake selesai
 
     async def list_tools(self, client: httpx.AsyncClient) -> list[MCPTool]:
         await self.initialize(client)
@@ -142,23 +136,38 @@ class MCPManager:
         self.clients: dict[str, StreamableHttpClient] = {}
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
+        # Coba ambil dynamic config dari database jika tersedia
+        try:
+            from database import get_system_config
+            db_cfg = get_system_config()
+        except Exception:
+            db_cfg = {}
+
         if name == "sap":
-            config_json_str = settings.mcp_sap_config_json
+            config_json_str = db_cfg.get("mcp_sap_config_json") or settings.mcp_sap_config_json
             if not config_json_str:
                 # Default fallback jika env var belum ter-load sempurna
                 return "http://192.168.1.162:8091/mcp", {"Authorization": "Bearer Trias123"}
-            config = json.loads(config_json_str)
-            mcp_servers = config.get("mcpServers", {})
-            sap_config = list(mcp_servers.values())[0]
-            return sap_config.get("url"), sap_config.get("headers", {})
+            try:
+                config = json.loads(config_json_str)
+                mcp_servers = config.get("mcpServers", {})
+                sap_config = list(mcp_servers.values())[0] if mcp_servers else {}
+                return sap_config.get("url", "http://192.168.1.162:8091/mcp"), sap_config.get("headers", {"Authorization": "Bearer Trias123"})
+            except Exception:
+                return "http://192.168.1.162:8091/mcp", {"Authorization": "Bearer Trias123"}
+
         elif name == "rag":
-            config_json_str = settings.mcp_rag_config_json
+            config_json_str = db_cfg.get("mcp_rag_config_json") or settings.mcp_rag_config_json
             if not config_json_str:
                 # Default fallback jika env var belum ter-load sempurna
                 return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
-            config = json.loads(config_json_str)
-            rag_config = config.get("mcpServers", {}).get("manufacturing-rag", {})
-            return rag_config.get("url"), rag_config.get("headers", {})
+            try:
+                config = json.loads(config_json_str)
+                mcp_servers = config.get("mcpServers", {})
+                rag_config = mcp_servers.get("manufacturing-rag", list(mcp_servers.values())[0] if mcp_servers else {})
+                return rag_config.get("url", "http://192.168.1.162:8090/mcp"), rag_config.get("headers", {"Authorization": "Bearer Trias123"})
+            except Exception:
+                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
         else:
             raise ValueError(f"Unknown MCP server name: {name}")
 
@@ -177,12 +186,16 @@ class MCPManager:
                 sap_tools = await sap_client.list_tools(http_client)
                 
                 sub_servers = []
+                active_server_name = "Default"
                 try:
                     srv_res = await sap_client.call_tool(http_client, "list_servers", {})
                     if srv_res and not srv_res.isError and srv_res.content:
                         txt = srv_res.content[0].text
                         srv_data = json.loads(txt)
                         sub_servers = srv_data.get("servers", [])
+                        for s in sub_servers:
+                            if s.get("active"):
+                                active_server_name = s.get("name") or s.get("sid") or "Active"
                 except Exception as ex:
                     logger.warning(f"Gagal mengambil daftar sub-servers SAP: {ex}")
 
@@ -191,7 +204,10 @@ class MCPManager:
                     "name": "SAP ECC 6.0 Server",
                     "description": "Live Data, Tabel & ABAP Code SAP",
                     "online": True,
+                    "status": "online",
                     "tool_count": len(sap_tools),
+                    "tools_count": len(sap_tools),
+                    "active_server": active_server_name,
                     "sub_servers": sub_servers
                 }
             except Exception as e:
@@ -201,7 +217,10 @@ class MCPManager:
                     "name": "SAP ECC 6.0 Server",
                     "description": "Live Data, Tabel & ABAP Code SAP",
                     "online": False,
+                    "status": "offline",
                     "tool_count": 0,
+                    "tools_count": 0,
+                    "active_server": "-",
                     "sub_servers": [],
                     "error": str(e)
                 }
@@ -215,7 +234,9 @@ class MCPManager:
                     "name": "Manufacturing RAG",
                     "description": "Enterprise Document & Knowledge Base",
                     "online": True,
-                    "tool_count": len(rag_tools)
+                    "status": "online",
+                    "tool_count": len(rag_tools),
+                    "tools_count": len(rag_tools)
                 }
             except Exception as e:
                 logger.error(f"Error checking RAG server: {e}")
@@ -224,33 +245,36 @@ class MCPManager:
                     "name": "Manufacturing RAG",
                     "description": "Enterprise Document & Knowledge Base",
                     "online": False,
+                    "status": "offline",
                     "tool_count": 0,
+                    "tools_count": 0,
                     "error": str(e)
                 }
 
         return status
+
+    async def set_active_sap_server(self, target_sap: str):
+        """Set server aktif pada MCP SAP."""
+        if not target_sap:
+            return
+        async with httpx.AsyncClient() as http_client:
+            try:
+                sap_client = self.get_client("sap")
+                res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
+                logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
+            except Exception as ex:
+                logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
 
     async def get_all_tools(self, server_filter: str = "all") -> list[dict]:
         tools = []
         is_sap = True  # SAP selalu aktif
         is_rag = True  # RAG selalu aktif - kedua server wajib terhubung
 
-        target_sap = None
-        if server_filter.startswith("sap:"):
-            target_sap = server_filter.split(":", 1)[1]
-
         async with httpx.AsyncClient() as http_client:
             # SAP Tools
             if is_sap:
                 try:
                     sap_client = self.get_client("sap")
-                    if target_sap:
-                        try:
-                            await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
-                            logger.info(f"SAP Active Server diset ke '{target_sap}'")
-                        except Exception as ex:
-                            logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
-
                     sap_tools = await sap_client.list_tools(http_client)
                     for t in sap_tools:
                         tools.append({"server": "sap", "tool": t})

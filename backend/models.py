@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="ID Sesi percakapan")
     selected_server: str = Field(default="all", description="Target MCP Server: 'all', 'sap', 'rag', atau 'sap:target_alias'")
     server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
+    active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
 
 class ChatResponse(BaseModel):
     """Model untuk response dari AI."""

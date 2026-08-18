@@ -11,22 +11,33 @@ logger = logging.getLogger(__name__)
 
 def _clean_thinking_process(text: str) -> str:
     """Membersihkan teks proses berpikir internal (<think>...</think>, 'Here's a thinking process:', 
-    paragraf Bahasa Inggris analisis internal seperti 'We need to answer...') yang sering dikeluarkan 
-    oleh model reasoning/instruct agar tidak bocor ke antarmuka pengguna."""
+    'Now server is set to...', 'User wants...', 'Let's use...', paragraf Bahasa Inggris analisis internal)
+    yang dikeluarkan oleh model reasoning/instruct agar tidak bocor ke antarmuka pengguna."""
     if not text:
         return ""
-    # Hapus tag <think>...</think>
+    # 1. Hapus tag <think>...</think>
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
     
-    # Hapus blok 'Here's a thinking process: ...' atau 'Here is a thinking process:'
+    # 2. Hapus blok 'Here's a thinking process: ...'
     if "thinking process" in text.lower():
         parts = re.split(r'Here\'s? a thinking process:.*?(?=\n\n[📦🔍📊💰🛒🏭🔧🏬🧑‍💻A-Z]|\Z)', text, flags=re.DOTALL | re.IGNORECASE)
         cleaned = "".join([p for p in parts if p]).strip()
         if cleaned:
             text = cleaned
             
-    # Hapus paragraf Bahasa Inggris analisis internal seperti "We need to answer...", "We performed a RAG search...", "Doc 1 snippet:", "No plant."
-    text = re.sub(r'^(We need to answer|We performed a|Let\'s examine|Doc \d+ snippet|We could try to|There is no|No plant|Analyzing user query).*?(?=\n\n|\n[📦🔍📊💰🛒🏭🔧🏬🧑‍💻A-Z]|\Z)', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # 3. Hapus teks penalaran / chain of thought seperti:
+    # "Now server is set to...", "User wants...", "In SAP, TECO status...", "But the rule says...", "Let's use..."
+    # sampai menemukan emoji header box (📦) atau awal respons resmi Bahasa Indonesia
+    if "📦" in text:
+        text = text[text.find("📦"):]
+    elif "🔍" in text:
+        text = text[text.find("🔍"):]
+    else:
+        # Jika tidak ada emoji header box, bersihkan pola kalimat penalaran umum di awal
+        text = re.sub(r'^(Now server is set to|User wants|In SAP,|Need to find|Common tables:|But the rule says|We need to answer|We performed a|Let\'s examine|Doc \d+ snippet|We could try to|There is no|No plant|Analyzing user query).*?(?=\n\n[A-Z0-9\-\*]|\Z)', '', text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 4. Hapus sisa-sisa blok kode tool invocation palsu dalam teks markdown jika masih ada
+    text = re.sub(r'```(?:abap|query|json)?\s*(?:sap__|rag__).*?```', '', text, flags=re.DOTALL | re.IGNORECASE)
     
     return text.strip()
 
@@ -50,7 +61,12 @@ def _extract_text(content) -> str:
 
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "") -> ChatResponse:
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
-    target_srv = chat_req.server or chat_req.selected_server or "sap"
+    target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
+    if target_srv.startswith("sap:"):
+        target_sap = target_srv.split(":", 1)[1]
+        logger.info(f"Mengaktifkan target SAP server: {target_sap}")
+        await mcp_manager.set_active_sap_server(target_sap)
+
     all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     
     if not all_mcp_tools:
@@ -71,29 +87,38 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         t = item["tool"]
         tool_name = f"{server}__{t.name}".replace("-", "_")
         
+        # Pangkas deskripsi tool agar efisien dalam limit input token model gratis
+        desc = (t.description or f"Tool {t.name} dari {server}")
+        if len(desc) > 300:
+            desc = desc[:300] + "..."
+            
         openai_tools.append({
             "type": "function",
             "function": {
                 "name": tool_name,
-                "description": t.description or f"Tool {t.name} dari {server}",
+                "description": desc,
                 "parameters": t.inputSchema
             }
         })
         tool_map[tool_name] = {"server": server, "mcp_name": t.name}
 
-    # 3. Setup LLM (Primary & Fallback Model)
-    if not settings.openrouter_api_key or settings.openrouter_api_key == "your_openrouter_api_key_here":
+    # 3. Setup LLM (Primary & Fallback Model dinamis dari DB / Settings)
+    from database import get_system_config
+    sys_cfg = get_system_config()
+    
+    api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
+    if not api_key or api_key == "your_openrouter_api_key_here":
         return ChatResponse(
-            reply="Mohon maaf, API Key OpenRouter belum dikonfigurasi. Silakan atur OPENROUTER_API_KEY pada file .env.",
+            reply="Mohon maaf, API Key OpenRouter belum dikonfigurasi. Silakan atur API Key pada Dashboard Admin atau file `.env`.",
             sources=[]
         )
         
-    primary_model = settings.openrouter_model or "openrouter/auto"
-    fallback_model = settings.openrouter_fallback_model or "openrouter/free"
+    primary_model = sys_cfg.get("openrouter_model") or settings.openrouter_model or "openrouter/auto"
+    fallback_model = sys_cfg.get("openrouter_fallback_model") or settings.openrouter_fallback_model or "openrouter/free"
     
     llm_primary = ChatOpenAI(
         model=primary_model,
-        openai_api_key=settings.openrouter_api_key,
+        openai_api_key=api_key,
         openai_api_base="https://openrouter.ai/api/v1",
         default_headers={
             "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
@@ -105,7 +130,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
     llm_fallback = ChatOpenAI(
         model=fallback_model,
-        openai_api_key=settings.openrouter_api_key,
+        openai_api_key=api_key,
         openai_api_base="https://openrouter.ai/api/v1",
         default_headers={
             "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
@@ -227,31 +252,79 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             logger.warning(f"Model utama ({primary_model}) gagal: {primary_err}. Menjajal model fallback ({fallback_model})...")
             try:
                 response = await active_fallback.ainvoke(messages)
-            except Exception as e:
-                err = str(e)
-                logger.error(f"LLM primary and fallback invoke error: {err}")
-                low = err.lower()
-                if "402" in err or "credit" in low or "insufficient" in low or "quota" in low:
-                    reply_text = (
-                        "⚠️ **Layanan AI tidak tersedia**\n\n"
-                        "Panggilan ke model AI utama maupun fallback gagal karena **saldo/kuota OpenRouter habis** (error 402). "
-                        "Silakan cek saldo/kredit atau perbarui OPENROUTER_MODEL & OPENROUTER_FALLBACK_MODEL pada file `.env`.\n\n"
-                        "_Catatan: koneksi RAG & MCP SAP sendiri berfungsi normal._"
-                    )
-                else:
-                    reply_text = (
-                        "⚠️ **Kesalahan Layanan AI**\n\n"
-                        f"Gagal memanggil model AI (Utama & Fallback): {err[:300]}"
-                    )
-                return ChatResponse(reply=reply_text, sources=sources)
+            except Exception as fallback_err:
+                logger.warning(f"Model fallback dengan tool binding gagal: {fallback_err}. Menjajal fallback plain prompt tanpa tools...")
+                try:
+                    # Retry terakhir dengan model fallback tanpa tool binding (mengatasi model gratis yg tdk support function calling)
+                    response = await llm_fallback.ainvoke(messages)
+                except Exception as e:
+                    err = str(e)
+                    logger.error(f"LLM primary and fallback invoke error: {err}")
+                    low = err.lower()
+                    if "429" in err or "rate limit" in low or "resource_exhausted" in low:
+                        reply_text = (
+                            "⚠️ **Batas Kuota / Rate Limit Terlampaui (429)**\n\n"
+                            "Model AI gratis OpenRouter sedang mengalami pembatasan rate limit (terlalu banyak permintaan per menit).\n\n"
+                            "**Solusi:**\n"
+                            "1. Tunggu 20-30 detik lalu ulangi pertanyaan Anda.\n"
+                            "2. Atau ganti **Primary / Fallback AI Model** di menu **Admin Dashboard > Settings** ke model lain (misal: `openrouter/auto`, `google/gemini-2.0-flash-exp:free`, `meta-llama/llama-3.3-70b-instruct:free`, dll.) atau gunakan API Key berbayar untuk kapasitas tanpa batas.\n\n"
+                            f"_Detail error provider:_ `{err[:250]}`"
+                        )
+                    elif "402" in err or "credit" in low or "insufficient" in low or "quota" in low:
+                        reply_text = (
+                            "⚠️ **Layanan AI tidak tersedia (402)**\n\n"
+                            "Panggilan ke model AI utama maupun fallback gagal karena **saldo/kuota OpenRouter habis** (error 402). "
+                            "Silakan periksa saldo kredit akun OpenRouter atau perbarui pilihan model pada Admin Dashboard.\n\n"
+                            "_Catatan: koneksi RAG & MCP SAP sendiri berfungsi normal._"
+                        )
+                    else:
+                        reply_text = (
+                            "⚠️ **Kesalahan Layanan AI**\n\n"
+                            f"Gagal memanggil model AI (Utama & Fallback): {err[:300]}"
+                        )
+                    return ChatResponse(reply=reply_text, sources=sources)
         messages.append(response)
         
         if not response.tool_calls:
             raw_content = _extract_text(response.content)
+            
+            # Cek apakah LLM mencoba menulis panggilan tool dalam teks alih-alih function call native
+            # Pola seperti: sap__read_table({"table": "AUFK"}) atau rag__rag_search({"query": "..."})
+            text_tool_match = re.search(r'(?:call:\s*)?(sap__[a-zA-Z0-9_]+|rag__[a-zA-Z0-9_]+)\s*\(\s*({.*?})\s*\)', raw_content, flags=re.DOTALL)
+            if text_tool_match and iteration < max_iterations:
+                t_name = text_tool_match.group(1)
+                t_args_str = text_tool_match.group(2)
+                try:
+                    import json
+                    t_args = json.loads(t_args_str)
+                    logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
+                    
+                    server_name, actual_tool_name = t_name.split("__", 1)
+                    tool_result = await mcp_manager.call_tool(server_name, actual_tool_name, t_args)
+                    
+                    res_str = ""
+                    if tool_result.content:
+                        res_str = "\n".join([item.text for item in tool_result.content if item.text])
+                    if tool_result.is_error:
+                        res_str = f"Execution Error: {res_str or tool_result.content}"
+                        
+                    sources.append(SourceReference(
+                        type="MCP",
+                        name=f"Tool: {actual_tool_name}",
+                        content=res_str[:500] if len(res_str) > 500 else res_str
+                    ))
+                    
+                    messages.append(HumanMessage(
+                        content=f"Hasil eksekusi {t_name}: {res_str}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
+                    ))
+                    continue
+                except Exception as parse_ex:
+                    logger.warning(f"Gagal mem-parse text-based tool call: {parse_ex}")
+
             if iteration == 1 and openai_tools and ("thinking process" in response.content.lower() or "identify available tools" in response.content.lower() or "we need to answer" in response.content.lower()):
                 logger.info("Mendeteksi LLM mengeluarkan thinking process alih-alih tool_calls. Meminta eksekusi tool ulang...")
                 messages.append(HumanMessage(
-                    content="SISTEM: Jangan tuliskan teks analisis internal dalam Bahasa Inggris. LANGSUNG panggil tool SAP (misal sap__read_table atau sap__sap_read_table dengan table MARC/MARA) untuk mengecek data pengguna di server SAP yang aktif!"
+                    content="SISTEM: Jangan tuliskan teks analisis internal dalam Bahasa Inggris. LANGSUNG panggil tool SAP atau RAG untuk mengecek data pengguna di server SAP yang aktif!"
                 ))
                 continue
 
@@ -285,12 +358,14 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             try:
                 result = await mcp_manager.call_tool(server_name, mcp_name, tool_args)
                 texts = []
-                if result.isError:
-                    texts.append(f"Execution Error: {result.content}")
-                else:
+                if result.content:
                     for c in result.content:
-                        if c.type == "text":
+                        if hasattr(c, "text"):
                             texts.append(c.text)
+                        else:
+                            texts.append(str(c))
+                if result.isError and not texts:
+                    texts.append(f"Execution Error: {result}")
                             
                 content_str = "\n".join(texts)
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))

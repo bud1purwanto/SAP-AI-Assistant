@@ -80,7 +80,7 @@ def init_db():
                     VALUES ('TRST-BUDI', '1234567', 'user', :persona)
                 """), {"persona": settings.assistant_persona or ""})
 
-            # 8. Seed system configs (MCP SAP & MCP RAG) jika belum ada
+            # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
             res_sap = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
             if not res_sap:
                 conn.execute(text("""
@@ -94,6 +94,27 @@ def init_db():
                     INSERT INTO ai_assistant.system_config (key, value)
                     VALUES ('mcp_rag_config_json', :val)
                 """), {"val": settings.mcp_rag_config_json or ""})
+
+            res_primary = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_model'")).fetchone()
+            if not res_primary:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('openrouter_model', :val)
+                """), {"val": settings.openrouter_model or "openrouter/auto"})
+
+            res_fallback = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_fallback_model'")).fetchone()
+            if not res_fallback:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('openrouter_fallback_model', :val)
+                """), {"val": settings.openrouter_fallback_model or "openrouter/free"})
+
+            res_apikey = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_api_key'")).fetchone()
+            if not res_apikey:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('openrouter_api_key', :val)
+                """), {"val": settings.openrouter_api_key or ""})
 
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
@@ -181,42 +202,84 @@ def update_user_persona(username: str, persona: str):
         return False
 
 def get_system_config():
-    """Ambil konfigurasi MCP SAP dan MCP RAG dari database."""
+    """Ambil konfigurasi MCP SAP, MCP RAG, dan AI Model dari database."""
     sap_cfg = settings.mcp_sap_config_json
     rag_cfg = settings.mcp_rag_config_json
+    model_primary = settings.openrouter_model or "openrouter/auto"
+    model_fallback = settings.openrouter_fallback_model or "openrouter/free"
+    api_key = settings.openrouter_api_key or ""
+    
     try:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("SELECT key, value FROM ai_assistant.system_config")).fetchall()
             for r in rows:
-                if r.key == 'mcp_sap_config_json' and r.value:
+                if r.key == 'mcp_sap_config_json' and r.value is not None:
                     sap_cfg = r.value
-                elif r.key == 'mcp_rag_config_json' and r.value:
+                elif r.key == 'mcp_rag_config_json' and r.value is not None:
                     rag_cfg = r.value
+                elif r.key == 'openrouter_model' and r.value:
+                    model_primary = r.value
+                elif r.key == 'openrouter_fallback_model' and r.value:
+                    model_fallback = r.value
+                elif r.key == 'openrouter_api_key' and r.value:
+                    api_key = r.value
     except Exception as e:
         logger.error(f"Error get_system_config: {e}")
     return {
         "mcp_sap_config_json": sap_cfg,
-        "mcp_rag_config_json": rag_cfg
+        "mcp_rag_config_json": rag_cfg,
+        "openrouter_model": model_primary,
+        "openrouter_fallback_model": model_fallback,
+        "openrouter_api_key": api_key
     }
 
-def update_system_config(mcp_sap_json: str, mcp_rag_json: str):
-    """Update konfigurasi MCP SAP & MCP RAG di database."""
+def update_system_config(
+    mcp_sap_json: str = None, 
+    mcp_rag_json: str = None,
+    openrouter_model: str = None,
+    openrouter_fallback_model: str = None,
+    openrouter_api_key: str = None
+):
+    """Update konfigurasi MCP dan AI Model di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("""
-                INSERT INTO ai_assistant.system_config (key, value) 
-                VALUES ('mcp_sap_config_json', :val)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """), {"val": mcp_sap_json})
-            
-            conn.execute(text("""
-                INSERT INTO ai_assistant.system_config (key, value) 
-                VALUES ('mcp_rag_config_json', :val)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            """), {"val": mcp_rag_json})
-            
+            if mcp_sap_json is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('mcp_sap_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": mcp_sap_json})
+                
+            if mcp_rag_json is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('mcp_rag_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": mcp_rag_json})
+
+            if openrouter_model is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('openrouter_model', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": openrouter_model})
+
+            if openrouter_fallback_model is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('openrouter_fallback_model', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": openrouter_fallback_model})
+
+            if openrouter_api_key is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('openrouter_api_key', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": openrouter_api_key})
+                
             conn.commit()
             return True
     except Exception as e:
@@ -334,4 +397,156 @@ def get_chat_messages(session_id: str):
             ]
     except Exception as e:
         logger.error(f"Error get_chat_messages: {e}")
+        return []
+
+# --- SUPER ADMIN FUNCTIONS ---
+
+def list_all_users():
+    """Ambil seluruh daftar user untuk dashboard admin."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT username, role, assistant_persona 
+                FROM ai_assistant.users 
+                ORDER BY role DESC, username ASC
+            """)).fetchall()
+            return [
+                {
+                    "username": r.username,
+                    "role": r.role,
+                    "assistant_persona": r.assistant_persona or ""
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error list_all_users: {e}")
+        return []
+
+def create_new_user(username: str, password: str, role: str = "user", persona: str = ""):
+    """Buat user baru di database."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT username FROM ai_assistant.users WHERE username = :u"), {"u": username}).fetchone()
+            if existing:
+                return {"success": False, "message": f"User '{username}' sudah ada."}
+            
+            conn.execute(text("""
+                INSERT INTO ai_assistant.users (username, password, role, assistant_persona)
+                VALUES (:u, :p, :r, :persona)
+            """), {"u": username, "p": password, "r": role, "persona": persona})
+            conn.commit()
+            return {"success": True, "message": f"User '{username}' berhasil dibuat."}
+    except Exception as e:
+        logger.error(f"Error create_new_user: {e}")
+        return {"success": False, "message": str(e)}
+
+def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None):
+    """Admin mengupdate data user (role, persona, dan optional reset password)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT username, role, assistant_persona FROM ai_assistant.users WHERE username = :u"), {"u": username}).fetchone()
+            if not existing:
+                return {"success": False, "message": "User tidak ditemukan."}
+
+            updates = []
+            params = {"u": username}
+
+            if role is not None:
+                updates.append("role = :r")
+                params["r"] = role
+            if persona is not None:
+                updates.append("assistant_persona = :p")
+                params["p"] = persona
+            if password:
+                updates.append("password = :pass")
+                params["pass"] = password
+
+            if updates:
+                sql = f"UPDATE ai_assistant.users SET {', '.join(updates)} WHERE username = :u"
+                conn.execute(text(sql), params)
+                conn.commit()
+            return {"success": True, "message": f"User '{username}' berhasil diperbarui."}
+    except Exception as e:
+        logger.error(f"Error update_user_by_admin: {e}")
+        return {"success": False, "message": str(e)}
+
+def delete_user_by_admin(username: str):
+    """Hapus user beserta sesi chat-nya (kecuali akun superadmin itu sendiri)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            # Hapus sessions user terlebih dahulu jika FK belum ON DELETE CASCADE
+            conn.execute(text("DELETE FROM ai_assistant.chat_sessions WHERE username = :u"), {"u": username})
+            res = conn.execute(text("DELETE FROM ai_assistant.users WHERE username = :u"), {"u": username})
+            conn.commit()
+            if res.rowcount == 0:
+                return {"success": False, "message": "User tidak ditemukan."}
+            return {"success": True, "message": f"User '{username}' berhasil dihapus."}
+    except Exception as e:
+        logger.error(f"Error delete_user_by_admin: {e}")
+        return {"success": False, "message": str(e)}
+
+def get_admin_system_stats():
+    """Mengambil ringkasan statistik sistem untuk dashboard."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            user_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.users")).scalar() or 0
+            session_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_sessions")).scalar() or 0
+            msg_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages")).scalar() or 0
+            
+            # 5 user teraktif
+            top_users = conn.execute(text("""
+                SELECT username, COUNT(session_id) as session_count
+                FROM ai_assistant.chat_sessions
+                GROUP BY username
+                ORDER BY session_count DESC
+                LIMIT 5
+            """)).fetchall()
+
+            return {
+                "total_users": user_count,
+                "total_sessions": session_count,
+                "total_messages": msg_count,
+                "top_users": [{"username": r.username, "sessions": r.session_count} for r in top_users]
+            }
+    except Exception as e:
+        logger.error(f"Error get_admin_system_stats: {e}")
+        return {
+            "total_users": 0,
+            "total_sessions": 0,
+            "total_messages": 0,
+            "top_users": []
+        }
+
+def get_all_sessions_for_audit(limit: int = 50):
+    """Ambil semua riwayat sesi chat dari seluruh user untuk audit log."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT s.session_id, s.username, s.title, s.created_at, s.updated_at,
+                       COUNT(m.id) as message_count
+                FROM ai_assistant.chat_sessions s
+                LEFT JOIN ai_assistant.chat_messages m ON s.session_id = m.session_id
+                GROUP BY s.session_id, s.username, s.title, s.created_at, s.updated_at
+                ORDER BY s.updated_at DESC
+                LIMIT :lim
+            """), {"lim": limit}).fetchall()
+            return [
+                {
+                    "session_id": r.session_id,
+                    "username": r.username,
+                    "title": r.title,
+                    "message_count": r.message_count,
+                    "created_at": r.created_at.isoformat() if r.created_at else "",
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else ""
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error get_all_sessions_for_audit: {e}")
         return []

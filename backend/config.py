@@ -1,5 +1,10 @@
-seimport os
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+import os
+from pathlib import Path
+
+ENV_PATH = Path(__file__).parent / ".env"
 
 class Settings(BaseSettings):
     """
@@ -15,6 +20,10 @@ class Settings(BaseSettings):
     mcp_rag_config_json: str = ""
     database_url: str = "postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=ENV_PATH,
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
 settings = Settings()
