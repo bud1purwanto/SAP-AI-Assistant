@@ -6,11 +6,20 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 # Fallback DATABASE_URL if not set
-DEFAULT_DB_URL = "postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB"
+DEFAULT_DB_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
+
+_engine = None
 
 def get_engine():
-    db_url = settings.database_url or DEFAULT_DB_URL
-    return create_engine(db_url, pool_pre_ping=True)
+    global _engine
+    if _engine is None:
+        db_url = settings.database_url or DEFAULT_DB_URL
+        try:
+            _engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
+        except Exception as e:
+            logger.error(f"Error creating database engine: {e}")
+            raise
+    return _engine
 
 def init_db():
     """Membuat schema 'ai_assistant' serta tabel 'users', 'system_config', 
@@ -18,8 +27,11 @@ def init_db():
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # 1. Buat Schema ai_assistant
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
+            # 1. Buat Schema ai_assistant (jika didukung seperti PostgreSQL)
+            try:
+                conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
+            except Exception:
+                pass
             
             # 2. Buat Tabel ai_assistant.users
             conn.execute(text("""
