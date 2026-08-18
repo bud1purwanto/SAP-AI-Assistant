@@ -11,8 +11,8 @@ WorkingDirectory=/opt/sap-ai-assistant/backend
 Environment="PATH=/opt/sap-ai-assistant/backend/venv/bin:/usr/local/bin:/usr/bin"
 EnvironmentFile=/opt/sap-ai-assistant/backend/.env
 
-# Menjalankan Uvicorn dengan 4 worker di localhost port 8000
-ExecStart=/opt/sap-ai-assistant/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 4
+# Menjalankan Uvicorn dengan 4 worker di localhost port 8005 (port 8000 sudah dipakai aplikasi ABAP/lainnya)
+ExecStart=/opt/sap-ai-assistant/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8005 --workers 4
 
 # Auto restart on failure
 Restart=always
