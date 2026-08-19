@@ -76,11 +76,22 @@ const ChatMessage = ({ message }) => {
                 li: ({ children }) => <li className="leading-relaxed">{children}</li>,
                 strong: ({ children }) => <strong className="font-semibold text-slate-900 dark:text-white">{children}</strong>,
                 code: ({ inline, className, children, ...props }) => {
-                  return inline ? (
-                    <code className="bg-slate-100 dark:bg-slate-800/90 text-indigo-600 dark:text-indigo-300 font-mono text-[13px] px-1.5 py-0.5 rounded-md border border-slate-200/80 dark:border-slate-700/60 font-medium" {...props}>
-                      {children}
-                    </code>
-                  ) : (
+                  const codeString = String(children || '').replace(/\n$/, '');
+                  const isMultiLine = codeString.includes('\n');
+                  const isShort = !isMultiLine && codeString.length <= 60;
+
+                  if (inline || isShort) {
+                    return (
+                      <code 
+                        className="inline-flex items-center font-mono text-[12.5px] px-2 py-0.5 mx-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-semibold shadow-2xs select-all" 
+                        {...props}
+                      >
+                        {codeString}
+                      </code>
+                    );
+                  }
+
+                  return (
                     <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 dark:border-slate-800 shadow-md">
                       {/* Code block terminal top bar */}
                       <div className="bg-slate-950 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] font-mono text-slate-400">
@@ -89,13 +100,13 @@ const ChatMessage = ({ message }) => {
                           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
                           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
                           <span className="ml-2 text-slate-400 font-medium flex items-center gap-1">
-                            <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Query
+                            <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Source Code
                           </span>
                         </div>
                       </div>
-                      <code className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed" {...props}>
-                        {children}
-                      </code>
+                      <pre className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed">
+                        <code {...props}>{codeString}</code>
+                      </pre>
                     </div>
                   );
                 },
