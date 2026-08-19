@@ -65,10 +65,34 @@ Buka browser dan akses alamat IP server Anda:
 
 ---
 
-## 🔄 Prosedur Pembaruan Kode (Update Code)
+## 🔄 Prosedur Pembaruan Kode (Update Code di Server)
 
-Jika nanti Anda melakukan update code dari Git:
+### Cara Cepat (Manual via Script):
+Setelah Anda melakukan `git push` dari komputer lokal, jalankan perintah ini di terminal server Linux:
 ```bash
-cd ~/sap-ai-assistant
-git pull origin main
-sudo ./deploy/deploy.sh
+cd ~/sap-ai-assistant  # sesuaikan dengan folder project Anda
+chmod +x deploy/update.sh
+sudo ./deploy/update.sh
+```
+*Skrip `update.sh` akan otomatis melakukan `git pull`, install dependensi terbaru, build frontend, dan restart service.*
+
+---
+
+## ⚡ Apakah Bisa Otomatis Fetch Saat Git Push?
+
+Secara default, Git adalah sistem pull/manual sehingga server Linux **tidak otomatis fetch sendiri** kecuali dipasangi trigger otomatis.
+
+Jika Anda ingin server **otomatis update tanpa login SSH**, ada 2 pilihan mudah:
+
+### Opsi A: Menggunakan Cron Job (Paling Praktis, cek update tiap X menit)
+Di terminal server Linux, ketik:
+```bash
+crontab -e
+```
+Tambahkan baris berikut di bagian paling bawah (misal cek update setiap 5 menit):
+```cron
+*/5 * * * * cd /path/ke/sap-ai-assistant && git fetch && [ $(git rev-parse HEAD) != $(git rev-parse @{u}) ] && bash deploy/update.sh >> /var/log/sap-ai-autoupdate.log 2>&1
+```
+
+### Opsi B: Webhook / CI-CD (GitHub Actions / GitLab CI)
+Jika repository ada di GitHub/GitLab, Anda bisa menggunakan GitHub Actions Runner atau Webhook yang memanggil script deploy saat ada push ke branch `main`.

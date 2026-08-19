@@ -7,21 +7,31 @@ logger = logging.getLogger(__name__)
 
 # Fallback DATABASE_URL if not set
 DEFAULT_DB_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
+SQLITE_FALLBACK_URL = "sqlite:///./sap_ai_assistant.db"
 
 _engine = None
+_using_sqlite = False
 
 def get_engine():
-    global _engine
+    global _engine, _using_sqlite
     if _engine is None:
         db_url = settings.database_url or DEFAULT_DB_URL
         # Normalisasi schema postgresql:// standar agar otomatis memakai psycopg v3 jika psycopg2 tidak ada
         if db_url.startswith("postgresql://"):
             db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
         try:
-            _engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
+            test_engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=3)
+            # Test koneksi awal
+            with test_engine.connect() as conn:
+                pass
+            _engine = test_engine
+            _using_sqlite = False
+            logger.info("Database PostgreSQL berhasil terhubung.")
         except Exception as e:
-            logger.error(f"Error creating database engine: {e}")
-            raise
+            logger.warning(f"Koneksi PostgreSQL gagal ({e}). Beralih otomatis ke SQLite lokal fallback...")
+            _engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
+            _using_sqlite = True
+            logger.info(f"Menggunakan SQLite database fallback: {SQLITE_FALLBACK_URL}")
     return _engine
 
 def init_db():
@@ -66,16 +76,29 @@ def init_db():
             """))
 
             # 5. Buat Tabel ai_assistant.chat_messages
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
-                    id SERIAL PRIMARY KEY,
-                    session_id VARCHAR(50) NOT NULL REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE,
-                    role VARCHAR(20) NOT NULL,
-                    content TEXT NOT NULL,
-                    sources TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
+            # Jika SQLite, SERIAL diubah menjadi INTEGER PRIMARY KEY AUTOINCREMENT
+            if _using_sqlite:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_id VARCHAR(50) NOT NULL,
+                        role VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        sources TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
+                        id SERIAL PRIMARY KEY,
+                        session_id VARCHAR(50) NOT NULL REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE,
+                        role VARCHAR(20) NOT NULL,
+                        content TEXT NOT NULL,
+                        sources TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """))
 
             conn.commit()
 
