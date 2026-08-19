@@ -25,7 +25,7 @@ npm install --silent
 npm run build
 
 echo "⚙️ [4/4] Merestart service backend..."
-systemctl restart sap-ai-backend
+sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart sap-ai-backend
 
 echo "=========================================================="
 echo "✅ Update selesai & service berhasil direstart!"
