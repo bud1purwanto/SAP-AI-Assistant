@@ -265,14 +265,21 @@ const ChatLayout = () => {
     }
 
     try {
+      const historyPayload = messages.map(m => ({
+        role: (m.role === 'user') ? 'user' : 'assistant',
+        content: m.content
+      }));
+
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'X-User-Name': user?.username || 'Guest'
+          'X-User-Name': user?.username || 'Guest',
+          'X-User-Role': user?.role || 'user'
         },
         body: JSON.stringify({
           message: text,
+          history: historyPayload,
           session_id: currentSessionId,
           active_server: activeServer
         })

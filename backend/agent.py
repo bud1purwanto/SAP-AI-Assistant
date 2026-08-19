@@ -232,6 +232,13 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"   -> Contoh untuk cek plant material 'SRRPAI': Panggil `sap__read_table` dengan `table: 'MARC'`, `where: [\"MATNR = 'SRRPAI'\"]` ATAU `sap__sap_read_table` dengan `table_name: 'MARC'`, `options: [\"MATNR = 'SRRPAI'\"]`.\n"
         f"   -> JANGAN HANYA melakukan pencarian dokumen RAG jika pertanyaan meminta data live SAP/tabel SAP spesifik!\n"
         f"2. Gunakan RAG (`rag__search`) HANYA untuk pertanyaan konseptual, panduan manual, dokumen blueprint, atau sebagai fallback jika data live tidak ditemukan.\n\n"
+        f"🔴 ATURAN MEMORI & RIWAYAT PERCAKAPAN (SESSION CONTEXT):\n"
+        f"1. Anda memiliki akses penuh ke riwayat percakapan sebelumnya dalam sesi ini.\n"
+        f"2. Jika pengguna mengajukan pertanyaan lanjutan (follow-up), klarifikasi, atau merujuk pada data/tabel/material/status yang sudah pernah dibahas pada chat sebelumnya:\n"
+        f"   - WAJIB BACA dan GUNAKAN konteks data dari riwayat percakapan sebelumnya.\n"
+        f"   - JANGAN berhalusinasi, berasumsi liar, atau mengabaikan temuan data sebelumnya.\n"
+        f"   - Jika informasi yang ditanyakan sudah lengkap di riwayat sesi ini, Anda BISA langsung menjawab secara cerdas dan akurat.\n"
+        f"   - Jika pengguna meminta data/tabel/material baru yang belum ada di riwayat, panggil tool MCP SAP yang relevan.\n\n"
         f"🔴 FORMAT RESPONS WAJIB (BAHASA INDONESIA):\n"
         f"Setiap balasan HARUS selalu diawali dengan header box berikut secara persis:\n"
         f"📦 **MM Server: {sap_server_name} (SID: {sap_sid}) | Mode: LIVE**\n\n"
@@ -269,6 +276,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             
     messages.append(HumanMessage(content=chat_req.message))
 
+    primary_model_name = nine_router_model if nine_router_enabled else openrouter_model
+    fallback_model_name = openrouter_fallback_model if openrouter_enabled else primary_model_name
+
     # 5. Agentic Loop
     sources = []
     max_iterations = 6
@@ -276,13 +286,13 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     
     while iteration < max_iterations:
         iteration += 1
-        active_primary = llm_primary_force if (iteration == 1 and openai_tools) else llm_primary_auto
-        active_fallback = llm_fallback_force if (iteration == 1 and openai_tools) else llm_fallback_auto
+        active_primary = llm_primary_auto
+        active_fallback = llm_fallback_auto
         
         try:
             response = await active_primary.ainvoke(messages)
         except Exception as primary_err:
-            logger.warning(f"Model utama ({primary_model}) gagal: {primary_err}. Menjajal model fallback ({fallback_model})...")
+            logger.warning(f"Model utama ({primary_model_name}) gagal: {primary_err}. Menjajal model fallback ({fallback_model_name})...")
             try:
                 response = await active_fallback.ainvoke(messages)
             except Exception as fallback_err:

@@ -323,10 +323,27 @@ async def chat_endpoint(request: Request, chat_req: ChatRequest):
             new_session = create_chat_session(username, title="Percakapan Baru")
             if new_session:
                 active_session_id = new_session["session_id"]
+                chat_req.session_id = active_session_id
 
         # Simpan pesan dari user ke DB
         if active_session_id:
             add_chat_message(active_session_id, "user", chat_req.message)
+
+    # Pastikan riwayat percakapan (session context) terisi lengkap dari Database jika history kosong di request
+    if active_session_id and not chat_req.history:
+        raw_msgs = get_chat_messages(active_session_id)
+        # Ambil pesan-pesan sebelum pesan user yang baru saja disimpan
+        db_history = []
+        for m in raw_msgs[:-1] if username != "Guest" else raw_msgs:
+            role_val = "assistant" if m["role"] in ("ai", "assistant") else "user"
+            db_history.append({
+                "role": role_val,
+                "content": m["content"]
+            })
+        if db_history:
+            # Ambil maksimal 12 pesan terakhir untuk efisiensi context window
+            chat_req.history = db_history[-12:]
+            logger.info(f"Dimuat {len(chat_req.history)} pesan histori dari session {active_session_id} untuk konteks percakapan.")
 
     # Proses respons dengan agent AI
     response = await process_chat(chat_req, user_role, user_persona)
