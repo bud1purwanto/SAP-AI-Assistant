@@ -102,43 +102,76 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         })
         tool_map[tool_name] = {"server": server, "mcp_name": t.name}
 
-    # 3. Setup LLM (Primary & Fallback Model dinamis dari DB / Settings)
+    # 3. Setup LLM (Dual Provider: 9Router Proxy & OpenRouter)
     from database import get_system_config
     sys_cfg = get_system_config()
-    
-    api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
-    if not api_key or api_key == "your_openrouter_api_key_here":
+
+    nine_router_enabled = sys_cfg.get("nine_router_enabled", True)
+    nine_router_base_url = sys_cfg.get("nine_router_base_url") or settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
+    nine_router_model = sys_cfg.get("nine_router_model") or settings.nine_router_model or "ag/gemini-3.7-flash-medium"
+    nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "sk-9router-local"
+
+    openrouter_enabled = sys_cfg.get("openrouter_enabled", False)
+    openrouter_api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
+    openrouter_model = sys_cfg.get("openrouter_model") or settings.openrouter_model or "openrouter/auto"
+    openrouter_fallback_model = sys_cfg.get("openrouter_fallback_model") or settings.openrouter_fallback_model or "openrouter/free"
+
+    # Prioritas provider LLM
+    if nine_router_enabled:
+        llm_primary = ChatOpenAI(
+            model=nine_router_model,
+            openai_api_key=nine_router_api_key,
+            openai_api_base=nine_router_base_url,
+            max_retries=1,
+            max_tokens=2048,
+        )
+        if openrouter_enabled and openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here":
+            llm_fallback = ChatOpenAI(
+                model=openrouter_fallback_model or openrouter_model,
+                openai_api_key=openrouter_api_key,
+                openai_api_base="https://openrouter.ai/api/v1",
+                default_headers={
+                    "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
+                    "X-Title": "SAP AI Assistant",
+                },
+                max_retries=1,
+                max_tokens=1024,
+            )
+        else:
+            llm_fallback = llm_primary
+    elif openrouter_enabled or (openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here"):
+        if not openrouter_api_key or openrouter_api_key == "your_openrouter_api_key_here":
+            return ChatResponse(
+                reply="Mohon maaf, 9Router dinonaktifkan dan API Key OpenRouter belum dikonfigurasi. Silakan atur konfigurasi AI Provider pada Dashboard Admin.",
+                sources=[]
+            )
+        llm_primary = ChatOpenAI(
+            model=openrouter_model,
+            openai_api_key=openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
+                "X-Title": "SAP AI Assistant",
+            },
+            max_retries=1,
+            max_tokens=1024,
+        )
+        llm_fallback = ChatOpenAI(
+            model=openrouter_fallback_model,
+            openai_api_key=openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
+                "X-Title": "SAP AI Assistant",
+            },
+            max_retries=1,
+            max_tokens=1024,
+        )
+    else:
         return ChatResponse(
-            reply="Mohon maaf, API Key OpenRouter belum dikonfigurasi. Silakan atur API Key pada Dashboard Admin atau file `.env`.",
+            reply="Mohon maaf, tidak ada AI Provider yang aktif. Silakan aktifkan 9Router atau OpenRouter melalui Dashboard Admin.",
             sources=[]
         )
-        
-    primary_model = sys_cfg.get("openrouter_model") or settings.openrouter_model or "openrouter/auto"
-    fallback_model = sys_cfg.get("openrouter_fallback_model") or settings.openrouter_fallback_model or "openrouter/free"
-    
-    llm_primary = ChatOpenAI(
-        model=primary_model,
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        default_headers={
-            "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
-            "X-Title": "SAP AI Assistant",
-        },
-        max_retries=1,
-        max_tokens=1024,
-    )
-
-    llm_fallback = ChatOpenAI(
-        model=fallback_model,
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
-        default_headers={
-            "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
-            "X-Title": "SAP AI Assistant",
-        },
-        max_retries=1,
-        max_tokens=1024,
-    )
 
     if openai_tools:
         llm_primary_force = llm_primary.bind_tools(openai_tools, tool_choice="required")

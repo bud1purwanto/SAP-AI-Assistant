@@ -96,19 +96,58 @@ def init_db():
                 """), {"persona": settings.assistant_persona or ""})
 
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
-            res_sap = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
-            if not res_sap:
+            res_sap = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
+            if not res_sap or not res_sap.value:
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value)
                     VALUES ('mcp_sap_config_json', :val)
-                """), {"val": settings.mcp_sap_config_json or ""})
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": settings.mcp_sap_config_json or DEFAULT_MCP_SAP_JSON})
 
-            res_rag = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'mcp_rag_config_json'")).fetchone()
-            if not res_rag:
+            res_rag = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_rag_config_json'")).fetchone()
+            if not res_rag or not res_rag.value:
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value)
                     VALUES ('mcp_rag_config_json', :val)
-                """), {"val": settings.mcp_rag_config_json or ""})
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON})
+
+            # 9Router Config Defaults
+            res_9r_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_enabled'")).fetchone()
+            if not res_9r_en:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('nine_router_enabled', :val)
+                """), {"val": str(settings.nine_router_enabled).lower()})
+
+            res_9r_url = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_base_url'")).fetchone()
+            if not res_9r_url:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('nine_router_base_url', :val)
+                """), {"val": settings.nine_router_base_url or "http://192.168.88.83:20128/v1"})
+
+            res_9r_mod = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_model'")).fetchone()
+            if not res_9r_mod:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('nine_router_model', :val)
+                """), {"val": settings.nine_router_model or "ag/gemini-3.7-flash-medium"})
+
+            res_9r_key = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_api_key'")).fetchone()
+            if not res_9r_key:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('nine_router_api_key', :val)
+                """), {"val": settings.nine_router_api_key or ""})
+
+            # OpenRouter Config Defaults
+            res_or_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_enabled'")).fetchone()
+            if not res_or_en:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('openrouter_enabled', :val)
+                """), {"val": str(settings.openrouter_enabled).lower()})
 
             res_primary = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_model'")).fetchone()
             if not res_primary:
@@ -244,10 +283,41 @@ def update_user_persona(username: str, persona: str):
         logger.error(f"Error update_user_persona: {e}")
         return False
 
+DEFAULT_MCP_SAP_JSON = '''{
+  "mcpServers": {
+    "sap-leader-remote": {
+      "type": "http",
+      "url": "http://192.168.1.162:8091/mcp",
+      "headers": {
+        "Authorization": "Bearer Trias123"
+      }
+    }
+  }
+}'''
+
+DEFAULT_MCP_RAG_JSON = '''{
+  "mcpServers": {
+    "manufacturing-rag": {
+      "type": "http",
+      "url": "http://192.168.1.162:8090/mcp",
+      "headers": {
+        "Authorization": "Bearer Trias123"
+      }
+    }
+  }
+}'''
+
 def get_system_config():
-    """Ambil konfigurasi MCP SAP, MCP RAG, dan AI Model dari database."""
-    sap_cfg = settings.mcp_sap_config_json
-    rag_cfg = settings.mcp_rag_config_json
+    """Ambil konfigurasi MCP SAP, MCP RAG, 9Router, dan OpenRouter dari database."""
+    sap_cfg = settings.mcp_sap_config_json or DEFAULT_MCP_SAP_JSON
+    rag_cfg = settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON
+    
+    nine_router_enabled = settings.nine_router_enabled
+    nine_router_base_url = settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
+    nine_router_model = settings.nine_router_model or "ag/gemini-3.7-flash-medium"
+    nine_router_api_key = settings.nine_router_api_key or ""
+
+    openrouter_enabled = settings.openrouter_enabled
     model_primary = settings.openrouter_model or "openrouter/auto"
     model_fallback = settings.openrouter_fallback_model or "openrouter/free"
     api_key = settings.openrouter_api_key or ""
@@ -261,17 +331,32 @@ def get_system_config():
                     sap_cfg = r.value
                 elif r.key == 'mcp_rag_config_json' and r.value is not None:
                     rag_cfg = r.value
-                elif r.key == 'openrouter_model' and r.value:
+                elif r.key == 'nine_router_enabled' and r.value is not None:
+                    nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'nine_router_base_url' and r.value is not None:
+                    nine_router_base_url = r.value
+                elif r.key == 'nine_router_model' and r.value is not None:
+                    nine_router_model = r.value
+                elif r.key == 'nine_router_api_key' and r.value is not None:
+                    nine_router_api_key = r.value
+                elif r.key == 'openrouter_enabled' and r.value is not None:
+                    openrouter_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'openrouter_model' and r.value is not None:
                     model_primary = r.value
-                elif r.key == 'openrouter_fallback_model' and r.value:
+                elif r.key == 'openrouter_fallback_model' and r.value is not None:
                     model_fallback = r.value
-                elif r.key == 'openrouter_api_key' and r.value:
+                elif r.key == 'openrouter_api_key' and r.value is not None:
                     api_key = r.value
     except Exception as e:
         logger.error(f"Error get_system_config: {e}")
     return {
         "mcp_sap_config_json": sap_cfg,
         "mcp_rag_config_json": rag_cfg,
+        "nine_router_enabled": nine_router_enabled,
+        "nine_router_base_url": nine_router_base_url,
+        "nine_router_model": nine_router_model,
+        "nine_router_api_key": nine_router_api_key,
+        "openrouter_enabled": openrouter_enabled,
         "openrouter_model": model_primary,
         "openrouter_fallback_model": model_fallback,
         "openrouter_api_key": api_key
@@ -280,11 +365,16 @@ def get_system_config():
 def update_system_config(
     mcp_sap_json: str = None, 
     mcp_rag_json: str = None,
+    nine_router_enabled: bool = None,
+    nine_router_base_url: str = None,
+    nine_router_model: str = None,
+    nine_router_api_key: str = None,
+    openrouter_enabled: bool = None,
     openrouter_model: str = None,
     openrouter_fallback_model: str = None,
     openrouter_api_key: str = None
 ):
-    """Update konfigurasi MCP dan AI Model di database."""
+    """Update konfigurasi MCP, 9Router, dan OpenRouter di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -301,6 +391,41 @@ def update_system_config(
                     VALUES ('mcp_rag_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": mcp_rag_json})
+
+            if nine_router_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('nine_router_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if nine_router_enabled else "false"})
+
+            if nine_router_base_url is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('nine_router_base_url', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": nine_router_base_url})
+
+            if nine_router_model is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('nine_router_model', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": nine_router_model})
+
+            if nine_router_api_key is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('nine_router_api_key', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": nine_router_api_key})
+
+            if openrouter_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('openrouter_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if openrouter_enabled else "false"})
 
             if openrouter_model is not None:
                 conn.execute(text("""

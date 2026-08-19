@@ -40,9 +40,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '' });
 
   // AI & MCP Config State
+  const [nineRouterEnabled, setNineRouterEnabled] = useState(true);
+  const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('http://192.168.88.83:20128/v1');
+  const [nineRouterModel, setNineRouterModel] = useState('ag/gemini-3.7-flash-medium');
+  const [nineRouterApiKey, setNineRouterApiKey] = useState('');
+
+  const [openrouterEnabled, setOpenrouterEnabled] = useState(false);
   const [openrouterModel, setOpenrouterModel] = useState('openrouter/auto');
   const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('openrouter/free');
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
+
   const [mcpSapConfig, setMcpSapConfig] = useState('');
   const [mcpRagConfig, setMcpRagConfig] = useState('');
   const [mcpSaving, setMcpSaving] = useState(false);
@@ -90,6 +97,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         const data = await res.json();
         setMcpSapConfig(data.mcp_sap_config_json || '');
         setMcpRagConfig(data.mcp_rag_config_json || '');
+        setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
+        setNineRouterBaseUrl(data.nine_router_base_url || 'http://192.168.88.83:20128/v1');
+        setNineRouterModel(data.nine_router_model || 'ag/gemini-3.7-flash-medium');
+        setNineRouterApiKey(data.nine_router_api_key || '');
+        setOpenrouterEnabled(data.openrouter_enabled !== undefined ? data.openrouter_enabled : false);
         setOpenrouterModel(data.openrouter_model || 'openrouter/auto');
         setOpenrouterFallbackModel(data.openrouter_fallback_model || 'openrouter/free');
         setOpenrouterApiKey(data.openrouter_api_key || '');
@@ -218,8 +230,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const handleSaveMcpConfig = async () => {
     setMcpSaving(true);
-    setActionError('');
     setActionSuccess('');
+    setActionError('');
     try {
       const res = await fetch(`${API_BASE_URL}/api/config`, {
         method: 'POST',
@@ -230,6 +242,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         body: JSON.stringify({
           mcp_sap_config_json: mcpSapConfig,
           mcp_rag_config_json: mcpRagConfig,
+          nine_router_enabled: nineRouterEnabled,
+          nine_router_base_url: nineRouterBaseUrl,
+          nine_router_model: nineRouterModel,
+          nine_router_api_key: nineRouterApiKey,
+          openrouter_enabled: openrouterEnabled,
           openrouter_model: openrouterModel,
           openrouter_fallback_model: openrouterFallbackModel,
           openrouter_api_key: openrouterApiKey,
@@ -237,7 +254,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         })
       });
       if (!res.ok) throw new Error("Gagal menyimpan konfigurasi sistem.");
-      setActionSuccess("Konfigurasi AI Model & MCP SAP/RAG berhasil disimpan ke Database!");
+      setActionSuccess("Konfigurasi AI Provider (9Router & OpenRouter) serta MCP berhasil disimpan!");
       if (onRefreshMcpServers) onRefreshMcpServers();
       fetchStats();
     } catch (err) {
@@ -769,61 +786,161 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </button>
                 </div>
 
-                {/* AI Model Setting Panel */}
-                <div className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                      Pengaturan Model AI (OpenRouter)
-                    </h4>
+                {/* AI Providers Setting Cards (2 Options) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Card 1: 9Router (Local Gateway) */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    nineRouterEnabled 
+                      ? 'border-indigo-300 dark:border-indigo-700/80 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-sm' 
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 opacity-75'
+                  } space-y-3`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-indigo-600 text-white rounded-lg">
+                          <Server className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                            9Router (Local Gateway)
+                          </h4>
+                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                            Prioritas Utama / Internal Network
+                          </span>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={nineRouterEnabled} 
+                          onChange={(e) => setNineRouterEnabled(e.target.checked)} 
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </label>
+                    </div>
+
+                    <div className="space-y-2.5 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          Base URL
+                        </label>
+                        <input 
+                          type="text"
+                          value={nineRouterBaseUrl}
+                          onChange={(e) => setNineRouterBaseUrl(e.target.value)}
+                          disabled={!nineRouterEnabled}
+                          className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                          placeholder="http://192.168.88.83:20128/v1"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            Model Name
+                          </label>
+                          <input 
+                            type="text"
+                            value={nineRouterModel}
+                            onChange={(e) => setNineRouterModel(e.target.value)}
+                            disabled={!nineRouterEnabled}
+                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                            placeholder="ag/gemini-3.7-flash-medium"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            API Key (Opsional)
+                          </label>
+                          <input 
+                            type="password"
+                            value={nineRouterApiKey}
+                            onChange={(e) => setNineRouterApiKey(e.target.value)}
+                            disabled={!nineRouterEnabled}
+                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                            placeholder="Kosongkan jika tanpa auth"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Primary AI Model
+
+                  {/* Card 2: OpenRouter (Cloud Gateway) */}
+                  <div className={`p-4 rounded-2xl border transition-all ${
+                    openrouterEnabled 
+                      ? 'border-emerald-300 dark:border-emerald-700/80 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm' 
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 opacity-75'
+                  } space-y-3`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                          <Key className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                            OpenRouter (Cloud AI)
+                          </h4>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            Cloud Failover / Alternatif
+                          </span>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={openrouterEnabled} 
+                          onChange={(e) => setOpenrouterEnabled(e.target.checked)} 
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
                       </label>
-                      <input 
-                        type="text"
-                        value={openrouterModel}
-                        onChange={(e) => setOpenrouterModel(e.target.value)}
-                        className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                        placeholder="openrouter/auto"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Default: <code>openrouter/auto</code>
-                      </p>
                     </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Fallback AI Model
-                      </label>
-                      <input 
-                        type="text"
-                        value={openrouterFallbackModel}
-                        onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
-                        className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                        placeholder="openrouter/free"
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        Cadangan jika kuota model utama habis
-                      </p>
-                    </div>
+                    <div className="space-y-2.5 pt-1">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          API Key
+                        </label>
+                        <input 
+                          type="password"
+                          value={openrouterApiKey}
+                          onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                          disabled={!openrouterEnabled}
+                          className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                          placeholder="sk-or-v1-..."
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        OpenRouter API Key
-                      </label>
-                      <input 
-                        type="password"
-                        value={openrouterApiKey}
-                        onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                        className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                        placeholder="sk-or-v1-..."
-                      />
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        API Key OpenRouter
-                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            Primary Model
+                          </label>
+                          <input 
+                            type="text"
+                            value={openrouterModel}
+                            onChange={(e) => setOpenrouterModel(e.target.value)}
+                            disabled={!openrouterEnabled}
+                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                            placeholder="openrouter/auto"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                            Fallback Model
+                          </label>
+                          <input 
+                            type="text"
+                            value={openrouterFallbackModel}
+                            onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
+                            disabled={!openrouterEnabled}
+                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                            placeholder="openrouter/free"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

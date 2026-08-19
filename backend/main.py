@@ -93,6 +93,11 @@ async def change_password_endpoint(request: Request, req: ChangePasswordRequest)
 class ConfigUpdate(BaseModel):
     mcp_sap_config_json: str = None
     mcp_rag_config_json: str = None
+    nine_router_enabled: bool = None
+    nine_router_base_url: str = None
+    nine_router_model: str = None
+    nine_router_api_key: str = None
+    openrouter_enabled: bool = None
     openrouter_model: str = None
     openrouter_fallback_model: str = None
     openrouter_api_key: str = None
@@ -109,6 +114,11 @@ async def get_config(request: Request):
     return {
         "mcp_sap_config_json": sys_cfg.get("mcp_sap_config_json", ""),
         "mcp_rag_config_json": sys_cfg.get("mcp_rag_config_json", ""),
+        "nine_router_enabled": sys_cfg.get("nine_router_enabled", True),
+        "nine_router_base_url": sys_cfg.get("nine_router_base_url", "http://192.168.88.83:20128/v1"),
+        "nine_router_model": sys_cfg.get("nine_router_model", "ag/gemini-3.7-flash-medium"),
+        "nine_router_api_key": sys_cfg.get("nine_router_api_key", ""),
+        "openrouter_enabled": sys_cfg.get("openrouter_enabled", False),
         "openrouter_model": sys_cfg.get("openrouter_model", "openrouter/auto"),
         "openrouter_fallback_model": sys_cfg.get("openrouter_fallback_model", "openrouter/free"),
         "openrouter_api_key": sys_cfg.get("openrouter_api_key", ""),
@@ -133,6 +143,11 @@ async def update_config(request: Request, config: ConfigUpdate):
         update_system_config(
             mcp_sap_json=config.mcp_sap_config_json,
             mcp_rag_json=config.mcp_rag_config_json,
+            nine_router_enabled=config.nine_router_enabled,
+            nine_router_base_url=config.nine_router_base_url,
+            nine_router_model=config.nine_router_model,
+            nine_router_api_key=config.nine_router_api_key,
+            openrouter_enabled=config.openrouter_enabled,
             openrouter_model=config.openrouter_model,
             openrouter_fallback_model=config.openrouter_fallback_model,
             openrouter_api_key=config.openrouter_api_key
