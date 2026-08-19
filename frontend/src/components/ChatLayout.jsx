@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, BarChart2, Cpu, Layers, LogIn, LogOut, Menu, MessageSquare,
-  Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles,
-  Square, Sun, Trash2, X,
+  AlertTriangle, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Square, Sun, Trash2, X,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -15,15 +13,39 @@ import { api, ApiError, clearSession, getStoredUser, saveSession, setUnauthorize
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
-const WELCOME_MESSAGE = {
-  role: 'assistant',
-  content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?',
+/** Sapaan dibuat personal bila nama pengguna diketahui. */
+const buildWelcome = (user) => {
+  const name = (user?.full_name || '').trim().split(' ')[0]
+    || (user?.role === 'guest' ? '' : user?.username || '');
+  const greeting = name ? `Halo, ${name}!` : 'Halo!';
+  return {
+    role: 'assistant',
+    isWelcome: true,
+    content: `${greeting} Saya asisten SAP Anda. Tanyakan apa saja soal data SAP, prosedur kerja, atau minta saya menyusun laporan dan berkas Excel.`,
+  };
 };
 
+// Contoh ditulis sebagai pertanyaan kerja sehari-hari, bukan potongan
+// nomor dokumen yang hanya bermakna bagi pengguna teknis.
 const SUGGESTIONS = [
-  { title: 'Cek Stock Material', query: 'Cek stock material 100-100 di plant 1000', icon: Layers },
-  { title: 'Status Purchase Order', query: 'Cek status PO nomor 4500000001', icon: Search },
-  { title: 'Panduan T-Code ME21N', query: 'Jelaskan langkah-langkah membuat Purchase Order di ME21N', icon: BarChart2 },
+  {
+    title: 'Cek stok barang',
+    subtitle: 'Lihat jumlah stok di pabrik tertentu',
+    query: 'Berapa stok material 100-100 di plant 1000?',
+    icon: Layers,
+  },
+  {
+    title: 'Lacak pesanan pembelian',
+    subtitle: 'Periksa status PO yang sedang berjalan',
+    query: 'Bagaimana status purchase order nomor 4500000001?',
+    icon: Search,
+  },
+  {
+    title: 'Buat laporan Excel',
+    subtitle: 'Rangkum data menjadi berkas siap unduh',
+    query: 'Buatkan ringkasan stok material dalam bentuk file Excel.',
+    icon: FileSpreadsheet,
+  },
 ];
 
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
@@ -32,7 +54,7 @@ const THEME_LABEL = { light: 'Tema terang', dark: 'Tema gelap', system: 'Ikuti t
 const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
 
 const ChatLayout = () => {
-  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState(() => [buildWelcome(getStoredUser())]);
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -122,24 +144,25 @@ const ChatLayout = () => {
       const data = await api.sessionMessages(sessionId);
       setMessages(
         !data || data.length === 0
-          ? [WELCOME_MESSAGE]
+          ? [buildWelcome(user)]
           : data.map((m) => ({
               role: m.role === 'user' ? 'user' : 'assistant',
               content: m.content,
               sources: parseSources(m.sources),
+              created_at: m.created_at,
             })),
       );
     } catch (err) {
       setError({ message: err.message, retry: () => loadSession(sessionId) });
     }
-  }, []);
+  }, [user]);
 
   const fetchSessions = useCallback(async (keepCurrentId = false) => {
     if (isGuest) {
       setSessions([]);
       setIsSessionsLoading(false);
       setCurrentSessionId(null);
-      setMessages([WELCOME_MESSAGE]);
+      setMessages([buildWelcome(user)]);
       return;
     }
 
@@ -151,7 +174,7 @@ const ChatLayout = () => {
         if (!keepCurrentId || !currentSessionId) loadSession(data[0].session_id);
       } else {
         setCurrentSessionId(null);
-        setMessages([WELCOME_MESSAGE]);
+        setMessages([buildWelcome(user)]);
       }
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) {
@@ -173,7 +196,7 @@ const ChatLayout = () => {
     setIsSidebarOpen(false);
     if (isGuest) {
       setCurrentSessionId(null);
-      setMessages([WELCOME_MESSAGE]);
+      setMessages([buildWelcome(user)]);
       return;
     }
     try {
@@ -181,7 +204,7 @@ const ChatLayout = () => {
       if (data?.session_id) {
         setSessions((prev) => [data, ...prev]);
         setCurrentSessionId(data.session_id);
-        setMessages([WELCOME_MESSAGE]);
+        setMessages([buildWelcome(user)]);
       }
     } catch (err) {
       setError({ message: err.message, retry: createNewSession });
@@ -203,7 +226,7 @@ const ChatLayout = () => {
         loadSession(remaining[0].session_id);
       } else {
         setCurrentSessionId(null);
-        setMessages([WELCOME_MESSAGE]);
+        setMessages([buildWelcome(user)]);
       }
     }
   };
@@ -215,7 +238,7 @@ const ChatLayout = () => {
   };
 
   const handleSendMessage = async (text) => {
-    const outgoing = [...messages, { role: 'user', content: text }];
+    const outgoing = [...messages, { role: 'user', content: text, created_at: new Date().toISOString() }];
     setMessages(outgoing);
     setIsLoading(true);
     setError(null);
@@ -225,7 +248,7 @@ const ChatLayout = () => {
 
     try {
       const history = messages
-        .filter((m) => m !== WELCOME_MESSAGE)
+        .filter((m) => !m.isWelcome)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
       const data = await api.chat(
@@ -238,6 +261,7 @@ const ChatLayout = () => {
         content: data.reply,
         sources: data.sources || [],
         artifacts: data.artifacts || [],
+        created_at: new Date().toISOString(),
       }]);
 
       if (data.session_id) setCurrentSessionId(data.session_id);
@@ -275,7 +299,7 @@ const ChatLayout = () => {
     setUser(GUEST_USER);
     setSessions([]);
     setCurrentSessionId(null);
-    setMessages([WELCOME_MESSAGE]);
+    setMessages([buildWelcome(user)]);
   };
 
   // Peringatan bila target yang dipilih adalah sistem SAP produksi.
@@ -311,8 +335,8 @@ const ChatLayout = () => {
             <div>
               <h1 className="text-sm font-extrabold tracking-tight font-display text-content">SAP AI Co-Pilot</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-[11px] font-semibold text-content-muted uppercase tracking-wider">ECC &amp; RAG Ready</span>
+                <span className="w-2 h-2 rounded-full bg-success" />
+                <span className="text-xs text-content-muted">Siap membantu</span>
               </div>
             </div>
           </div>
@@ -336,8 +360,8 @@ const ChatLayout = () => {
         </div>
 
         <nav className="flex-1 overflow-y-auto px-3 space-y-1.5 py-1" aria-label="Riwayat percakapan">
-          <h2 className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-content-subtle">
-            Riwayat Percakapan
+          <h2 className="px-2 py-1.5 text-xs font-semibold text-content-muted">
+            Riwayat percakapan
           </h2>
 
           {isSessionsLoading ? (
@@ -404,8 +428,12 @@ const ChatLayout = () => {
                 {user.username.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold truncate text-content">{user.username}</div>
-                <div className="text-[11px] text-content-muted capitalize">{user.role}</div>
+                <div className="text-sm font-semibold truncate text-content">
+                  {user.full_name || user.username}
+                </div>
+                <div className="text-xs text-content-muted">
+                  {user.role === 'superadmin' ? 'Administrator' : user.role === 'guest' ? 'Tamu' : 'Pengguna'}
+                </div>
               </div>
             </div>
 
@@ -443,26 +471,26 @@ const ChatLayout = () => {
               <Menu className="w-4 h-4" aria-hidden="true" />
             </button>
 
-            <label htmlFor="sap-target" className="hidden sm:block text-xs font-bold text-content-muted font-mono shrink-0">
-              TARGET SAP:
+            <label htmlFor="sap-target" className="hidden sm:block text-sm text-content-muted shrink-0">
+              Sistem SAP
             </label>
             {sapSubServers.length > 0 ? (
               <select
                 id="sap-target"
                 value={activeServer}
                 onChange={(e) => setActiveServer(e.target.value)}
-                className={`bg-surface-sunken text-content text-xs font-bold py-1.5 px-3 rounded-xl border cursor-pointer max-w-[15rem] truncate ${
+                className={`bg-surface-sunken text-content text-sm font-medium py-2 px-3.5 rounded-xl border cursor-pointer max-w-[17rem] truncate ${
                   isProductionTarget ? 'border-danger text-danger' : 'border-line'
                 }`}
               >
                 {sapSubServers.map((srv) => (
                   <option key={srv.number ?? aliasOf(srv)} value={`sap:${aliasOf(srv)}`}>
-                    {srv.number}. {srv.name} ({srv.sid}){srv.production_warning ? ' ⚠️ PRODUKSI' : ''}
+                    {srv.name}{srv.production_warning ? ' — PRODUKSI' : ''}
                   </option>
                 ))}
               </select>
             ) : (
-              <span className="text-xs text-content-subtle font-mono">memuat daftar server…</span>
+              <span className="text-sm text-content-subtle">Menghubungkan…</span>
             )}
           </div>
 
@@ -493,8 +521,8 @@ const ChatLayout = () => {
           >
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span>
-              Target aktif adalah sistem <strong>PRODUKSI</strong> ({selectedServer?.sid}). Setiap permintaan
-              dijalankan terhadap data SAP sungguhan.
+              Anda terhubung ke sistem <strong>PRODUKSI</strong> ({selectedServer?.name}). Setiap permintaan
+              dijalankan terhadap data perusahaan yang sesungguhnya.
             </span>
           </div>
         )}
@@ -538,8 +566,8 @@ const ChatLayout = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6">
-          <div className="max-w-4xl mx-auto space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-8">
+          <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
             ))}
@@ -555,8 +583,8 @@ const ChatLayout = () => {
                     <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
                     <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
                   </span>
-                  <span className="text-xs font-semibold text-content-muted font-mono">
-                    Menghubungi SAP MCP Server &amp; RAG Engine…
+                  <span className="text-sm text-content-muted">
+                    Sedang mengambil data…
                   </span>
                   <button
                     onClick={stopGeneration}
@@ -575,9 +603,9 @@ const ChatLayout = () => {
                   <div className="inline-flex items-center justify-center p-3 bg-accent-soft rounded-2xl text-accent-soft-fg mb-3">
                     <Cpu className="w-6 h-6" aria-hidden="true" />
                   </div>
-                  <h3 className="text-base font-bold text-content font-display">Pilih Rekomendasi Pertanyaan</h3>
-                  <p className="text-xs text-content-muted mt-1">
-                    Klik salah satu template di bawah untuk memulai pencarian cepat
+                  <h3 className="text-lg font-bold text-content font-display">Mulai dari sini</h3>
+                  <p className="text-sm text-content-muted mt-1.5">
+                    Pilih salah satu contoh, atau tulis pertanyaan Anda sendiri di bawah
                   </p>
                 </div>
 
@@ -588,15 +616,15 @@ const ChatLayout = () => {
                       <button
                         key={item.title}
                         onClick={() => handleSendMessage(item.query)}
-                        className="flex flex-col text-left p-4 rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.98]"
+                        className="flex flex-col text-left p-5 rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99]"
                       >
-                        <span className="p-2 w-fit rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors mb-3">
-                          <IconComp className="w-4 h-4" aria-hidden="true" />
+                        <span className="p-2.5 w-fit rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors mb-3.5">
+                          <IconComp className="w-5 h-5" aria-hidden="true" />
                         </span>
-                        <span className="text-xs font-bold text-content group-hover:text-accent transition-colors">
+                        <span className="text-sm font-bold text-content group-hover:text-accent transition-colors">
                           {item.title}
                         </span>
-                        <span className="text-[11px] text-content-muted mt-1 line-clamp-2">{item.query}</span>
+                        <span className="text-xs text-content-muted mt-1.5 leading-relaxed">{item.subtitle}</span>
                       </button>
                     );
                   })}

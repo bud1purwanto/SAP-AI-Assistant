@@ -117,7 +117,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </div>
             <div>
               <h2 className="text-base font-bold text-content font-display">
-                Settings & Account
+                Pengaturan
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs text-content-muted">User: <strong className="text-content-secondary">{user?.username || 'Guest'}</strong></span>
@@ -149,7 +149,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>Assistant Persona</span>
+            <span>Persona &amp; Profil</span>
           </button>
 
           {isSuperadmin && (
@@ -166,7 +166,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </button>
           )}
 
-          <button
+          {isSuperadmin && (
+            <button
             onClick={() => setActiveTab('mcp')}
             className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'mcp'
@@ -175,8 +176,9 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>MCP Config {isSuperadmin ? '' : '(Read Only)'}</span>
+            <span>Koneksi Data</span>
           </button>
+          )}
 
           {isLoggedIn && (
             <button
@@ -188,7 +190,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               }`}
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Password Akun</span>
+              <span>Ubah Password</span>
             </button>
           )}
         </div>

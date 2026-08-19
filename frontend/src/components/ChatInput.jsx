@@ -51,9 +51,9 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Tanyakan seputar SAP PO, Stock Material, Sales Order, Vendor…"
+            placeholder="Tanyakan sesuatu, atau minta saya menyusun laporan…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[180px] py-2 px-2 bg-transparent text-content placeholder:text-content-subtle text-sm focus:outline-none resize-none leading-relaxed"
+            className="flex-1 max-h-[180px] py-2.5 px-2 bg-transparent text-content placeholder:text-content-subtle text-[15px] focus:outline-none resize-none leading-relaxed"
             disabled={isLoading}
           />
 
@@ -75,15 +75,10 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           </div>
         </div>
 
-        {/* Floating helper shortcuts footer */}
-        <div className="flex items-center justify-between px-3 pt-1 text-[11px] text-content-subtle">
-          <div className="flex items-center gap-2">
-            <span className="hidden sm:inline font-mono">Shift + Enter untuk baris baru</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-success" aria-hidden="true"></span>
-            <span>Agent v1.0 • Connected</span>
-          </div>
+        {/* Petunjuk singkat. Status versi/koneksi agen dihapus: itu informasi
+            operasional yang tidak dapat ditindaklanjuti pengguna. */}
+        <div className="px-3 pt-1 text-xs text-content-subtle">
+          <span className="hidden sm:inline">Tekan Enter untuk mengirim, Shift + Enter untuk baris baru</span>
         </div>
       </form>
     </div>

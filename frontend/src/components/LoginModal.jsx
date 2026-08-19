@@ -32,6 +32,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
       onLoginSuccess({
         access_token: data.access_token,
         username: data.username,
+        full_name: data.full_name || '',
         role: data.role,
         assistant_persona: data.assistant_persona,
       });

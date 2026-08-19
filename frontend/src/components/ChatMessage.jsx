@@ -34,11 +34,32 @@ const downloadArtifact = async (file) => {
   }
 };
 
+/** Terjemahkan nama tool internal menjadi keterangan yang dapat dipahami pengguna. */
+const describeSource = (src) => {
+  const name = (src.name || '').toLowerCase();
+  if (name.includes('read_table')) return 'Pembacaan tabel data SAP';
+  if (name.includes('program') || name.includes('abap')) return 'Pembacaan program ABAP';
+  if (name.includes('function')) return 'Pemanggilan fungsi SAP';
+  if (name.includes('search')) return 'Pencarian pada dokumen internal';
+  return src.type === 'MCP' ? 'Pembacaan data SAP' : 'Rujukan dokumen';
+};
+
+const formatTime = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+};
+
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
+  const [openDetail, setOpenDetail] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  const timeLabel = formatTime(message.created_at);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -51,8 +72,9 @@ const ChatMessage = ({ message }) => {
       <div className="flex justify-end items-start gap-3 my-4 group">
         <div className="flex flex-col items-end max-w-[85%] sm:max-w-[75%]">
           {/* Label Header */}
-          <div className="flex items-center gap-1.5 mb-1.5 mr-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 tracking-wider">
-            <span>You</span>
+          <div className="flex items-center gap-2 mb-1.5 mr-1 text-xs text-content-muted">
+            <span className="font-semibold text-content-secondary">Anda</span>
+            {timeLabel && <span>{timeLabel}</span>}
           </div>
 
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
@@ -82,13 +104,9 @@ const ChatMessage = ({ message }) => {
       
       <div className="flex flex-col gap-1.5 max-w-[90%] sm:max-w-[85%] min-w-0 flex-1">
         {/* Label Header */}
-        <div className="flex items-center gap-2 mb-1 ml-1">
-          <span className="text-[11px] font-bold text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-indigo-600 dark:from-teal-400 dark:to-indigo-400 uppercase tracking-wider">
-            SAP AI Assistant
-          </span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20">
-            ECC 6.0 & RAG
-          </span>
+        <div className="flex items-center gap-2 mb-1.5 ml-1">
+          <span className="text-xs font-semibold text-content-secondary">Asisten SAP</span>
+          {timeLabel && <span className="text-xs text-content-subtle">{timeLabel}</span>}
         </div>
 
         {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
@@ -160,10 +178,12 @@ const ChatMessage = ({ message }) => {
             {message.sources && message.sources.length > 0 ? (
               <button 
                 onClick={() => setShowSources(!showSources)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700 bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100/60 px-2.5 py-1 rounded-lg transition-all border border-teal-200/50 dark:border-teal-800/40"
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:brightness-110 bg-accent-soft px-3 py-1.5 rounded-xl transition-all border border-accent/20"
               >
-                <Database className="w-3.5 h-3.5" />
-                <span>{showSources ? 'Hide Data Trace' : 'View Data Trace'}</span>
+                <Database className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>
+                  {showSources ? 'Sembunyikan sumber' : `Lihat sumber data (${message.sources.length})`}
+                </span>
                 {showSources ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
               </button>
             ) : (
@@ -222,26 +242,51 @@ const ChatMessage = ({ message }) => {
           </div>
         )}
 
-        {/* Traceability Sources Accordion */}
+        {/* Sumber data — ditulis dalam bahasa kerja, detail teknis disembunyikan.
+            Panel ini gunanya membangun kepercayaan pada angka yang ditampilkan,
+            sehingga tidak boleh tampil seperti keluaran terminal. */}
         {showSources && message.sources && (
-          <div className="mt-1 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
-            {message.sources.map((src, idx) => (
-              <div key={idx} className="bg-slate-900 rounded-2xl p-3.5 shadow-md border border-slate-800 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-teal-500 to-indigo-500"></div>
-                <div className="flex items-center gap-2 mb-2 pl-1">
-                  {src.type === 'MCP' ? (
-                    <Database className="w-4 h-4 text-emerald-400 shrink-0" />
-                  ) : (
-                    <Info className="w-4 h-4 text-indigo-400 shrink-0" />
+          <div className="mt-1.5 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+            {message.sources.map((src, idx) => {
+              const isLive = src.type === 'MCP';
+              return (
+                <div key={idx} className="bg-surface-raised border border-line rounded-2xl overflow-hidden">
+                  <div className="flex items-center gap-2.5 px-4 py-3">
+                    <span className={`p-1.5 rounded-lg shrink-0 ${isLive ? 'bg-accent-soft text-accent-soft-fg' : 'bg-surface-sunken text-content-muted'}`}>
+                      {isLive
+                        ? <Database className="w-3.5 h-3.5" aria-hidden="true" />
+                        : <Info className="w-3.5 h-3.5" aria-hidden="true" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold text-content">
+                        {isLive ? 'Data langsung dari sistem SAP' : 'Dokumen panduan internal'}
+                      </span>
+                      <span className="block text-xs text-content-muted truncate">
+                        {describeSource(src)}
+                      </span>
+                    </span>
+                    <button
+                      onClick={() => setOpenDetail(openDetail === idx ? null : idx)}
+                      className="text-xs font-medium text-content-muted hover:text-content px-2 py-1 rounded-lg hover:bg-surface-hover transition-colors shrink-0"
+                      aria-expanded={openDetail === idx}
+                    >
+                      {openDetail === idx ? 'Tutup detail' : 'Detail teknis'}
+                    </button>
+                  </div>
+
+                  {openDetail === idx && (
+                    <div className="border-t border-line bg-surface-sunken px-4 py-3">
+                      <div className="text-xs text-content-muted mb-1.5">
+                        Sumber: <span className="font-mono">{src.name}</span>
+                      </div>
+                      <pre className="text-xs font-mono text-content-secondary bg-surface-raised border border-line p-3 rounded-xl overflow-x-auto leading-relaxed max-h-64">
+                        {src.content}
+                      </pre>
+                    </div>
                   )}
-                  <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">{src.type} Source</span>
-                  <span className="text-[11px] text-slate-400 font-mono truncate">• {src.name}</span>
                 </div>
-                <pre className="text-[11px] font-mono text-slate-300 bg-slate-950/80 p-2.5 rounded-xl overflow-x-auto border border-slate-800/80 leading-relaxed">
-                  {src.content}
-                </pre>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

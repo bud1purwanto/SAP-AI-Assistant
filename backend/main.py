@@ -132,6 +132,7 @@ async def login(req: LoginRequest):
         "token_type": "bearer",
         "expires_in": settings.jwt_expire_minutes * 60,
         "username": user["username"],
+        "full_name": user.get("full_name", ""),
         "role": user["role"],
         "assistant_persona": user["assistant_persona"],
     }
