@@ -30,6 +30,21 @@ Skrip ini akan otomatis melakukan:
 6. Konfigurasi firewall UFW.
 
 ### 3. Konfigurasi Environment Variable
+### Variabel wajib di produksi
+
+| Variabel | Kegunaan |
+| :--- | :--- |
+| `JWT_SECRET` | Kunci penandatangan token login. Wajib diisi dan sama di semua worker — bila kosong, server memakai secret acak sehingga semua sesi gugur tiap restart. Buat dengan `openssl rand -base64 48`. |
+| `DATABASE_URL` | Koneksi PostgreSQL. |
+| `REQUIRE_POSTGRES` | Set `true` agar startup gagal ketika PostgreSQL tidak terjangkau, alih-alih diam-diam melayani SQLite kosong. |
+| `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (hindari `*`). |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Password superadmin awal saat instalasi pertama. |
+| `GUEST_DAILY_LIMIT` | Kuota prompt harian untuk pengunjung tanpa login. |
+
+> **Catatan keamanan:** aplikasi ini melayani beberapa user, sehingga password dan
+> token melintas jaringan. Terminasikan TLS (HTTPS) di depan Nginx sebelum
+> membukanya ke pengguna; konfigurasi bawaan masih `listen 8080` tanpa TLS.
+
 Edit file `.env` di backend jika ingin menyesuaikan API Key atau MCP endpoint:
 ```bash
 nano backend/.env
@@ -46,10 +61,13 @@ sudo systemctl restart sap-ai-backend
 Buka browser dan akses alamat IP server Anda:
 👉 **`http://<IP_SERVER>:8080`**  *(Contoh: `http://192.168.88.83:8080` atau `http://192.168.254.58:8080`)*
 
-### Akun Super Admin Bawaan:
+### Akun Super Admin Bootstrap:
 - **Username:** `TRSTDEV`
-- **Password:** `ronin03`
+- **Password:** diambil dari `BOOTSTRAP_ADMIN_PASSWORD` di `backend/.env`, dan hanya dipakai ketika tabel `users` masih kosong.
 - **Role:** Super Admin (Akses menu Manajemen Pengguna, MCP Gateway, Persona/Prompt System, & API Key).
+
+> **Ganti password ini lewat menu Settings segera setelah login pertama.** Password
+> disimpan sebagai hash bcrypt; tidak ada kredensial cadangan yang tertanam di kode.
 
 ---
 
