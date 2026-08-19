@@ -1,0 +1,18 @@
+name: Auto Deploy SAP AI Assistant
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Auto Deploy on Push
+    runs-on: self-hosted
+    steps:
+      - name: Checkout or Update Repository
+        run: |
+          echo "🚀 Memulai Auto Deployment di Server..."
+          cd /var/www/SAP-AI-Assistant
+          chmod +x deploy/update.sh
+          bash deploy/update.sh
