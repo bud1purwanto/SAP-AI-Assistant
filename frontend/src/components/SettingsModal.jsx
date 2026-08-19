@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Save, Database, Shield, Lock, KeyRound, CheckCircle2, AlertCircle, 
-  Bot, User, Sliders, Cpu
+  Bot, User, Sliders, Cpu, Globe, Server, Check, ToggleLeft, ToggleRight
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
 
@@ -10,7 +10,15 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const [config, setConfig] = useState({
     mcp_sap_config_json: '',
     mcp_rag_config_json: '',
-    assistant_persona: ''
+    assistant_persona: '',
+    nine_router_enabled: true,
+    nine_router_base_url: 'http://192.168.88.83:20128/v1',
+    nine_router_model: 'ag/gemini-3.7-flash-medium',
+    nine_router_api_key: '',
+    openrouter_enabled: false,
+    openrouter_model: 'openrouter/auto',
+    openrouter_fallback_model: 'openrouter/free',
+    openrouter_api_key: ''
   });
   const [userRole, setUserRole] = useState(user?.role || 'user');
   const [isSaving, setIsSaving] = useState(false);
@@ -33,7 +41,15 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
           setConfig({
             mcp_sap_config_json: data.mcp_sap_config_json || '',
             mcp_rag_config_json: data.mcp_rag_config_json || '',
-            assistant_persona: data.assistant_persona || ''
+            assistant_persona: data.assistant_persona || '',
+            nine_router_enabled: data.nine_router_enabled ?? true,
+            nine_router_base_url: data.nine_router_base_url || 'http://192.168.88.83:20128/v1',
+            nine_router_model: data.nine_router_model || 'ag/gemini-3.7-flash-medium',
+            nine_router_api_key: data.nine_router_api_key || '',
+            openrouter_enabled: data.openrouter_enabled ?? false,
+            openrouter_model: data.openrouter_model || 'openrouter/auto',
+            openrouter_fallback_model: data.openrouter_fallback_model || 'openrouter/free',
+            openrouter_api_key: data.openrouter_api_key || ''
           });
           setUserRole(data.role || user.role || 'user');
         })
@@ -116,7 +132,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-200/80 dark:border-zinc-800 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200/80 dark:border-zinc-800 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         
         {/* Header Modal */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-zinc-800">
@@ -148,10 +164,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-100 dark:border-zinc-800 px-6 pt-2 gap-2 bg-slate-50/50 dark:bg-zinc-900/50">
+        <div className="flex border-b border-slate-100 dark:border-zinc-800 px-6 pt-2 gap-2 bg-slate-50/50 dark:bg-zinc-900/50 overflow-x-auto">
           <button
             onClick={() => setActiveTab('persona')}
-            className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'persona'
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
                 : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
@@ -161,10 +177,36 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             <span>Assistant Persona</span>
           </button>
 
+          {isSuperadmin && (
+            <button
+              onClick={() => setActiveTab('router')}
+              className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'router'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>AI Provider & Router</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab('mcp')}
+            className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'mcp'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>MCP Config {isSuperadmin ? '' : '(Read Only)'}</span>
+          </button>
+
           {isLoggedIn && (
             <button
               onClick={() => setActiveTab('security')}
-              className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 ${
+              className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'security'
                   ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
                   : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
@@ -174,18 +216,6 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               <span>Password Akun</span>
             </button>
           )}
-
-          <button
-            onClick={() => setActiveTab('mcp')}
-            className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 ${
-              activeTab === 'mcp'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>MCP Config {isSuperadmin ? '' : '(Read Only)'}</span>
-          </button>
         </div>
 
         {/* Content Body */}
@@ -205,14 +235,198 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                   disabled={!isLoggedIn}
                   value={config.assistant_persona}
                   onChange={e => setConfig({...config, assistant_persona: e.target.value})}
-                  className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-3 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-y min-h-[120px] disabled:opacity-60"
+                  className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-3 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-y min-h-[140px] disabled:opacity-60"
                   placeholder={isLoggedIn ? "Contoh: Berikan ringkasan tabel SAP terlebih dahulu, lalu jelaskan alur prosesnya secara step-by-step." : "Login untuk mengkustomisasi persona asisten Anda."}
                 />
               </div>
             </div>
           )}
 
-          {/* TAB 2: Security & Password */}
+          {/* TAB 2: AI Provider & Router */}
+          {activeTab === 'router' && isSuperadmin && (
+            <div className="space-y-6">
+              
+              {/* 9Router Card */}
+              <div className={`p-4 rounded-2xl border transition-all ${
+                config.nine_router_enabled 
+                  ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/50' 
+                  : 'bg-slate-50/60 dark:bg-zinc-800/40 border-slate-200 dark:border-zinc-800 opacity-80'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-indigo-600 text-white rounded-lg">
+                      <Server className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-zinc-100">9Router (Local Gateway / Primary)</h4>
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400">Endpoint gateway AI lokal berkecepatan tinggi</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({...config, nine_router_enabled: !config.nine_router_enabled})}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      config.nine_router_enabled
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {config.nine_router_enabled ? 'Aktif (Primary)' : 'Nonaktif'}
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Base URL</label>
+                    <input 
+                      type="text"
+                      value={config.nine_router_base_url}
+                      onChange={e => setConfig({...config, nine_router_base_url: e.target.value})}
+                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                      placeholder="http://192.168.88.83:20128/v1"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Model Name</label>
+                      <input 
+                        type="text"
+                        value={config.nine_router_model}
+                        onChange={e => setConfig({...config, nine_router_model: e.target.value})}
+                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        placeholder="ag/gemini-3.7-flash-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">API Key (Opsional)</label>
+                      <input 
+                        type="password"
+                        value={config.nine_router_api_key}
+                        onChange={e => setConfig({...config, nine_router_api_key: e.target.value})}
+                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        placeholder="Kosongkan jika tanpa auth"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* OpenRouter Card */}
+              <div className={`p-4 rounded-2xl border transition-all ${
+                config.openrouter_enabled 
+                  ? 'bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/50' 
+                  : 'bg-slate-50/60 dark:bg-zinc-800/40 border-slate-200 dark:border-zinc-800 opacity-80'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-purple-600 text-white rounded-lg">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900 dark:text-zinc-100">OpenRouter (Cloud Failover / Gateway)</h4>
+                      <span className="text-[10px] text-slate-500 dark:text-zinc-400">Penyedia model AI multi-cloud (Gemini, Claude, GPT-4o, dll)</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({...config, openrouter_enabled: !config.openrouter_enabled})}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      config.openrouter_enabled
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {config.openrouter_enabled ? 'Aktif (Failover)' : 'Nonaktif'}
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">OpenRouter API Key</label>
+                    <input 
+                      type="password"
+                      value={config.openrouter_api_key}
+                      onChange={e => setConfig({...config, openrouter_api_key: e.target.value})}
+                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                      placeholder="sk-or-v1-..."
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Primary Model</label>
+                      <input 
+                        type="text"
+                        value={config.openrouter_model}
+                        onChange={e => setConfig({...config, openrouter_model: e.target.value})}
+                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                        placeholder="openrouter/auto"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Fallback Model</label>
+                      <input 
+                        type="text"
+                        value={config.openrouter_fallback_model}
+                        onChange={e => setConfig({...config, openrouter_fallback_model: e.target.value})}
+                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                        placeholder="openrouter/free"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* TAB 3: MCP Config */}
+          {activeTab === 'mcp' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-indigo-500" />
+                  Konfigurasi MCP Server JSON
+                </span>
+                {!isSuperadmin && (
+                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1 font-medium">
+                    <Lock className="w-3 h-3" /> Hanya Superadmin
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
+                    MCP SAP Remote Endpoint (SSE / JSON-RPC)
+                  </label>
+                  <textarea 
+                    disabled={!isSuperadmin}
+                    value={config.mcp_sap_config_json}
+                    onChange={e => setConfig({...config, mcp_sap_config_json: e.target.value})}
+                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
+                    placeholder='{\n  "mcpServers": {\n    "sap-leader-remote": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
+                  />
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
+                    MCP RAG Remote Endpoint (SSE / JSON-RPC)
+                  </label>
+                  <textarea 
+                    disabled={!isSuperadmin}
+                    value={config.mcp_rag_config_json}
+                    onChange={e => setConfig({...config, mcp_rag_config_json: e.target.value})}
+                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
+                    placeholder='{\n  "mcpServers": {\n    "manufacturing-rag": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Security & Password */}
           {activeTab === 'security' && isLoggedIn && (
             <form onSubmit={handleChangePassword} className="space-y-4">
               {passMessage.text && (
@@ -272,51 +486,6 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                 <span>{isChangingPass ? 'Memproses...' : 'Perbarui Password'}</span>
               </button>
             </form>
-          )}
-
-          {/* TAB 3: MCP Config */}
-          {activeTab === 'mcp' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-indigo-500" />
-                  Konfigurasi MCP Server JSON
-                </span>
-                {!isSuperadmin && (
-                  <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1 font-medium">
-                    <Lock className="w-3 h-3" /> Hanya Superadmin
-                  </span>
-                )}
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                    MCP SAP Remote Endpoint (SSE / JSON-RPC)
-                  </label>
-                  <textarea 
-                    disabled={!isSuperadmin}
-                    value={config.mcp_sap_config_json}
-                    onChange={e => setConfig({...config, mcp_sap_config_json: e.target.value})}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
-                    placeholder='{\n  "mcpServers": {\n    "sap-leader-remote": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
-                  />
-                </div>
-
-                <div>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
-                    MCP RAG Remote Endpoint (SSE / JSON-RPC)
-                  </label>
-                  <textarea 
-                    disabled={!isSuperadmin}
-                    value={config.mcp_rag_config_json}
-                    onChange={e => setConfig({...config, mcp_rag_config_json: e.target.value})}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
-                    placeholder='{\n  "mcpServers": {\n    "manufacturing-rag": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
-                  />
-                </div>
-              </div>
-            </div>
           )}
 
         </div>
