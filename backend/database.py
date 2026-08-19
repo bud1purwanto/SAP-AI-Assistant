@@ -1,6 +1,10 @@
 import logging
 import uuid
-from sqlalchemy import create_engine, text
+from pathlib import Path
+
+from sqlalchemy import create_engine, event, text
+
+from auth import hash_password, is_bcrypt_hash, verify_password
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -8,9 +12,20 @@ logger = logging.getLogger(__name__)
 # Fallback DATABASE_URL if not set
 DEFAULT_DB_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
 SQLITE_FALLBACK_URL = "sqlite:///./sap_ai_assistant.db"
+# Berkas terpisah yang di-ATTACH sebagai schema "ai_assistant" agar query
+# ber-schema yang sama bisa dipakai di SQLite maupun PostgreSQL.
+SQLITE_SCHEMA_FILE = Path(__file__).parent / "sap_ai_assistant_schema.db"
 
 _engine = None
 _using_sqlite = False
+
+
+def _iso(value):
+    """Normalisasi timestamp: PostgreSQL memberi datetime, SQLite memberi string."""
+    if not value:
+        return ""
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
 
 def get_engine():
     global _engine, _using_sqlite
@@ -22,17 +37,36 @@ def get_engine():
         try:
             test_engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=3)
             # Test koneksi awal
-            with test_engine.connect() as conn:
+            with test_engine.connect():
                 pass
             _engine = test_engine
             _using_sqlite = False
             logger.info("Database PostgreSQL berhasil terhubung.")
         except Exception as e:
+            if settings.require_postgres:
+                # Di produksi, fallback senyap ke SQLite berbahaya: aplikasi tampak
+                # sehat padahal melayani database kosong, dan dengan >1 worker
+                # uvicorn setiap proses menulis ke berkas yang sama.
+                logger.error(f"Koneksi PostgreSQL gagal dan REQUIRE_POSTGRES aktif: {e}")
+                raise RuntimeError(
+                    "Tidak dapat terhubung ke PostgreSQL sementara REQUIRE_POSTGRES=true. "
+                    "Periksa DATABASE_URL."
+                ) from e
+
             logger.warning(f"Koneksi PostgreSQL gagal ({e}). Beralih otomatis ke SQLite lokal fallback...")
-            _engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
+            sqlite_engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
+
+            # SQLite tidak mengenal schema; ATTACH berkas sebagai "ai_assistant"
+            # supaya seluruh query "ai_assistant.<tabel>" tetap valid.
+            @event.listens_for(sqlite_engine, "connect")
+            def _attach_schema(dbapi_conn, _record):
+                dbapi_conn.execute(f"ATTACH DATABASE '{SQLITE_SCHEMA_FILE}' AS ai_assistant")
+
+            _engine = sqlite_engine
             _using_sqlite = True
             logger.info(f"Menggunakan SQLite database fallback: {SQLITE_FALLBACK_URL}")
     return _engine
+
 
 def init_db():
     """Membuat schema 'ai_assistant' serta tabel 'users', 'system_config', 
@@ -50,12 +84,25 @@ def init_db():
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_assistant.users (
                     username VARCHAR(50) PRIMARY KEY,
-                    password VARCHAR(100) NOT NULL,
+                    password VARCHAR(100),
+                    password_hash VARCHAR(255),
                     role VARCHAR(20) NOT NULL,
                     assistant_persona TEXT
                 );
             """))
             
+            # 2b. Migrasi instalasi lama: tambahkan kolom password_hash bila belum ada,
+            # dan longgarkan NOT NULL pada kolom password plaintext yang akan dipensiunkan.
+            try:
+                conn.execute(text("ALTER TABLE ai_assistant.users ADD COLUMN password_hash VARCHAR(255)"))
+            except Exception:
+                pass  # kolom sudah ada
+            if not _using_sqlite:
+                try:
+                    conn.execute(text("ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"))
+                except Exception:
+                    pass
+
             # 3. Buat Tabel ai_assistant.system_config
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_assistant.system_config (
@@ -76,29 +123,31 @@ def init_db():
             """))
 
             # 5. Buat Tabel ai_assistant.chat_messages
-            # Jika SQLite, SERIAL diubah menjadi INTEGER PRIMARY KEY AUTOINCREMENT
-            if _using_sqlite:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS chat_messages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        session_id VARCHAR(50) NOT NULL,
-                        role VARCHAR(20) NOT NULL,
-                        content TEXT NOT NULL,
-                        sources TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """))
-            else:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
-                        id SERIAL PRIMARY KEY,
-                        session_id VARCHAR(50) NOT NULL REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE,
-                        role VARCHAR(20) NOT NULL,
-                        content TEXT NOT NULL,
-                        sources TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """))
+            # SQLite tidak punya SERIAL; schema "ai_assistant" tersedia lewat ATTACH.
+            id_col = "INTEGER PRIMARY KEY AUTOINCREMENT" if _using_sqlite else "SERIAL PRIMARY KEY"
+            fk = "" if _using_sqlite else " REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE"
+            conn.execute(text(f"""
+                CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
+                    id {id_col},
+                    session_id VARCHAR(50) NOT NULL{fk},
+                    role VARCHAR(20) NOT NULL,
+                    content TEXT NOT NULL,
+                    sources TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+
+            # 5b. Kuota harian pengunjung tamu, ditegakkan di sisi server.
+            # localStorage di browser dapat dihapus kapan saja sehingga tidak
+            # bisa dijadikan dasar pembatasan.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.guest_usage (
+                    client_key VARCHAR(64) NOT NULL,
+                    usage_date VARCHAR(10) NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (client_key, usage_date)
+                );
+            """))
 
             conn.commit()
 
@@ -106,17 +155,12 @@ def init_db():
             res_dev = conn.execute(text("SELECT username FROM ai_assistant.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
             if not res_dev:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.users (username, password, role, assistant_persona)
-                    VALUES ('TRSTDEV', 'ronin03', 'superadmin', :persona)
-                """), {"persona": settings.assistant_persona or ""})
-
-            # 7. Seed User TRST-BUDI (user biasa) jika belum ada
-            res_budi = conn.execute(text("SELECT username FROM ai_assistant.users WHERE UPPER(username) = 'TRST-BUDI'")).fetchone()
-            if not res_budi:
-                conn.execute(text("""
-                    INSERT INTO ai_assistant.users (username, password, role, assistant_persona)
-                    VALUES ('TRST-BUDI', '1234567', 'user', :persona)
-                """), {"persona": settings.assistant_persona or ""})
+                    INSERT INTO ai_assistant.users (username, password_hash, role, assistant_persona)
+                    VALUES ('TRSTDEV', :pwd, 'superadmin', :persona)
+                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
+                logger.warning(
+                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
+                )
 
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
             res_sap = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
@@ -199,68 +243,94 @@ def init_db():
         logger.error(f"Gagal inisialisasi database PostgreSQL: {e}")
 
 def authenticate_user(username: str, password: str):
-    """Verifikasi login user (case-insensitive username dan fallback jika DB seeding belum berjalan)."""
+    """Verifikasi login user (username case-insensitive).
+
+    Password diverifikasi terhadap hash bcrypt. Instalasi lama yang masih
+    menyimpan plaintext akan otomatis di-upgrade ke hash pada login pertama
+    yang berhasil. Tidak ada kredensial fallback hardcoded: bila database
+    tidak dapat dihubungi, login gagal (fail closed).
+    """
     uname_clean = (username or "").strip()
     pwd_clean = (password or "").strip()
-    
+    if not uname_clean or not pwd_clean:
+        return None
+
     try:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, password, role, assistant_persona 
-                FROM ai_assistant.users 
+                SELECT username, password, password_hash, role, assistant_persona
+                FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
-            if row and row.password == pwd_clean:
+
+            if not row:
+                return None
+
+            stored_hash = row.password_hash
+            authenticated = False
+
+            if is_bcrypt_hash(stored_hash):
+                authenticated = verify_password(pwd_clean, stored_hash)
+            elif row.password:
+                # Kredensial warisan berformat plaintext.
+                authenticated = row.password == pwd_clean
+                if authenticated:
+                    conn.execute(text("""
+                        UPDATE ai_assistant.users
+                        SET password_hash = :h, password = NULL
+                        WHERE LOWER(username) = LOWER(:u)
+                    """), {"h": hash_password(pwd_clean), "u": uname_clean})
+                    conn.commit()
+                    logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
+
+            if authenticated:
                 return {
                     "username": row.username,
                     "role": row.role,
                     "assistant_persona": row.assistant_persona or ""
                 }
     except Exception as e:
-        logger.error(f"Error authenticate_user (DB fallback check): {e}")
+        logger.error(f"Error authenticate_user: {e}")
 
-    # Fallback built-in credentials jika PostgreSQL belum connect atau seeding terhambat
-    if uname_clean.upper() == "TRSTDEV" and pwd_clean == "ronin03":
-        logger.info("Autentikasi TRSTDEV via fallback superadmin.")
-        return {
-            "username": "TRSTDEV",
-            "role": "superadmin",
-            "assistant_persona": settings.assistant_persona or ""
-        }
-    elif uname_clean.upper() == "TRST-BUDI" and pwd_clean == "1234567":
-        logger.info("Autentikasi TRST-BUDI via fallback user.")
-        return {
-            "username": "TRST-BUDI",
-            "role": "user",
-            "assistant_persona": settings.assistant_persona or ""
-        }
-        
     return None
+
 
 def change_user_password(username: str, old_password: str, new_password: str):
     """Ubah password user yang sedang login."""
+    if not new_password or len(new_password) < 8:
+        return {"success": False, "message": "Password baru minimal 8 karakter."}
+
     try:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT password FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)
+                SELECT password, password_hash FROM ai_assistant.users
+                WHERE LOWER(username) = LOWER(:u)
             """), {"u": username.strip()}).fetchone()
 
             if not row:
                 return {"success": False, "message": "User tidak ditemukan."}
 
-            if row.password != old_password:
+            if is_bcrypt_hash(row.password_hash):
+                valid_old = verify_password(old_password, row.password_hash)
+            else:
+                valid_old = bool(row.password) and row.password == old_password
+
+            if not valid_old:
                 return {"success": False, "message": "Password lama salah."}
 
             conn.execute(text("""
-                UPDATE ai_assistant.users SET password = :new_p WHERE LOWER(username) = LOWER(:u)
-            """), {"new_p": new_password, "u": username.strip()})
+                UPDATE ai_assistant.users
+                SET password_hash = :new_h, password = NULL
+                WHERE LOWER(username) = LOWER(:u)
+            """), {"new_h": hash_password(new_password), "u": username.strip()})
             conn.commit()
             return {"success": True, "message": "Password berhasil diperbarui."}
     except Exception as e:
         logger.error(f"Error change_user_password: {e}")
         return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
+
 
 def get_user_by_username(username: str):
     """Ambil detail user berdasarkan username."""
@@ -281,13 +351,7 @@ def get_user_by_username(username: str):
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
-        
-    # Fallback built-in
-    if uname_clean.upper() == "TRSTDEV":
-        return {"username": "TRSTDEV", "role": "superadmin", "assistant_persona": settings.assistant_persona or ""}
-    elif uname_clean.upper() == "TRST-BUDI":
-        return {"username": "TRST-BUDI", "role": "user", "assistant_persona": settings.assistant_persona or ""}
-        
+
     return None
 
 def update_user_persona(username: str, persona: str):
@@ -514,8 +578,8 @@ def get_chat_sessions(username: str):
                 {
                     "session_id": r.session_id,
                     "title": r.title,
-                    "created_at": r.created_at.isoformat() if r.created_at else "",
-                    "updated_at": r.updated_at.isoformat() if r.updated_at else ""
+                    "created_at": _iso(r.created_at),
+                    "updated_at": _iso(r.updated_at)
                 }
                 for r in rows
             ]
@@ -528,12 +592,22 @@ def delete_chat_session(session_id: str, username: str):
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            # Hapus pesan lebih dulu: SQLite tidak menegakkan ON DELETE CASCADE
+            # secara default sehingga pesan bisa tertinggal sebagai data yatim.
             conn.execute(text("""
+                DELETE FROM ai_assistant.chat_messages
+                WHERE session_id IN (
+                    SELECT session_id FROM ai_assistant.chat_sessions
+                    WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
+                )
+            """), {"sid": session_id, "u": username.strip()})
+            res = conn.execute(text("""
                 DELETE FROM ai_assistant.chat_sessions
                 WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
             """), {"sid": session_id, "u": username.strip()})
             conn.commit()
-            return True
+            # rowcount 0 berarti sesi tidak ada atau bukan milik user ini.
+            return res.rowcount > 0
     except Exception as e:
         logger.error(f"Error delete_chat_session: {e}")
         return False
@@ -548,17 +622,19 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
                 VALUES (:sid, :r, :c, :s)
             """), {"sid": session_id, "r": role, "c": content, "s": sources or ""})
             
-            # Update title jika ini pesan pertama dan judul masih "Percakapan Baru"
+            # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
+            # Pemotongan judul dilakukan di Python: SUBSTRING(x FROM a FOR b)
+            # hanya valid di PostgreSQL dan menggagalkan transaksi di SQLite.
             if role == 'user':
                 conn.execute(text("""
                     UPDATE ai_assistant.chat_sessions
                     SET updated_at = CURRENT_TIMESTAMP,
-                        title = CASE 
-                            WHEN title = 'Percakapan Baru' THEN SUBSTRING(:c FROM 1 FOR 40)
-                            ELSE title 
+                        title = CASE
+                            WHEN title = 'Percakapan Baru' THEN :title
+                            ELSE title
                         END
                     WHERE session_id = :sid
-                """), {"c": content, "sid": session_id})
+                """), {"title": (content or "").strip()[:40] or "Percakapan Baru", "sid": session_id})
             
             conn.commit()
             return True
@@ -566,23 +642,54 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
         logger.error(f"Error add_chat_message: {e}")
         return False
 
-def get_chat_messages(session_id: str):
-    """Ambil semua pesan dalam suatu sesi percakapan."""
+def session_belongs_to(session_id: str, username: str) -> bool:
+    """Cek apakah sesi percakapan dimiliki user tersebut."""
+    if not session_id or not username:
+        return False
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT role, content, sources, created_at
-                FROM ai_assistant.chat_messages
-                WHERE session_id = :sid
-                ORDER BY id ASC
-            """), {"sid": session_id}).fetchall()
+            row = conn.execute(text("""
+                SELECT 1 FROM ai_assistant.chat_sessions
+                WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
+            """), {"sid": session_id, "u": username.strip()}).fetchone()
+            return row is not None
+    except Exception as e:
+        logger.error(f"Error session_belongs_to: {e}")
+        return False
+
+
+def get_chat_messages(session_id: str, username: str = None):
+    """Ambil pesan dalam suatu sesi percakapan.
+
+    Bila `username` diberikan, hasil dibatasi pada sesi milik user tersebut.
+    Pemanggil yang melewatkan None (jalur audit Super Admin) harus sudah
+    melakukan pemeriksaan otorisasinya sendiri.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if username is not None:
+                rows = conn.execute(text("""
+                    SELECT m.role, m.content, m.sources, m.created_at
+                    FROM ai_assistant.chat_messages m
+                    JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                    WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u)
+                    ORDER BY m.id ASC
+                """), {"sid": session_id, "u": username.strip()}).fetchall()
+            else:
+                rows = conn.execute(text("""
+                    SELECT role, content, sources, created_at
+                    FROM ai_assistant.chat_messages
+                    WHERE session_id = :sid
+                    ORDER BY id ASC
+                """), {"sid": session_id}).fetchall()
             return [
                 {
                     "role": r.role,
                     "content": r.content,
                     "sources": r.sources if r.sources else None,
-                    "created_at": r.created_at.isoformat() if r.created_at else ""
+                    "created_at": _iso(r.created_at)
                 }
                 for r in rows
             ]
@@ -612,10 +719,7 @@ def list_all_users():
             ]
     except Exception as e:
         logger.error(f"Error list_all_users: {e}")
-        return [
-            {"username": "TRSTDEV", "role": "superadmin", "assistant_persona": ""},
-            {"username": "TRST-BUDI", "role": "user", "assistant_persona": ""}
-        ]
+        return []
 
 def create_new_user(username: str, password: str, role: str = "user", persona: str = ""):
     """Buat user baru di database."""
@@ -627,9 +731,9 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
                 return {"success": False, "message": f"User '{username}' sudah ada."}
             
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password, role, assistant_persona)
+                INSERT INTO ai_assistant.users (username, password_hash, role, assistant_persona)
                 VALUES (:u, :p, :r, :persona)
-            """), {"u": username.strip(), "p": password, "r": role, "persona": persona})
+            """), {"u": username.strip(), "p": hash_password(password), "r": role, "persona": persona})
             conn.commit()
             return {"success": True, "message": f"User '{username}' berhasil dibuat."}
     except Exception as e:
@@ -655,8 +759,9 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 updates.append("assistant_persona = :p")
                 params["p"] = persona
             if password:
-                updates.append("password = :pass")
-                params["pass"] = password
+                updates.append("password_hash = :pass")
+                updates.append("password = NULL")
+                params["pass"] = hash_password(password)
 
             if updates:
                 sql = f"UPDATE ai_assistant.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
@@ -736,11 +841,50 @@ def get_all_sessions_for_audit(limit: int = 50):
                     "username": r.username,
                     "title": r.title,
                     "message_count": r.message_count,
-                    "created_at": r.created_at.isoformat() if r.created_at else "",
-                    "updated_at": r.updated_at.isoformat() if r.updated_at else ""
+                    "created_at": _iso(r.created_at),
+                    "updated_at": _iso(r.updated_at)
                 }
                 for r in rows
             ]
     except Exception as e:
         logger.error(f"Error get_all_sessions_for_audit: {e}")
         return []
+
+# --- KUOTA TAMU (SISI SERVER) ---
+
+def consume_guest_quota(client_key: str, usage_date: str, limit: int) -> dict:
+    """Catat satu pemakaian prompt tamu dan laporkan apakah kuota masih tersedia.
+
+    Dihitung di server karena penghitung di localStorage dapat direset user
+    kapan saja hanya dengan menghapus site data.
+    """
+    if limit <= 0:
+        return {"allowed": False, "used": 0, "limit": limit}
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT count FROM ai_assistant.guest_usage
+                WHERE client_key = :k AND usage_date = :d
+            """), {"k": client_key, "d": usage_date}).fetchone()
+
+            used = row.count if row else 0
+            if used >= limit:
+                return {"allowed": False, "used": used, "limit": limit}
+
+            if row:
+                conn.execute(text("""
+                    UPDATE ai_assistant.guest_usage SET count = count + 1
+                    WHERE client_key = :k AND usage_date = :d
+                """), {"k": client_key, "d": usage_date})
+            else:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.guest_usage (client_key, usage_date, count)
+                    VALUES (:k, :d, 1)
+                """), {"k": client_key, "d": usage_date})
+            conn.commit()
+            return {"allowed": True, "used": used + 1, "limit": limit}
+    except Exception as e:
+        logger.error(f"Error consume_guest_quota: {e}")
+        # Gagal-tertutup: bila kuota tidak dapat dicatat, jangan berikan akses gratis.
+        return {"allowed": False, "used": 0, "limit": limit}

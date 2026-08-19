@@ -20,7 +20,12 @@ class MCPContentItem:
 class MCPCallResult:
     def __init__(self, content: list[MCPContentItem], is_error: bool = False):
         self.content = content
-        self.isError = is_error
+        self.is_error = is_error
+
+    @property
+    def isError(self) -> bool:
+        """Alias kompatibilitas untuk penamaan gaya JSON-RPC."""
+        return self.is_error
 
 class StreamableHttpClient:
     def __init__(self, name: str, url: str, headers: dict):
@@ -134,6 +139,13 @@ class StreamableHttpClient:
 class MCPManager:
     def __init__(self):
         self.clients: dict[str, StreamableHttpClient] = {}
+        # Server MCP SAP menyimpan "server aktif" sebagai state global di sisi
+        # server. Dengan beberapa user bersamaan, request user lain dapat
+        # menggeser target di antara set_active_server dan pemanggilan tool,
+        # sehingga query dieksekusi ke sistem SAP yang salah tanpa pesan error.
+        # Lock ini menjadikan pasangan (set target -> panggil tool) atomik.
+        self._sap_lock = asyncio.Lock()
+        self._active_sap_target: str | None = None
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         # Coba ambil dynamic config dari database jika tersedia
@@ -253,17 +265,27 @@ class MCPManager:
 
         return status
 
+    async def _set_active_sap_server_unlocked(self, http_client, target_sap: str):
+        """Set server aktif pada MCP SAP. Pemanggil wajib memegang _sap_lock."""
+        try:
+            sap_client = self.get_client("sap")
+            res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
+            self._active_sap_target = target_sap
+            logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
+            return True
+        except Exception as ex:
+            # Target tidak dapat dipastikan; jangan biarkan nilai lama tersimpan.
+            self._active_sap_target = None
+            logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
+            return False
+
     async def set_active_sap_server(self, target_sap: str):
-        """Set server aktif pada MCP SAP."""
+        """Set server aktif pada MCP SAP (dilindungi lock)."""
         if not target_sap:
             return
-        async with httpx.AsyncClient() as http_client:
-            try:
-                sap_client = self.get_client("sap")
-                res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
-                logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
-            except Exception as ex:
-                logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
+        async with self._sap_lock:
+            async with httpx.AsyncClient() as http_client:
+                await self._set_active_sap_server_unlocked(http_client, target_sap)
 
     async def get_all_tools(self, server_filter: str = "all") -> list[dict]:
         tools = []
@@ -293,7 +315,37 @@ class MCPManager:
 
         return tools
 
-    async def call_tool(self, server_name: str, tool_name: str, arguments: dict) -> MCPCallResult:
+    async def call_tool(
+        self,
+        server_name: str,
+        tool_name: str,
+        arguments: dict,
+        sap_target: str = None,
+    ) -> MCPCallResult:
+        """Panggil satu tool MCP.
+
+        Untuk server SAP, `sap_target` menyatakan sistem SAP mana yang dituju.
+        Penetapan target dan pemanggilan tool dilakukan di bawah satu lock agar
+        request user lain tidak dapat menyisip di antaranya dan mengalihkan
+        query ke sistem yang salah.
+        """
+        if server_name == "sap" and sap_target:
+            async with self._sap_lock:
+                async with httpx.AsyncClient() as http_client:
+                    ok = await self._set_active_sap_server_unlocked(http_client, sap_target)
+                    if not ok:
+                        return MCPCallResult(
+                            content=[MCPContentItem(
+                                text=(
+                                    f"Gagal mengarahkan permintaan ke sistem SAP '{sap_target}'. "
+                                    "Tool tidak dijalankan untuk menghindari eksekusi pada sistem yang salah."
+                                )
+                            )],
+                            is_error=True,
+                        )
+                    client = self.get_client(server_name)
+                    return await client.call_tool(http_client, tool_name, arguments)
+
         async with httpx.AsyncClient() as http_client:
             client = self.get_client(server_name)
             return await client.call_tool(http_client, tool_name, arguments)

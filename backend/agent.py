@@ -62,10 +62,12 @@ def _extract_text(content) -> str:
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "") -> ChatResponse:
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
-    if target_srv.startswith("sap:"):
-        target_sap = target_srv.split(":", 1)[1]
-        logger.info(f"Mengaktifkan target SAP server: {target_sap}")
-        await mcp_manager.set_active_sap_server(target_sap)
+    # Target SAP dibawa per-request dan diterapkan ulang di setiap pemanggilan
+    # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
+    # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
+    sap_target = target_srv.split(":", 1)[1] if target_srv.startswith("sap:") else None
+    if sap_target:
+        logger.info(f"Target SAP server untuk request ini: {sap_target}")
 
     all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     
@@ -348,7 +350,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
-                    tool_result = await mcp_manager.call_tool(server_name, actual_tool_name, t_args)
+                    tool_result = await mcp_manager.call_tool(
+                        server_name, actual_tool_name, t_args, sap_target=sap_target
+                    )
                     
                     res_str = ""
                     if tool_result.content:
@@ -404,7 +408,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             mcp_name = mapping["mcp_name"]
             
             try:
-                result = await mcp_manager.call_tool(server_name, mcp_name, tool_args)
+                result = await mcp_manager.call_tool(
+                    server_name, mcp_name, tool_args, sap_target=sap_target
+                )
                 texts = []
                 if result.content:
                     for c in result.content:
@@ -412,7 +418,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                             texts.append(c.text)
                         else:
                             texts.append(str(c))
-                if result.isError and not texts:
+                if result.is_error and not texts:
                     texts.append(f"Execution Error: {result}")
                             
                 content_str = "\n".join(texts)

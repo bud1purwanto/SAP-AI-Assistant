@@ -36,11 +36,25 @@ fi
 
 # Buat .env jika belum ada
 if [ ! -f ".env" ]; then
-    echo "⚠️ File .env tidak ditemukan, membuat dari template .env.production..."
-    if [ -f "${PROJECT_DIR}/deploy/.env.production" ]; then
-        cp ${PROJECT_DIR}/deploy/.env.production .env
+    echo "⚠️ File .env tidak ditemukan, membuat dari template..."
+    if [ -f "${PROJECT_DIR}/deploy/.env.production.example" ]; then
+        cp ${PROJECT_DIR}/deploy/.env.production.example .env
     elif [ -f ".env.example" ]; then
         cp .env.example .env
+    fi
+    echo "‼️  .env dibuat dari template berisi PLACEHOLDER."
+    echo "‼️  Isi DATABASE_URL, API key, dan JWT_SECRET sebelum menjalankan layanan."
+fi
+
+# JWT_SECRET wajib ada: tanpa itu sesi login gugur setiap restart dan
+# tidak konsisten antar worker uvicorn.
+if ! grep -qE '^JWT_SECRET=.+' .env || grep -qE '^JWT_SECRET=(ganti-dengan-secret-acak-panjang)?$' .env; then
+    echo "🔐 Membuat JWT_SECRET acak..."
+    NEW_SECRET=$(openssl rand -base64 48 | tr -d '\n')
+    if grep -q '^JWT_SECRET=' .env; then
+        sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${NEW_SECRET}|" .env
+    else
+        echo "JWT_SECRET=${NEW_SECRET}" >> .env
     fi
 fi
 
