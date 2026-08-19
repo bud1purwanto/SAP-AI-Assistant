@@ -1,8 +1,20 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
 import { fetchArtifactBlob } from '../lib/api';
+
+const ARTIFACT_ICON = {
+  xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
+  csv: <FileText className="w-4 h-4" aria-hidden="true" />,
+  docx: <FileType className="w-4 h-4" aria-hidden="true" />,
+};
+
+const ARTIFACT_LABEL = {
+  xlsx: 'Excel',
+  csv: 'CSV',
+  docx: 'Word',
+};
 
 const formatSize = (bytes) => {
   if (!bytes) return '0 KB';
@@ -228,14 +240,12 @@ const ChatMessage = ({ message }) => {
                 className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group"
               >
                 <span className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg shrink-0">
-                  {file.type === 'csv'
-                    ? <FileText className="w-4 h-4" aria-hidden="true" />
-                    : <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />}
+                  {ARTIFACT_ICON[file.type] || <FileText className="w-4 h-4" aria-hidden="true" />}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-xs font-bold text-content truncate max-w-[16rem]">{file.filename}</span>
                   <span className="block text-[11px] text-content-muted">
-                    {file.type.toUpperCase()} • {formatSize(file.size)} • klik untuk unduh
+                    {ARTIFACT_LABEL[file.type] || file.type.toUpperCase()} • {formatSize(file.size)} • klik untuk unduh
                   </span>
                 </span>
                 <Download className="w-4 h-4 text-content-subtle group-hover:text-accent shrink-0" aria-hidden="true" />

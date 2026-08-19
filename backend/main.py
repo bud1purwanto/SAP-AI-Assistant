@@ -35,6 +35,7 @@ from database import (
     get_user_by_username,
     init_db,
     list_all_users,
+    purge_expired_artifacts,
     session_belongs_to,
     update_system_config,
     update_user_by_admin,
@@ -56,12 +57,14 @@ async def lifespan(app: FastAPI):
             "akan gugur setiap restart dan tidak konsisten antar worker. "
             "Set JWT_SECRET di .env untuk produksi."
         )
-    try:
-        init_db()
-    except Exception as e:
-        if settings.require_postgres:
-            raise
-        logger.error(f"Startup DB init failed (server will still run): {e}")
+    # Kegagalan database selalu fatal: tanpa PostgreSQL aplikasi tidak punya
+    # tempat menyimpan user, percakapan, maupun berkas hasil generate.
+    init_db()
+    # Bersihkan berkas kedaluwarsa saat startup; TTL-nya pendek sehingga tidak
+    # perlu penjadwal tersendiri.
+    removed = purge_expired_artifacts()
+    if removed:
+        logger.info(f"{removed} berkas hasil generate yang kedaluwarsa dibersihkan.")
     yield
 
 
@@ -110,22 +113,15 @@ async def root():
 async def healthz():
     """Health check untuk load balancer / monitoring.
 
-    Menyertakan database yang sedang dipakai supaya fallback SQLite yang tidak
-    disengaja terlihat langsung, bukan baru ketahuan saat data hilang.
+    Menyertakan database yang sedang dipakai; bila koneksi bermasalah endpoint
+    ini melaporkan "degraded" alih-alih gagal senyap.
     """
     try:
         info = get_backend_info()
     except Exception as e:
         return {"status": "degraded", "database": "unavailable", "detail": str(e)[:200]}
 
-    degraded = info["engine"] != "postgresql"
-    return {
-        "status": "degraded" if degraded else "ok",
-        "database": info["engine"],
-        "require_postgres": info["require_postgres"],
-        **({"warning": "Server berjalan di atas SQLite, bukan PostgreSQL. "
-                       "Set REQUIRE_POSTGRES=true dan periksa DATABASE_URL."} if degraded else {}),
-    }
+    return {"status": "ok", "database": info["engine"]}
 
 
 # --- AUTENTIKASI ---

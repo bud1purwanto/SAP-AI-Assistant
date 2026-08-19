@@ -1,63 +1,40 @@
 import logging
 import uuid
-from pathlib import Path
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 
 from auth import hash_password, is_bcrypt_hash, verify_password
 from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Fallback DATABASE_URL if not set
+# Aplikasi ini hanya berjalan di atas PostgreSQL. Fallback SQLite sengaja
+# dihapus: fallback itu membuat server tampak sehat padahal melayani database
+# kosong, dan dengan lebih dari satu worker uvicorn setiap proses menulis ke
+# berkas yang berbeda sehingga data terbelah.
 DEFAULT_DB_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
-SQLITE_FALLBACK_URL = "sqlite:///./sap_ai_assistant.db"
-# Berkas terpisah yang di-ATTACH sebagai schema "ai_assistant" agar query
-# ber-schema yang sama bisa dipakai di SQLite maupun PostgreSQL.
-SQLITE_SCHEMA_FILE = Path(__file__).parent / "sap_ai_assistant_schema.db"
 
 _engine = None
-_using_sqlite = False
 
 
 def _iso(value):
-    """Normalisasi timestamp: PostgreSQL memberi datetime, SQLite memberi string."""
+    """Normalisasi timestamp menjadi string ISO 8601."""
     if not value:
         return ""
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
 def get_backend_info() -> dict:
-    """Laporkan database yang benar-benar dipakai proses ini.
-
-    Berguna untuk memastikan server produksi tidak diam-diam berjalan di atas
-    SQLite karena PostgreSQL sempat tidak terjangkau saat startup.
-    """
+    """Laporkan database yang dipakai proses ini (untuk health check)."""
     engine = get_engine()
     return {
-        "engine": "sqlite" if _using_sqlite else "postgresql",
+        "engine": "postgresql",
         "dialect": engine.dialect.name,
-        "require_postgres": settings.require_postgres,
     }
 
 
-def _make_sqlite_engine(url: str):
-    """Buat engine SQLite dengan schema "ai_assistant" ter-ATTACH.
-
-    SQLite tidak mengenal schema, sementara seluruh query memakai prefiks
-    ai_assistant.<tabel>. ATTACH membuat kedua backend memakai SQL yang sama.
-    """
-    engine = create_engine(url, connect_args={"check_same_thread": False})
-
-    @event.listens_for(engine, "connect")
-    def _attach_schema(dbapi_conn, _record):
-        dbapi_conn.execute(f"ATTACH DATABASE '{SQLITE_SCHEMA_FILE}' AS ai_assistant")
-
-    return engine
-
-
 def get_engine():
-    global _engine, _using_sqlite
+    global _engine
     if _engine is not None:
         return _engine
 
@@ -66,36 +43,25 @@ def get_engine():
     if db_url.startswith("postgresql://"):
         db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-    # SQLite yang dikonfigurasi secara eksplisit (pengembangan lokal / pengujian).
-    if db_url.startswith("sqlite"):
-        _engine = _make_sqlite_engine(db_url)
-        _using_sqlite = True
-        logger.info(f"Menggunakan SQLite sesuai konfigurasi: {db_url}")
-        return _engine
+    if not db_url.startswith("postgresql"):
+        raise RuntimeError(
+            f"DATABASE_URL harus menunjuk ke PostgreSQL, bukan '{db_url.split(':', 1)[0]}'. "
+            "Dukungan SQLite telah dihapus."
+        )
 
     try:
-        test_engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=3)
-        with test_engine.connect():
+        engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
+        with engine.connect():
             pass
-        _engine = test_engine
-        _using_sqlite = False
-        logger.info("Database PostgreSQL berhasil terhubung.")
     except Exception as e:
-        if settings.require_postgres:
-            # Di produksi, fallback senyap ke SQLite berbahaya: aplikasi tampak
-            # sehat padahal melayani database kosong, dan dengan >1 worker
-            # uvicorn setiap proses menulis ke berkas yang sama.
-            logger.error(f"Koneksi PostgreSQL gagal dan REQUIRE_POSTGRES aktif: {e}")
-            raise RuntimeError(
-                "Tidak dapat terhubung ke PostgreSQL sementara REQUIRE_POSTGRES=true. "
-                "Periksa DATABASE_URL."
-            ) from e
+        logger.error(f"Koneksi PostgreSQL gagal: {e}")
+        raise RuntimeError(
+            "Tidak dapat terhubung ke PostgreSQL. Periksa DATABASE_URL dan pastikan "
+            "server database berjalan."
+        ) from e
 
-        logger.warning(f"Koneksi PostgreSQL gagal ({e}). Beralih otomatis ke SQLite lokal fallback...")
-        _engine = _make_sqlite_engine(SQLITE_FALLBACK_URL)
-        _using_sqlite = True
-        logger.info(f"Menggunakan SQLite database fallback: {SQLITE_FALLBACK_URL}")
-
+    _engine = engine
+    logger.info("Database PostgreSQL berhasil terhubung.")
     return _engine
 
 
@@ -106,10 +72,7 @@ def init_db():
         engine = get_engine()
         with engine.connect() as conn:
             # 1. Buat Schema ai_assistant (jika didukung seperti PostgreSQL)
-            try:
-                conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
-            except Exception:
-                pass
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
             
             # 2. Buat Tabel ai_assistant.users
             conn.execute(text("""
@@ -123,21 +86,21 @@ def init_db():
                 );
             """))
             
-            # 2b. Migrasi instalasi lama: tambahkan kolom password_hash bila belum ada,
-            # dan longgarkan NOT NULL pada kolom password plaintext yang akan dipensiunkan.
-            for ddl in (
-                "ALTER TABLE ai_assistant.users ADD COLUMN password_hash VARCHAR(255)",
-                "ALTER TABLE ai_assistant.users ADD COLUMN full_name VARCHAR(120)",
-            ):
-                try:
-                    conn.execute(text(ddl))
-                except Exception:
-                    pass  # kolom sudah ada
-            if not _using_sqlite:
-                try:
-                    conn.execute(text("ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"))
-                except Exception:
-                    pass
+            # 2b. Migrasi instalasi lama.
+            # DDL di bawah harus idempoten, bukan dibungkus try/except: di
+            # PostgreSQL satu pernyataan yang gagal membatalkan SELURUH
+            # transaksi, sehingga semua perintah berikutnya ikut gagal.
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
+            ))
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120)"
+            ))
+            # Kolom password plaintext dipensiunkan; DROP NOT NULL bersifat
+            # idempoten sehingga aman dijalankan berulang.
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"
+            ))
 
             # 3. Buat Tabel ai_assistant.system_config
             conn.execute(text("""
@@ -159,13 +122,11 @@ def init_db():
             """))
 
             # 5. Buat Tabel ai_assistant.chat_messages
-            # SQLite tidak punya SERIAL; schema "ai_assistant" tersedia lewat ATTACH.
-            id_col = "INTEGER PRIMARY KEY AUTOINCREMENT" if _using_sqlite else "SERIAL PRIMARY KEY"
-            fk = "" if _using_sqlite else " REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE"
-            conn.execute(text(f"""
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
-                    id {id_col},
-                    session_id VARCHAR(50) NOT NULL{fk},
+                    id SERIAL PRIMARY KEY,
+                    session_id VARCHAR(50) NOT NULL
+                        REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE,
                     role VARCHAR(20) NOT NULL,
                     content TEXT NOT NULL,
                     sources TEXT,
@@ -186,6 +147,28 @@ def init_db():
             """))
 
             conn.commit()
+
+            # 5c. Berkas hasil generate (Excel / CSV / Word).
+            # Disimpan di database, bukan di memori proses: dengan lebih dari
+            # satu worker uvicorn, unduhan bisa mendarat di worker yang berbeda
+            # dari yang membuat berkasnya, dan berkas hilang setiap restart.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.generated_artifacts (
+                    artifact_id VARCHAR(32) PRIMARY KEY,
+                    owner VARCHAR(50) NOT NULL,
+                    filename VARCHAR(255) NOT NULL,
+                    content_type VARCHAR(150) NOT NULL,
+                    kind VARCHAR(10) NOT NULL,
+                    data BYTEA NOT NULL,
+                    size_bytes INTEGER NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_artifacts_expires
+                ON ai_assistant.generated_artifacts (expires_at);
+            """))
 
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
             res_dev = conn.execute(text("SELECT username FROM ai_assistant.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
@@ -279,8 +262,7 @@ def init_db():
         logger.error(f"Gagal inisialisasi database: {e}")
         # Di produksi kegagalan ini tidak boleh ditelan: tanpa ini server tetap
         # menyala dan melayani permintaan di atas database yang belum siap.
-        if settings.require_postgres:
-            raise
+        raise
 
 def authenticate_user(username: str, password: str):
     """Verifikasi login user (username case-insensitive).
@@ -665,8 +647,7 @@ def delete_chat_session(session_id: str, username: str):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # Hapus pesan lebih dulu: SQLite tidak menegakkan ON DELETE CASCADE
-            # secara default sehingga pesan bisa tertinggal sebagai data yatim.
+            # Pesan dihapus eksplisit agar tidak bergantung pada ON DELETE CASCADE.
             conn.execute(text("""
                 DELETE FROM ai_assistant.chat_messages
                 WHERE session_id IN (
@@ -696,8 +677,6 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
             """), {"sid": session_id, "r": role, "c": content, "s": sources or ""})
             
             # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
-            # Pemotongan judul dilakukan di Python: SUBSTRING(x FROM a FOR b)
-            # hanya valid di PostgreSQL dan menggagalkan transaksi di SQLite.
             if role == 'user':
                 conn.execute(text("""
                     UPDATE ai_assistant.chat_sessions
@@ -967,3 +946,69 @@ def consume_guest_quota(client_key: str, usage_date: str, limit: int) -> dict:
         logger.error(f"Error consume_guest_quota: {e}")
         # Gagal-tertutup: bila kuota tidak dapat dicatat, jangan berikan akses gratis.
         return {"allowed": False, "used": 0, "limit": limit}
+
+
+# --- BERKAS HASIL GENERATE ---
+
+def save_artifact(artifact_id: str, owner: str, filename: str, content_type: str,
+                  kind: str, data: bytes, expires_at) -> bool:
+    """Simpan berkas hasil generate agar dapat diunduh oleh pemiliknya."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.generated_artifacts
+                    (artifact_id, owner, filename, content_type, kind, data, size_bytes, expires_at)
+                VALUES (:id, :owner, :fn, :ct, :kind, :data, :size, :exp)
+            """), {
+                "id": artifact_id, "owner": owner, "fn": filename, "ct": content_type,
+                "kind": kind, "data": data, "size": len(data), "exp": expires_at,
+            })
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error save_artifact: {e}")
+        return False
+
+
+def load_artifact(artifact_id: str, owner: str):
+    """Ambil berkas milik user tertentu, selama belum kedaluwarsa.
+
+    Berkas dapat memuat data SAP, sehingga kepemilikan diperiksa di query.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT filename, content_type, data
+                FROM ai_assistant.generated_artifacts
+                WHERE artifact_id = :id
+                  AND LOWER(owner) = LOWER(:owner)
+                  AND expires_at > CURRENT_TIMESTAMP
+            """), {"id": artifact_id, "owner": (owner or "").strip()}).fetchone()
+            if not row:
+                return None
+            return {
+                "filename": row.filename,
+                "content_type": row.content_type,
+                "data": bytes(row.data),
+            }
+    except Exception as e:
+        logger.error(f"Error load_artifact: {e}")
+        return None
+
+
+def purge_expired_artifacts() -> int:
+    """Hapus berkas yang sudah lewat masa berlakunya."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("""
+                DELETE FROM ai_assistant.generated_artifacts
+                WHERE expires_at <= CURRENT_TIMESTAMP
+            """))
+            conn.commit()
+            return res.rowcount or 0
+    except Exception as e:
+        logger.error(f"Error purge_expired_artifacts: {e}")
+        return 0

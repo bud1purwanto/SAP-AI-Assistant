@@ -1,6 +1,6 @@
 # 🚀 Panduan Deployment SAP AI Assistant ke Server Linux (Production)
 
-Dokumen ini berisi panduan komprehensif langkah demi langkah untuk men-deploy **SAP AI Assistant (FastAPI + React + MCP Gateway + PostgreSQL/SQLite)** ke server Linux (Ubuntu 20.04 / 22.04 / 24.04 LTS atau Debian).
+Dokumen ini berisi panduan komprehensif langkah demi langkah untuk men-deploy **SAP AI Assistant (FastAPI + React + MCP Gateway + PostgreSQL)** ke server Linux (Ubuntu 20.04 / 22.04 / 24.04 LTS atau Debian).
 
 ---
 
@@ -35,8 +35,7 @@ Skrip ini akan otomatis melakukan:
 | Variabel | Kegunaan |
 | :--- | :--- |
 | `JWT_SECRET` | Kunci penandatangan token login. Wajib diisi dan sama di semua worker — bila kosong, server memakai secret acak sehingga semua sesi gugur tiap restart. Buat dengan `openssl rand -base64 48`. |
-| `DATABASE_URL` | Koneksi PostgreSQL. |
-| `REQUIRE_POSTGRES` | Set `true` agar startup gagal ketika PostgreSQL tidak terjangkau, alih-alih diam-diam melayani SQLite kosong. |
+| `DATABASE_URL` | Koneksi PostgreSQL. **Wajib** — aplikasi tidak berjalan tanpa database ini; tidak ada fallback lokal. |
 | `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (hindari `*`). |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Password superadmin awal saat instalasi pertama. |
 | `GUEST_DAILY_LIMIT` | Kuota prompt harian untuk pengunjung tanpa login. |

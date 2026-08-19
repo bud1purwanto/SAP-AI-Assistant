@@ -42,9 +42,6 @@ class Settings(BaseSettings):
     # --- Deployment ---
     # Daftar origin yang diizinkan, dipisahkan koma. "*" hanya untuk pengembangan.
     cors_allow_origins: str = "*"
-    # Bila True (produksi), kegagalan koneksi PostgreSQL akan menggagalkan startup
-    # alih-alih diam-diam beralih ke SQLite dengan data kosong.
-    require_postgres: bool = False
     # Kuota prompt harian untuk pengunjung yang belum login (ditegakkan di server).
     guest_daily_limit: int = 1
     # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel
