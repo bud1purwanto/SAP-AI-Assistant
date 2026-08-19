@@ -16,8 +16,17 @@ class ChatRequest(BaseModel):
     server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
 
+class GeneratedArtifact(BaseModel):
+    """Berkas (Excel/CSV) yang dihasilkan asisten dan siap diunduh."""
+    artifact_id: str = Field(..., description="ID untuk mengunduh berkas")
+    filename: str = Field(..., description="Nama berkas")
+    type: str = Field(..., description="Jenis berkas: 'xlsx' atau 'csv'")
+    size: int = Field(default=0, description="Ukuran berkas dalam byte")
+
+
 class ChatResponse(BaseModel):
     """Model untuk response dari AI."""
     reply: str = Field(..., description="Jawaban dari asisten AI")
     sources: List[SourceReference] = Field(default_factory=list, description="Daftar referensi sumber data yang digunakan")
     session_id: Optional[str] = Field(default=None, description="ID Sesi percakapan yang aktif")
+    artifacts: List[GeneratedArtifact] = Field(default_factory=list, description="Berkas yang dihasilkan asisten")

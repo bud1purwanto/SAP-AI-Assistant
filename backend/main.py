@@ -5,10 +5,11 @@ from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
 from agent import process_chat
+from artifacts import get_artifact
 from auth import (
     create_access_token,
     get_current_user,
@@ -36,6 +37,7 @@ from database import (
     session_belongs_to,
     update_system_config,
     update_user_by_admin,
+    update_user_full_name,
     update_user_persona,
 )
 from mcp_manager import mcp_manager
@@ -175,6 +177,8 @@ class ConfigUpdate(BaseModel):
     openrouter_fallback_model: str = None
     openrouter_api_key: str = None
     assistant_persona: str = ""
+    full_name: str = None
+    global_assistant_persona: str = None
 
 
 @app.get("/api/config")
@@ -188,7 +192,11 @@ async def get_config(user: dict = Depends(get_current_user)):
 
     payload = {
         "assistant_persona": profile["assistant_persona"],
+        "full_name": profile.get("full_name", ""),
         "role": profile["role"],
+        # Persona organisasi ditampilkan (baca-saja bagi non-admin) agar user
+        # memahami dasar perilaku asisten sebelum menambah preferensi pribadi.
+        "global_assistant_persona": sys_cfg.get("global_assistant_persona", ""),
     }
 
     # Konfigurasi sistem (termasuk endpoint internal) hanya untuk superadmin.
@@ -222,6 +230,9 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
     if config.assistant_persona is not None:
         update_user_persona(profile["username"], config.assistant_persona)
 
+    if config.full_name is not None:
+        update_user_full_name(profile["username"], config.full_name)
+
     if profile["role"] == "superadmin":
         # Nilai bertanda mask berarti field tidak diubah user — jangan timpa.
         nine_key = config.nine_router_api_key
@@ -242,6 +253,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             openrouter_model=config.openrouter_model,
             openrouter_fallback_model=config.openrouter_fallback_model,
             openrouter_api_key=open_key,
+            global_assistant_persona=config.global_assistant_persona,
         )
 
     return {"status": "success"}
@@ -310,6 +322,7 @@ async def get_admin_users_endpoint(admin: dict = Depends(require_superadmin)):
 class AdminCreateUserRequest(BaseModel):
     username: str
     password: str
+    full_name: str = ""
     role: str = "user"
     assistant_persona: str = ""
 
@@ -332,6 +345,7 @@ async def create_user_endpoint(
         password=req.password,
         role=req.role,
         persona=req.assistant_persona,
+        full_name=req.full_name,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -342,6 +356,7 @@ class AdminUpdateUserRequest(BaseModel):
     role: str = None
     assistant_persona: str = None
     password: str = None
+    full_name: str = None
 
 
 @app.put("/api/admin/users/{username}")
@@ -366,6 +381,7 @@ async def update_user_endpoint(
         password=req.password if req.password else None,
         role=req.role,
         persona=req.assistant_persona,
+        full_name=req.full_name,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -476,7 +492,7 @@ async def chat_endpoint(
                 f"{active_session_id} untuk konteks percakapan."
             )
 
-    response = await process_chat(chat_req, user_role, user_persona)
+    response = await process_chat(chat_req, user_role, user_persona, username=user["username"])
 
     if not is_guest and active_session_id:
         sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
@@ -484,6 +500,24 @@ async def chat_endpoint(
 
     response.session_id = active_session_id
     return response
+
+
+@app.get("/api/artifacts/{artifact_id}")
+async def download_artifact(artifact_id: str, user: dict = Depends(get_current_user_optional)):
+    """Unduh berkas (Excel/CSV) yang dihasilkan asisten.
+
+    Berkas dapat memuat data SAP, sehingga hanya dapat diambil oleh akun yang
+    memintanya dan hanya selama masa berlaku singkat.
+    """
+    item = get_artifact(artifact_id, owner=user["username"])
+    if not item:
+        raise HTTPException(status_code=404, detail="Berkas tidak ditemukan atau sudah kedaluwarsa.")
+
+    return Response(
+        content=item["data"],
+        media_type=item["content_type"],
+        headers={"Content-Disposition": f'attachment; filename="{item["filename"]}"'},
+    )
 
 
 if __name__ == "__main__":

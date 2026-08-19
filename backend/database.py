@@ -103,6 +103,7 @@ def init_db():
                     username VARCHAR(50) PRIMARY KEY,
                     password VARCHAR(100),
                     password_hash VARCHAR(255),
+                    full_name VARCHAR(120),
                     role VARCHAR(20) NOT NULL,
                     assistant_persona TEXT
                 );
@@ -110,10 +111,14 @@ def init_db():
             
             # 2b. Migrasi instalasi lama: tambahkan kolom password_hash bila belum ada,
             # dan longgarkan NOT NULL pada kolom password plaintext yang akan dipensiunkan.
-            try:
-                conn.execute(text("ALTER TABLE ai_assistant.users ADD COLUMN password_hash VARCHAR(255)"))
-            except Exception:
-                pass  # kolom sudah ada
+            for ddl in (
+                "ALTER TABLE ai_assistant.users ADD COLUMN password_hash VARCHAR(255)",
+                "ALTER TABLE ai_assistant.users ADD COLUMN full_name VARCHAR(120)",
+            ):
+                try:
+                    conn.execute(text(ddl))
+                except Exception:
+                    pass  # kolom sudah ada
             if not _using_sqlite:
                 try:
                     conn.execute(text("ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"))
@@ -276,7 +281,7 @@ def authenticate_user(username: str, password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, password, password_hash, role, assistant_persona
+                SELECT username, password, password_hash, full_name, role, assistant_persona
                 FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
@@ -304,6 +309,7 @@ def authenticate_user(username: str, password: str):
             if authenticated:
                 return {
                     "username": row.username,
+                    "full_name": row.full_name or "",
                     "role": row.role,
                     "assistant_persona": row.assistant_persona or ""
                 }
@@ -356,13 +362,14 @@ def get_user_by_username(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, role, assistant_persona 
-                FROM ai_assistant.users 
+                SELECT username, full_name, role, assistant_persona
+                FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
             if row:
                 return {
                     "username": row.username,
+                    "full_name": row.full_name or "",
                     "role": row.role,
                     "assistant_persona": row.assistant_persona or ""
                 }
@@ -370,6 +377,23 @@ def get_user_by_username(username: str):
         logger.error(f"Error get_user_by_username: {e}")
 
     return None
+
+def update_user_full_name(username: str, full_name: str):
+    """Update nama lengkap milik user tertentu."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                UPDATE ai_assistant.users
+                SET full_name = :fn
+                WHERE LOWER(username) = LOWER(:u)
+            """), {"fn": (full_name or "").strip(), "u": username.strip()})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error update_user_full_name: {e}")
+        return False
+
 
 def update_user_persona(username: str, persona: str):
     """Update persona milik user tertentu."""
@@ -425,7 +449,10 @@ def get_system_config():
     model_primary = settings.openrouter_model or "openrouter/auto"
     model_fallback = settings.openrouter_fallback_model or "openrouter/free"
     api_key = settings.openrouter_api_key or ""
-    
+    # Persona global: berlaku untuk semua user sebagai dasar, di atasnya
+    # persona masing-masing user diterapkan sebagai penyesuaian.
+    global_persona = settings.assistant_persona or ""
+
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -451,6 +478,8 @@ def get_system_config():
                     model_fallback = r.value
                 elif r.key == 'openrouter_api_key' and r.value is not None:
                     api_key = r.value
+                elif r.key == 'global_assistant_persona' and r.value is not None:
+                    global_persona = r.value
     except Exception as e:
         logger.error(f"Error get_system_config: {e}")
     return {
@@ -463,7 +492,8 @@ def get_system_config():
         "openrouter_enabled": openrouter_enabled,
         "openrouter_model": model_primary,
         "openrouter_fallback_model": model_fallback,
-        "openrouter_api_key": api_key
+        "openrouter_api_key": api_key,
+        "global_assistant_persona": global_persona
     }
 
 def update_system_config(
@@ -476,9 +506,10 @@ def update_system_config(
     openrouter_enabled: bool = None,
     openrouter_model: str = None,
     openrouter_fallback_model: str = None,
-    openrouter_api_key: str = None
+    openrouter_api_key: str = None,
+    global_assistant_persona: str = None
 ):
-    """Update konfigurasi MCP, 9Router, dan OpenRouter di database."""
+    """Update konfigurasi MCP, 9Router, OpenRouter, dan persona global di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -552,6 +583,13 @@ def update_system_config(
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": openrouter_api_key})
                 
+            if global_assistant_persona is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('global_assistant_persona', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": global_assistant_persona})
+
             conn.commit()
             return True
     except Exception as e:
@@ -722,13 +760,14 @@ def list_all_users():
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT username, role, assistant_persona 
-                FROM ai_assistant.users 
+                SELECT username, full_name, role, assistant_persona
+                FROM ai_assistant.users
                 ORDER BY role DESC, username ASC
             """)).fetchall()
             return [
                 {
                     "username": r.username,
+                    "full_name": r.full_name or "",
                     "role": r.role,
                     "assistant_persona": r.assistant_persona or ""
                 }
@@ -738,7 +777,7 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = ""):
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = ""):
     """Buat user baru di database."""
     try:
         engine = get_engine()
@@ -748,16 +787,18 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
                 return {"success": False, "message": f"User '{username}' sudah ada."}
             
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password_hash, role, assistant_persona)
-                VALUES (:u, :p, :r, :persona)
-            """), {"u": username.strip(), "p": hash_password(password), "r": role, "persona": persona})
+                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona)
+                VALUES (:u, :p, :fn, :r, :persona)
+            """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
+                   "r": role, "persona": persona})
             conn.commit()
             return {"success": True, "message": f"User '{username}' berhasil dibuat."}
     except Exception as e:
         logger.error(f"Error create_new_user: {e}")
         return {"success": False, "message": str(e)}
 
-def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None):
+def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
+                         full_name: str = None):
     """Admin mengupdate data user (role, persona, dan optional reset password)."""
     try:
         engine = get_engine()
@@ -775,6 +816,9 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
             if persona is not None:
                 updates.append("assistant_persona = :p")
                 params["p"] = persona
+            if full_name is not None:
+                updates.append("full_name = :fn")
+                params["fn"] = full_name.strip()
             if password:
                 updates.append("password_hash = :pass")
                 updates.append("password = NULL")

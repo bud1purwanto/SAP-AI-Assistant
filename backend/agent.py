@@ -4,42 +4,43 @@ import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from mcp_manager import mcp_manager
+from artifacts import ARTIFACT_PROMPT, extract_and_build
 from models import ChatRequest, ChatResponse, SourceReference
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 def _clean_thinking_process(text: str) -> str:
-    """Membersihkan teks proses berpikir internal (<think>...</think>, 'Here's a thinking process:', 
-    'Now server is set to...', 'User wants...', 'Let's use...', paragraf Bahasa Inggris analisis internal)
-    yang dikeluarkan oleh model reasoning/instruct agar tidak bocor ke antarmuka pengguna."""
+    """Buang jejak penalaran internal model tanpa merusak isi jawaban.
+
+    Versi sebelumnya memotong teks pada kemunculan pertama emoji (`text[text.find("📦"):]`)
+    dan menghapus paragraf berbahasa Inggris dengan regex longgar. Selama jawaban
+    selalu berupa laporan SAP berformat tetap hal itu jarang terlihat, tetapi untuk
+    jawaban serbaguna (tabel, ringkasan, kode, teks campuran) pemotongan itu
+    membuang isi yang sah. Sekarang yang dibuang hanya penanda penalaran yang eksplisit.
+    """
     if not text:
         return ""
-    # 1. Hapus tag <think>...</think>
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    
-    # 2. Hapus blok 'Here's a thinking process: ...'
-    if "thinking process" in text.lower():
-        parts = re.split(r'Here\'s? a thinking process:.*?(?=\n\n[📦🔍📊💰🛒🏭🔧🏬🧑‍💻A-Z]|\Z)', text, flags=re.DOTALL | re.IGNORECASE)
-        cleaned = "".join([p for p in parts if p]).strip()
-        if cleaned:
-            text = cleaned
-            
-    # 3. Hapus teks penalaran / chain of thought seperti:
-    # "Now server is set to...", "User wants...", "In SAP, TECO status...", "But the rule says...", "Let's use..."
-    # sampai menemukan emoji header box (📦) atau awal respons resmi Bahasa Indonesia
-    if "📦" in text:
-        text = text[text.find("📦"):]
-    elif "🔍" in text:
-        text = text[text.find("🔍"):]
-    else:
-        # Jika tidak ada emoji header box, bersihkan pola kalimat penalaran umum di awal
-        text = re.sub(r'^(Now server is set to|User wants|In SAP,|Need to find|Common tables:|But the rule says|We need to answer|We performed a|Let\'s examine|Doc \d+ snippet|We could try to|There is no|No plant|Analyzing user query).*?(?=\n\n[A-Z0-9\-\*]|\Z)', '', text, flags=re.DOTALL | re.IGNORECASE)
-    
-    # 4. Hapus sisa-sisa blok kode tool invocation palsu dalam teks markdown jika masih ada
-    text = re.sub(r'```(?:abap|query|json)?\s*(?:sap__|rag__).*?```', '', text, flags=re.DOTALL | re.IGNORECASE)
-    
+
+    # 1. Tag penalaran eksplisit dari model reasoning.
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    # Tag pembuka tanpa penutup (respons terpotong).
+    text = re.sub(r'<think(?:ing)?>.*\Z', '', text, flags=re.DOTALL | re.IGNORECASE)
+
+    # 2. Preambul "Here's a thinking process: ..." sampai baris kosong pertama.
+    text = re.sub(
+        r"\A\s*(?:Here'?s? (?:a|my) thinking process|Let me think|Thinking process)\s*:.*?(?:\n\s*\n|\Z)",
+        '',
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    # 3. Panggilan tool yang terlanjur ditulis sebagai teks (bukan function call).
+    text = re.sub(r'```(?:abap|query|json)?\s*(?:sap__|rag__)\w+\s*\(.*?```', '', text, flags=re.DOTALL | re.IGNORECASE)
+
     return text.strip()
+
 
 def _extract_text(content) -> str:
     """Ambil teks dari content AIMessage dan bersihkan dari teks pemikiran internal."""
@@ -59,7 +60,8 @@ def _extract_text(content) -> str:
         
     return _clean_thinking_process(raw_text)
 
-async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "") -> ChatResponse:
+async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
+                       username: str = "Guest") -> ChatResponse:
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
     # Target SAP dibawa per-request dan diterapkan ulang di setiap pemanggilan
@@ -125,7 +127,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             openai_api_key=nine_router_api_key,
             openai_api_base=nine_router_base_url,
             max_retries=1,
-            max_tokens=2048,
+            max_tokens=4096,
         )
         if openrouter_enabled and openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here":
             llm_fallback = ChatOpenAI(
@@ -137,7 +139,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                     "X-Title": "SAP AI Assistant",
                 },
                 max_retries=1,
-                max_tokens=1024,
+                max_tokens=4096,
             )
         else:
             llm_fallback = llm_primary
@@ -156,7 +158,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 "X-Title": "SAP AI Assistant",
             },
             max_retries=1,
-            max_tokens=1024,
+            max_tokens=4096,
         )
         llm_fallback = ChatOpenAI(
             model=openrouter_fallback_model,
@@ -167,7 +169,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 "X-Title": "SAP AI Assistant",
             },
             max_retries=1,
-            max_tokens=1024,
+            max_tokens=4096,
         )
     else:
         return ChatResponse(
@@ -220,55 +222,109 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         else:
             sap_server_name = sap_alias.upper()
 
+    # ------------------------------------------------------------------
+    # SYSTEM PROMPT
+    #
+    # Prompt lama mewajibkan setiap balasan memanggil tool SAP dan diawali
+    # header "📦 MM Server: ...". Akibatnya pertanyaan umum ("buatkan tabel
+    # perbandingan", "ringkas ini", "jelaskan konsep") tetap dipaksa menjadi
+    # laporan investigasi SAP. Prompt di bawah memisahkan dua hal: SAP tetap
+    # keahlian utama dan tetap diprioritaskan untuk pertanyaan data, tetapi
+    # asisten boleh menjawab langsung untuk hal di luar itu.
+    # ------------------------------------------------------------------
+    tool_inventory = []
+    if has_sap:
+        tool_inventory.append(f"data live SAP pada server **{sap_server_name} (SID: {sap_sid})**")
+    if has_rag:
+        tool_inventory.append("basis pengetahuan dokumen (RAG)")
+    inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
+
     system_prompt = (
-        f"Anda adalah Enterprise SAP Assistant (Leader Orchestrator).\n"
-        f"Role pengguna saat ini: {user_role}.\n\n"
-        f"🔴 ATURAN UTAMA SELEKSI SERVER:\n"
-        f"Pengguna TELAH MEMILIH Server SAP aktif melalui antarmuka UI: **{sap_server_name} (SID: {sap_sid})**.\n"
-        f"Server ini SUDAH DIAKTIFKAN secara otomatis di backend MCP.\n"
-        f"JANGAN BERTANYA KEMBALI KEPADA PENGGUNA TENTANG PILIHAN SERVER MAUPUN MENOLAK QUERY DATA!\n"
-        f"LANGSUNG eksekusi tool SAP (seperti `sap__read_table` atau `sap__sap_read_table`, `sap__read_program`, `sap__search_programs`, `sap__call_function`, dll) pada server ini.\n\n"
-        f"🔴 PRIORITAS PENGGUNAAN TOOL & ATURAN QUERY DATA:\n"
-        f"1. Pengecekan Data Live SAP (Material, Plant/Pabrik, Stock, Tabel MARA/MARC/MARD/T001W, PO, SO, Vendor, ABAP Code, dsb):\n"
-        f"   -> WAJIB UTAMAKAN MEMANGGIL TOOL MCP SAP (seperti `sap__read_table` atau `sap__sap_read_table` dengan table MARC untuk Plant, MARA untuk Material Master) secara LIVE!\n"
-        f"   -> Contoh untuk cek plant material 'SRRPAI': Panggil `sap__read_table` dengan `table: 'MARC'`, `where: [\"MATNR = 'SRRPAI'\"]` ATAU `sap__sap_read_table` dengan `table_name: 'MARC'`, `options: [\"MATNR = 'SRRPAI'\"]`.\n"
-        f"   -> JANGAN HANYA melakukan pencarian dokumen RAG jika pertanyaan meminta data live SAP/tabel SAP spesifik!\n"
-        f"2. Gunakan RAG (`rag__search`) HANYA untuk pertanyaan konseptual, panduan manual, dokumen blueprint, atau sebagai fallback jika data live tidak ditemukan.\n\n"
-        f"🔴 ATURAN MEMORI & RIWAYAT PERCAKAPAN (SESSION CONTEXT):\n"
-        f"1. Anda memiliki akses penuh ke riwayat percakapan sebelumnya dalam sesi ini.\n"
-        f"2. Jika pengguna mengajukan pertanyaan lanjutan (follow-up), klarifikasi, atau merujuk pada data/tabel/material/status yang sudah pernah dibahas pada chat sebelumnya:\n"
-        f"   - WAJIB BACA dan GUNAKAN konteks data dari riwayat percakapan sebelumnya.\n"
-        f"   - JANGAN berhalusinasi, berasumsi liar, atau mengabaikan temuan data sebelumnya.\n"
-        f"   - Jika informasi yang ditanyakan sudah lengkap di riwayat sesi ini, Anda BISA langsung menjawab secara cerdas dan akurat.\n"
-        f"   - Jika pengguna meminta data/tabel/material baru yang belum ada di riwayat, panggil tool MCP SAP yang relevan.\n\n"
-        f"🔴 FORMAT RESPONS WAJIB (BAHASA INDONESIA & COMPACT):\n"
-        f"Setiap balasan HARUS selalu diawali dengan header box berikut secara persis:\n"
-        f"📦 **MM Server: {sap_server_name} (SID: {sap_sid}) | Mode: LIVE**\n\n"
-        f"🔍 **Hasil Investigasi**\n"
-        f"Jelaskan hasil pemeriksaan data/tabel secara terstruktur, ringkas, ramah, profesional, dan dalam Bahasa Indonesia murni.\n"
-        f"Tampilkan temuan, kode material, tabel yang diperiksa (seperti MARA/MARC), dan status keberadaan data.\n\n"
-        f"🔴 ATURAN TAMPILAN RINGKAS (USER-FRIENDLY UNTUK NON-TECHNICAL):\n"
-        f"1. JANGAN memecah nama tabel/field/function module ke dalam baris-baris blok kode terpisah (` ```abap `). Ini membuat tampilan chat terlalu panjang dan membingungkan.\n"
-        f"2. Tuliskan nama tabel, field, atau tcode secara berdampingan dalam kalimat atau list ringkas (contoh: `VBAP` (Sales Item) & `VBAK` (Sales Header), `CAWN` / `CABN`, `MARA` & `MARC`).\n"
-        f"3. Gunakan blok kode terminal HANYA jika Anda menyajikan potongan kode program ABAP utuh multi-baris yang memang perlu disalin oleh developer.\n"
-        f"4. Gunakan bullet list ringkas atau tabel markdown yang rapi agar penjelasan padat dan mudah dipahami.\n\n"
-        f"DILARANG KERAS mengeluarkan teks pemikiran internal berbahasa Inggris seperti 'We need to answer...', 'We performed a RAG search...', 'Doc 1 snippet:'.\n"
+        f"Anda adalah SAP AI Assistant: asisten kerja serbaguna dengan keahlian utama SAP.\n"
+        f"Role pengguna saat ini: {user_role}.\n"
+        f"Sumber data yang tersedia untuk Anda: {inventory_line}.\n\n"
+
+        f"## CARA MEMILIH PENDEKATAN\n"
+        f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
+        f"**A. Permintaan data SAP nyata** (stock material, plant, PO/SO, vendor, isi tabel "
+        f"MARA/MARC/MARD/T001W/EKKO/VBAK, kode ABAP, status dokumen, dsb.)\n"
+        f"   -> WAJIB panggil tool MCP SAP untuk mengambil data LIVE. Jangan mengarang angka.\n"
+        f"   -> Contoh: cek plant material 'SRRPAI' -> `sap__read_table` dengan `table: 'MARC'`, "
+        f"`where: [\"MATNR = 'SRRPAI'\"]`, atau `sap__sap_read_table` dengan `table_name: 'MARC'`, "
+        f"`options: [\"MATNR = 'SRRPAI'\"]`.\n"
+        f"   -> Server SAP aktif SUDAH dipilih pengguna lewat antarmuka. Jangan bertanya ulang "
+        f"soal pilihan server dan jangan menolak permintaan data.\n\n"
+        f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal**\n"
+        f"   -> Gunakan `rag__search` bila jawabannya kemungkinan ada di dokumen internal "
+        f"(blueprint, SOP, manual). Bila tidak ditemukan, jawab dari pengetahuan Anda dan "
+        f"katakan bahwa itu bukan dari dokumen internal.\n\n"
+        f"**C. Permintaan umum di luar data SAP** — menulis, meringkas, menerjemahkan, "
+        f"menghitung, menyusun tabel/laporan, membuat berkas Excel/CSV, menjelaskan konsep, "
+        f"membantu kode, brainstorming, atau sekadar menyapa.\n"
+        f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool SAP/RAG "
+        f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi SAP.\n\n"
+        f"Bila sebuah permintaan menggabungkan beberapa jenis (misalnya: ambil data SAP lalu "
+        f"rapikan jadi Excel), kerjakan berurutan: ambil datanya dulu, baru olah hasilnya.\n\n"
+
+        f"## MEMORI PERCAKAPAN\n"
+        f"Anda memiliki akses ke riwayat percakapan sesi ini. Untuk pertanyaan lanjutan atau "
+        f"rujukan ke data yang sudah dibahas, gunakan konteks tersebut dan jangan mengulang "
+        f"pemanggilan tool bila datanya sudah ada. Jangan berhalusinasi atau mengabaikan "
+        f"temuan sebelumnya.\n\n"
+
+        f"## FORMAT JAWABAN\n"
+        f"1. Gunakan Bahasa Indonesia yang jelas dan profesional, kecuali pengguna meminta bahasa lain.\n"
+        f"2. Bila jawaban memuat data live dari SAP, awali dengan baris status berikut persis:\n"
+        f"   📦 **Server: {sap_server_name} (SID: {sap_sid}) | Mode: LIVE**\n"
+        f"   Untuk jawaban yang TIDAK mengambil data SAP, JANGAN tampilkan baris tersebut.\n"
+        f"3. Sajikan data tabular sebagai tabel markdown yang rapi. Gunakan bullet ringkas untuk penjelasan.\n"
+        f"4. Tulis nama tabel/field/tcode secara inline (contoh: `VBAP` & `VBAK`, `MARA` & `MARC`), "
+        f"bukan sebagai blok kode terpisah per baris.\n"
+        f"5. Gunakan blok kode hanya untuk kode program utuh yang memang perlu disalin.\n"
+        f"6. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
+        f"7. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
+        f"'We performed a RAG search...', atau 'Doc 1 snippet:'.\n\n"
+
+        f"{ARTIFACT_PROMPT}\n"
     )
 
     if not has_sap:
-        system_prompt += "PERINGATAN: Koneksi ke server SAP MCP saat ini TERPUTUS. Beritahu pengguna bahwa data live SAP tidak dapat diakses.\n"
-    if not has_rag:
-        system_prompt += "PERINGATAN: Koneksi ke server RAG MCP saat ini TERPUTUS.\n"
-
-    active_persona = user_persona.strip() or settings.assistant_persona.strip()
-    if active_persona:
         system_prompt += (
-            f"\n--- PERSONA & ATURAN ASISTEN ---\n"
-            f"{active_persona}\n"
-            f"---------------------------------\n"
-            f"TUGAS PENTING: Anda WAJIB mematuhi format respons dan aturan dari persona di atas secara absolut dalam setiap balasan Anda."
+            "\nCATATAN: Koneksi ke server MCP SAP sedang TERPUTUS. Beritahu pengguna bila mereka "
+            "meminta data live SAP, namun tetap layani permintaan lain yang tidak membutuhkan SAP.\n"
         )
-    
+    if not has_rag:
+        system_prompt += "\nCATATAN: Koneksi ke server RAG sedang TERPUTUS.\n"
+
+    # --- PERSONA BERLAPIS ---
+    # Persona global (diatur admin) berlaku sebagai dasar untuk semua user;
+    # persona milik user diterapkan di atasnya sebagai penyesuaian pribadi.
+    # Sebelumnya persona user MENGGANTIKAN persona global sepenuhnya.
+    global_persona = (sys_cfg.get("global_assistant_persona") or settings.assistant_persona or "").strip()
+    personal_persona = (user_persona or "").strip()
+
+    if global_persona:
+        system_prompt += (
+            f"\n--- PERSONA ORGANISASI (dasar, berlaku untuk semua pengguna) ---\n"
+            f"{global_persona}\n"
+            f"----------------------------------------------------------------\n"
+        )
+    if personal_persona:
+        system_prompt += (
+            f"\n--- PREFERENSI PRIBADI PENGGUNA INI (penyesuaian di atas persona organisasi) ---\n"
+            f"{personal_persona}\n"
+            f"------------------------------------------------------------------------------\n"
+        )
+    if global_persona and personal_persona:
+        system_prompt += (
+            "CARA MENGGABUNGKAN: patuhi persona organisasi sebagai dasar, lalu terapkan preferensi "
+            "pribadi pengguna di atasnya. Bila keduanya bertentangan pada hal yang sama (misal gaya "
+            "bahasa atau panjang jawaban), preferensi pribadi yang menang — KECUALI menyangkut aturan "
+            "keakuratan data, keamanan, atau kepatuhan, yang selalu mengikuti persona organisasi.\n"
+        )
+    elif global_persona or personal_persona:
+        system_prompt += "Patuhi persona di atas secara konsisten pada setiap balasan.\n"
+
     messages = [SystemMessage(content=system_prompt)]
     
     for msg in chat_req.history:
@@ -373,10 +429,21 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 except Exception as parse_ex:
                     logger.warning(f"Gagal mem-parse text-based tool call: {parse_ex}")
 
-            if iteration == 1 and openai_tools and ("thinking process" in response.content.lower() or "identify available tools" in response.content.lower() or "we need to answer" in response.content.lower()):
-                logger.info("Mendeteksi LLM mengeluarkan thinking process alih-alih tool_calls. Meminta eksekusi tool ulang...")
+            # Model kadang membocorkan penalaran alih-alih menjawab. Dorong sekali
+            # untuk menulis jawaban akhir — tanpa memaksa pemanggilan tool SAP,
+            # karena permintaan yang sedang diproses belum tentu soal data SAP.
+            leaked = response.content.lower() if isinstance(response.content, str) else ""
+            if iteration == 1 and any(
+                marker in leaked
+                for marker in ("thinking process", "identify available tools", "we need to answer")
+            ):
+                logger.info("Model membocorkan proses berpikir alih-alih menjawab. Meminta jawaban akhir...")
                 messages.append(HumanMessage(
-                    content="SISTEM: Jangan tuliskan teks analisis internal dalam Bahasa Inggris. LANGSUNG panggil tool SAP atau RAG untuk mengecek data pengguna di server SAP yang aktif!"
+                    content=(
+                        "SISTEM: Jangan tampilkan analisis internal berbahasa Inggris. Tuliskan jawaban "
+                        "akhir untuk pengguna dalam Bahasa Indonesia. Bila permintaan membutuhkan data "
+                        "live SAP, panggil tool SAP yang sesuai terlebih dahulu; bila tidak, jawab langsung."
+                    )
                 ))
                 continue
 
@@ -447,4 +514,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         except Exception as e:
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
 
-    return ChatResponse(reply=reply_text, sources=sources)
+    # Ubah blok spesifikasi berkas dari model menjadi berkas Excel/CSV sungguhan.
+    reply_text, artifacts = extract_and_build(reply_text, owner=username)
+
+    return ChatResponse(reply=reply_text, sources=sources, artifacts=artifacts)
