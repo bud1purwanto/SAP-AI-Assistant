@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Paperclip, CornerDownLeft, Database } from 'lucide-react';
+import { Send, Sparkles } from 'lucide-react';
 
-const ChatInput = ({ onSendMessage, isLoading, isLimitReached, onPromptLimitHit }) => {
+const ChatInput = ({ onSendMessage, isLoading }) => {
   const [input, setInput] = useState('');
   const textareaRef = useRef(null);
 
@@ -14,11 +14,6 @@ const ChatInput = ({ onSendMessage, isLoading, isLimitReached, onPromptLimitHit 
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (isLimitReached) {
-      if (onPromptLimitHit) onPromptLimitHit();
-      return;
-    }
-
     if (input.trim() && !isLoading) {
       onSendMessage(input);
       setInput('');
@@ -40,13 +35,13 @@ const ChatInput = ({ onSendMessage, isLoading, isLimitReached, onPromptLimitHit 
       {/* Floating Island Container with Glassmorphism and Glow on Focus */}
       <form 
         onSubmit={handleSubmit}
-        className="relative bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-slate-950/60 p-2 sm:p-2.5 transition-all focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500/80"
+        className="relative bg-surface-raised backdrop-blur-xl rounded-3xl border border-line shadow-xl p-2 sm:p-2.5 transition-all focus-within:border-accent"
       >
         <div className="flex items-end gap-2">
           
           {/* Subtle Feature Badge/Icon */}
-          <div className="pl-3 pb-2.5 hidden sm:flex items-center text-slate-400 dark:text-slate-500">
-            <Sparkles className="w-4 h-4 text-indigo-500 animate-pulse" />
+          <div className="pl-3 pb-2.5 hidden sm:flex items-center text-content-subtle">
+            <Sparkles className="w-4 h-4 text-accent animate-pulse" aria-hidden="true" />
           </div>
 
           {/* Dynamic Auto-Expanding Textarea */}
@@ -56,8 +51,9 @@ const ChatInput = ({ onSendMessage, isLoading, isLimitReached, onPromptLimitHit 
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isLimitReached ? "Batas limit tercapai. Silakan login untuk melanjutkan..." : "Tanyakan seputar SAP PO, Stock Material, Sales Order, Vendor..."}
-            className="flex-1 max-h-[180px] py-2 px-2 bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm focus:outline-none resize-none leading-relaxed"
+            placeholder="Tanyakan seputar SAP PO, Stock Material, Sales Order, Vendor…"
+            aria-label="Tulis pertanyaan Anda"
+            className="flex-1 max-h-[180px] py-2 px-2 bg-transparent text-content placeholder:text-content-subtle text-sm focus:outline-none resize-none leading-relaxed"
             disabled={isLoading}
           />
 
@@ -68,23 +64,24 @@ const ChatInput = ({ onSendMessage, isLoading, isLimitReached, onPromptLimitHit 
               disabled={!input.trim() || isLoading}
               className={`p-2.5 rounded-2xl flex items-center justify-center transition-all ${
                 input.trim() && !isLoading
-                  ? 'bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/30 hover:scale-105 active:scale-95'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                  ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
+                  : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
               }`}
               title="Kirim pesan (Enter)"
+              aria-label="Kirim pesan"
             >
-              <Send className="w-4 h-4" />
+              <Send className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>
 
         {/* Floating helper shortcuts footer */}
-        <div className="flex items-center justify-between px-3 pt-1 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="flex items-center justify-between px-3 pt-1 text-[11px] text-content-subtle">
           <div className="flex items-center gap-2">
             <span className="hidden sm:inline font-mono">Shift + Enter untuk baris baru</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span className="w-1.5 h-1.5 rounded-full bg-success" aria-hidden="true"></span>
             <span>Agent v1.0 • Connected</span>
           </div>
         </div>

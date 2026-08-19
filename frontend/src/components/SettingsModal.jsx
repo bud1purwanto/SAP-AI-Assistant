@@ -1,9 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Save, Database, Shield, Lock, KeyRound, CheckCircle2, AlertCircle, 
-  Bot, User, Sliders, Cpu, Globe, Server, Check, ToggleLeft, ToggleRight
-} from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { X, Save, Database, Shield, Lock, KeyRound, CheckCircle2, AlertCircle, Bot, Sliders, Cpu, Globe, Server } from 'lucide-react';
+import { api } from '../lib/api';
 
 const SettingsModal = ({ isOpen, onClose, user }) => {
   const [activeTab, setActiveTab] = useState('persona');
@@ -32,11 +29,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const [isChangingPass, setIsChangingPass] = useState(false);
 
   useEffect(() => {
-    if (isOpen && user?.username && user?.username !== 'Guest') {
-      fetch(`${API_BASE_URL}/api/config`, {
-        headers: { 'X-User-Name': user.username }
-      })
-        .then(res => res.json())
+    if (isOpen && user?.username && user?.role !== 'guest') {
+      api.getConfig()
         .then(data => {
           setConfig({
             mcp_sap_config_json: data.mcp_sap_config_json || '',
@@ -61,21 +55,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
     setIsSaving(true);
     setSaveStatus('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-User-Name': user?.username || 'Guest'
-        },
-        body: JSON.stringify(config)
-      });
-      if (res.ok) {
-        setSaveStatus('success');
-        setTimeout(() => onClose(), 1000);
-      } else {
-        setSaveStatus('error');
-      }
-    } catch (err) {
+      await api.saveConfig(config);
+      setSaveStatus('success');
+      setTimeout(() => onClose(), 1000);
+    } catch {
       setSaveStatus('error');
     }
     setIsSaving(false);
@@ -90,36 +73,21 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
       return;
     }
 
-    if (newPassword.length < 4) {
-      setPassMessage({ type: 'error', text: 'Password baru minimal 4 karakter.' });
+    // Ambang ini harus sejalan dengan validasi di backend.
+    if (newPassword.length < 8) {
+      setPassMessage({ type: 'error', text: 'Password baru minimal 8 karakter.' });
       return;
     }
 
     setIsChangingPass(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/change-password`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-User-Name': user?.username
-        },
-        body: JSON.stringify({
-          old_password: oldPassword,
-          new_password: newPassword
-        })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        setPassMessage({ type: 'success', text: 'Password berhasil diperbarui!' });
-        setOldPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        setPassMessage({ type: 'error', text: data.detail || 'Gagal mengubah password.' });
-      }
+      await api.changePassword(oldPassword, newPassword);
+      setPassMessage({ type: 'success', text: 'Password berhasil diperbarui!' });
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
     } catch (err) {
-      setPassMessage({ type: 'error', text: 'Gagal terhubung ke server backend.' });
+      setPassMessage({ type: 'error', text: err.message || 'Gagal mengubah password.' });
     } finally {
       setIsChangingPass(false);
     }
@@ -132,20 +100,20 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
   return (
     <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200/80 dark:border-zinc-800 animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+      <div className="bg-surface-raised rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-line animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
         
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-zinc-800">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600 dark:text-indigo-400">
               <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white font-display">
+              <h2 className="text-base font-bold text-content font-display">
                 Settings & Account
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-slate-500 dark:text-zinc-400">User: <strong className="text-slate-700 dark:text-zinc-200">{user?.username || 'Guest'}</strong></span>
+                <span className="text-xs text-content-muted">User: <strong className="text-content-secondary">{user?.username || 'Guest'}</strong></span>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
                   isSuperadmin 
                     ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
@@ -158,19 +126,19 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </div>
           </div>
 
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-content rounded-full hover:bg-surface-hover  transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-100 dark:border-zinc-800 px-6 pt-2 gap-2 bg-slate-50/50 dark:bg-zinc-900/50 overflow-x-auto">
+        <div className="flex border-b border-line px-6 pt-2 gap-2 bg-surface overflow-x-auto">
           <button
             onClick={() => setActiveTab('persona')}
             className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'persona'
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+                : 'border-transparent text-content-muted hover:text-content'
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
@@ -183,7 +151,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'router'
                   ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                  : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+                  : 'border-transparent text-content-muted hover:text-content'
               }`}
             >
               <Cpu className="w-3.5 h-3.5" />
@@ -196,7 +164,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'mcp'
                 ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+                : 'border-transparent text-content-muted hover:text-content'
             }`}
           >
             <Database className="w-3.5 h-3.5" />
@@ -209,7 +177,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'security'
                   ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                  : 'border-transparent text-slate-500 dark:text-zinc-400 hover:text-slate-800'
+                  : 'border-transparent text-content-muted hover:text-content'
               }`}
             >
               <KeyRound className="w-3.5 h-3.5" />
@@ -225,17 +193,17 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
           {activeTab === 'persona' && (
             <div className="space-y-4">
               <div>
-                <label className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-zinc-200 mb-1.5">
+                <label className="flex items-center gap-2 text-sm font-bold text-content mb-1.5">
                   🎭 Personal AI Assistant Prompt
                 </label>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mb-3 leading-relaxed">
+                <p className="text-xs text-content-muted mb-3 leading-relaxed">
                   Sesuaikan gaya respon, preferensi format ABAP code, atau instruksi khusus untuk asisten AI Anda.
                 </p>
                 <textarea 
                   disabled={!isLoggedIn}
                   value={config.assistant_persona}
                   onChange={e => setConfig({...config, assistant_persona: e.target.value})}
-                  className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-3 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-y min-h-[140px] disabled:opacity-60"
+                  className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-3 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-y min-h-[140px] disabled:opacity-60"
                   placeholder={isLoggedIn ? "Contoh: Berikan ringkasan tabel SAP terlebih dahulu, lalu jelaskan alur prosesnya secara step-by-step." : "Login untuk mengkustomisasi persona asisten Anda."}
                 />
               </div>
@@ -250,7 +218,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               <div className={`p-4 rounded-2xl border transition-all ${
                 config.nine_router_enabled 
                   ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800/50' 
-                  : 'bg-slate-50/60 dark:bg-zinc-800/40 border-slate-200 dark:border-zinc-800 opacity-80'
+                  : 'bg-surface-sunken border-line opacity-80'
               }`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -258,8 +226,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                       <Server className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-zinc-100">9Router (Local Gateway / Primary)</h4>
-                      <span className="text-[10px] text-slate-500 dark:text-zinc-400">Endpoint gateway AI lokal berkecepatan tinggi</span>
+                      <h4 className="text-xs font-bold text-content">9Router (Local Gateway / Primary)</h4>
+                      <span className="text-[10px] text-content-muted">Endpoint gateway AI lokal berkecepatan tinggi</span>
                     </div>
                   </div>
                   <button
@@ -268,7 +236,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                     className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
                       config.nine_router_enabled
                         ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                        : 'bg-surface-sunken text-content-muted'
                     }`}
                   >
                     {config.nine_router_enabled ? 'Aktif (Primary)' : 'Nonaktif'}
@@ -277,34 +245,34 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
                 <div className="space-y-3 pt-2">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Base URL</label>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1">Base URL</label>
                     <input 
                       type="text"
                       value={config.nine_router_base_url}
                       onChange={e => setConfig({...config, nine_router_base_url: e.target.value})}
-                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                      className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-indigo-500"
                       placeholder="http://192.168.88.83:20128/v1"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Model Name</label>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">Model Name</label>
                       <input 
                         type="text"
                         value={config.nine_router_model}
                         onChange={e => setConfig({...config, nine_router_model: e.target.value})}
-                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-indigo-500"
                         placeholder="ag/gemini-3.7-flash-medium"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">API Key (Opsional)</label>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">API Key (Opsional)</label>
                       <input 
                         type="password"
                         value={config.nine_router_api_key}
                         onChange={e => setConfig({...config, nine_router_api_key: e.target.value})}
-                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-indigo-500"
                         placeholder="Kosongkan jika tanpa auth"
                       />
                     </div>
@@ -316,7 +284,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               <div className={`p-4 rounded-2xl border transition-all ${
                 config.openrouter_enabled 
                   ? 'bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/50' 
-                  : 'bg-slate-50/60 dark:bg-zinc-800/40 border-slate-200 dark:border-zinc-800 opacity-80'
+                  : 'bg-surface-sunken border-line opacity-80'
               }`}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
@@ -324,8 +292,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                       <Globe className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900 dark:text-zinc-100">OpenRouter (Cloud Failover / Gateway)</h4>
-                      <span className="text-[10px] text-slate-500 dark:text-zinc-400">Penyedia model AI multi-cloud (Gemini, Claude, GPT-4o, dll)</span>
+                      <h4 className="text-xs font-bold text-content">OpenRouter (Cloud Failover / Gateway)</h4>
+                      <span className="text-[10px] text-content-muted">Penyedia model AI multi-cloud (Gemini, Claude, GPT-4o, dll)</span>
                     </div>
                   </div>
                   <button
@@ -334,7 +302,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                     className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
                       config.openrouter_enabled
                         ? 'bg-purple-600 text-white'
-                        : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                        : 'bg-surface-sunken text-content-muted'
                     }`}
                   >
                     {config.openrouter_enabled ? 'Aktif (Failover)' : 'Nonaktif'}
@@ -343,34 +311,34 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
                 <div className="space-y-3 pt-2">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">OpenRouter API Key</label>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1">OpenRouter API Key</label>
                     <input 
                       type="password"
                       value={config.openrouter_api_key}
                       onChange={e => setConfig({...config, openrouter_api_key: e.target.value})}
-                      className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                      className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-purple-500"
                       placeholder="sk-or-v1-..."
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Primary Model</label>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">Primary Model</label>
                       <input 
                         type="text"
                         value={config.openrouter_model}
                         onChange={e => setConfig({...config, openrouter_model: e.target.value})}
-                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-purple-500"
                         placeholder="openrouter/auto"
                       />
                     </div>
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 dark:text-zinc-300 mb-1">Fallback Model</label>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">Fallback Model</label>
                       <input 
                         type="text"
                         value={config.openrouter_fallback_model}
                         onChange={e => setConfig({...config, openrouter_fallback_model: e.target.value})}
-                        className="w-full bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-zinc-100 focus:outline-none focus:border-purple-500"
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3 py-2 text-xs font-mono text-content focus:outline-none focus:border-purple-500"
                         placeholder="openrouter/free"
                       />
                     </div>
@@ -385,7 +353,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
           {activeTab === 'mcp' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-content-muted flex items-center gap-1.5">
                   <Database className="w-3.5 h-3.5 text-indigo-500" />
                   Konfigurasi MCP Server JSON
                 </span>
@@ -398,27 +366,27 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
+                  <label className="flex items-center gap-2 text-xs font-bold text-content-secondary mb-1.5">
                     MCP SAP Remote Endpoint (SSE / JSON-RPC)
                   </label>
                   <textarea 
                     disabled={!isSuperadmin}
                     value={config.mcp_sap_config_json}
                     onChange={e => setConfig({...config, mcp_sap_config_json: e.target.value})}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder='{\n  "mcpServers": {\n    "sap-leader-remote": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
                   />
                 </div>
 
                 <div>
-                  <label className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5">
+                  <label className="flex items-center gap-2 text-xs font-bold text-content-secondary mb-1.5">
                     MCP RAG Remote Endpoint (SSE / JSON-RPC)
                   </label>
                   <textarea 
                     disabled={!isSuperadmin}
                     value={config.mcp_rag_config_json}
                     onChange={e => setConfig({...config, mcp_rag_config_json: e.target.value})}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-4 py-2.5 text-xs text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
                     placeholder='{\n  "mcpServers": {\n    "manufacturing-rag": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
                   />
                 </div>
@@ -441,37 +409,37 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5 uppercase tracking-wider">Password Lama</label>
+                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Password Lama</label>
                 <input 
                   type="password"
                   required
                   value={oldPassword}
                   onChange={e => setOldPassword(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                   placeholder="Masukkan password saat ini"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5 uppercase tracking-wider">Password Baru</label>
+                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Password Baru</label>
                   <input 
                     type="password"
                     required
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     placeholder="Minimal 4 karakter"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-zinc-300 mb-1.5 uppercase tracking-wider">Konfirmasi Password</label>
+                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Konfirmasi Password</label>
                   <input 
                     type="password"
                     required
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-zinc-800/80 border border-slate-200 dark:border-zinc-700 rounded-2xl px-3.5 py-2.5 text-sm text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     placeholder="Ulangi password baru"
                   />
                 </div>
@@ -491,7 +459,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
         </div>
 
         {/* Footer Modal */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-zinc-900 border-t border-slate-100 dark:border-zinc-800 flex items-center justify-between">
+        <div className="px-6 py-4 bg-surface border-t border-line flex items-center justify-between">
           <div className="text-xs font-medium">
             {saveStatus === 'success' && <span className="text-emerald-600 dark:text-emerald-400 font-bold">Pengaturan berhasil disimpan!</span>}
             {saveStatus === 'error' && <span className="text-rose-600 dark:text-rose-400 font-bold">Gagal menyimpan pengaturan.</span>}
@@ -499,7 +467,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
           <div className="flex items-center gap-3">
             <button 
               onClick={onClose}
-              className="px-4 py-2 text-xs font-bold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors"
+              className="px-4 py-2 text-xs font-bold text-content-muted hover:text-content transition-colors"
             >
               Tutup
             </button>

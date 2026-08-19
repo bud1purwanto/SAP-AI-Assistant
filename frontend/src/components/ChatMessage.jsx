@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { 
-  ThumbsUp, ThumbsDown, Code2, Database, Info, Bot, User, Copy, Check, 
-  Sparkles, Terminal, ChevronDown, ChevronUp
-} from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Database, Info, User, Copy, Check, Sparkles, Terminal, ChevronDown, ChevronUp } from 'lucide-react';
 
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
@@ -64,18 +61,19 @@ const ChatMessage = ({ message }) => {
         </div>
 
         {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
-        <div className="relative px-6 py-5 rounded-3xl rounded-tl-sm text-[14.5px] leading-relaxed bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/90 text-slate-800 dark:text-slate-100 shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80">
+        <div className="relative px-6 py-5 rounded-3xl rounded-tl-sm text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80">
           
-          <div className="prose prose-sm max-w-none text-slate-700 dark:text-slate-200">
+          <div className="prose prose-sm max-w-none text-content-secondary">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
-                p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-slate-700 dark:text-slate-200">{children}</p>,
-                ul: ({ children }) => <ul className="list-disc pl-5 my-2.5 space-y-1 text-slate-700 dark:text-slate-200">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal pl-5 my-2.5 space-y-1 text-slate-700 dark:text-slate-200">{children}</ol>,
+                p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-5 my-2.5 space-y-1 text-content-secondary">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-5 my-2.5 space-y-1 text-content-secondary">{children}</ol>,
                 li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                strong: ({ children }) => <strong className="font-semibold text-slate-900 dark:text-white">{children}</strong>,
-                code: ({ inline, className, children, ...props }) => {
+                strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
+                // className sengaja diambil terpisah agar tidak ikut tersebar ke ...props
+                code: ({ inline, className: _className, children, ...props }) => {
                   const codeString = String(children || '').replace(/\n$/, '');
                   const isMultiLine = codeString.includes('\n');
                   const isShort = !isMultiLine && codeString.length <= 60;
@@ -92,7 +90,7 @@ const ChatMessage = ({ message }) => {
                   }
 
                   return (
-                    <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 dark:border-slate-800 shadow-md">
+                    <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 shadow-md">
                       {/* Code block terminal top bar */}
                       <div className="bg-slate-950 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] font-mono text-slate-400">
                         <div className="flex items-center gap-1.5">
@@ -110,16 +108,16 @@ const ChatMessage = ({ message }) => {
                     </div>
                   );
                 },
-                h1: ({ children }) => <h1 className="text-lg font-bold text-slate-900 dark:text-white mt-4 mb-2 font-display">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-base font-bold text-slate-900 dark:text-white mt-3 mb-1.5 font-display">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-sm font-bold text-slate-900 dark:text-white mt-2.5 mb-1 font-display">{children}</h3>,
+                h1: ({ children }) => <h1 className="text-lg font-bold text-content mt-4 mb-2 font-display">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-base font-bold text-content mt-3 mb-1.5 font-display">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-sm font-bold text-content mt-2.5 mb-1 font-display">{children}</h3>,
                 table: ({ children }) => (
-                  <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-sm">
-                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700 text-xs">{children}</table>
+                  <div className="overflow-x-auto my-3 rounded-xl border border-line shadow-sm">
+                    <table className="min-w-full divide-y divide-line text-xs">{children}</table>
                   </div>
                 ),
-                th: ({ children }) => <th className="bg-slate-50 dark:bg-slate-800/80 px-3.5 py-2 text-left font-semibold text-slate-800 dark:text-slate-200">{children}</th>,
-                td: ({ children }) => <td className="px-3.5 py-2 border-t border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono">{children}</td>,
+                th: ({ children }) => <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content">{children}</th>,
+                td: ({ children }) => <td className="px-3.5 py-2 border-t border-line text-content-secondary font-mono">{children}</td>,
               }}
             >
               {message.content}
@@ -127,7 +125,7 @@ const ChatMessage = ({ message }) => {
           </div>
           
           {/* Action Footer Bar */}
-          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
             {message.sources && message.sources.length > 0 ? (
               <button 
                 onClick={() => setShowSources(!showSources)}
@@ -141,24 +139,24 @@ const ChatMessage = ({ message }) => {
               <div></div>
             )}
             
-            <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800/50 p-0.5 rounded-xl border border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-1 bg-surface-sunken p-0.5 rounded-xl border border-line">
               <button 
                 onClick={handleCopy}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-white dark:hover:bg-slate-700 transition-all"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white  transition-all"
                 title="Salin jawaban"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               <button 
                 onClick={() => setFeedback('up')}
-                className={`p-1.5 rounded-lg transition-all ${feedback === 'up' ? 'text-teal-600 dark:text-teal-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-white dark:hover:bg-slate-700'}`}
+                className={`p-1.5 rounded-lg transition-all ${feedback === 'up' ? 'text-teal-600 dark:text-teal-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-white '}`}
                 title="Jawaban membantu"
               >
                 <ThumbsUp className="w-3.5 h-3.5" />
               </button>
               <button 
                 onClick={() => setFeedback('down')}
-                className={`p-1.5 rounded-lg transition-all ${feedback === 'down' ? 'text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white dark:hover:bg-slate-700'}`}
+                className={`p-1.5 rounded-lg transition-all ${feedback === 'down' ? 'text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white '}`}
                 title="Jawaban kurang sesuai"
               >
                 <ThumbsDown className="w-3.5 h-3.5" />
@@ -171,7 +169,7 @@ const ChatMessage = ({ message }) => {
         {showSources && message.sources && (
           <div className="mt-1 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
             {message.sources.map((src, idx) => (
-              <div key={idx} className="bg-slate-900 dark:bg-slate-950 rounded-2xl p-3.5 shadow-md border border-slate-800 relative overflow-hidden">
+              <div key={idx} className="bg-slate-900 rounded-2xl p-3.5 shadow-md border border-slate-800 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-teal-500 to-indigo-500"></div>
                 <div className="flex items-center gap-2 mb-2 pl-1">
                   {src.type === 'MCP' ? (

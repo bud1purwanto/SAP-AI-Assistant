@@ -1,30 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  Server, 
-  Activity, 
-  History, 
-  X, 
-  Plus, 
-  Trash2, 
-  Edit3, 
-  CheckCircle, 
-  XCircle, 
-  RefreshCw, 
-  Save, 
-  ShieldCheck, 
-  MessageSquare, 
-  Key, 
-  UserCheck, 
-  Database,
-  Search,
-  ExternalLink
-} from 'lucide-react';
-import { API_BASE_URL } from '../config';
+import { Users, Server, Activity, History, X, Plus, Trash2, Edit3, CheckCircle, XCircle, RefreshCw, Save, ShieldCheck, MessageSquare, Key, UserCheck, Database, Search } from 'lucide-react';
+import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'mcp' | 'audit'
-  const [loading, setLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -62,13 +41,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchStats = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/stats`, {
-        headers: { 'X-User-Name': user.username }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      setStats(await api.adminStats());
     } catch (err) {
       console.error("Gagal load stats:", err);
     }
@@ -76,13 +49,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
-        headers: { 'X-User-Name': user.username }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUsersList(data);
-      }
+      setUsersList(await api.adminUsers());
     } catch (err) {
       console.error("Gagal load users:", err);
     }
@@ -90,11 +57,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config`, {
-        headers: { 'X-User-Name': user.username }
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await api.getConfig();
+      {
         setMcpSapConfig(data.mcp_sap_config_json || '');
         setMcpRagConfig(data.mcp_rag_config_json || '');
         setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
@@ -113,13 +77,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchAuditSessions = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/sessions?limit=100`, {
-        headers: { 'X-User-Name': user.username }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAuditSessions(data);
-      }
+      setAuditSessions(await api.adminSessions(100));
     } catch (err) {
       console.error("Gagal load audit sessions:", err);
     }
@@ -127,13 +85,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const fetchAuditMessages = async (sessionId) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/sessions/${sessionId}/messages`, {
-        headers: { 'X-User-Name': user.username }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAuditMessages(data);
-      }
+      setAuditMessages(await api.adminSessionMessages(sessionId));
     } catch (err) {
       console.error("Gagal load audit messages:", err);
     }
@@ -155,16 +107,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Name': user.username
-        },
-        body: JSON.stringify(newUserForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "Gagal membuat user.");
+      await api.adminCreateUser(newUserForm);
       
       setActionSuccess(`User '${newUserForm.username}' berhasil dibuat!`);
       setNewUserForm({ username: '', password: '', role: 'user', assistant_persona: '' });
@@ -189,16 +132,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       if (editUserForm.password) {
         payload.password = editUserForm.password;
       }
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${editingUser.username}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Name': user.username
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "Gagal memperbarui user.");
+      await api.adminUpdateUser(editingUser.username, payload);
       
       setActionSuccess(`User '${editingUser.username}' berhasil diperbarui!`);
       setEditingUser(null);
@@ -213,12 +147,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/users/${targetUsername}`, {
-        method: 'DELETE',
-        headers: { 'X-User-Name': user.username }
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || data.message || "Gagal menghapus user.");
+      await api.adminDeleteUser(targetUsername);
       
       setActionSuccess(`User '${targetUsername}' berhasil dihapus.`);
       fetchUsers();
@@ -233,27 +162,21 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionSuccess('');
     setActionError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Name': user.username
-        },
-        body: JSON.stringify({
-          mcp_sap_config_json: mcpSapConfig,
-          mcp_rag_config_json: mcpRagConfig,
-          nine_router_enabled: nineRouterEnabled,
-          nine_router_base_url: nineRouterBaseUrl,
-          nine_router_model: nineRouterModel,
-          nine_router_api_key: nineRouterApiKey,
-          openrouter_enabled: openrouterEnabled,
-          openrouter_model: openrouterModel,
-          openrouter_fallback_model: openrouterFallbackModel,
-          openrouter_api_key: openrouterApiKey,
-          assistant_persona: user.assistant_persona || ""
-        })
+      await api.saveConfig({
+        mcp_sap_config_json: mcpSapConfig,
+        mcp_rag_config_json: mcpRagConfig,
+        nine_router_enabled: nineRouterEnabled,
+        nine_router_base_url: nineRouterBaseUrl,
+        nine_router_model: nineRouterModel,
+        // Nilai bertanda mask berarti tidak diubah; backend akan mengabaikannya
+        // dan mempertahankan kunci yang tersimpan.
+        nine_router_api_key: nineRouterApiKey,
+        openrouter_enabled: openrouterEnabled,
+        openrouter_model: openrouterModel,
+        openrouter_fallback_model: openrouterFallbackModel,
+        openrouter_api_key: openrouterApiKey,
+        assistant_persona: user.assistant_persona || ""
       });
-      if (!res.ok) throw new Error("Gagal menyimpan konfigurasi sistem.");
       setActionSuccess("Konfigurasi AI Provider (9Router & OpenRouter) serta MCP berhasil disimpan!");
       if (onRefreshMcpServers) onRefreshMcpServers();
       fetchStats();
@@ -278,10 +201,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden text-slate-800 dark:text-slate-100">
+      <div className="bg-surface-raised border border-line rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden text-content">
         
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-gradient-to-tr from-amber-500 to-indigo-600 rounded-xl text-white shadow-md shadow-indigo-500/20">
               <ShieldCheck className="w-6 h-6" />
@@ -290,7 +213,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
                 Super Admin Control Center
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-content-muted">
                 Kelola User, Konfigurasi Server MCP, Audit Riwayat Chat, dan Metrik Sistem
               </p>
             </div>
@@ -298,7 +221,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           
           <button 
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-content hover:bg-surface-hover  transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -329,13 +252,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         <div className="flex-1 flex overflow-hidden">
           
           {/* Internal Navigation Tabs */}
-          <div className="w-56 border-r border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 p-4 space-y-1.5 flex-shrink-0">
+          <div className="w-56 border-r border-line bg-surface p-4 space-y-1.5 flex-shrink-0">
             <button
               onClick={() => { setActiveTab('overview'); setSelectedAuditSession(null); }}
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activeTab === 'overview'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                  : 'text-content-muted hover:bg-surface-hover '
               }`}
             >
               <Activity className="w-4 h-4" />
@@ -347,7 +270,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activeTab === 'users'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                  : 'text-content-muted hover:bg-surface-hover '
               }`}
             >
               <Users className="w-4 h-4" />
@@ -359,7 +282,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activeTab === 'mcp'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                  : 'text-content-muted hover:bg-surface-hover '
               }`}
             >
               <Server className="w-4 h-4" />
@@ -371,7 +294,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 activeTab === 'audit'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800'
+                  : 'text-content-muted hover:bg-surface-hover '
               }`}
             >
               <History className="w-4 h-4" />
@@ -380,13 +303,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           </div>
 
           {/* Tab Content Panel */}
-          <div className="flex-1 overflow-y-auto p-6 bg-white dark:bg-slate-900">
+          <div className="flex-1 overflow-y-auto p-6 bg-surface-raised">
             
             {/* TAB 1: OVERVIEW & STATS */}
             {activeTab === 'overview' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-content flex items-center gap-2">
                     <Activity className="w-5 h-5 text-indigo-500" /> Ringkasan Sistem
                   </h3>
                   <button 
@@ -404,7 +327,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <span className="text-xs font-semibold uppercase tracking-wider">Total User</span>
                       <Users className="w-5 h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-slate-900 dark:text-white">
+                    <p className="text-3xl font-extrabold mt-2 text-content">
                       {stats?.total_users ?? '-'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">Akun aktif terdaftar di PostgreSQL</p>
@@ -415,7 +338,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <span className="text-xs font-semibold uppercase tracking-wider">Total Sesi Chat</span>
                       <MessageSquare className="w-5 h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-slate-900 dark:text-white">
+                    <p className="text-3xl font-extrabold mt-2 text-content">
                       {stats?.total_sessions ?? '-'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">Percakapan tersimpan di sistem</p>
@@ -426,7 +349,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <span className="text-xs font-semibold uppercase tracking-wider">Total Pesan</span>
                       <Database className="w-5 h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-slate-900 dark:text-white">
+                    <p className="text-3xl font-extrabold mt-2 text-content">
                       {stats?.total_messages ?? '-'}
                     </p>
                     <p className="text-xs text-slate-500 mt-1">Query user & jawaban AI</p>
@@ -434,15 +357,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* MCP Live Status Card */}
-                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                  <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
+                <div className="p-5 rounded-2xl border border-line bg-surface">
+                  <h4 className="text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2">
                     <Server className="w-4 h-4 text-emerald-500" /> Status Live MCP Servers
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* MCP SAP Card */}
-                    <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <div className="p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">MCP SAP Gateway</span>
+                        <span className="font-bold text-content">MCP SAP Gateway</span>
                         {(stats?.mcp_status?.sap?.status === 'online' || stats?.mcp_status?.sap?.online === true) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
@@ -453,15 +376,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      <p className="text-xs text-content-muted mt-2">
                         {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} Tools tersedia • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
                       </p>
                     </div>
 
                     {/* MCP RAG Card */}
-                    <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <div className="p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800 dark:text-slate-100">MCP RAG Knowledge</span>
+                        <span className="font-bold text-content">MCP RAG Knowledge</span>
                         {(stats?.mcp_status?.rag?.status === 'online' || stats?.mcp_status?.rag?.online === true) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
@@ -472,7 +395,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      <p className="text-xs text-content-muted mt-2">
                         {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} Vector Search & Document Tools
                       </p>
                     </div>
@@ -480,11 +403,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Top Active Users */}
-                <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                  <h4 className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
+                <div className="p-5 rounded-2xl border border-line bg-surface-raised">
+                  <h4 className="text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2">
                     <UserCheck className="w-4 h-4 text-indigo-500" /> User Paling Aktif
                   </h4>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <div className="divide-y divide-line">
                     {stats?.top_users?.length > 0 ? (
                       stats.top_users.map((u, i) => (
                         <div key={i} className="py-2.5 flex items-center justify-between">
@@ -492,9 +415,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center">
                               {i + 1}
                             </div>
-                            <span className="font-medium text-sm text-slate-800 dark:text-slate-200">{u.username}</span>
+                            <span className="font-medium text-sm text-content">{u.username}</span>
                           </div>
-                          <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md">
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-surface-sunken text-content-muted rounded-md">
                             {u.sessions} Sesi Chat
                           </span>
                         </div>
@@ -512,10 +435,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="space-y-5 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
                       <Users className="w-5 h-5 text-indigo-500" /> Manajemen User ({usersList.length})
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Tambah akun baru, ubah role / password, atau hapus user.</p>
+                    <p className="text-xs text-content-muted">Tambah akun baru, ubah role / password, atau hapus user.</p>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -526,7 +449,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         placeholder="Cari user..."
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40 sm:w-48"
+                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40 sm:w-48"
                       />
                     </div>
                     <button
@@ -539,9 +462,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Users Table */}
-                <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="border border-line rounded-2xl overflow-hidden shadow-sm">
                   <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                    <thead className="bg-surface-sunken border-b border-line text-content-muted text-xs uppercase tracking-wider font-semibold">
                       <tr>
                         <th className="px-4 py-3">Username</th>
                         <th className="px-4 py-3">Role</th>
@@ -549,12 +472,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         <th className="px-4 py-3 text-right">Aksi</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
+                    <tbody className="divide-y divide-line text-content-secondary">
                       {filteredUsers.length > 0 ? (
                         filteredUsers.map((u) => (
-                          <tr key={u.username} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                            <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold text-indigo-600">
+                          <tr key={u.username} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="px-4 py-3 font-semibold text-content flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-full bg-surface-sunken flex items-center justify-center text-xs font-bold text-indigo-600">
                                 {u.username.substring(0, 2).toUpperCase()}
                               </div>
                               {u.username}
@@ -580,7 +503,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   setEditingUser(u);
                                   setEditUserForm({ role: u.role, assistant_persona: u.assistant_persona || '', password: '' });
                                 }}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors"
                                 title="Edit user"
                               >
                                 <Edit3 className="w-4 h-4" />
@@ -590,8 +513,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 disabled={u.username === user.username}
                                 className={`p-1.5 rounded-lg transition-colors ${
                                   u.username === user.username 
-                                    ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
-                                    : 'text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    ? 'text-content-subtle cursor-not-allowed' 
+                                    : 'text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-hover '
                                 }`}
                                 title="Hapus user"
                               >
@@ -614,47 +537,47 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <h4 className="font-bold text-content flex items-center gap-2">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
                         </h4>
-                        <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-slate-600">
+                        <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-content">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
                       <form onSubmit={handleCreateUser} className="space-y-3.5 text-sm">
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Username *</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Username *</label>
                           <input 
                             type="text"
                             required
                             value={newUserForm.username}
                             onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                             placeholder="misal: TRST-USER1"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Password *</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Password *</label>
                           <input 
                             type="password"
                             required
                             value={newUserForm.password}
                             onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                             placeholder="Minimal 6 karakter"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Role</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Role</label>
                           <select
                             value={newUserForm.role}
                             onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
                             <option value="user">User Biasa</option>
                             <option value="superadmin">Super Admin</option>
@@ -662,12 +585,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Custom Persona (Opsional)</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Custom Persona (Opsional)</label>
                           <textarea 
                             rows="2"
                             value={newUserForm.assistant_persona}
                             onChange={(e) => setNewUserForm({ ...newUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                             placeholder="Persona khusus untuk user ini..."
                           />
                         </div>
@@ -676,7 +599,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <button
                             type="button"
                             onClick={() => setIsAddUserOpen(false)}
-                            className="px-4 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                            className="px-4 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl"
                           >
                             Batal
                           </button>
@@ -695,23 +618,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <h4 className="font-bold text-content flex items-center gap-2">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
                         </h4>
-                        <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-slate-600">
+                        <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-content">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
                       <form onSubmit={handleUpdateUser} className="space-y-3.5 text-sm">
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Role</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Role</label>
                           <select
                             value={editUserForm.role}
                             onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
                             <option value="user">User Biasa</option>
                             <option value="superadmin">Super Admin</option>
@@ -719,25 +642,25 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
                             Reset Password (kosongkan jika tidak ingin diubah)
                           </label>
                           <input 
                             type="password"
                             value={editUserForm.password}
                             onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                             placeholder="Password baru..."
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Custom Persona</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Custom Persona</label>
                           <textarea 
                             rows="3"
                             value={editUserForm.assistant_persona}
                             onChange={(e) => setEditUserForm({ ...editUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                             placeholder="Persona AI khusus user ini..."
                           />
                         </div>
@@ -746,7 +669,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <button
                             type="button"
                             onClick={() => setEditingUser(null)}
-                            className="px-4 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl"
+                            className="px-4 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl"
                           >
                             Batal
                           </button>
@@ -769,10 +692,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="space-y-5 animate-fadeIn">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
                       <Server className="w-5 h-5 text-indigo-500" /> Konfigurasi AI Model & Server MCP
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-content-muted">
                       Edit Model AI utama, Model AI fallback/gratis, API Key OpenRouter, dan konfigurasi MCP di database.
                     </p>
                   </div>
@@ -792,7 +715,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <div className={`p-4 rounded-2xl border transition-all ${
                     nineRouterEnabled 
                       ? 'border-indigo-300 dark:border-indigo-700/80 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-sm' 
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 opacity-75'
+                      : 'border-line bg-surface opacity-75'
                   } space-y-3`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -800,7 +723,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <Server className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-content">
                             9Router (Local Gateway)
                           </h4>
                           <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
@@ -821,7 +744,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                     <div className="space-y-2.5 pt-1">
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                           Base URL
                         </label>
                         <input 
@@ -829,14 +752,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           value={nineRouterBaseUrl}
                           onChange={(e) => setNineRouterBaseUrl(e.target.value)}
                           disabled={!nineRouterEnabled}
-                          className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                          className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
                           placeholder="http://192.168.88.83:20128/v1"
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                             Model Name
                           </label>
                           <input 
@@ -844,13 +767,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={nineRouterModel}
                             onChange={(e) => setNineRouterModel(e.target.value)}
                             disabled={!nineRouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
                             placeholder="ag/gemini-3.7-flash-medium"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                             API Key (Opsional)
                           </label>
                           <input 
@@ -858,7 +781,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={nineRouterApiKey}
                             onChange={(e) => setNineRouterApiKey(e.target.value)}
                             disabled={!nineRouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
+                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
                             placeholder="Kosongkan jika tanpa auth"
                           />
                         </div>
@@ -870,7 +793,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <div className={`p-4 rounded-2xl border transition-all ${
                     openrouterEnabled 
                       ? 'border-emerald-300 dark:border-emerald-700/80 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm' 
-                      : 'border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/30 opacity-75'
+                      : 'border-line bg-surface opacity-75'
                   } space-y-3`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -878,7 +801,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <Key className="w-4 h-4" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-content">
                             OpenRouter (Cloud AI)
                           </h4>
                           <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
@@ -899,7 +822,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                     <div className="space-y-2.5 pt-1">
                       <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                           API Key
                         </label>
                         <input 
@@ -907,14 +830,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           value={openrouterApiKey}
                           onChange={(e) => setOpenrouterApiKey(e.target.value)}
                           disabled={!openrouterEnabled}
-                          className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                          className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
                           placeholder="sk-or-v1-..."
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                             Primary Model
                           </label>
                           <input 
@@ -922,13 +845,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={openrouterModel}
                             onChange={(e) => setOpenrouterModel(e.target.value)}
                             disabled={!openrouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
                             placeholder="openrouter/auto"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
                             Fallback Model
                           </label>
                           <input 
@@ -936,7 +859,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={openrouterFallbackModel}
                             onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
                             disabled={!openrouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
+                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
                             placeholder="openrouter/free"
                           />
                         </div>
@@ -947,15 +870,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 <div className="space-y-4">
                   {/* MCP SAP Config JSON */}
-                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                  <div className="p-4 rounded-2xl border border-line bg-surface">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
                       <Database className="w-4 h-4 text-amber-500" /> MCP SAP Config (JSON)
                     </label>
                     <textarea 
                       rows="6"
                       value={mcpSapConfig}
                       onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-slate-200"
+                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8001/sse"}'
                     />
                     <p className="text-[11px] text-slate-400 mt-1">
@@ -964,15 +887,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   {/* MCP RAG Config JSON */}
-                  <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                  <div className="p-4 rounded-2xl border border-line bg-surface">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
                       <Database className="w-4 h-4 text-emerald-500" /> MCP RAG Config (JSON)
                     </label>
                     <textarea 
                       rows="6"
                       value={mcpRagConfig}
                       onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800 dark:text-slate-200"
+                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8002/sse"}'
                     />
                     <p className="text-[11px] text-slate-400 mt-1">
@@ -988,10 +911,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="h-full flex flex-col space-y-4 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
                       <History className="w-5 h-5 text-indigo-500" /> Audit Log Percakapan
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-xs text-content-muted">
                       Pantau percakapan dari seluruh user untuk keperluan audit dan troubleshooting.
                     </p>
                   </div>
@@ -1003,14 +926,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       placeholder="Cari user / judul chat..."
                       value={auditSearch}
                       onChange={(e) => setAuditSearch(e.target.value)}
-                      className="pl-9 pr-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
+                      className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
                     />
                   </div>
                 </div>
 
                 <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0">
                   {/* Sessions List */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-y-auto max-h-[55vh] divide-y divide-slate-100 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="border border-line rounded-2xl overflow-y-auto max-h-[55vh] divide-y divide-line bg-surface">
                     {filteredAuditSessions.length > 0 ? (
                       filteredAuditSessions.map((s) => (
                         <button
@@ -1022,16 +945,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           className={`w-full text-left p-3 transition-colors ${
                             selectedAuditSession?.session_id === s.session_id
                               ? 'bg-indigo-50 dark:bg-indigo-950/50 border-l-4 border-indigo-600'
-                              : 'hover:bg-slate-100/70 dark:hover:bg-slate-800/50'
+                              : 'hover:bg-surface-hover '
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200 truncate">{s.username}</span>
+                            <span className="font-bold text-xs text-content truncate">{s.username}</span>
                             <span className="text-[10px] text-slate-400">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
                           </div>
-                          <p className="text-xs text-slate-600 dark:text-slate-400 truncate mt-1">{s.title}</p>
+                          <p className="text-xs text-content-muted truncate mt-1">{s.title}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">
+                            <span className="text-[10px] bg-surface-sunken px-1.5 py-0.5 rounded text-content-muted">
                               {s.message_count} pesan
                             </span>
                           </div>
@@ -1043,12 +966,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   {/* Messages Viewer */}
-                  <div className="md:col-span-2 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 overflow-y-auto max-h-[55vh] bg-white dark:bg-slate-900 flex flex-col">
+                  <div className="md:col-span-2 border border-line rounded-2xl p-4 overflow-y-auto max-h-[55vh] bg-surface-raised flex flex-col">
                     {selectedAuditSession ? (
                       <div className="space-y-4">
-                        <div className="pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <div className="pb-3 border-b border-line flex items-center justify-between">
                           <div>
-                            <h4 className="font-bold text-sm text-slate-900 dark:text-white">{selectedAuditSession.title}</h4>
+                            <h4 className="font-bold text-sm text-content">{selectedAuditSession.title}</h4>
                             <p className="text-xs text-slate-500">User: <span className="font-semibold text-indigo-600">{selectedAuditSession.username}</span> • ID: {selectedAuditSession.session_id}</p>
                           </div>
                         </div>
@@ -1061,7 +984,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 className={`p-3 rounded-xl text-xs ${
                                   m.role === 'user' 
                                     ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-indigo-950 dark:text-indigo-200' 
-                                    : 'bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                                    : 'bg-surface-sunken border border-line text-content'
                                 }`}
                               >
                                 <div className="flex items-center justify-between mb-1 font-semibold">

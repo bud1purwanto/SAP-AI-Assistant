@@ -1,636 +1,601 @@
-import React, { useState, useEffect, useRef } from 'react';
-import ChatMessage from './ChatMessage';
-import ChatInput from './ChatInput';
-import LoginModal from './LoginModal';
-import SettingsModal from './SettingsModal';
-import AdminDashboard from './AdminDashboard';
-import { API_BASE_URL } from '../config';
-import { 
-  Bot, Settings, Moon, Sun, Database, Server, RefreshCw, MessageSquare, 
-  Trash2, Plus, LogIn, LogOut, User, Sparkles, ChevronRight, ShieldAlert,
-  ShieldCheck, Search, BarChart2, Layers, Cpu
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle, BarChart2, Cpu, Layers, LogIn, LogOut, Menu, MessageSquare,
+  Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles,
+  Square, Sun, Trash2, X,
 } from 'lucide-react';
 
+import AdminDashboard from './AdminDashboard';
+import ChatInput from './ChatInput';
+import ChatMessage from './ChatMessage';
+import LoginModal from './LoginModal';
+import SettingsModal from './SettingsModal';
+import { useTheme } from '../hooks/useTheme';
+import { api, ApiError, clearSession, getStoredUser, saveSession, setUnauthorizedHandler } from '../lib/api';
+
+const GUEST_USER = { username: 'Guest', role: 'guest' };
+
+const WELCOME_MESSAGE = {
+  role: 'assistant',
+  content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?',
+};
+
+const SUGGESTIONS = [
+  { title: 'Cek Stock Material', query: 'Cek stock material 100-100 di plant 1000', icon: Layers },
+  { title: 'Status Purchase Order', query: 'Cek status PO nomor 4500000001', icon: Search },
+  { title: 'Panduan T-Code ME21N', query: 'Jelaskan langkah-langkah membuat Purchase Order di ME21N', icon: BarChart2 },
+];
+
+const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
+const THEME_LABEL = { light: 'Tema terang', dark: 'Tema gelap', system: 'Ikuti tema sistem' };
+
+const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
+
 const ChatLayout = () => {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([WELCOME_MESSAGE]);
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const THEME_KEY = 'sap_assistant_theme';
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    try {
-      const saved = localStorage.getItem(THEME_KEY);
-      if (saved !== null) {
-        return saved === 'dark';
-      }
-      return true; // Default dark theme
-    } catch (e) {
-      return true;
-    }
-  });
+  const [isSessionsLoading, setIsSessionsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
   const [activeServer, setActiveServer] = useState('sap:sandbox-new');
   const [sapSubServers, setSapSubServers] = useState([]);
-  
-  const messagesEndRef = useRef(null);
 
-  const scrollToBottom = (smooth = true) => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior: smooth ? 'smooth' : 'auto',
-        block: 'end'
-      });
-    }
-  };
-
-  // Auth state
-  const [user, setUser] = useState({ username: 'Guest', role: 'guest' });
-  const [promptCount, setPromptCount] = useState(0);
+  const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Apply & persist theme to localStorage and <html> classList
+  const { theme, cycleTheme } = useTheme();
+
+  const messagesEndRef = useRef(null);
+  const abortRef = useRef(null);
+
+  const isGuest = user.role === 'guest';
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+  }, []);
+
+  // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
   useEffect(() => {
-    try {
-      localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
-    } catch (e) {}
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDarkMode]);
+    setUnauthorizedHandler(() => {
+      setUser(GUEST_USER);
+      setSessions([]);
+      setCurrentSessionId(null);
+      setCustomLoginMsg('Sesi Anda telah berakhir. Silakan login kembali.');
+      setIsLoginModalOpen(true);
+    });
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
-  const fetchServers = async () => {
+  const fetchServers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/mcp/servers`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.sap?.sub_servers && Array.isArray(data.sap.sub_servers)) {
-          setSapSubServers(data.sap.sub_servers);
-          const activeOne = data.sap.sub_servers.find(s => s.active);
-          if (activeOne) {
-            const preferredAlias = activeOne.aliases?.[0] || activeOne.name.toLowerCase().replace(/\s+/g, '-');
-            setActiveServer(`sap:${preferredAlias}`);
-          }
-        }
+      const data = await api.mcpServers();
+      const subs = data?.sap?.sub_servers;
+      if (Array.isArray(subs) && subs.length > 0) {
+        setSapSubServers(subs);
+        const activeOne = subs.find((s) => s.active);
+        if (activeOne) setActiveServer(`sap:${aliasOf(activeOne)}`);
       }
     } catch (e) {
-      console.error("Gagal mengambil data server MCP:", e);
+      console.error('Gagal mengambil data server MCP:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchServers();
+  }, [fetchServers]);
+
+  // Validasi token tersimpan saat aplikasi dibuka: profil bisa saja sudah
+  // diubah atau dihapus admin sejak login terakhir.
+  useEffect(() => {
+    if (isGuest) return;
+    api.me()
+      .then((profile) => setUser(profile))
+      .catch(() => { /* 401 sudah ditangani handler di atas */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom(true);
+  }, [messages, isLoading, scrollToBottom]);
+
+  const parseSources = (raw) => {
+    if (!raw) return [];
+    try {
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch {
+      return [];
     }
   };
 
-  // Load user & fetch MCP server list on mount
-  useEffect(() => {
-    const savedUser = localStorage.getItem('sap_assistant_user');
-    if (savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        setUser(parsed);
-      } catch (e) {}
+  const loadSession = useCallback(async (sessionId) => {
+    if (!sessionId) return;
+    setCurrentSessionId(sessionId);
+    setIsSidebarOpen(false);
+    setError(null);
+    try {
+      const data = await api.sessionMessages(sessionId);
+      setMessages(
+        !data || data.length === 0
+          ? [WELCOME_MESSAGE]
+          : data.map((m) => ({
+              role: m.role === 'user' ? 'user' : 'assistant',
+              content: m.content,
+              sources: parseSources(m.sources),
+            })),
+      );
+    } catch (err) {
+      setError({ message: err.message, retry: () => loadSession(sessionId) });
     }
-    const today = new Date().toISOString().slice(0, 10);
-    const savedDate = localStorage.getItem('guest_prompt_date');
-    if (savedDate === today) {
-      const count = parseInt(localStorage.getItem('guest_prompt_count') || '0', 10);
-      setPromptCount(count);
-    } else {
-      localStorage.setItem('guest_prompt_date', today);
-      localStorage.setItem('guest_prompt_count', '0');
-      setPromptCount(0);
-    }
-
-    fetchServers();
   }, []);
 
-  // Auto-scroll ke bawah saat ada pesan baru atau loading state berubah
-  useEffect(() => {
-    scrollToBottom(true);
-  }, [messages, isLoading]);
-
-  // Fetch session history when user changes
-  useEffect(() => {
-    fetchSessions();
-  }, [user]);
-
-  const fetchSessions = async (keepCurrentId = false) => {
-    if (!user || user.role === 'guest') {
+  const fetchSessions = useCallback(async (keepCurrentId = false) => {
+    if (isGuest) {
       setSessions([]);
       setIsSessionsLoading(false);
-      setCurrentSessionId('guest-session');
-      setMessages([
-        {
-          role: 'assistant',
-          content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-        }
-      ]);
+      setCurrentSessionId(null);
+      setMessages([WELCOME_MESSAGE]);
       return;
     }
 
     setIsSessionsLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
-        headers: { 'X-User-Name': user?.username || 'Guest' }
-      });
-      const data = await res.json();
+      const data = await api.listSessions();
       setSessions(data || []);
-      
       if (data && data.length > 0) {
-        if (!keepCurrentId || !currentSessionId) {
-          const firstId = data[0].session_id;
-          loadSession(firstId);
-        }
+        if (!keepCurrentId || !currentSessionId) loadSession(data[0].session_id);
       } else {
-        // Belum ada session di database
         setCurrentSessionId(null);
-        setMessages([
-          {
-            role: 'assistant',
-            content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-          }
-        ]);
+        setMessages([WELCOME_MESSAGE]);
       }
     } catch (err) {
-      console.error("Gagal mengambil daftar session:", err);
+      if (!(err instanceof ApiError && err.status === 401)) {
+        setError({ message: err.message, retry: () => fetchSessions(keepCurrentId) });
+      }
     } finally {
       setIsSessionsLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGuest, currentSessionId, loadSession]);
 
-  const loadSession = async (sessionId) => {
-    if (!sessionId) return;
-    setCurrentSessionId(sessionId);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/history/${sessionId}`, {
-        headers: { 'X-User-Name': user?.username || 'Guest' }
-      });
-      const data = await res.json();
-      if (!data || data.length === 0) {
-        setMessages([
-          {
-            role: 'assistant',
-            content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-          }
-        ]);
-      } else {
-        const formatted = data.map(m => {
-          let parsedSources = [];
-          if (m.sources) {
-            try {
-              parsedSources = typeof m.sources === 'string' ? JSON.parse(m.sources) : m.sources;
-            } catch (e) {
-              parsedSources = [];
-            }
-          }
-          return {
-            role: m.role,
-            content: m.content,
-            sources: parsedSources
-          };
-        });
-        setMessages(formatted);
-      }
-    } catch (err) {
-      console.error("Gagal memuat percakapan:", err);
-    }
-  };
+  useEffect(() => {
+    fetchSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user.username, user.role]);
 
   const createNewSession = async () => {
-    if (user.role === 'guest') {
-      setCurrentSessionId('guest-session-' + Date.now());
-      setMessages([
-        {
-          role: 'assistant',
-          content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-        }
-      ]);
+    setError(null);
+    setIsSidebarOpen(false);
+    if (isGuest) {
+      setCurrentSessionId(null);
+      setMessages([WELCOME_MESSAGE]);
       return;
     }
-
     try {
-      const res = await fetch(`${API_BASE_URL}/api/sessions`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-User-Name': user?.username || 'Guest'
-        },
-        body: JSON.stringify({ title: 'Percakapan Baru' })
-      });
-      const data = await res.json();
-      if (data && data.session_id) {
-        setSessions(prev => [data, ...prev]);
+      const data = await api.createSession('Percakapan Baru');
+      if (data?.session_id) {
+        setSessions((prev) => [data, ...prev]);
         setCurrentSessionId(data.session_id);
-        setMessages([
-          {
-            role: 'assistant',
-            content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-          }
-        ]);
+        setMessages([WELCOME_MESSAGE]);
       }
     } catch (err) {
-      console.error("Gagal membuat sesi baru:", err);
+      setError({ message: err.message, retry: createNewSession });
     }
   };
 
   const deleteSession = async (e, sessionId) => {
     e.stopPropagation();
     try {
-      await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: { 'X-User-Name': user?.username || 'Guest' }
-      });
-      const remaining = sessions.filter(s => s.session_id !== sessionId);
-      setSessions(remaining);
-      if (currentSessionId === sessionId) {
-        if (remaining.length > 0) {
-          loadSession(remaining[0].session_id);
-        } else {
-          setCurrentSessionId(null);
-          setMessages([
-            {
-              role: 'assistant',
-              content: 'Halo! Saya **SAP AI Assistant**. Ada yang bisa saya bantu terkait SAP ECC atau Knowledge Base hari ini?'
-            }
-          ]);
-        }
-      }
+      await api.deleteSession(sessionId);
     } catch (err) {
-      console.error("Gagal menghapus session:", err);
+      setError({ message: err.message });
+      return;
+    }
+    const remaining = sessions.filter((s) => s.session_id !== sessionId);
+    setSessions(remaining);
+    if (currentSessionId === sessionId) {
+      if (remaining.length > 0) {
+        loadSession(remaining[0].session_id);
+      } else {
+        setCurrentSessionId(null);
+        setMessages([WELCOME_MESSAGE]);
+      }
     }
   };
 
+  const stopGeneration = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsLoading(false);
+  };
+
   const handleSendMessage = async (text) => {
-    if (user.role === 'guest' && promptCount >= 1) {
-      setCustomLoginMsg('Batas limit akun Guest tercapai (1 prompt/hari). Silakan login dengan akun SAP untuk akses tanpa batas.');
-      setIsLoginModalOpen(true);
-      return;
-    }
-
-    const newMessages = [...messages, { role: 'user', content: text }];
-    setMessages(newMessages);
+    const outgoing = [...messages, { role: 'user', content: text }];
+    setMessages(outgoing);
     setIsLoading(true);
+    setError(null);
 
-    if (user.role === 'guest') {
-      const newCount = promptCount + 1;
-      setPromptCount(newCount);
-      localStorage.setItem('guest_prompt_count', newCount.toString());
-    }
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
-      const historyPayload = messages.map(m => ({
-        role: (m.role === 'user') ? 'user' : 'assistant',
-        content: m.content
-      }));
+      const history = messages
+        .filter((m) => m !== WELCOME_MESSAGE)
+        .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
-      const res = await fetch(`${API_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'X-User-Name': user?.username || 'Guest',
-          'X-User-Role': user?.role || 'user'
-        },
-        body: JSON.stringify({
-          message: text,
-          history: historyPayload,
-          session_id: currentSessionId,
-          active_server: activeServer
-        })
-      });
+      const data = await api.chat(
+        { message: text, history, session_id: currentSessionId, active_server: activeServer },
+        controller.signal,
+      );
 
-      const data = await res.json();
-      setMessages([...newMessages, {
+      setMessages([...outgoing, {
         role: 'assistant',
         content: data.reply,
-        sources: data.sources || []
+        sources: data.sources || [],
       }]);
-      
-      if (data.session_id) {
-        setCurrentSessionId(data.session_id);
-      }
-      
-      // Refresh list session tanpa me-reset chat aktif
-      if (user.role !== 'guest') {
-        const sessRes = await fetch(`${API_BASE_URL}/api/sessions`, {
-          headers: { 'X-User-Name': user?.username || 'Guest' }
-        });
-        const sessData = await sessRes.json();
-        setSessions(sessData || []);
-      }
+
+      if (data.session_id) setCurrentSessionId(data.session_id);
+      if (!isGuest) fetchSessions(true);
     } catch (err) {
-      setMessages([...newMessages, {
-        role: 'assistant',
-        content: '⚠️ Maaf, terjadi kesalahan saat menghubungi server backend SAP Assistant.'
-      }]);
+      if (err.name === 'AbortError') {
+        setMessages([...outgoing, { role: 'assistant', content: '_Permintaan dibatalkan._' }]);
+        return;
+      }
+      // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
+      if (err instanceof ApiError && err.status === 429) {
+        setMessages(messages);
+        setCustomLoginMsg(err.message);
+        setIsLoginModalOpen(true);
+        return;
+      }
+      setMessages(outgoing);
+      setError({ message: err.message, retry: () => { setMessages(messages); handleSendMessage(text); } });
     } finally {
+      abortRef.current = null;
       setIsLoading(false);
     }
   };
 
-  const handleLoginSuccess = (userData) => {
+  const handleLoginSuccess = ({ access_token: token, ...userData }) => {
+    saveSession(token, userData);
     setUser(userData);
-    localStorage.setItem('sap_assistant_user', JSON.stringify(userData));
     setIsLoginModalOpen(false);
+    setCustomLoginMsg('');
+    setError(null);
   };
 
   const handleLogout = () => {
-    setUser({ username: 'Guest', role: 'guest' });
-    localStorage.removeItem('sap_assistant_user');
-    setPromptCount(0);
+    clearSession();
+    setUser(GUEST_USER);
     setSessions([]);
-    createNewSession();
+    setCurrentSessionId(null);
+    setMessages([WELCOME_MESSAGE]);
   };
 
-  const isLimitReached = user.role === 'guest' && promptCount >= 1;
+  // Peringatan bila target yang dipilih adalah sistem SAP produksi.
+  const selectedServer = sapSubServers.find((s) => `sap:${aliasOf(s)}` === activeServer);
+  const isProductionTarget = Boolean(selectedServer?.production_warning);
 
-  // Suggestion chips templates
-  const suggestions = [
-    { title: "Cek Stock Material", query: "Cek stock material 100-100 di plant 1000", icon: Layers },
-    { title: "Status Purchase Order", query: "Cek status PO nomor 4500000001", icon: Search },
-    { title: "Panduan T-Code ME21N", query: "Jelaskan langkah-langkah membuat Purchase Order di ME21N", icon: BarChart2 },
-  ];
+  const ThemeIcon = THEME_ICON[theme];
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans transition-colors duration-200">
-      
+    <div className="flex h-dvh bg-surface text-content overflow-hidden font-sans">
+
+      {/* Latar gelap untuk drawer sidebar di layar sempit */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* ================= SIDEBAR ================= */}
-      <aside className="w-72 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border-r border-slate-200/80 dark:border-zinc-800/80 flex flex-col z-20 shrink-0">
-        
-        {/* Header App Branding */}
-        <div className="p-4 border-b border-slate-100 dark:border-zinc-800/80 flex items-center justify-between">
+      <aside
+        className={`fixed md:static inset-y-0 left-0 w-72 bg-surface-raised/90 backdrop-blur-xl border-r border-line
+          flex flex-col z-40 shrink-0 transition-transform duration-200
+          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+        aria-label="Navigasi percakapan"
+      >
+        <div className="p-4 border-b border-line flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 flex items-center justify-center shadow-md shadow-indigo-500/20 text-white font-bold text-lg">
+            <div className="w-9 h-9 rounded-2xl bg-accent flex items-center justify-center shadow-md text-accent-fg">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-sm font-extrabold tracking-tight font-display text-slate-900 dark:text-white">SAP AI Co-Pilot</h1>
+              <h1 className="text-sm font-extrabold tracking-tight font-display text-content">SAP AI Co-Pilot</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-[10px] font-semibold text-slate-400 dark:text-zinc-400 uppercase tracking-wider">ECC & RAG Ready</span>
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <span className="text-[11px] font-semibold text-content-muted uppercase tracking-wider">ECC &amp; RAG Ready</span>
               </div>
             </div>
           </div>
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover"
+            aria-label="Tutup menu"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* New Session Button */}
         <div className="p-3">
-          <button 
+          <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl text-xs font-bold shadow-sm transition-all active:scale-[0.98]"
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-accent hover:bg-accent-hover text-accent-fg rounded-2xl text-xs font-bold shadow-sm transition-colors active:scale-[0.98]"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
             <span>Chat Baru</span>
           </button>
         </div>
 
-        {/* Sessions List */}
-        <div className="flex-1 overflow-y-auto px-3 space-y-1.5 py-1">
-          <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500">
+        <nav className="flex-1 overflow-y-auto px-3 space-y-1.5 py-1" aria-label="Riwayat percakapan">
+          <h2 className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-content-subtle">
             Riwayat Percakapan
-          </div>
+          </h2>
 
           {isSessionsLoading ? (
-            <div className="space-y-2 p-2">
-              <div className="h-9 bg-slate-200/70 dark:bg-zinc-800/60 rounded-xl animate-pulse"></div>
-              <div className="h-9 bg-slate-200/70 dark:bg-zinc-800/60 rounded-xl animate-pulse w-4/5"></div>
-              <div className="h-9 bg-slate-200/70 dark:bg-zinc-800/60 rounded-xl animate-pulse w-3/4"></div>
+            <div className="space-y-2 p-2" aria-busy="true" aria-label="Memuat riwayat">
+              <div className="h-9 bg-surface-sunken rounded-xl animate-pulse" />
+              <div className="h-9 bg-surface-sunken rounded-xl animate-pulse w-4/5" />
+              <div className="h-9 bg-surface-sunken rounded-xl animate-pulse w-3/4" />
             </div>
           ) : sessions.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-400">
-              Belum ada percakapan
-            </div>
+            <p className="text-center py-8 text-xs text-content-subtle">
+              {isGuest ? 'Login untuk menyimpan riwayat percakapan' : 'Belum ada percakapan'}
+            </p>
           ) : (
-            sessions.map(session => {
+            sessions.map((session) => {
               const sid = session.session_id || session.id;
               const isActive = sid === currentSessionId;
               return (
                 <div
                   key={sid}
-                  onClick={() => loadSession(sid)}
-                  className={`group relative flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer text-xs transition-all ${
-                    isActive 
-                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-semibold border border-indigo-200/60 dark:border-indigo-800/50 shadow-xs' 
-                      : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100/80 dark:hover:bg-zinc-800/50 hover:text-slate-900 dark:hover:text-zinc-200'
+                  className={`group relative flex items-center justify-between rounded-xl text-xs transition-colors ${
+                    isActive
+                      ? 'bg-accent-soft text-accent-soft-fg font-semibold border border-accent/30'
+                      : 'text-content-muted hover:bg-surface-hover hover:text-content'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 truncate pr-2">
-                    <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
-                    <span className="truncate">{session.title || 'Percakapan SAP'}</span>
-                  </div>
-                  
-                  <button 
-                    onClick={(e) => deleteSession(e, sid)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 rounded-lg transition-opacity"
-                    title="Hapus percakapan"
+                  <button
+                    onClick={() => loadSession(sid)}
+                    className="flex items-center gap-2.5 truncate flex-1 text-left px-3 py-2.5"
+                    aria-current={isActive ? 'page' : undefined}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{session.title || 'Percakapan SAP'}</span>
+                  </button>
+                  <button
+                    onClick={(e) => deleteSession(e, sid)}
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 mr-2 text-content-subtle hover:text-danger rounded-lg transition-opacity"
+                    aria-label={`Hapus percakapan ${session.title || ''}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
               );
             })
           )}
-        </div>
+        </nav>
 
-        {/* User Account / Profile Box in Sidebar Footer */}
-        <div className="p-3 border-t border-slate-100 dark:border-zinc-800/80 bg-slate-50/50 dark:bg-zinc-900/40">
-          {/* Tombol Super Admin Dashboard jika user adalah superadmin */}
-          {user?.role === 'superadmin' && (
+        <div className="p-3 border-t border-line bg-surface-sunken">
+          {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/10 to-indigo-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-all mb-2 shadow-xs"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-warning-soft border border-warning/40 text-warning hover:brightness-110 transition-all mb-2"
             >
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-500" />
-                <span>Admin Dashboard</span>
-              </div>
-              <span className="text-[10px] bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">SUPER</span>
+              <span className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+                Admin Dashboard
+              </span>
+              <span className="text-[10px] bg-warning text-surface px-1.5 py-0.5 rounded font-bold">SUPER</span>
             </button>
           )}
-          <div className="flex items-center justify-between bg-white dark:bg-zinc-800/60 p-2.5 rounded-2xl border border-slate-200/80 dark:border-zinc-700/60 shadow-xs">
+
+          <div className="flex items-center justify-between bg-surface-raised p-2.5 rounded-2xl border border-line">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+              <div className="w-8 h-8 rounded-full bg-accent text-accent-fg flex items-center justify-center font-bold text-xs shrink-0">
                 {user.username.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold truncate text-slate-800 dark:text-zinc-200">{user.username}</div>
-                <div className="text-[10px] text-slate-400 capitalize">{user.role || 'Guest'}</div>
+                <div className="text-xs font-bold truncate text-content">{user.username}</div>
+                <div className="text-[11px] text-content-muted capitalize">{user.role}</div>
               </div>
             </div>
-            
-            {user.role === 'guest' ? (
-              <button 
+
+            {isGuest ? (
+              <button
                 onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-                className="p-1.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 text-xs font-semibold flex items-center gap-1 transition-colors"
-                title="Login SAP"
+                className="p-1.5 bg-accent-soft text-accent-soft-fg rounded-xl hover:brightness-95 transition-all"
+                aria-label="Login ke akun SAP"
               >
-                <LogIn className="w-3.5 h-3.5" />
+                <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             ) : (
-              <button 
+              <button
                 onClick={handleLogout}
-                className="p-1.5 text-slate-400 hover:text-rose-500 rounded-xl hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors"
-                title="Logout"
+                className="p-1.5 text-content-subtle hover:text-danger rounded-xl hover:bg-surface-hover transition-colors"
+                aria-label="Keluar dari akun"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
-
       </aside>
 
-      {/* ================= MAIN CHAT AREA ================= */}
-      <main className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-zinc-950 relative overflow-hidden">
-        
-        {/* Top Floating Glass Header */}
-        <header className="h-14 bg-white/75 dark:bg-zinc-900/75 backdrop-blur-xl border-b border-slate-200/70 dark:border-zinc-800/70 px-6 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-slate-500 dark:text-zinc-400 font-mono">TARGET SAP:</span>
-            <div className="flex items-center bg-slate-100 dark:bg-zinc-800/80 p-0.5 rounded-xl border border-slate-200/60 dark:border-zinc-700/60">
-              {sapSubServers && sapSubServers.length > 0 ? (
-                <div className="flex items-center gap-1">
-                  <select
-                    value={activeServer}
-                    onChange={(e) => setActiveServer(e.target.value)}
-                    className="bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 text-xs font-bold py-1 px-3 rounded-lg border border-slate-200/80 dark:border-zinc-700 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    {sapSubServers.map((srv) => {
-                      const alias = srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
-                      const val = `sap:${alias}`;
-                      return (
-                        <option key={srv.number} value={val}>
-                          {srv.number}. {srv.name} ({srv.sid}) {srv.production_warning ? '⚠️ PROD' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <button 
-                    onClick={() => setActiveServer('sap')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                      activeServer === 'sap' || activeServer === 'ALL'
-                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-xs' 
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800'
-                    }`}
-                    title="Gunakan server SAP default"
-                  >
-                    Default
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center">
-                  <button 
-                    onClick={() => setActiveServer('sap:sandbox-new')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                      activeServer.includes('sandbox-new')
-                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-300 shadow-xs' 
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800'
-                    }`}
-                  >
-                    Sandbox New (TRS)
-                  </button>
-                  <button 
-                    onClick={() => setActiveServer('sap:dev')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                      activeServer.includes('dev')
-                        ? 'bg-white dark:bg-zinc-700 text-teal-600 dark:text-teal-300 shadow-xs' 
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800'
-                    }`}
-                  >
-                    Dev AIX (TRD)
-                  </button>
-                </div>
-              )}
-            </div>
+      {/* ================= AREA CHAT UTAMA ================= */}
+      <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0">
+
+        <header className="h-14 bg-surface-raised/80 backdrop-blur-xl border-b border-line px-4 sm:px-6 flex items-center justify-between z-10 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden p-2 rounded-xl text-content-muted hover:bg-surface-hover"
+              aria-label="Buka menu percakapan"
+            >
+              <Menu className="w-4 h-4" aria-hidden="true" />
+            </button>
+
+            <label htmlFor="sap-target" className="hidden sm:block text-xs font-bold text-content-muted font-mono shrink-0">
+              TARGET SAP:
+            </label>
+            {sapSubServers.length > 0 ? (
+              <select
+                id="sap-target"
+                value={activeServer}
+                onChange={(e) => setActiveServer(e.target.value)}
+                className={`bg-surface-sunken text-content text-xs font-bold py-1.5 px-3 rounded-xl border cursor-pointer max-w-[15rem] truncate ${
+                  isProductionTarget ? 'border-danger text-danger' : 'border-line'
+                }`}
+              >
+                {sapSubServers.map((srv) => (
+                  <option key={srv.number ?? aliasOf(srv)} value={`sap:${aliasOf(srv)}`}>
+                    {srv.number}. {srv.name} ({srv.sid}){srv.production_warning ? ' ⚠️ PRODUKSI' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs text-content-subtle font-mono">memuat daftar server…</span>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <button 
+          <div className="flex items-center gap-2 shrink-0">
+            <button
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 transition-all"
-              title="Settings"
+              className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+              aria-label="Buka pengaturan"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="w-4 h-4" aria-hidden="true" />
             </button>
-            <button 
-              onClick={() => setIsDarkMode(!isDarkMode)}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 transition-all"
-              title="Toggle Theme"
+            <button
+              onClick={cycleTheme}
+              className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+              aria-label={`${THEME_LABEL[theme]} — klik untuk mengganti tema`}
+              title={THEME_LABEL[theme]}
             >
-              {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+              <ThemeIcon className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </header>
 
-        {/* Guest Quota Banner Alert if limit reached */}
-        {isLimitReached && (
-          <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-2 flex items-center justify-between animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
-              <ShieldAlert className="w-4 h-4" />
-              <span>Limit prompt akun Guest telah habis untuk hari ini. Masuk dengan akun SAP untuk terus bertanya.</span>
-            </div>
-            <button 
-              onClick={() => setIsLoginModalOpen(true)}
-              className="text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded-lg transition-all"
+        {/* Peringatan target produksi: query di sini menyentuh data SAP sungguhan. */}
+        {isProductionTarget && (
+          <div
+            role="alert"
+            className="bg-danger-soft border-b border-danger/40 px-4 sm:px-6 py-2 flex items-center gap-2 text-xs font-semibold text-danger"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span>
+              Target aktif adalah sistem <strong>PRODUKSI</strong> ({selectedServer?.sid}). Setiap permintaan
+              dijalankan terhadap data SAP sungguhan.
+            </span>
+          </div>
+        )}
+
+        {isGuest && (
+          <div className="bg-warning-soft border-b border-warning/30 px-4 sm:px-6 py-2 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-xs font-semibold text-warning">
+              <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />
+              Mode tamu dibatasi beberapa prompt per hari. Login untuk akses penuh dan riwayat tersimpan.
+            </span>
+            <button
+              onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
+              className="text-xs font-bold bg-warning text-surface px-3 py-1 rounded-lg shrink-0"
             >
-              Login Sekarang
+              Login
             </button>
           </div>
         )}
 
-        {/* Message Content Scroll Area */}
+        {/* Error ditampilkan sebagai komponen tersendiri, bukan gelembung chat palsu. */}
+        {error && (
+          <div
+            role="alert"
+            className="bg-danger-soft border-b border-danger/40 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3"
+          >
+            <span className="flex items-center gap-2 text-xs font-semibold text-danger min-w-0">
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">{error.message}</span>
+            </span>
+            <span className="flex items-center gap-2 shrink-0">
+              {error.retry && (
+                <button onClick={() => { const r = error.retry; setError(null); r(); }}
+                  className="text-xs font-bold bg-danger text-surface px-3 py-1 rounded-lg">
+                  Coba lagi
+                </button>
+              )}
+              <button onClick={() => setError(null)} className="p-1 text-danger" aria-label="Tutup pesan kesalahan">
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </span>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6">
           <div className="max-w-4xl mx-auto space-y-4">
-            
             {messages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
             ))}
 
-            {/* AI Thinking Animation Indicator */}
             {isLoading && (
-              <div className="flex items-start gap-3.5 my-4 animate-in fade-in duration-200">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-teal-500 to-indigo-500 p-[1.5px] shadow-sm mt-1">
-                  <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center text-emerald-400">
-                    <Sparkles className="w-4 h-4 text-emerald-400 animate-spin" />
-                  </div>
+              <div className="flex items-start gap-3.5 my-4" role="status" aria-live="polite">
+                <div className="w-8 h-8 rounded-full bg-accent text-accent-fg flex items-center justify-center mt-1 shrink-0">
+                  <Sparkles className="w-4 h-4 animate-pulse" aria-hidden="true" />
                 </div>
-                <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border border-slate-200 dark:border-zinc-800 rounded-3xl rounded-tl-sm px-5 py-4 shadow-sm flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400 font-mono">
-                    Menghubungi SAP MCP Server & RAG Engine...
+                <div className="bg-surface-raised border border-line rounded-3xl rounded-tl-sm px-5 py-4 flex items-center gap-3 flex-wrap">
+                  <span className="flex gap-1.5" aria-hidden="true">
+                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
                   </span>
+                  <span className="text-xs font-semibold text-content-muted font-mono">
+                    Menghubungi SAP MCP Server &amp; RAG Engine…
+                  </span>
+                  <button
+                    onClick={stopGeneration}
+                    className="flex items-center gap-1.5 text-xs font-bold text-content-muted hover:text-danger border border-line rounded-lg px-2 py-1 transition-colors"
+                  >
+                    <Square className="w-3 h-3" aria-hidden="true" />
+                    Hentikan
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* Quick Action Suggestion Chips for Empty or Fresh State */}
             {messages.length <= 1 && !isLoading && (
-              <div className="pt-8 pb-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <div className="pt-8 pb-4">
                 <div className="text-center mb-6">
-                  <div className="inline-flex items-center justify-center p-3 bg-indigo-500/10 rounded-2xl text-indigo-600 dark:text-indigo-400 mb-3">
-                    <Cpu className="w-6 h-6" />
+                  <div className="inline-flex items-center justify-center p-3 bg-accent-soft rounded-2xl text-accent-soft-fg mb-3">
+                    <Cpu className="w-6 h-6" aria-hidden="true" />
                   </div>
-                  <h3 className="text-base font-bold text-slate-800 dark:text-zinc-200 font-display">Pilih Rekomendasi Pertanyaan</h3>
-                  <p className="text-xs text-slate-400 mt-1">Klik salah satu template di bawah untuk memulai pencarian cepat</p>
+                  <h3 className="text-base font-bold text-content font-display">Pilih Rekomendasi Pertanyaan</h3>
+                  <p className="text-xs text-content-muted mt-1">
+                    Klik salah satu template di bawah untuk memulai pencarian cepat
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {suggestions.map((item, idx) => {
+                  {SUGGESTIONS.map((item) => {
                     const IconComp = item.icon;
                     return (
                       <button
-                        key={idx}
+                        key={item.title}
                         onClick={() => handleSendMessage(item.query)}
-                        className="flex flex-col text-left p-4 rounded-2xl bg-white/70 dark:bg-zinc-900/70 hover:bg-white dark:hover:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 hover:border-indigo-400 dark:hover:border-indigo-500/50 shadow-xs hover:shadow-md transition-all group active:scale-[0.98]"
+                        className="flex flex-col text-left p-4 rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.98]"
                       >
-                        <div className="p-2 w-fit rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-950/60 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-3">
-                          <IconComp className="w-4 h-4" />
-                        </div>
-                        <span className="text-xs font-bold text-slate-800 dark:text-zinc-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{item.title}</span>
-                        <span className="text-[11px] text-slate-400 mt-1 line-clamp-2">{item.query}</span>
+                        <span className="p-2 w-fit rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors mb-3">
+                          <IconComp className="w-4 h-4" aria-hidden="true" />
+                        </span>
+                        <span className="text-xs font-bold text-content group-hover:text-accent transition-colors">
+                          {item.title}
+                        </span>
+                        <span className="text-[11px] text-content-muted mt-1 line-clamp-2">{item.query}</span>
                       </button>
                     );
                   })}
@@ -638,35 +603,22 @@ const ChatLayout = () => {
               </div>
             )}
 
-            {/* Anchor element untuk auto-scroll ke bawah */}
             <div ref={messagesEndRef} className="h-1" />
-
           </div>
         </div>
 
-        {/* Input Bar Island */}
-        <ChatInput 
-          onSendMessage={handleSendMessage} 
-          isLoading={isLoading} 
-          isLimitReached={isLimitReached}
-          onPromptLimitHit={() => {
-            setCustomLoginMsg('Batas limit akun Guest tercapai (1 prompt/hari). Silakan login dengan akun SAP untuk akses tanpa batas.');
-            setIsLoginModalOpen(true);
-          }}
-        />
-
+        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
       </main>
 
       {/* Modals */}
-      <LoginModal 
+      <LoginModal
         isOpen={isLoginModalOpen}
         onLoginSuccess={handleLoginSuccess}
-        onGuestContinue={() => setIsLoginModalOpen(false)}
         customMessage={customLoginMsg}
         onClose={() => setIsLoginModalOpen(false)}
       />
 
-      <SettingsModal 
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         user={user}
@@ -678,7 +630,6 @@ const ChatLayout = () => {
         user={user}
         onRefreshMcpServers={fetchServers}
       />
-
     </div>
   );
 };

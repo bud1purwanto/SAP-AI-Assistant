@@ -27,44 +27,61 @@ def _iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+def _make_sqlite_engine(url: str):
+    """Buat engine SQLite dengan schema "ai_assistant" ter-ATTACH.
+
+    SQLite tidak mengenal schema, sementara seluruh query memakai prefiks
+    ai_assistant.<tabel>. ATTACH membuat kedua backend memakai SQL yang sama.
+    """
+    engine = create_engine(url, connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def _attach_schema(dbapi_conn, _record):
+        dbapi_conn.execute(f"ATTACH DATABASE '{SQLITE_SCHEMA_FILE}' AS ai_assistant")
+
+    return engine
+
+
 def get_engine():
     global _engine, _using_sqlite
-    if _engine is None:
-        db_url = settings.database_url or DEFAULT_DB_URL
-        # Normalisasi schema postgresql:// standar agar otomatis memakai psycopg v3 jika psycopg2 tidak ada
-        if db_url.startswith("postgresql://"):
-            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
-        try:
-            test_engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=3)
-            # Test koneksi awal
-            with test_engine.connect():
-                pass
-            _engine = test_engine
-            _using_sqlite = False
-            logger.info("Database PostgreSQL berhasil terhubung.")
-        except Exception as e:
-            if settings.require_postgres:
-                # Di produksi, fallback senyap ke SQLite berbahaya: aplikasi tampak
-                # sehat padahal melayani database kosong, dan dengan >1 worker
-                # uvicorn setiap proses menulis ke berkas yang sama.
-                logger.error(f"Koneksi PostgreSQL gagal dan REQUIRE_POSTGRES aktif: {e}")
-                raise RuntimeError(
-                    "Tidak dapat terhubung ke PostgreSQL sementara REQUIRE_POSTGRES=true. "
-                    "Periksa DATABASE_URL."
-                ) from e
+    if _engine is not None:
+        return _engine
 
-            logger.warning(f"Koneksi PostgreSQL gagal ({e}). Beralih otomatis ke SQLite lokal fallback...")
-            sqlite_engine = create_engine(SQLITE_FALLBACK_URL, connect_args={"check_same_thread": False})
+    db_url = settings.database_url or DEFAULT_DB_URL
+    # Normalisasi schema postgresql:// standar agar otomatis memakai psycopg v3 jika psycopg2 tidak ada
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
-            # SQLite tidak mengenal schema; ATTACH berkas sebagai "ai_assistant"
-            # supaya seluruh query "ai_assistant.<tabel>" tetap valid.
-            @event.listens_for(sqlite_engine, "connect")
-            def _attach_schema(dbapi_conn, _record):
-                dbapi_conn.execute(f"ATTACH DATABASE '{SQLITE_SCHEMA_FILE}' AS ai_assistant")
+    # SQLite yang dikonfigurasi secara eksplisit (pengembangan lokal / pengujian).
+    if db_url.startswith("sqlite"):
+        _engine = _make_sqlite_engine(db_url)
+        _using_sqlite = True
+        logger.info(f"Menggunakan SQLite sesuai konfigurasi: {db_url}")
+        return _engine
 
-            _engine = sqlite_engine
-            _using_sqlite = True
-            logger.info(f"Menggunakan SQLite database fallback: {SQLITE_FALLBACK_URL}")
+    try:
+        test_engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=3)
+        with test_engine.connect():
+            pass
+        _engine = test_engine
+        _using_sqlite = False
+        logger.info("Database PostgreSQL berhasil terhubung.")
+    except Exception as e:
+        if settings.require_postgres:
+            # Di produksi, fallback senyap ke SQLite berbahaya: aplikasi tampak
+            # sehat padahal melayani database kosong, dan dengan >1 worker
+            # uvicorn setiap proses menulis ke berkas yang sama.
+            logger.error(f"Koneksi PostgreSQL gagal dan REQUIRE_POSTGRES aktif: {e}")
+            raise RuntimeError(
+                "Tidak dapat terhubung ke PostgreSQL sementara REQUIRE_POSTGRES=true. "
+                "Periksa DATABASE_URL."
+            ) from e
+
+        logger.warning(f"Koneksi PostgreSQL gagal ({e}). Beralih otomatis ke SQLite lokal fallback...")
+        _engine = _make_sqlite_engine(SQLITE_FALLBACK_URL)
+        _using_sqlite = True
+        logger.info(f"Menggunakan SQLite database fallback: {SQLITE_FALLBACK_URL}")
+
     return _engine
 
 
