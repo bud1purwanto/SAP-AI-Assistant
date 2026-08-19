@@ -14,6 +14,9 @@ def get_engine():
     global _engine
     if _engine is None:
         db_url = settings.database_url or DEFAULT_DB_URL
+        # Normalisasi schema postgresql:// standar agar otomatis memakai psycopg v3 jika psycopg2 tidak ada
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
         try:
             _engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
         except Exception as e:
