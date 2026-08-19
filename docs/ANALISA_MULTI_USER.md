@@ -4,6 +4,11 @@ Dokumen ini menganalisa kondisi aplikasi saat ini terhadap target **diakses bany
 
 Basis analisa: commit `3fb954d` pada branch `claude/multi-user-app-analysis-roi5s4`.
 
+> **Status implementasi:** seluruh temuan A1–A13 dan rekomendasi UI/tema (bagian D)
+> sudah diterapkan pada branch ini. Lihat [Lampiran: Status Implementasi](#lampiran-status-implementasi)
+> di akhir dokumen untuk rinciannya, termasuk temuan tambahan yang muncul saat
+> pengerjaan dan bagian mana yang sengaja belum dikerjakan.
+
 ---
 
 ## A. Bug & Risiko
@@ -243,3 +248,58 @@ Setelah tersentralisasi, tambahan berikut menjadi murah: **preferensi theme ters
 Untuk pertanyaan inti — *apakah aplikasi ini siap diakses banyak user?* — jawabannya belum, dan penghalangnya spesifik: **A1 (autentikasi hanya header), A2 (password plaintext), A3 (riwayat chat lintas user), dan A4 (state MCP global yang menyilangkan target sistem SAP antar-user).** Empat hal itu sebaiknya diselesaikan sebelum akun kedua dibuat.
 
 Sisanya — konsolidasi frontend (A5) dan sistem theme berbasis token (D2) — bukan penghalang, tetapi keduanya menurunkan biaya setiap perubahan UI berikutnya, sehingga layak dikerjakan lebih awal.
+
+
+---
+
+## Lampiran: Status Implementasi
+
+Diterapkan pada branch `claude/multi-user-app-analysis-roi5s4`.
+
+### Temuan yang sudah diperbaiki
+
+| # | Temuan | Penyelesaian |
+| :-- | :--- | :--- |
+| A1 | Autentikasi via header | JWT bertanda tangan (`backend/auth.py`); seluruh endpoint memakai dependency `get_current_user` / `require_superadmin`. Header `X-User-Name` tidak lagi dikirim maupun dibaca. |
+| A2 | Password plaintext | Hash bcrypt di kolom `password_hash`; baris lama otomatis di-upgrade saat login pertama yang berhasil. |
+| A3 | IDOR riwayat chat | `get_chat_messages()` menerima `username` dan mem-`JOIN` ke pemilik sesi; `session_id` dari klien divalidasi kepemilikannya sebelum dipakai. |
+| A4 | State MCP global | `set_active_server` + pemanggilan tool dijalankan atomik di bawah satu `asyncio.Lock`; target SAP dibawa per-request, bukan state proses. |
+| A5 | `App.jsx` kode mati | `App.jsx` menjadi shell 17 baris; state hanya hidup di `ChatLayout`. |
+| A6 | Role tidak konsisten | Tamu konsisten memakai role `guest`; role tidak lagi diterima dari input klien. |
+| A7 | Limit tamu di klien | Tabel `guest_usage` + `consume_guest_quota()`, ditegakkan di server per IP per hari. |
+| A8 | Kredensial ter-commit | `deploy/.env.production` diganti `.example` berisi placeholder; `.gitignore` diperluas ke `.env.*`. |
+| A9 | CORS `*` + credentials | Origin dibatasi lewat `CORS_ALLOW_ORIGINS`; credentials hanya aktif untuk origin spesifik. |
+| A10 | API key bocor | Key tidak pernah dikirim utuh; superadmin melihat nilai termasker dan tetap bisa menuliskan nilai baru. |
+| A11 | Fallback SQLite senyap | `REQUIRE_POSTGRES=true` menggagalkan startup alih-alih melayani database kosong. |
+| A12 | HTTP polos | Didokumentasikan sebagai langkah wajib di `DEPLOY.md` (konfigurasi TLS adalah keputusan infrastruktur, lihat di bawah). |
+| A13 | Deprecation & kerapian | `lifespan`, `model_dump()`, import ganda dibereskan; ditambah `/healthz` dan `/api/me`. |
+
+### Temuan tambahan yang muncul saat pengerjaan
+
+Empat di antaranya adalah bug aktif yang tidak terlihat pada pembacaan awal:
+
+1. **Kredensial fallback hardcoded.** `authenticate_user()` menerima `TRSTDEV/ronin03` dan `TRST-BUDI/1234567` setiap kali database tidak terjangkau — pintu belakang yang justru terbuka saat sistem sedang bermasalah. Dihapus; autentikasi kini gagal-tertutup.
+2. **`add_chat_message` memakai sintaks khusus PostgreSQL.** `SUBSTRING(:c FROM 1 FOR 40)` menggagalkan seluruh transaksi di SQLite sehingga pesan hilang tanpa pesan error. Pemotongan judul dipindahkan ke Python.
+3. **`MCPCallResult` tidak punya atribut `is_error`.** Kelasnya hanya menyetel `isError`, sementara `agent.py:356` membacanya sebagai `is_error` — `AttributeError` di jalur fallback parser tool. Atribut disatukan dengan alias kompatibilitas.
+4. **`delete_chat_session()` selalu melaporkan sukses**, termasuk ketika tidak ada baris yang terhapus — sehingga percobaan menghapus sesi milik user lain tampak berhasil. Kini memakai `rowcount`.
+
+Selain itu: timestamp diasumsikan objek `datetime` padahal SQLite mengembalikan string, dan mode SQLite menulis ke tabel `chat_messages` tanpa prefiks sementara seluruh query memakai schema `ai_assistant` (kini diselaraskan lewat `ATTACH`).
+
+### Bagian D: sistem tema
+
+Token semantik (`surface`, `content`, `line`, `accent`, `danger`, `warning`) didefinisikan sekali di `index.css`; 275 pasangan warna literal di JSX dimigrasikan ke token tersebut. Kontrol tema menjadi tiga pilihan **Light / Dark / System** dengan satu `useTheme` hook sebagai sumber kebenaran, dan skrip anti-kedip di `index.html`. Menambah tema baru kini cukup satu blok `[data-theme="..."]`.
+
+Perbaikan UI lain yang ikut diterapkan: sidebar menjadi drawer di layar sempit, error tampil sebagai alert yang bisa dicoba ulang (bukan gelembung chat palsu), tombol **Hentikan** untuk membatalkan permintaan yang sedang berjalan, peringatan mencolok saat target SAP adalah sistem produksi, serta `aria-label`, penutupan dengan `Esc`, cincin fokus, dan dukungan `prefers-reduced-motion`.
+
+### Verifikasi
+
+- 16 pengujian backend (autentikasi, penolakan spoofing header, IDOR, isolasi hapus sesi, masking API key, ganti password, penolakan token palsu) — lolos.
+- Pengujian kuota tamu dan pengujian konkurensi yang membuktikan pasangan `set target` → `panggil tool` tidak lagi saling menyisip.
+- Build produksi dan oxlint bersih.
+- Isolasi multi-user diuji lewat antarmuka sungguhan di browser: sesi milik satu akun tidak muncul di sidebar akun lain dan pesannya tidak dikembalikan.
+
+### Yang belum dikerjakan, dan alasannya
+
+- **TLS (A12).** Sertifikat dan terminasinya adalah keputusan infrastruktur, bukan perubahan kode — dicatat sebagai langkah wajib di `DEPLOY.md`.
+- **Rotasi kredensial yang sudah terlanjur ter-commit (A8).** Berkasnya sudah dilepas dari pelacakan git, tetapi nilai lama masih ada di riwayat repositori. Rotasi password database dan API key perlu dilakukan langsung di sistem terkait.
+- **Fitur pada bagian C** (multi-tenant, RBAC lebih halus, izin per-server SAP, streaming respons, berbagi percakapan, pencarian riwayat). Semuanya perubahan lingkup produk dengan implikasi skema dan UX tersendiri, bukan perbaikan atas cacat yang ada — sebaiknya diputuskan dan dirancang terpisah. Dua di antaranya sudah difasilitasi sebagian: pembatalan permintaan sudah ada, dan izin per-server SAP kini dapat ditegakkan di backend karena target sudah dibawa per-request.
