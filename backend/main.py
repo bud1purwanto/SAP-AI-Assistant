@@ -29,6 +29,7 @@ from database import (
     get_admin_system_stats,
     get_all_sessions_for_audit,
     get_chat_messages,
+    get_backend_info,
     get_chat_sessions,
     get_system_config,
     get_user_by_username,
@@ -107,8 +108,24 @@ async def root():
 
 @app.get("/healthz")
 async def healthz():
-    """Health check ringan untuk load balancer / monitoring."""
-    return {"status": "ok"}
+    """Health check untuk load balancer / monitoring.
+
+    Menyertakan database yang sedang dipakai supaya fallback SQLite yang tidak
+    disengaja terlihat langsung, bukan baru ketahuan saat data hilang.
+    """
+    try:
+        info = get_backend_info()
+    except Exception as e:
+        return {"status": "degraded", "database": "unavailable", "detail": str(e)[:200]}
+
+    degraded = info["engine"] != "postgresql"
+    return {
+        "status": "degraded" if degraded else "ok",
+        "database": info["engine"],
+        "require_postgres": info["require_postgres"],
+        **({"warning": "Server berjalan di atas SQLite, bukan PostgreSQL. "
+                       "Set REQUIRE_POSTGRES=true dan periksa DATABASE_URL."} if degraded else {}),
+    }
 
 
 # --- AUTENTIKASI ---

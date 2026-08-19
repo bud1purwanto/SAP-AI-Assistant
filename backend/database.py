@@ -27,6 +27,20 @@ def _iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+def get_backend_info() -> dict:
+    """Laporkan database yang benar-benar dipakai proses ini.
+
+    Berguna untuk memastikan server produksi tidak diam-diam berjalan di atas
+    SQLite karena PostgreSQL sempat tidak terjangkau saat startup.
+    """
+    engine = get_engine()
+    return {
+        "engine": "sqlite" if _using_sqlite else "postgresql",
+        "dialect": engine.dialect.name,
+        "require_postgres": settings.require_postgres,
+    }
+
+
 def _make_sqlite_engine(url: str):
     """Buat engine SQLite dengan schema "ai_assistant" ter-ATTACH.
 
@@ -262,7 +276,11 @@ def init_db():
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
     except Exception as e:
-        logger.error(f"Gagal inisialisasi database PostgreSQL: {e}")
+        logger.error(f"Gagal inisialisasi database: {e}")
+        # Di produksi kegagalan ini tidak boleh ditelan: tanpa ini server tetap
+        # menyala dan melayani permintaan di atas database yang belum siap.
+        if settings.require_postgres:
+            raise
 
 def authenticate_user(username: str, password: str):
     """Verifikasi login user (username case-insensitive).
