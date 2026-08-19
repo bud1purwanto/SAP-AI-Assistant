@@ -166,7 +166,9 @@ const ChatMessage = ({ message }) => {
                   </div>
                 ),
                 th: ({ children }) => <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content">{children}</th>,
-                td: ({ children }) => <td className="px-3.5 py-2 border-t border-line text-content-secondary font-mono">{children}</td>,
+                td: ({ children }) => (
+                  <td className="px-3.5 py-2 border-t border-line text-content-secondary tabular-nums">{children}</td>
+                ),
               }}
             >
               {message.content}
