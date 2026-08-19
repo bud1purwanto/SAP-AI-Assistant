@@ -237,6 +237,7 @@ const ChatLayout = () => {
         role: 'assistant',
         content: data.reply,
         sources: data.sources || [],
+        artifacts: data.artifacts || [],
       }]);
 
       if (data.session_id) setCurrentSessionId(data.session_id);

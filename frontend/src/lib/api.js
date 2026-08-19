@@ -138,3 +138,26 @@ export const api = {
   adminSessions: (limit = 50) => apiFetch(`/api/admin/sessions?limit=${limit}`),
   adminSessionMessages: (id) => apiFetch(`/api/admin/sessions/${id}/messages`),
 };
+
+/**
+ * Ambil berkas hasil generate sebagai Blob.
+ *
+ * Endpoint unduhan memerlukan token, sehingga tidak bisa dibuka lewat
+ * tautan biasa — berkasnya diambil di sini lalu disimpan dari sisi browser.
+ */
+export async function fetchArtifactBlob(artifactId) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}/api/artifacts/${artifactId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (res.status === 401) {
+    clearSession();
+    onUnauthorized();
+    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+  }
+  if (!res.ok) {
+    throw new ApiError('Berkas tidak ditemukan atau sudah kedaluwarsa.', res.status);
+  }
+  return res.blob();
+}

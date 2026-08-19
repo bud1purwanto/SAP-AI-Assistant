@@ -1,7 +1,38 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ThumbsUp, ThumbsDown, Database, Info, User, Copy, Check, Sparkles, Terminal, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
+import { fetchArtifactBlob } from '../lib/api';
+
+const formatSize = (bytes) => {
+  if (!bytes) return '0 KB';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+/**
+ * Unduh berkas lewat fetch, bukan tautan langsung.
+ *
+ * Endpointnya memerlukan header Authorization, sementara navigasi <a href>
+ * tidak dapat menyertakan header tersebut.
+ */
+const downloadArtifact = async (file) => {
+  try {
+    const blob = await fetchArtifactBlob(file.artifact_id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Gagal mengunduh berkas:', err);
+    alert(err.message || 'Berkas gagal diunduh.');
+  }
+};
 
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
@@ -164,6 +195,32 @@ const ChatMessage = ({ message }) => {
             </div>
           </div>
         </div>
+
+        {/* Berkas hasil (Excel/CSV) yang dibuat asisten */}
+        {message.artifacts && message.artifacts.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {message.artifacts.map((file) => (
+              <button
+                key={file.artifact_id}
+                onClick={() => downloadArtifact(file)}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group"
+              >
+                <span className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg shrink-0">
+                  {file.type === 'csv'
+                    ? <FileText className="w-4 h-4" aria-hidden="true" />
+                    : <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold text-content truncate max-w-[16rem]">{file.filename}</span>
+                  <span className="block text-[11px] text-content-muted">
+                    {file.type.toUpperCase()} • {formatSize(file.size)} • klik untuk unduh
+                  </span>
+                </span>
+                <Download className="w-4 h-4 text-content-subtle group-hover:text-accent shrink-0" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Traceability Sources Accordion */}
         {showSources && message.sources && (

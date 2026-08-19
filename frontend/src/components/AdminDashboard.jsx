@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Server, Activity, History, X, Plus, Trash2, Edit3, CheckCircle, XCircle, RefreshCw, Save, ShieldCheck, MessageSquare, Key, UserCheck, Database, Search } from 'lucide-react';
+import { Activity, CheckCircle, Database, Edit3, History, Key, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'mcp' | 'audit'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'persona' | 'mcp' | 'audit'
+  const [globalPersona, setGlobalPersona] = useState('');
+  const [personaSaving, setPersonaSaving] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -15,8 +17,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', role: 'user', assistant_persona: '' });
-  const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', assistant_persona: '' });
+  const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '', full_name: '' });
 
   // AI & MCP Config State
   const [nineRouterEnabled, setNineRouterEnabled] = useState(true);
@@ -59,6 +61,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     try {
       const data = await api.getConfig();
       {
+        setGlobalPersona(data.global_assistant_persona || '');
         setMcpSapConfig(data.mcp_sap_config_json || '');
         setMcpRagConfig(data.mcp_rag_config_json || '');
         setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
@@ -110,7 +113,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       await api.adminCreateUser(newUserForm);
       
       setActionSuccess(`User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', role: 'user', assistant_persona: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', assistant_persona: '' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -127,6 +130,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     try {
       const payload = {
         role: editUserForm.role,
+        full_name: editUserForm.full_name,
         assistant_persona: editUserForm.assistant_persona
       };
       if (editUserForm.password) {
@@ -154,6 +158,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchStats();
     } catch (err) {
       setActionError(err.message);
+    }
+  };
+
+  const handleSaveGlobalPersona = async () => {
+    setPersonaSaving(true);
+    setActionSuccess('');
+    setActionError('');
+    try {
+      await api.saveConfig({ global_assistant_persona: globalPersona });
+      setActionSuccess('Persona organisasi berhasil disimpan. Berlaku untuk seluruh pengguna.');
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setPersonaSaving(false);
     }
   };
 
@@ -200,8 +218,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-md animate-fadeIn">
-      <div className="bg-surface-raised border border-line rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden text-content">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
+      {/* Dashboard memakai hampir seluruh layar: tabel user, audit log, dan
+          editor konfigurasi sebelumnya berdesakan di dalam lebar max-w-6xl. */}
+      <div className="bg-surface-raised border border-line sm:rounded-2xl shadow-2xl w-full max-w-[1600px] h-full sm:h-[94vh] flex flex-col overflow-hidden text-content">
         
         {/* Header Modal */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
@@ -210,7 +230,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
+              <h2 className="text-xl font-bold tracking-tight text-content">
                 Super Admin Control Center
               </h2>
               <p className="text-xs text-content-muted">
@@ -275,6 +295,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             >
               <Users className="w-4 h-4" />
               <span>User Management</span>
+            </button>
+
+            <button
+              onClick={() => { setActiveTab('persona'); setSelectedAuditSession(null); }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                activeTab === 'persona'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                  : 'text-content-muted hover:bg-surface-hover'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Persona Organisasi</span>
             </button>
 
             <button
@@ -467,15 +499,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <thead className="bg-surface-sunken border-b border-line text-content-muted text-xs uppercase tracking-wider font-semibold">
                       <tr>
                         <th className="px-4 py-3">Username</th>
+                        <th className="px-4 py-3">Nama Lengkap</th>
                         <th className="px-4 py-3">Role</th>
-                        <th className="px-4 py-3">Custom Persona</th>
+                        <th className="px-4 py-3">Persona Pribadi</th>
                         <th className="px-4 py-3 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line text-content-secondary">
                       {filteredUsers.length > 0 ? (
                         filteredUsers.map((u) => (
-                          <tr key={u.username} className="hover:bg-slate-50/70 transition-colors">
+                          <tr key={u.username} className="hover:bg-surface-hover transition-colors">
                             <td className="px-4 py-3 font-semibold text-content flex items-center gap-2">
                               <div className="w-7 h-7 rounded-full bg-surface-sunken flex items-center justify-center text-xs font-bold text-indigo-600">
                                 {u.username.substring(0, 2).toUpperCase()}
@@ -484,6 +517,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               {u.username === user.username && (
                                 <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.5 rounded font-normal">Anda</span>
                               )}
+                            </td>
+                            <td className="px-4 py-3 text-content-secondary">
+                              {u.full_name || <span className="italic text-content-subtle">—</span>}
                             </td>
                             <td className="px-4 py-3">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
@@ -494,14 +530,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 {u.role}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate">
-                              {u.assistant_persona || <span className="italic text-slate-400">Default global persona</span>}
+                            <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
+                              {u.assistant_persona || <span className="italic text-content-subtle">Mengikuti persona organisasi</span>}
                             </td>
                             <td className="px-4 py-3 text-right space-x-1">
                               <button
                                 onClick={() => {
                                   setEditingUser(u);
-                                  setEditUserForm({ role: u.role, assistant_persona: u.assistant_persona || '', password: '' });
+                                  setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
                                 }}
                                 className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors"
                                 title="Edit user"
@@ -525,7 +561,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         ))
                       ) : (
                         <tr>
-                          <td colSpan="4" className="text-center py-6 text-slate-400 text-xs">
+                          <td colSpan="5" className="text-center py-6 text-content-subtle text-xs">
                             Tidak ada data user yang sesuai.
                           </td>
                         </tr>
@@ -542,7 +578,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         <h4 className="font-bold text-content flex items-center gap-2">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
                         </h4>
-                        <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-content">
+                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-subtle hover:text-content">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
@@ -561,6 +597,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Nama Lengkap</label>
+                          <input
+                            type="text"
+                            value={newUserForm.full_name}
+                            onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
+                            placeholder="misal: Andi Wijaya"
+                          />
+                        </div>
+
+                        <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">Password *</label>
                           <input 
                             type="password"
@@ -568,7 +615,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={newUserForm.password}
                             onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Minimal 6 karakter"
+                            placeholder="Minimal 8 karakter"
+                            minLength={8}
                           />
                         </div>
 
@@ -585,13 +633,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Custom Persona (Opsional)</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Persona Pribadi (Opsional)</label>
                           <textarea 
                             rows="2"
                             value={newUserForm.assistant_persona}
                             onChange={(e) => setNewUserForm({ ...newUserForm, assistant_persona: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                            placeholder="Persona khusus untuk user ini..."
+                            placeholder="Penyesuaian di atas persona organisasi, khusus user ini…"
                           />
                         </div>
 
@@ -623,12 +671,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         <h4 className="font-bold text-content flex items-center gap-2">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
                         </h4>
-                        <button onClick={() => setEditingUser(null)} className="text-slate-400 hover:text-content">
+                        <button onClick={() => setEditingUser(null)} className="text-content-subtle hover:text-content">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
                       <form onSubmit={handleUpdateUser} className="space-y-3.5 text-sm">
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Nama Lengkap</label>
+                          <input
+                            type="text"
+                            value={editUserForm.full_name}
+                            onChange={(e) => setEditUserForm({ ...editUserForm, full_name: e.target.value })}
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
+                            placeholder="misal: Andi Wijaya"
+                          />
+                        </div>
+
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">Role</label>
                           <select
@@ -650,18 +709,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={editUserForm.password}
                             onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Password baru..."
+                            placeholder="Password baru (minimal 8 karakter)…"
+                            minLength={8}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Custom Persona</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Persona Pribadi</label>
                           <textarea 
                             rows="3"
                             value={editUserForm.assistant_persona}
                             onChange={(e) => setEditUserForm({ ...editUserForm, assistant_persona: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                            placeholder="Persona AI khusus user ini..."
+                            placeholder="Kosongkan agar user ini sepenuhnya mengikuti persona organisasi…"
                           />
                         </div>
 
@@ -684,6 +744,60 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* TAB: PERSONA ORGANISASI */}
+            {activeTab === 'persona' && (
+              <div className="space-y-5 animate-fadeIn max-w-4xl">
+                <div>
+                  <h3 className="text-lg font-bold text-content flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-indigo-500" /> Persona Organisasi
+                  </h3>
+                  <p className="text-xs text-content-muted mt-1">
+                    Aturan dasar yang berlaku untuk jawaban AI ke <strong>seluruh pengguna</strong>.
+                  </p>
+                </div>
+
+                <div className="bg-surface-sunken border border-line rounded-2xl p-4 text-xs text-content-secondary leading-relaxed">
+                  <p className="font-semibold text-content mb-1.5">Cara persona diterapkan</p>
+                  <p>
+                    Persona organisasi menjadi <strong>lapisan dasar</strong>. Di atasnya, persona pribadi
+                    yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.
+                  </p>
+                  <p className="mt-2">
+                    Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang
+                    jawaban — preferensi pribadi yang menang. Namun untuk aturan <strong>keakuratan data,
+                    keamanan, dan kepatuhan</strong>, persona organisasi selalu diutamakan.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="global-persona" className="block text-xs font-semibold text-content-muted mb-1.5">
+                    Instruksi persona organisasi
+                  </label>
+                  <textarea
+                    id="global-persona"
+                    rows="10"
+                    value={globalPersona}
+                    onChange={(e) => setGlobalPersona(e.target.value)}
+                    className="w-full px-3.5 py-3 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed"
+                    placeholder={'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
+                  />
+                  <p className="text-[11px] text-content-subtle mt-1.5">
+                    Kosongkan untuk memakai perilaku bawaan asisten.
+                  </p>
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSaveGlobalPersona}
+                    disabled={personaSaving}
+                    className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60"
+                  >
+                    {personaSaving ? 'Menyimpan…' : 'Simpan Persona Organisasi'}
+                  </button>
+                </div>
               </div>
             )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Database, Shield, Lock, KeyRound, CheckCircle2, AlertCircle, Bot, Sliders, Cpu, Globe, Server } from 'lucide-react';
+import { AlertCircle, Bot, CheckCircle2, Cpu, Database, Globe, KeyRound, Lock, Save, Server, Shield, ShieldCheck, Sliders, X } from 'lucide-react';
 import { api } from '../lib/api';
 
 const SettingsModal = ({ isOpen, onClose, user }) => {
@@ -8,6 +8,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
     mcp_sap_config_json: '',
     mcp_rag_config_json: '',
     assistant_persona: '',
+    full_name: '',
+    global_assistant_persona: '',
     nine_router_enabled: true,
     nine_router_base_url: 'http://192.168.88.83:20128/v1',
     nine_router_model: 'ag/gemini-3.7-flash-medium',
@@ -36,6 +38,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             mcp_sap_config_json: data.mcp_sap_config_json || '',
             mcp_rag_config_json: data.mcp_rag_config_json || '',
             assistant_persona: data.assistant_persona || '',
+            full_name: data.full_name || '',
+            global_assistant_persona: data.global_assistant_persona || '',
             nine_router_enabled: data.nine_router_enabled ?? true,
             nine_router_base_url: data.nine_router_base_url || 'http://192.168.88.83:20128/v1',
             nine_router_model: data.nine_router_model || 'ag/gemini-3.7-flash-medium',
@@ -55,7 +59,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
     setIsSaving(true);
     setSaveStatus('');
     try {
-      await api.saveConfig(config);
+      // Persona organisasi dikelola terpisah di Admin Dashboard; dari sini
+      // hanya profil dan preferensi pribadi yang dikirim.
+      const { global_assistant_persona: _ignored, ...payload } = config;
+      await api.saveConfig(payload);
       setSaveStatus('success');
       setTimeout(() => onClose(), 1000);
     } catch {
@@ -191,20 +198,61 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
           
           {/* TAB 1: Persona */}
           {activeTab === 'persona' && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
-                <label className="flex items-center gap-2 text-sm font-bold text-content mb-1.5">
-                  🎭 Personal AI Assistant Prompt
+                <label htmlFor="profile-fullname" className="block text-sm font-bold text-content mb-1.5">
+                  Nama Lengkap
                 </label>
-                <p className="text-xs text-content-muted mb-3 leading-relaxed">
-                  Sesuaikan gaya respon, preferensi format ABAP code, atau instruksi khusus untuk asisten AI Anda.
+                <p className="text-xs text-content-muted mb-2.5">
+                  Ditampilkan pada profil Anda dan pada daftar pengguna di dashboard admin.
                 </p>
-                <textarea 
+                <input
+                  id="profile-fullname"
+                  type="text"
+                  disabled={!isLoggedIn}
+                  value={config.full_name}
+                  onChange={e => setConfig({ ...config, full_name: e.target.value })}
+                  className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 text-sm text-content outline-none transition-all disabled:opacity-60"
+                  placeholder={isLoggedIn ? 'misal: Andi Wijaya' : 'Login untuk mengubah profil Anda.'}
+                />
+              </div>
+
+              {/* Persona organisasi ditampilkan baca-saja agar pengguna paham
+                  dasar perilaku asisten sebelum menambahkan preferensinya. */}
+              {config.global_assistant_persona && (
+                <div className="bg-surface-sunken border border-line rounded-2xl p-4">
+                  <div className="flex items-center gap-2 text-xs font-bold text-content mb-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" aria-hidden="true" />
+                    Persona Organisasi (diatur admin)
+                  </div>
+                  <p className="text-xs text-content-muted whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">
+                    {config.global_assistant_persona}
+                  </p>
+                  <p className="text-[11px] text-content-subtle mt-2">
+                    Aturan ini menjadi dasar untuk semua pengguna. Preferensi Anda di bawah
+                    diterapkan di atasnya.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label htmlFor="personal-persona" className="block text-sm font-bold text-content mb-1.5">
+                  🎭 Preferensi Pribadi Anda
+                </label>
+                <p className="text-xs text-content-muted mb-2.5 leading-relaxed">
+                  Sesuaikan gaya jawaban, format, bahasa, atau instruksi khusus untuk asisten AI Anda
+                  sendiri. Untuk gaya penulisan, preferensi ini menang atas persona organisasi;
+                  aturan keakuratan data dan keamanan tetap mengikuti organisasi.
+                </p>
+                <textarea
+                  id="personal-persona"
                   disabled={!isLoggedIn}
                   value={config.assistant_persona}
-                  onChange={e => setConfig({...config, assistant_persona: e.target.value})}
-                  className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-3 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-y min-h-[140px] disabled:opacity-60"
-                  placeholder={isLoggedIn ? "Contoh: Berikan ringkasan tabel SAP terlebih dahulu, lalu jelaskan alur prosesnya secara step-by-step." : "Login untuk mengkustomisasi persona asisten Anda."}
+                  onChange={e => setConfig({ ...config, assistant_persona: e.target.value })}
+                  className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-3 text-sm text-content outline-none transition-all resize-y min-h-[140px] disabled:opacity-60"
+                  placeholder={isLoggedIn
+                    ? 'Contoh: Ringkas dulu dalam tabel, lalu jelaskan alur prosesnya step-by-step. Sertakan nama tabel SAP sumbernya.'
+                    : 'Login untuk mengkustomisasi persona asisten Anda.'}
                 />
               </div>
             </div>

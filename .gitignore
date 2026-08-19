@@ -12,3 +12,6 @@ dist/
 !.env.example
 !*.env.example
 !.env.*.example
+
+# Local SQLite development databases
+*.db
