@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -19,6 +20,8 @@ from auth import require_superadmin as require_superadmin_token
 from config import settings, _EPHEMERAL_JWT_SECRET
 from database import (
     add_chat_message,
+    check_login_block,
+    clear_login_failures,
     authenticate_user,
     change_user_password,
     consume_guest_quota,
@@ -36,6 +39,7 @@ from database import (
     init_db,
     list_all_users,
     purge_expired_artifacts,
+    register_login_failure,
     session_belongs_to,
     update_system_config,
     update_user_by_admin,
@@ -46,6 +50,20 @@ from mcp_manager import mcp_manager
 from models import ChatRequest, ChatResponse
 
 logger = logging.getLogger(__name__)
+
+
+async def _artifact_cleanup_loop():
+    """Bersihkan berkas kedaluwarsa secara berkala selama server hidup."""
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            removed = purge_expired_artifacts()
+            if removed:
+                logger.info(f"{removed} berkas kedaluwarsa dibersihkan.")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"Pembersihan berkas gagal: {e}")
 
 
 @asynccontextmanager
@@ -65,7 +83,14 @@ async def lifespan(app: FastAPI):
     removed = purge_expired_artifacts()
     if removed:
         logger.info(f"{removed} berkas hasil generate yang kedaluwarsa dibersihkan.")
-    yield
+
+    # Server produksi bisa berjalan berminggu-minggu tanpa restart, sehingga
+    # pembersihan saat startup saja tidak cukup.
+    cleanup = asyncio.create_task(_artifact_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup.cancel()
 
 
 app = FastAPI(title="Enterprise SAP Chat Assistant", lifespan=lifespan)
@@ -103,6 +128,14 @@ def _mask_secret(value: str) -> str:
     return f"{value[:4]}••••{value[-4:]}"
 
 
+def _client_ip(request: Request) -> str:
+    """Alamat IP klien, menghormati X-Forwarded-For dari reverse proxy."""
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "unknown")[:64]
+
+
 @app.get("/")
 async def root():
     """Redirect ke halaman dokumentasi API (Swagger UI)."""
@@ -132,12 +165,29 @@ class LoginRequest(BaseModel):
 
 
 @app.post("/api/login")
-async def login(req: LoginRequest):
-    """Endpoint autentikasi user. Mengembalikan access token JWT."""
+async def login(req: LoginRequest, request: Request):
+    """Endpoint autentikasi user. Mengembalikan access token JWT.
+
+    Percobaan gagal dibatasi per (IP, username) agar tebak-password tidak dapat
+    dijalankan tanpa batas; bcrypt memperlambat, tetapi tidak menghentikannya.
+    """
+    attempt_key = f"{_client_ip(request)}|{(req.username or '').strip().lower()}"[:120]
+
+    blocked_for = check_login_block(attempt_key)
+    if blocked_for > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Terlalu banyak percobaan login yang gagal. Coba lagi dalam {blocked_for // 60 + 1} menit.",
+        )
+
     user = authenticate_user(req.username, req.password)
     if not user:
+        register_login_failure(
+            attempt_key, settings.login_max_failures, settings.login_lock_seconds
+        )
         raise HTTPException(status_code=401, detail="Username atau password salah")
 
+    clear_login_failures(attempt_key)
     token = create_access_token(user["username"], user["role"])
     return {
         "status": "success",
@@ -304,11 +354,20 @@ async def delete_session_endpoint(session_id: str, user: dict = Depends(get_curr
 
 
 @app.get("/api/sessions/{session_id}/messages")
-async def get_session_messages_endpoint(session_id: str, user: dict = Depends(get_current_user)):
-    """Riwayat pesan satu sesi, dibatasi pada sesi milik user yang meminta."""
+async def get_session_messages_endpoint(
+    session_id: str,
+    limit: int = 200,
+    before_id: int = None,
+    user: dict = Depends(get_current_user),
+):
+    """Riwayat pesan satu sesi, dibatasi pada sesi milik user yang meminta.
+
+    Mengembalikan `limit` pesan terakhir; `before_id` memuat halaman sebelumnya
+    agar percakapan panjang tidak dikirim sekaligus.
+    """
     if not session_id or session_id == "undefined":
         return []
-    return get_chat_messages(session_id, username=user["username"])
+    return get_chat_messages(session_id, username=user["username"], limit=limit, before_id=before_id)
 
 
 @app.get("/api/mcp/servers")
@@ -436,10 +495,7 @@ async def get_admin_session_messages_endpoint(
 
 def _guest_client_key(request: Request) -> str:
     """Kunci kuota tamu berbasis alamat IP klien."""
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()[:64]
-    return (request.client.host if request.client else "unknown")[:64]
+    return _client_ip(request)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -510,7 +566,10 @@ async def chat_endpoint(
 
     if not is_guest and active_session_id:
         sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
-        add_chat_message(active_session_id, "ai", response.reply, sources_str)
+        # Metadata berkas ikut disimpan; tanpa ini tombol unduh hilang setelah
+        # halaman dimuat ulang meski berkasnya masih tersimpan di database.
+        artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
+        add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
 
     response.session_id = active_session_id
     return response

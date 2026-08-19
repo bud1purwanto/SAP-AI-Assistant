@@ -12,7 +12,8 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from database import load_artifact, save_artifact
+from config import settings
+from database import drop_oldest_artifacts, load_artifact, save_artifact
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +450,10 @@ def extract_and_build(reply_text: str, owner: str) -> tuple[str, list[dict]]:
         if not stored:
             notes.append("_Berkas gagal disimpan, silakan coba lagi._")
             continue
+
+        # Batasi jumlah berkas per user agar tabel tidak tumbuh tanpa henti;
+        # yang terlama dibuang lebih dulu.
+        drop_oldest_artifacts(owner, settings.artifact_max_per_user)
 
         artifacts.append({
             "artifact_id": artifact_id,

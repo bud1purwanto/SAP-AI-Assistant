@@ -12,3 +12,4 @@ PyJWT>=2.8.0
 bcrypt>=4.1.0
 openpyxl>=3.1.0
 python-docx>=1.1.0
+pytest>=8.0.0

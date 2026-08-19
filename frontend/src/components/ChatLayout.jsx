@@ -126,10 +126,12 @@ const ChatLayout = () => {
     scrollToBottom(true);
   }, [messages, isLoading, scrollToBottom]);
 
-  const parseSources = (raw) => {
+  /** Kolom sources/artifacts disimpan sebagai JSON string di database. */
+  const parseJsonList = (raw) => {
     if (!raw) return [];
     try {
-      return typeof raw === 'string' ? JSON.parse(raw) : raw;
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
@@ -148,7 +150,8 @@ const ChatLayout = () => {
           : data.map((m) => ({
               role: m.role === 'user' ? 'user' : 'assistant',
               content: m.content,
-              sources: parseSources(m.sources),
+              sources: parseJsonList(m.sources),
+              artifacts: parseJsonList(m.artifacts),
               created_at: m.created_at,
             })),
       );

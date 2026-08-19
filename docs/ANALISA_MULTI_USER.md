@@ -127,7 +127,7 @@ Urutan ini disusun agar setiap tahap tetap bisa dirilis.
 **Fase 2 — Kebenaran di bawah beban bersamaan**
 
 5. Hilangkan state MCP global (A4) — ini penentu apakah aplikasi boleh dipakai >1 user pada saat yang sama.
-6. Tegakkan PostgreSQL di produksi; SQLite hanya untuk pengembangan lokal (A11).
+6. Tegakkan PostgreSQL di produksi (A11) — dukungan SQLite kemudian dihapus sepenuhnya.
 7. Rate limit dan kuota di sisi server (A7).
 
 **Fase 3 — Skala & operasional**
@@ -270,7 +270,7 @@ Diterapkan pada branch `claude/multi-user-app-analysis-roi5s4`.
 | A8 | Kredensial ter-commit | `deploy/.env.production` diganti `.example` berisi placeholder; `.gitignore` diperluas ke `.env.*`. |
 | A9 | CORS `*` + credentials | Origin dibatasi lewat `CORS_ALLOW_ORIGINS`; credentials hanya aktif untuk origin spesifik. |
 | A10 | API key bocor | Key tidak pernah dikirim utuh; superadmin melihat nilai termasker dan tetap bisa menuliskan nilai baru. |
-| A11 | Fallback SQLite senyap | `REQUIRE_POSTGRES=true` menggagalkan startup alih-alih melayani database kosong. |
+| A11 | Fallback SQLite senyap | Dukungan SQLite dihapus seluruhnya; aplikasi hanya berjalan di atas PostgreSQL dan gagal-cepat bila database tidak terjangkau. |
 | A12 | HTTP polos | Didokumentasikan sebagai langkah wajib di `DEPLOY.md` (konfigurasi TLS adalah keputusan infrastruktur, lihat di bawah). |
 | A13 | Deprecation & kerapian | `lifespan`, `model_dump()`, import ganda dibereskan; ditambah `/healthz` dan `/api/me`. |
 
@@ -303,3 +303,35 @@ Perbaikan UI lain yang ikut diterapkan: sidebar menjadi drawer di layar sempit, 
 - **TLS (A12).** Sertifikat dan terminasinya adalah keputusan infrastruktur, bukan perubahan kode — dicatat sebagai langkah wajib di `DEPLOY.md`.
 - **Rotasi kredensial yang sudah terlanjur ter-commit (A8).** Berkasnya sudah dilepas dari pelacakan git, tetapi nilai lama masih ada di riwayat repositori. Rotasi password database dan API key perlu dilakukan langsung di sistem terkait.
 - **Fitur pada bagian C** (multi-tenant, RBAC lebih halus, izin per-server SAP, streaming respons, berbagi percakapan, pencarian riwayat). Semuanya perubahan lingkup produk dengan implikasi skema dan UX tersendiri, bukan perbaikan atas cacat yang ada — sebaiknya diputuskan dan dirancang terpisah. Dua di antaranya sudah difasilitasi sebagian: pembatalan permintaan sudah ada, dan izin per-server SAP kini dapat ditegakkan di backend karena target sudah dibawa per-request.
+
+
+---
+
+## Lampiran 2: Pekerjaan Lanjutan
+
+Dikerjakan setelah lampiran pertama, sebagian karena temuan baru saat pengujian.
+
+### Penyimpanan dan basis data
+
+- **SQLite dihapus sepenuhnya** — engine fallback, shim schema `ATTACH`, seluruh cabang `_using_sqlite`, flag `REQUIRE_POSTGRES`, dan skrip migrasi. `DATABASE_URL` non-PostgreSQL ditolak saat startup.
+- Penghapusan itu membongkar bug yang selama ini disembunyikan SQLite: `init_db()` membungkus `ALTER TABLE` dalam `try/except`, padahal di PostgreSQL satu pernyataan gagal membatalkan **seluruh transaksi** sehingga semua perintah berikutnya ikut gagal. DDL kini idempoten (`ADD COLUMN IF NOT EXISTS`) tanpa menelan exception.
+- **Berkas hasil generate pindah ke tabel `generated_artifacts`** — sebelumnya di memori proses, sehingga unduhan gagal bila mendarat di worker uvicorn yang berbeda dan hilang setiap restart. Disertai kuota per user dan pembersihan berkala.
+
+### Kemampuan asisten
+
+- **Dokumen Word** (`docx`) dan **spesifikasi WRICEF** (`wricef`) dengan bagian baku: kebutuhan bisnis, deskripsi fungsional, asumsi, layar seleksi, field keluaran, logika pemrosesan, otorisasi, penanganan kesalahan, dan skenario pengujian.
+- Persona organisasi kini tersimpan di database dan dapat diedit admin dari aplikasi, bukan hanya lewat env var.
+
+### Antarmuka
+
+Istilah arsitektur (MCP, RAG, ECC, SID, "Agent v1.0") dikeluarkan dari permukaan dan diganti bahasa kerja; detail teknis tetap tersedia di balik tombol **Detail teknis** pada panel sumber data. Lihat `docs/screenshots/`.
+
+### Pengaman rekayasa
+
+- **Gerbang CI**: sebelumnya setiap push ke `main` langsung dideploy tanpa pemeriksaan. Kini build frontend, `oxlint --deny-warnings`, dan `pytest` harus lulus lebih dulu. Aturan `no-undef` diaktifkan — ini yang akan menahan bug seperti commit `a6b51e7`, yang menghapus deklarasi `isSessionsLoading` dan membuat halaman putih; build tetap lolos untuk bug semacam itu, lint tidak.
+- **Test suite** di `tests/` (45 tes) berjalan di atas PostgreSQL sungguhan, menjaga hashing password, isolasi antar user, pembuatan berkas, persona berlapis, dan idempotensi migrasi. Skrip `test.py`/`test_agent.py` lama yang menyesatkan dihapus.
+- **Pembatasan percobaan login** per (IP, username), indeks pada kolom yang sering dibaca, dan paginasi riwayat pesan.
+
+### Masih terbuka
+
+TLS di depan Nginx, rotasi kredensial yang pernah ter-commit, token yang masih disimpan di `localStorage` (sebaiknya menyusul bersama TLS), dan fitur produk pada bagian C.

@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     cors_allow_origins: str = "*"
     # Kuota prompt harian untuk pengunjung yang belum login (ditegakkan di server).
     guest_daily_limit: int = 1
+    # Pembatasan percobaan login untuk menahan serangan tebak-password.
+    login_max_failures: int = 8
+    login_lock_seconds: int = 900  # 15 menit
+    # Jumlah berkas hasil generate yang disimpan per user; yang terlama dibuang.
+    artifact_max_per_user: int = 20
     # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel
     # users masih kosong. Harus segera diganti setelah login pertama.
     bootstrap_admin_password: str = "ChangeMe!2024"

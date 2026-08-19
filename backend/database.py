@@ -134,6 +134,19 @@ def init_db():
                 );
             """))
 
+            # 5a. Migrasi & index untuk chat_messages / chat_sessions.
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS artifacts TEXT"
+            ))
+            # Kolom-kolom ini dibaca pada setiap pembukaan sesi dan render sidebar.
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_messages_session
+                ON ai_assistant.chat_messages (session_id, id);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_sessions_username
+                ON ai_assistant.chat_sessions (LOWER(username), updated_at DESC);
+            """))
             # 5b. Kuota harian pengunjung tamu, ditegakkan di sisi server.
             # localStorage di browser dapat dihapus kapan saja sehingga tidak
             # bisa dijadikan dasar pembatasan.
@@ -168,6 +181,20 @@ def init_db():
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_artifacts_expires
                 ON ai_assistant.generated_artifacts (expires_at);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_artifacts_owner
+                ON ai_assistant.generated_artifacts (LOWER(owner));
+            """))
+
+            # 5d. Catatan percobaan login gagal, untuk pembatasan brute force.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.login_attempts (
+                    client_key VARCHAR(120) PRIMARY KEY,
+                    failures INTEGER NOT NULL DEFAULT 0,
+                    first_failure_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    locked_until TIMESTAMPTZ
+                );
             """))
 
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
@@ -666,15 +693,17 @@ def delete_chat_session(session_id: str, username: str):
         logger.error(f"Error delete_chat_session: {e}")
         return False
 
-def add_chat_message(session_id: str, role: str, content: str, sources: str = None):
+def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
+                     artifacts: str = None):
     """Tambah pesan (user / ai) ke dalam sesi percakapan."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.chat_messages (session_id, role, content, sources)
-                VALUES (:sid, :r, :c, :s)
-            """), {"sid": session_id, "r": role, "c": content, "s": sources or ""})
+                INSERT INTO ai_assistant.chat_messages (session_id, role, content, sources, artifacts)
+                VALUES (:sid, :r, :c, :s, :a)
+            """), {"sid": session_id, "r": role, "c": content, "s": sources or "",
+                   "a": artifacts or ""})
             
             # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
             if role == 'user':
@@ -711,43 +740,62 @@ def session_belongs_to(session_id: str, username: str) -> bool:
         return False
 
 
-def get_chat_messages(session_id: str, username: str = None):
+def get_chat_messages(session_id: str, username: str = None, limit: int = 200, before_id: int = None):
     """Ambil pesan dalam suatu sesi percakapan.
 
     Bila `username` diberikan, hasil dibatasi pada sesi milik user tersebut.
     Pemanggil yang melewatkan None (jalur audit Super Admin) harus sudah
     melakukan pemeriksaan otorisasinya sendiri.
+
+    Hasil dibatasi `limit` pesan TERAKHIR agar percakapan panjang tidak
+    mengirim seluruh isinya sekaligus; `before_id` dipakai untuk memuat
+    halaman sebelumnya.
     """
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            # Ambil N pesan terakhir (opsional sebelum id tertentu), lalu balik
+            # urutannya agar tetap kronologis bagi pemanggil.
+            page_filter = "AND m.id < :before" if before_id else ""
+            params = {"sid": session_id, "lim": max(1, min(limit, 1000))}
+            if before_id:
+                params["before"] = before_id
+
             if username is not None:
-                rows = conn.execute(text("""
-                    SELECT m.role, m.content, m.sources, m.created_at
+                params["u"] = username.strip()
+                sql = f"""
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.created_at
                     FROM ai_assistant.chat_messages m
                     JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
-                    WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u)
-                    ORDER BY m.id ASC
-                """), {"sid": session_id, "u": username.strip()}).fetchall()
+                    WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
+                    ORDER BY m.id DESC
+                    LIMIT :lim
+                """
             else:
-                rows = conn.execute(text("""
-                    SELECT role, content, sources, created_at
-                    FROM ai_assistant.chat_messages
-                    WHERE session_id = :sid
-                    ORDER BY id ASC
-                """), {"sid": session_id}).fetchall()
+                sql = f"""
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.created_at
+                    FROM ai_assistant.chat_messages m
+                    WHERE m.session_id = :sid {page_filter}
+                    ORDER BY m.id DESC
+                    LIMIT :lim
+                """
+
+            rows = conn.execute(text(sql), params).fetchall()
             return [
                 {
+                    "id": r.id,
                     "role": r.role,
                     "content": r.content,
                     "sources": r.sources if r.sources else None,
-                    "created_at": _iso(r.created_at)
+                    "artifacts": r.artifacts if r.artifacts else None,
+                    "created_at": _iso(r.created_at),
                 }
-                for r in rows
+                for r in reversed(rows)
             ]
     except Exception as e:
         logger.error(f"Error get_chat_messages: {e}")
         return []
+
 
 # --- SUPER ADMIN FUNCTIONS ---
 
@@ -1011,4 +1059,102 @@ def purge_expired_artifacts() -> int:
             return res.rowcount or 0
     except Exception as e:
         logger.error(f"Error purge_expired_artifacts: {e}")
+        return 0
+
+
+# --- PEMBATASAN PERCOBAAN LOGIN ---
+
+def check_login_block(client_key: str):
+    """Kembalikan sisa detik penguncian, atau 0 bila tidak terkunci."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT EXTRACT(EPOCH FROM (locked_until - CURRENT_TIMESTAMP)) AS sisa
+                FROM ai_assistant.login_attempts
+                WHERE client_key = :k AND locked_until IS NOT NULL
+                  AND locked_until > CURRENT_TIMESTAMP
+            """), {"k": client_key}).fetchone()
+            return int(row.sisa) if row and row.sisa else 0
+    except Exception as e:
+        logger.error(f"Error check_login_block: {e}")
+        return 0
+
+
+def register_login_failure(client_key: str, max_failures: int, lock_seconds: int) -> int:
+    """Catat satu kegagalan login; kunci sementara bila melewati ambang.
+
+    Mengembalikan jumlah kegagalan berturut-turut setelah pencatatan.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                INSERT INTO ai_assistant.login_attempts (client_key, failures)
+                VALUES (:k, 1)
+                ON CONFLICT (client_key) DO UPDATE
+                SET failures = ai_assistant.login_attempts.failures + 1
+                RETURNING failures
+            """), {"k": client_key}).fetchone()
+            failures = row.failures if row else 1
+
+            if failures >= max_failures:
+                conn.execute(text("""
+                    UPDATE ai_assistant.login_attempts
+                    SET locked_until = CURRENT_TIMESTAMP + make_interval(secs => :sec),
+                        failures = 0
+                    WHERE client_key = :k
+                """), {"k": client_key, "sec": lock_seconds})
+            conn.commit()
+            return failures
+    except Exception as e:
+        logger.error(f"Error register_login_failure: {e}")
+        return 0
+
+
+def clear_login_failures(client_key: str):
+    """Bersihkan catatan kegagalan setelah login berhasil."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("DELETE FROM ai_assistant.login_attempts WHERE client_key = :k"),
+                         {"k": client_key})
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error clear_login_failures: {e}")
+
+
+def count_user_artifacts(owner: str) -> int:
+    """Jumlah berkas aktif milik seorang user (untuk kuota penyimpanan)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT COUNT(*) AS n FROM ai_assistant.generated_artifacts
+                WHERE LOWER(owner) = LOWER(:o) AND expires_at > CURRENT_TIMESTAMP
+            """), {"o": (owner or "").strip()}).fetchone()
+            return int(row.n) if row else 0
+    except Exception as e:
+        logger.error(f"Error count_user_artifacts: {e}")
+        return 0
+
+
+def drop_oldest_artifacts(owner: str, keep: int) -> int:
+    """Sisakan `keep` berkas terbaru milik user; sisanya dihapus."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("""
+                DELETE FROM ai_assistant.generated_artifacts
+                WHERE artifact_id IN (
+                    SELECT artifact_id FROM ai_assistant.generated_artifacts
+                    WHERE LOWER(owner) = LOWER(:o)
+                    ORDER BY created_at DESC
+                    OFFSET :keep
+                )
+            """), {"o": (owner or "").strip(), "keep": keep})
+            conn.commit()
+            return res.rowcount or 0
+    except Exception as e:
+        logger.error(f"Error drop_oldest_artifacts: {e}")
         return 0
