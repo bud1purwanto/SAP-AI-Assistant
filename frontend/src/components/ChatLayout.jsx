@@ -16,8 +16,18 @@ const ChatLayout = () => {
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSessionsLoading, setIsSessionsLoading] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const THEME_KEY = 'sap_assistant_theme';
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved !== null) {
+        return saved === 'dark';
+      }
+      return true; // Default dark theme
+    } catch (e) {
+      return true;
+    }
+  });
   const [activeServer, setActiveServer] = useState('sap:sandbox-new');
   const [sapSubServers, setSapSubServers] = useState([]);
   
@@ -40,8 +50,11 @@ const ChatLayout = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
 
-  // Initial setup: theme & load user
+  // Apply & persist theme to localStorage and <html> classList
   useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
+    } catch (e) {}
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
