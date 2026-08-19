@@ -7,9 +7,11 @@
 set -e
 
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
-echo "🔄 [1/4] Mengambil kode terbaru dari Git (git pull)..."
+echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 cd "${PROJECT_DIR}"
-git pull origin main || git pull
+git stash --include-untracked 2>/dev/null || true
+git fetch origin main
+git reset --hard origin/main
 
 echo "🐍 [2/4] Memeriksa & mengupdate dependensi backend..."
 cd "${PROJECT_DIR}/backend"
