@@ -8,11 +8,12 @@ on:
 jobs:
   deploy:
     name: Auto Deploy on Push
-    runs-on: self-hosted
+    # Menggunakan label spesifik agar terisolasi dari runner project lain di server yang sama
+    runs-on: [self-hosted, sap-ai]
     steps:
-      - name: Checkout or Update Repository
+      - name: Deploy to /var/www/SAP-AI-Assistant
         run: |
-          echo "🚀 Memulai Auto Deployment di Server..."
+          echo "🚀 [GitHub Runner] Memulai Auto Deployment SAP AI Assistant..."
           cd /var/www/SAP-AI-Assistant
           chmod +x deploy/update.sh
           bash deploy/update.sh
