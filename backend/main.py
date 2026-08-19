@@ -4,6 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from models import ChatRequest, ChatResponse, SourceReference
 from config import settings
@@ -44,7 +47,10 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Inisialisasi database schema & default user saat server dinyalakan."""
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        logger.error(f"Startup DB init failed (server will still run): {e}")
 
 @app.get("/")
 async def root():
