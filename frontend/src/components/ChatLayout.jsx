@@ -575,55 +575,57 @@ const ChatLayout = () => {
       {/* ================= AREA CHAT UTAMA ================= */}
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0">
 
-        <header className="h-14 bg-surface-raised/80 backdrop-blur-xl border-b border-line px-4 sm:px-6 flex items-center justify-between z-10 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="md:hidden p-2 rounded-xl text-content-muted hover:bg-surface-hover"
-              aria-label="Buka menu percakapan"
-            >
-              <Menu className="w-4 h-4" aria-hidden="true" />
-            </button>
-
-            <label htmlFor="sap-target" className="hidden sm:block text-sm text-content-muted shrink-0">
-              Sistem SAP
-            </label>
-            {sapSubServers.length > 0 ? (
-              <select
-                id="sap-target"
-                value={activeServer}
-                onChange={(e) => setActiveServer(e.target.value)}
-                className={`bg-surface-sunken text-content text-sm font-medium py-2 px-3.5 rounded-xl border cursor-pointer max-w-[17rem] truncate ${
-                  isProductionTarget ? 'border-danger text-danger' : 'border-line'
-                }`}
+        <header className="pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0">
+          <div className="h-14 px-4 sm:px-6 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="md:hidden p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0"
+                aria-label="Buka menu percakapan"
               >
-                {sapSubServers.map((srv) => (
-                  <option key={srv.number ?? aliasOf(srv)} value={`sap:${aliasOf(srv)}`}>
-                    {srv.name}{srv.production_warning ? ' — PRODUKSI' : ''}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-sm text-content-subtle">Menghubungkan…</span>
-            )}
-          </div>
+                <Menu className="w-4 h-4" aria-hidden="true" />
+              </button>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
-              aria-label="Buka pengaturan"
-            >
-              <Settings className="w-4 h-4" aria-hidden="true" />
-            </button>
-            <button
-              onClick={cycleTheme}
-              className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
-              aria-label={`${THEME_LABEL[theme]} — klik untuk mengganti tema`}
-              title={THEME_LABEL[theme]}
-            >
-              <ThemeIcon className="w-4 h-4" aria-hidden="true" />
-            </button>
+              <label htmlFor="sap-target" className="hidden sm:block text-sm text-content-muted shrink-0">
+                Sistem SAP
+              </label>
+              {sapSubServers.length > 0 ? (
+                <select
+                  id="sap-target"
+                  value={activeServer}
+                  onChange={(e) => setActiveServer(e.target.value)}
+                  className={`bg-surface-sunken text-content text-sm font-medium py-2 px-3 rounded-xl border cursor-pointer max-w-[15rem] sm:max-w-[17rem] truncate ${
+                    isProductionTarget ? 'border-danger text-danger' : 'border-line'
+                  }`}
+                >
+                  {sapSubServers.map((srv) => (
+                    <option key={srv.number ?? aliasOf(srv)} value={`sap:${aliasOf(srv)}`}>
+                      {srv.name}{srv.production_warning ? ' — PRODUKSI' : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-sm text-content-subtle">Menghubungkan…</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+                aria-label="Buka pengaturan"
+              >
+                <Settings className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                onClick={cycleTheme}
+                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+                aria-label={`${THEME_LABEL[theme]} — klik untuk mengganti tema`}
+                title={THEME_LABEL[theme]}
+              >
+                <ThemeIcon className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </header>
 
@@ -631,10 +633,10 @@ const ChatLayout = () => {
         {isProductionTarget && (
           <div
             role="alert"
-            className="bg-danger-soft border-b border-danger/40 px-4 sm:px-6 py-2 flex items-center gap-2 text-xs font-semibold text-danger"
+            className="bg-danger-soft border-b border-danger/40 px-4 sm:px-6 py-2 flex items-center gap-2 text-xs font-semibold text-danger shrink-0"
           >
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>
+            <span className="leading-snug">
               Anda terhubung ke sistem <strong>PRODUKSI</strong> ({selectedServer?.name}). Setiap permintaan
               dijalankan terhadap data perusahaan yang sesungguhnya.
             </span>
@@ -642,14 +644,16 @@ const ChatLayout = () => {
         )}
 
         {isGuest && (
-          <div className="bg-warning-soft border-b border-warning/30 px-4 sm:px-6 py-2 flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-xs font-semibold text-warning">
+          <div className="bg-warning-soft border-b border-warning/30 px-3.5 sm:px-6 py-2 flex items-center justify-between gap-2.5 shrink-0">
+            <div className="flex items-center gap-2 text-xs font-semibold text-warning min-w-0">
               <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />
-              Mode tamu dibatasi beberapa prompt per hari. Login untuk akses penuh dan riwayat tersimpan.
-            </span>
+              <span className="leading-tight">
+                Mode tamu dibatasi beberapa prompt per hari. Login untuk akses penuh dan riwayat tersimpan.
+              </span>
+            </div>
             <button
               onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-              className="text-xs font-bold bg-warning text-surface px-3 py-1 rounded-lg shrink-0"
+              className="text-xs font-bold bg-warning text-surface px-3 py-1.5 rounded-lg shrink-0 shadow-xs hover:brightness-110 active:scale-95 transition-all"
             >
               Login
             </button>

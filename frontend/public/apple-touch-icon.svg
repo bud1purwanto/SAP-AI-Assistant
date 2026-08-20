@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#60A5FA"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5.3999999999999995" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect x="9" y="9" width="162" height="162" rx="39.6" fill="url(#bgGrad)" stroke="#334155" stroke-width="3.6"/>
+  
+  <!-- Outer Glow Circle -->
+  <circle cx="90" cy="90" r="62.99999999999999" fill="none" stroke="url(#aiGrad)" stroke-width="3.2399999999999998" opacity="0.35"/>
+  
+  <!-- Main AI Spark Center -->
+  <path d="M90 32.4 C90 64.8 64.8 90 32.4 90 C64.8 90 90 115.2 90 147.6 C90 115.2 115.2 90 147.6 90 C115.2 90 90 64.8 90 32.4 Z" fill="url(#aiGrad)" filter="url(#glow)"/>
+  
+  <!-- Mini Secondary Spark -->
+  <path d="M129.6 39.6 C129.6 50.400000000000006 118.80000000000001 59.400000000000006 108 59.400000000000006 C118.80000000000001 59.400000000000006 129.6 68.4 129.6 79.2 C129.6 68.4 140.4 59.400000000000006 151.2 59.400000000000006 C140.4 59.400000000000006 129.6 50.400000000000006 129.6 39.6 Z" fill="#60A5FA" opacity="0.9"/>
+  
+  <!-- Center Core Node -->
+  <circle cx="90" cy="90" r="9.9" fill="#FFFFFF"/>
+</svg>

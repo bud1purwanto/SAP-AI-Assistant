@@ -126,14 +126,14 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 pb-4 sm:pb-6">
+    <div className="w-full max-w-3xl mx-auto px-3 sm:px-4 pb-2 sm:pb-4 pb-safe">
       <form
         onSubmit={handleSubmit}
         onDragEnter={onDragEnter}
         onDragOver={(e) => e.preventDefault()}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`relative bg-surface-raised backdrop-blur-xl rounded-3xl border shadow-xl p-2 sm:p-2.5 transition-all ${
+        className={`relative bg-surface-raised backdrop-blur-xl rounded-3xl border shadow-xl p-1.5 sm:p-2.5 transition-all ${
           isDragging ? 'border-accent border-dashed bg-accent-soft' : 'border-line focus-within:border-accent'
         }`}
       >
@@ -206,7 +206,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder="Tanyakan sesuatu, lampirkan berkas, atau minta saya menyusun laporan…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[180px] py-2.5 px-2 bg-transparent text-content placeholder:text-content-subtle text-[15px] focus:outline-none resize-none leading-relaxed"
+            className="flex-1 max-h-[180px] py-2.5 px-2 bg-transparent text-content placeholder:text-content-subtle text-base sm:text-[15px] focus:outline-none resize-none leading-relaxed"
             disabled={isLoading}
           />
 
@@ -236,7 +236,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[11px] text-content-subtle mt-2 pb-1 select-none">
+      <p className="text-center text-[10px] sm:text-[11px] text-content-subtle mt-1.5 sm:mt-2 px-2 select-none leading-tight">
         SAP AI Assistant adalah AI dan dapat membuat kesalahan. Harap selalu verifikasi data penting dan transaksi di SAP GUI.
       </p>
     </div>

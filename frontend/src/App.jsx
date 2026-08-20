@@ -1,17 +1,20 @@
 import React from 'react';
 import ChatLayout from './components/ChatLayout';
+import PWAPrompt from './components/PWAPrompt';
 
 /**
  * Shell aplikasi.
  *
- * Sebelumnya berkas ini menduplikasi seluruh state ChatLayout (user, sesi,
- * pesan, tema) dan meneruskannya sebagai props — padahal ChatLayout tidak
- * menerima props sama sekali, sehingga ~390 baris logika di sini tidak pernah
- * dieksekusi sementara dua komponen berebut key localStorage yang sama.
- * State kini hanya hidup di satu tempat.
+ * State percakapan dan sesi dikelola di ChatLayout.
+ * PWAPrompt menangani instalasi Progressive Web App untuk mobile/desktop.
  */
 function App() {
-  return <ChatLayout />;
+  return (
+    <>
+      <ChatLayout />
+      <PWAPrompt />
+    </>
+  );
 }
 
 export default App;
