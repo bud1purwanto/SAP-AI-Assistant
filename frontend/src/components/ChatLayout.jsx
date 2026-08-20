@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+impkert React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
 } from 'lucide-react';
@@ -618,12 +618,16 @@ const ChatLayout = () => {
                   id="sap-target"
                   value={activeServer}
                   onChange={(e) => handleServerChange(e.target.value)}
-                  className={`bg-surface-sunken text-content text-sm font-medium py-2 px-3 rounded-xl border cursor-pointer max-w-[15rem] sm:max-w-[17rem] truncate ${
-                    isProductionTarget ? 'border-danger text-danger' : 'border-line'
+                  className={`bg-surface-sunken text-sm font-medium py-2 px-3 rounded-xl border cursor-pointer max-w-[15rem] sm:max-w-[17rem] truncate transition-colors ${
+                    isProductionTarget ? 'border-danger text-danger font-semibold' : 'border-line text-content'
                   }`}
                 >
                   {sapSubServers.map((srv) => (
-                    <option key={srv.number ?? aliasOf(srv)} value={`sap:${aliasOf(srv)}`}>
+                    <option
+                      key={srv.number ?? aliasOf(srv)}
+                      value={`sap:${aliasOf(srv)}`}
+                      className="bg-surface-raised text-content py-1"
+                    >
                       {srv.name}{srv.production_warning ? ' — PRODUKSI' : ''}
                     </option>
                   ))}

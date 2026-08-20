@@ -126,15 +126,15 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] sm:pb-3">
+    <div className="px-2.5 sm:px-6 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
       <form
         onSubmit={handleSubmit}
-        onDragEnter={onDragEnter}
         onDragOver={(e) => e.preventDefault()}
+        onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`relative bg-surface-raised backdrop-blur-xl rounded-2xl sm:rounded-3xl border shadow-md sm:shadow-xl p-1 sm:p-2.5 transition-all ${
-          isDragging ? 'border-accent border-dashed bg-accent-soft' : 'border-line focus-within:border-accent'
+        className={`relative bg-surface-raised rounded-2xl sm:rounded-3xl border transition-all duration-200 p-1 sm:p-2 max-w-3xl mx-auto focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent shadow-xs hover:shadow-sm ${
+          isDragging ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/20' : 'border-line'
         }`}
       >
         {isDragging && (
@@ -206,7 +206,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder="Tanyakan sesuatu tentang SAP…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] focus:outline-none resize-none leading-snug sm:leading-relaxed"
+            className="flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-0 outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
@@ -235,7 +235,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[9px] sm:text-[11px] text-content-subtle mt-1 sm:mt-2 mb-0 px-2 select-none leading-tight tracking-normal">
+      <p className="text-center text-[9px] sm:text-[10.5px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
         SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
       </p>
     </div>
