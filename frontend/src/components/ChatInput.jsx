@@ -126,7 +126,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-2.5 sm:px-4 pb-1.5 sm:pb-4 pb-safe">
+    <div className="w-full max-w-3xl mx-auto px-2.5 sm:px-4 pb-2 sm:pb-4 pb-safe">
       <form
         onSubmit={handleSubmit}
         onDragEnter={onDragEnter}
@@ -235,7 +235,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[10px] sm:text-[11px] text-content-subtle mt-1.5 sm:mt-2 px-2 select-none leading-tight">
+      <p className="text-center text-[10px] sm:text-[11px] text-content-subtle mt-2 sm:mt-2.5 mb-1 sm:mb-2 px-2 select-none leading-tight tracking-normal">
         SAP AI Assistant adalah AI dan dapat membuat kesalahan. Harap selalu verifikasi data penting dan transaksi di SAP GUI.
       </p>
     </div>
