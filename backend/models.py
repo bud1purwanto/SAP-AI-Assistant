@@ -7,6 +7,15 @@ class SourceReference(BaseModel):
     name: str = Field(..., description="Nama tool atau dokumen referensi")
     content: str = Field(..., description="Cuplikan data yang diambil")
 
+class Attachment(BaseModel):
+    """Lampiran yang dikirim pengguna sebagai konteks."""
+    upload_id: str
+    filename: str
+    kind: str = Field(default="document", description="'image' atau 'document'")
+    content_type: str = ""
+    size: int = 0
+
+
 class ChatRequest(BaseModel):
     """Model untuk request pesan masuk dari user."""
     message: str = Field(..., description="Pesan dari user")
@@ -15,6 +24,7 @@ class ChatRequest(BaseModel):
     selected_server: str = Field(default="all", description="Target MCP Server: 'all', 'sap', 'rag', atau 'sap:target_alias'")
     server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
+    attachment_ids: List[str] = Field(default_factory=list, description="ID lampiran sebagai konteks")
 
 class GeneratedArtifact(BaseModel):
     """Berkas (Excel/CSV) yang dihasilkan asisten dan siap diunduh."""

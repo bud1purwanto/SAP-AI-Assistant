@@ -161,3 +161,49 @@ export async function fetchArtifactBlob(artifactId) {
   }
   return res.blob();
 }
+
+/**
+ * Unggah satu lampiran (gambar/dokumen) sebagai konteks percakapan.
+ *
+ * Dikirim sebagai multipart, sehingga Content-Type harus dibiarkan diisi
+ * browser lengkap dengan boundary-nya.
+ */
+export async function uploadAttachment(file, sessionId) {
+  const form = new FormData();
+  form.append('file', file);
+  if (sessionId) form.append('session_id', sessionId);
+
+  const token = getToken();
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/uploads`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+  } catch {
+    throw new ApiError('Tidak dapat terhubung ke server saat mengunggah berkas.', 0);
+  }
+
+  if (res.status === 401) {
+    clearSession();
+    onUnauthorized();
+    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new ApiError((data && data.detail) || 'Berkas gagal diunggah.', res.status);
+  }
+  return data;
+}
+
+/** URL pratinjau lampiran; perlu token sehingga diambil sebagai blob. */
+export async function fetchAttachmentBlob(uploadId) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}/api/uploads/${uploadId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new ApiError('Lampiran tidak dapat dimuat.', res.status);
+  return res.blob();
+}

@@ -152,6 +152,7 @@ const ChatLayout = () => {
               content: m.content,
               sources: parseJsonList(m.sources),
               artifacts: parseJsonList(m.artifacts),
+              attachments: parseJsonList(m.attachments),
               created_at: m.created_at,
             })),
       );
@@ -240,8 +241,13 @@ const ChatLayout = () => {
     setIsLoading(false);
   };
 
-  const handleSendMessage = async (text) => {
-    const outgoing = [...messages, { role: 'user', content: text, created_at: new Date().toISOString() }];
+  const handleSendMessage = async (text, attachments = []) => {
+    const outgoing = [...messages, {
+      role: 'user',
+      content: text,
+      attachments,
+      created_at: new Date().toISOString(),
+    }];
     setMessages(outgoing);
     setIsLoading(true);
     setError(null);
@@ -255,7 +261,13 @@ const ChatLayout = () => {
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
       const data = await api.chat(
-        { message: text, history, session_id: currentSessionId, active_server: activeServer },
+        {
+          message: text,
+          history,
+          session_id: currentSessionId,
+          active_server: activeServer,
+          attachment_ids: attachments.map((a) => a.upload_id),
+        },
         controller.signal,
       );
 

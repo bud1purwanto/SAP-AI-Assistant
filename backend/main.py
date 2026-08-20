@@ -4,13 +4,14 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
 from agent import process_chat
 from artifacts import get_artifact
+from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
     create_access_token,
     get_current_user,
@@ -20,6 +21,7 @@ from auth import require_superadmin as require_superadmin_token
 from config import settings, _EPHEMERAL_JWT_SECRET
 from database import (
     add_chat_message,
+    attach_uploads_to_session,
     check_login_block,
     clear_login_failures,
     authenticate_user,
@@ -38,7 +40,10 @@ from database import (
     get_user_by_username,
     init_db,
     list_all_users,
+    load_upload_file,
+    load_uploads,
     purge_expired_artifacts,
+    purge_expired_uploads,
     register_login_failure,
     session_belongs_to,
     update_system_config,
@@ -57,7 +62,7 @@ async def _artifact_cleanup_loop():
     while True:
         try:
             await asyncio.sleep(3600)
-            removed = purge_expired_artifacts()
+            removed = purge_expired_artifacts() + purge_expired_uploads()
             if removed:
                 logger.info(f"{removed} berkas kedaluwarsa dibersihkan.")
         except asyncio.CancelledError:
@@ -80,9 +85,9 @@ async def lifespan(app: FastAPI):
     init_db()
     # Bersihkan berkas kedaluwarsa saat startup; TTL-nya pendek sehingga tidak
     # perlu penjadwal tersendiri.
-    removed = purge_expired_artifacts()
+    removed = purge_expired_artifacts() + purge_expired_uploads()
     if removed:
-        logger.info(f"{removed} berkas hasil generate yang kedaluwarsa dibersihkan.")
+        logger.info(f"{removed} berkas kedaluwarsa dibersihkan saat startup.")
 
     # Server produksi bisa berjalan berminggu-minggu tanpa restart, sehingga
     # pembersihan saat startup saja tidak cukup.
@@ -541,7 +546,27 @@ async def chat_endpoint(
 
         chat_req.session_id = active_session_id
         if active_session_id:
-            add_chat_message(active_session_id, "user", chat_req.message)
+            # Lampiran disimpan bersama pesan pengguna agar tetap tampil setelah
+            # halaman dimuat ulang, dan diikat ke sesinya.
+            attachments_str = ""
+            if chat_req.attachment_ids:
+                ids = chat_req.attachment_ids[:MAX_ATTACHMENTS_PER_MESSAGE]
+                chat_req.attachment_ids = ids
+                attach_uploads_to_session(ids, profile["username"], active_session_id)
+                # Simpan metadata lengkap agar antarmuka tidak perlu memanggil
+                # API tambahan hanya untuk menampilkan nama berkasnya.
+                attachments_str = json.dumps([
+                    {
+                        "upload_id": item["upload_id"],
+                        "filename": item["filename"],
+                        "kind": item["kind"],
+                        "content_type": item["content_type"],
+                    }
+                    for item in load_uploads(ids, profile["username"])
+                ])
+            add_chat_message(
+                active_session_id, "user", chat_req.message, attachments=attachments_str
+            )
 
     # Lengkapi konteks percakapan dari database bila request tidak membawa histori.
     if active_session_id and not chat_req.history:
@@ -573,6 +598,45 @@ async def chat_endpoint(
 
     response.session_id = active_session_id
     return response
+
+
+@app.post("/api/uploads")
+async def upload_attachment(
+    file: UploadFile = File(...),
+    session_id: str = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Unggah satu gambar atau dokumen sebagai konteks percakapan.
+
+    Teks dokumen diekstraksi di sini, sekali, supaya giliran percakapan
+    berikutnya tidak perlu memproses ulang berkas yang sama.
+    """
+    data = await file.read()
+    try:
+        return store_upload(
+            owner=user["username"],
+            filename=file.filename or "berkas",
+            declared_type=file.content_type or "",
+            data=data,
+            session_id=session_id,
+        )
+    except UploadRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/uploads/{upload_id}")
+async def get_attachment(upload_id: str, user: dict = Depends(get_current_user)):
+    """Tampilkan/unduh lampiran; hanya dapat diakses pemiliknya."""
+    item = load_upload_file(upload_id, user["username"])
+    if not item:
+        raise HTTPException(status_code=404, detail="Lampiran tidak ditemukan atau sudah kedaluwarsa.")
+
+    disposition = "inline" if item["kind"] == "image" else "attachment"
+    return Response(
+        content=item["data"],
+        media_type=item["content_type"],
+        headers={"Content-Disposition": f'{disposition}; filename="{item["filename"]}"'},
+    )
 
 
 @app.get("/api/artifacts/{artifact_id}")

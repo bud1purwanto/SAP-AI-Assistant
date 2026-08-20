@@ -138,6 +138,11 @@ def init_db():
             conn.execute(text(
                 "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS artifacts TEXT"
             ))
+            # Lampiran dari pengguna dipisahkan dari berkas hasil generate:
+            # keduanya berkas, tetapi arah dan masa berlakunya berbeda.
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT"
+            ))
             # Kolom-kolom ini dibaca pada setiap pembukaan sesi dan render sidebar.
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_messages_session
@@ -185,6 +190,32 @@ def init_db():
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_artifacts_owner
                 ON ai_assistant.generated_artifacts (LOWER(owner));
+            """))
+
+            # 5c-bis. Lampiran percakapan (gambar & dokumen) yang dikirim pengguna
+            # sebagai konteks untuk AI. Teksnya diekstraksi sekali saat unggah.
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.chat_uploads (
+                    upload_id VARCHAR(32) PRIMARY KEY,
+                    owner VARCHAR(50) NOT NULL,
+                    session_id VARCHAR(50),
+                    filename VARCHAR(255) NOT NULL,
+                    content_type VARCHAR(150) NOT NULL,
+                    kind VARCHAR(20) NOT NULL,
+                    data BYTEA NOT NULL,
+                    extracted_text TEXT,
+                    size_bytes INTEGER NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_uploads_owner
+                ON ai_assistant.chat_uploads (LOWER(owner), created_at DESC);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_uploads_expires
+                ON ai_assistant.chat_uploads (expires_at);
             """))
 
             # 5d. Catatan percobaan login gagal, untuk pembatasan brute force.
@@ -694,16 +725,17 @@ def delete_chat_session(session_id: str, username: str):
         return False
 
 def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
-                     artifacts: str = None):
+                     artifacts: str = None, attachments: str = None):
     """Tambah pesan (user / ai) ke dalam sesi percakapan."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.chat_messages (session_id, role, content, sources, artifacts)
-                VALUES (:sid, :r, :c, :s, :a)
+                INSERT INTO ai_assistant.chat_messages
+                    (session_id, role, content, sources, artifacts, attachments)
+                VALUES (:sid, :r, :c, :s, :a, :att)
             """), {"sid": session_id, "r": role, "c": content, "s": sources or "",
-                   "a": artifacts or ""})
+                   "a": artifacts or "", "att": attachments or ""})
             
             # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
             if role == 'user':
@@ -764,7 +796,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             if username is not None:
                 params["u"] = username.strip()
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.created_at
                     FROM ai_assistant.chat_messages m
                     JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
                     WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
@@ -773,7 +805,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                 """
             else:
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.created_at
                     FROM ai_assistant.chat_messages m
                     WHERE m.session_id = :sid {page_filter}
                     ORDER BY m.id DESC
@@ -788,6 +820,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                     "content": r.content,
                     "sources": r.sources if r.sources else None,
                     "artifacts": r.artifacts if r.artifacts else None,
+                    "attachments": r.attachments if r.attachments else None,
                     "created_at": _iso(r.created_at),
                 }
                 for r in reversed(rows)
@@ -1157,4 +1190,106 @@ def drop_oldest_artifacts(owner: str, keep: int) -> int:
             return res.rowcount or 0
     except Exception as e:
         logger.error(f"Error drop_oldest_artifacts: {e}")
+        return 0
+
+
+# --- LAMPIRAN PERCAKAPAN ---
+
+def save_upload(upload_id: str, owner: str, session_id: str, filename: str,
+                content_type: str, kind: str, data: bytes, extracted_text: str,
+                expires_at) -> bool:
+    """Simpan satu lampiran beserta teks hasil ekstraksinya."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.chat_uploads
+                    (upload_id, owner, session_id, filename, content_type, kind,
+                     data, extracted_text, size_bytes, expires_at)
+                VALUES (:id, :owner, :sid, :fn, :ct, :kind, :data, :txt, :size, :exp)
+            """), {
+                "id": upload_id, "owner": owner, "sid": session_id, "fn": filename,
+                "ct": content_type, "kind": kind, "data": data,
+                "txt": extracted_text or "", "size": len(data), "exp": expires_at,
+            })
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error save_upload: {e}")
+        return False
+
+
+def load_uploads(upload_ids: list, owner: str) -> list:
+    """Ambil lampiran milik user tertentu, berikut isinya.
+
+    Lampiran dapat memuat dokumen internal, sehingga kepemilikan diperiksa di
+    dalam query dan id milik orang lain hanya menghasilkan daftar kosong.
+    """
+    if not upload_ids:
+        return []
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT upload_id, filename, content_type, kind, data, extracted_text
+                FROM ai_assistant.chat_uploads
+                WHERE upload_id = ANY(:ids)
+                  AND LOWER(owner) = LOWER(:owner)
+                  AND expires_at > CURRENT_TIMESTAMP
+            """), {"ids": list(upload_ids), "owner": (owner or "").strip()}).fetchall()
+
+            found = {
+                r.upload_id: {
+                    "upload_id": r.upload_id,
+                    "filename": r.filename,
+                    "content_type": r.content_type,
+                    "kind": r.kind,
+                    "data": bytes(r.data),
+                    "extracted_text": r.extracted_text or "",
+                }
+                for r in rows
+            }
+            # Pertahankan urutan sesuai permintaan pemanggil.
+            return [found[uid] for uid in upload_ids if uid in found]
+    except Exception as e:
+        logger.error(f"Error load_uploads: {e}")
+        return []
+
+
+def load_upload_file(upload_id: str, owner: str):
+    """Ambil satu lampiran untuk ditampilkan/diunduh pemiliknya."""
+    rows = load_uploads([upload_id], owner)
+    return rows[0] if rows else None
+
+
+def attach_uploads_to_session(upload_ids: list, owner: str, session_id: str):
+    """Tandai lampiran sebagai milik sesi tertentu setelah pesan terkirim."""
+    if not upload_ids or not session_id:
+        return
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                UPDATE ai_assistant.chat_uploads
+                SET session_id = :sid
+                WHERE upload_id = ANY(:ids) AND LOWER(owner) = LOWER(:owner)
+            """), {"ids": list(upload_ids), "sid": session_id, "owner": (owner or "").strip()})
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error attach_uploads_to_session: {e}")
+
+
+def purge_expired_uploads() -> int:
+    """Hapus lampiran yang sudah lewat masa berlakunya."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("""
+                DELETE FROM ai_assistant.chat_uploads
+                WHERE expires_at <= CURRENT_TIMESTAMP
+            """))
+            conn.commit()
+            return res.rowcount or 0
+    except Exception as e:
+        logger.error(f"Error purge_expired_uploads: {e}")
         return 0

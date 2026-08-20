@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
-import { fetchArtifactBlob } from '../lib/api';
+import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
+import { fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 
 const ARTIFACT_ICON = {
   xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
@@ -64,6 +64,52 @@ const formatTime = (value) => {
     : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 };
 
+/**
+ * Lampiran pada pesan pengguna. Gambar ditampilkan sebagai pratinjau kecil;
+ * karena endpointnya memerlukan token, berkasnya diambil sebagai blob.
+ */
+const AttachmentChip = ({ item }) => {
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  useEffect(() => {
+    if (item.kind !== 'image') return undefined;
+    let objectUrl;
+    let cancelled = false;
+
+    fetchAttachmentBlob(item.upload_id)
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      })
+      .catch(() => { /* pratinjau gagal; tetap tampilkan namanya */ });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [item.upload_id, item.kind]);
+
+  if (item.kind === 'image' && previewUrl) {
+    return (
+      <img
+        src={previewUrl}
+        alt={item.filename}
+        className="max-h-40 max-w-[12rem] rounded-2xl border border-line object-cover"
+      />
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-2 px-3 py-2.5 bg-surface-raised border border-line rounded-2xl text-xs">
+      {item.kind === 'image'
+        ? <ImageIcon className="w-3.5 h-3.5 text-content-muted" aria-hidden="true" />
+        : <FileText className="w-3.5 h-3.5 text-content-muted" aria-hidden="true" />}
+      <span className="max-w-[12rem] truncate text-content font-medium">{item.filename}</span>
+    </span>
+  );
+};
+
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
@@ -88,6 +134,15 @@ const ChatMessage = ({ message }) => {
             <span className="font-semibold text-content-secondary">Anda</span>
             {timeLabel && <span>{timeLabel}</span>}
           </div>
+
+          {/* Lampiran yang disertakan pengguna */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="flex flex-wrap items-start gap-2 justify-end mb-2">
+              {message.attachments.map((item) => (
+                <AttachmentChip key={item.upload_id} item={item} />
+              ))}
+            </div>
+          )}
 
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
           <div className="relative px-5 py-3.5 rounded-3xl rounded-tr-sm text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20">

@@ -60,6 +60,35 @@ def _extract_text(content) -> str:
         
     return _clean_thinking_process(raw_text)
 
+def _looks_like_vision_error(error: Exception) -> bool:
+    """Tebak apakah kegagalan disebabkan lampiran gambar, bukan hal lain."""
+    text = str(error).lower()
+    markers = ("image", "vision", "multimodal", "image_url", "content type", "unsupported")
+    return any(marker in text for marker in markers)
+
+
+def _strip_images(messages: list) -> list:
+    """Buang bagian gambar dari pesan, sisakan teksnya."""
+    cleaned = []
+    for message in messages:
+        if isinstance(getattr(message, "content", None), list):
+            text = " ".join(
+                part.get("text", "")
+                for part in message.content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ).strip()
+            cleaned.append(
+                HumanMessage(content=(
+                    text + "\n\n(Catatan: gambar tidak dapat diproses oleh model yang aktif; "
+                    "jawab berdasarkan teks yang ada dan minta pengguna menjelaskan isi gambar "
+                    "bila diperlukan.)"
+                ))
+            )
+        else:
+            cleaned.append(message)
+    return cleaned
+
+
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
                        username: str = "Guest") -> ChatResponse:
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
@@ -75,7 +104,13 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     
     if not all_mcp_tools:
         return ChatResponse(
-            reply="⚠️ **Sistem Terputus**\n\nMohon maaf, saya tidak dapat terhubung ke server MCP SAP maupun RAG SAP saat ini. Pastikan koneksi jaringan Anda stabil dan URL/Token di menu **Settings** sudah benar.",
+            reply=(
+                "⚠️ **Koneksi ke sistem SAP terputus**\n\n"
+                "Saya belum bisa mengambil data dari sistem SAP maupun basis dokumen internal "
+                "saat ini. Silakan coba beberapa saat lagi, atau hubungi administrator bila "
+                "berlanjut.\n\n"
+                "Anda tetap bisa bertanya hal umum atau melampirkan berkas untuk saya bantu olah."
+            ),
             sources=[]
         )
         
@@ -258,7 +293,13 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"   -> Gunakan `rag__search` bila jawabannya kemungkinan ada di dokumen internal "
         f"(blueprint, SOP, manual). Bila tidak ditemukan, jawab dari pengetahuan Anda dan "
         f"katakan bahwa itu bukan dari dokumen internal.\n\n"
-        f"**C. Permintaan umum di luar data SAP** — menulis, meringkas, menerjemahkan, "
+        f"**C. Permintaan yang menyertakan lampiran** (pengguna mengirim gambar atau dokumen)\n"
+        f"   -> Isi berkas sudah disediakan untuk Anda dalam blok LAMPIRAN DARI PENGGUNA. "
+        f"Baca dan gunakan isinya; jangan meminta pengguna menempelkan ulang isinya.\n"
+        f"   -> Sebutkan nama berkas ketika jawaban Anda bersumber dari lampiran tersebut.\n"
+        f"   -> Bila lampiran bertentangan dengan data SAP, sampaikan perbedaannya, jangan "
+        f"memilih diam-diam salah satunya.\n\n"
+        f"**D. Permintaan umum di luar data SAP** — menulis, meringkas, menerjemahkan, "
         f"menghitung, menyusun tabel/laporan, membuat berkas Excel/CSV, menjelaskan konsep, "
         f"membantu kode, brainstorming, atau sekadar menyapa.\n"
         f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool SAP/RAG "
@@ -339,7 +380,42 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         elif role in ("assistant", "ai"):
             messages.append(AIMessage(content=content))
             
-    messages.append(HumanMessage(content=chat_req.message))
+    # --- LAMPIRAN PENGGUNA ---
+    # Dokumen disisipkan sebagai teks konteks; gambar dikirim sebagai bagian
+    # multimodal. Bila model tidak mendukung gambar, permintaan diulang tanpa
+    # gambar agar percakapan tetap berjalan (lihat _invoke_with_vision_fallback).
+    attachment_images = []
+    user_content = chat_req.message
+
+    if getattr(chat_req, "attachment_ids", None):
+        from database import load_uploads
+        from uploads import build_context_blocks
+
+        loaded = load_uploads(chat_req.attachment_ids[:5], username)
+        if loaded:
+            text_block, attachment_images = build_context_blocks(loaded)
+            names = ", ".join(item["filename"] for item in loaded)
+            logger.info(f"Menyertakan {len(loaded)} lampiran sebagai konteks: {names}")
+
+            if text_block:
+                user_content = (
+                    f"{chat_req.message}\n\n"
+                    f"=== LAMPIRAN DARI PENGGUNA ===\n{text_block}\n"
+                    f"=== AKHIR LAMPIRAN ===\n\n"
+                    f"Gunakan isi lampiran di atas untuk menjawab. Bila jawaban berasal dari "
+                    f"lampiran, sebutkan nama berkasnya."
+                )
+            if attachment_images:
+                daftar = ", ".join(img["filename"] for img in attachment_images)
+                user_content += f"\n\n(Pengguna melampirkan gambar: {daftar})"
+
+    if attachment_images:
+        parts = [{"type": "text", "text": user_content}]
+        for image in attachment_images:
+            parts.append({"type": "image_url", "image_url": {"url": image["data_url"]}})
+        messages.append(HumanMessage(content=parts))
+    else:
+        messages.append(HumanMessage(content=user_content))
 
     primary_model_name = nine_router_model if nine_router_enabled else openrouter_model
     fallback_model_name = openrouter_fallback_model if openrouter_enabled else primary_model_name
@@ -357,40 +433,58 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         try:
             response = await active_primary.ainvoke(messages)
         except Exception as primary_err:
-            logger.warning(f"Model utama ({primary_model_name}) gagal: {primary_err}. Menjajal model fallback ({fallback_model_name})...")
-            try:
-                response = await active_fallback.ainvoke(messages)
-            except Exception as fallback_err:
-                logger.warning(f"Model fallback dengan tool binding gagal: {fallback_err}. Menjajal fallback plain prompt tanpa tools...")
+            vision_retry_ok = False
+            # Model yang tidak mendukung gambar menolak seluruh permintaan.
+            # Ulangi tanpa gambar agar pertanyaannya tetap terjawab.
+            if attachment_images and _looks_like_vision_error(primary_err):
+                logger.warning(
+                    f"Model menolak lampiran gambar ({primary_err}); mengulang tanpa gambar."
+                )
+                messages = _strip_images(messages)
+                attachment_images = []
                 try:
-                    # Retry terakhir dengan model fallback tanpa tool binding (mengatasi model gratis yg tdk support function calling)
-                    response = await llm_fallback.ainvoke(messages)
-                except Exception as e:
-                    err = str(e)
-                    logger.error(f"LLM primary and fallback invoke error: {err}")
-                    low = err.lower()
-                    if "429" in err or "rate limit" in low or "resource_exhausted" in low:
-                        reply_text = (
-                            "⚠️ **Batas Kuota / Rate Limit Terlampaui (429)**\n\n"
-                            "Model AI gratis OpenRouter sedang mengalami pembatasan rate limit (terlalu banyak permintaan per menit).\n\n"
-                            "**Solusi:**\n"
-                            "1. Tunggu 20-30 detik lalu ulangi pertanyaan Anda.\n"
-                            "2. Atau ganti **Primary / Fallback AI Model** di menu **Admin Dashboard > Settings** ke model lain (misal: `openrouter/auto`, `google/gemini-2.0-flash-exp:free`, `meta-llama/llama-3.3-70b-instruct:free`, dll.) atau gunakan API Key berbayar untuk kapasitas tanpa batas.\n\n"
-                            f"_Detail error provider:_ `{err[:250]}`"
-                        )
-                    elif "402" in err or "credit" in low or "insufficient" in low or "quota" in low:
-                        reply_text = (
-                            "⚠️ **Layanan AI tidak tersedia (402)**\n\n"
-                            "Panggilan ke model AI utama maupun fallback gagal karena **saldo/kuota OpenRouter habis** (error 402). "
-                            "Silakan periksa saldo kredit akun OpenRouter atau perbarui pilihan model pada Admin Dashboard.\n\n"
-                            "_Catatan: koneksi RAG & MCP SAP sendiri berfungsi normal._"
-                        )
-                    else:
-                        reply_text = (
-                            "⚠️ **Kesalahan Layanan AI**\n\n"
-                            f"Gagal memanggil model AI (Utama & Fallback): {err[:300]}"
-                        )
-                    return ChatResponse(reply=reply_text, sources=sources)
+                    response = await active_primary.ainvoke(messages)
+                except Exception as retry_err:
+                    primary_err = retry_err
+                else:
+                    # Berhasil tanpa gambar; lanjutkan ke pemrosesan
+                    # respons seperti biasa, jangan panggil model lagi.
+                    vision_retry_ok = True
+            if not vision_retry_ok:
+                logger.warning(f"Model utama ({primary_model_name}) gagal: {primary_err}. Menjajal model fallback ({fallback_model_name})...")
+                try:
+                    response = await active_fallback.ainvoke(messages)
+                except Exception as fallback_err:
+                    logger.warning(f"Model fallback dengan tool binding gagal: {fallback_err}. Menjajal fallback plain prompt tanpa tools...")
+                    try:
+                        # Retry terakhir dengan model fallback tanpa tool binding (mengatasi model gratis yg tdk support function calling)
+                        response = await llm_fallback.ainvoke(messages)
+                    except Exception as e:
+                        err = str(e)
+                        logger.error(f"LLM primary and fallback invoke error: {err}")
+                        low = err.lower()
+                        if "429" in err or "rate limit" in low or "resource_exhausted" in low:
+                            reply_text = (
+                                "⚠️ **Batas Kuota / Rate Limit Terlampaui (429)**\n\n"
+                                "Model AI gratis OpenRouter sedang mengalami pembatasan rate limit (terlalu banyak permintaan per menit).\n\n"
+                                "**Solusi:**\n"
+                                "1. Tunggu 20-30 detik lalu ulangi pertanyaan Anda.\n"
+                                "2. Atau ganti **Primary / Fallback AI Model** di menu **Admin Dashboard > Settings** ke model lain (misal: `openrouter/auto`, `google/gemini-2.0-flash-exp:free`, `meta-llama/llama-3.3-70b-instruct:free`, dll.) atau gunakan API Key berbayar untuk kapasitas tanpa batas.\n\n"
+                                f"_Detail error provider:_ `{err[:250]}`"
+                            )
+                        elif "402" in err or "credit" in low or "insufficient" in low or "quota" in low:
+                            reply_text = (
+                                "⚠️ **Layanan AI tidak tersedia (402)**\n\n"
+                                "Panggilan ke model AI utama maupun fallback gagal karena **saldo/kuota OpenRouter habis** (error 402). "
+                                "Silakan periksa saldo kredit akun OpenRouter atau perbarui pilihan model pada Admin Dashboard.\n\n"
+                                "_Catatan: koneksi RAG & MCP SAP sendiri berfungsi normal._"
+                            )
+                        else:
+                            reply_text = (
+                                "⚠️ **Kesalahan Layanan AI**\n\n"
+                                f"Gagal memanggil model AI (Utama & Fallback): {err[:300]}"
+                            )
+                        return ChatResponse(reply=reply_text, sources=sources)
         messages.append(response)
         
         if not response.tool_calls:
