@@ -31,27 +31,35 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const [isChangingPass, setIsChangingPass] = useState(false);
 
   useEffect(() => {
-    if (isOpen && user?.username && user?.role !== 'guest') {
-      api.getConfig()
-        .then(data => {
-          setConfig({
-            mcp_sap_config_json: data.mcp_sap_config_json || '',
-            mcp_rag_config_json: data.mcp_rag_config_json || '',
-            assistant_persona: data.assistant_persona || '',
-            full_name: data.full_name || '',
-            global_assistant_persona: data.global_assistant_persona || '',
-            nine_router_enabled: data.nine_router_enabled ?? true,
-            nine_router_base_url: data.nine_router_base_url || 'http://192.168.88.83:20128/v1',
-            nine_router_model: data.nine_router_model || 'ag/gemini-3.7-flash-medium',
-            nine_router_api_key: data.nine_router_api_key || '',
-            openrouter_enabled: data.openrouter_enabled ?? false,
-            openrouter_model: data.openrouter_model || 'openrouter/auto',
-            openrouter_fallback_model: data.openrouter_fallback_model || 'openrouter/free',
-            openrouter_api_key: data.openrouter_api_key || ''
-          });
-          setUserRole(data.role || user.role || 'user');
-        })
-        .catch(err => console.error("Failed to load config", err));
+    if (isOpen) {
+      const currentRole = user?.role || 'user';
+      setUserRole(currentRole);
+      setActiveTab(prev => (currentRole !== 'superadmin' && (prev === 'router' || prev === 'mcp')) ? 'persona' : prev);
+
+      if (user?.username && user?.role !== 'guest') {
+        api.getConfig()
+          .then(data => {
+            setConfig({
+              mcp_sap_config_json: data.mcp_sap_config_json || '',
+              mcp_rag_config_json: data.mcp_rag_config_json || '',
+              assistant_persona: data.assistant_persona || '',
+              full_name: data.full_name || '',
+              global_assistant_persona: data.global_assistant_persona || '',
+              nine_router_enabled: data.nine_router_enabled ?? true,
+              nine_router_base_url: data.nine_router_base_url || 'http://192.168.88.83:20128/v1',
+              nine_router_model: data.nine_router_model || 'ag/gemini-3.7-flash-medium',
+              nine_router_api_key: data.nine_router_api_key || '',
+              openrouter_enabled: data.openrouter_enabled ?? false,
+              openrouter_model: data.openrouter_model || 'openrouter/auto',
+              openrouter_fallback_model: data.openrouter_fallback_model || 'openrouter/free',
+              openrouter_api_key: data.openrouter_api_key || ''
+            });
+            const fetchedRole = data.role || currentRole;
+            setUserRole(fetchedRole);
+            setActiveTab(prev => (fetchedRole !== 'superadmin' && (prev === 'router' || prev === 'mcp')) ? 'persona' : prev);
+          })
+          .catch(err => console.error("Failed to load config", err));
+      }
     }
   }, [isOpen, user]);
 
@@ -199,7 +207,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
         <div className="p-6 space-y-6 overflow-y-auto flex-1">
           
           {/* TAB 1: Persona */}
-          {activeTab === 'persona' && (
+          {(activeTab === 'persona' || (!isSuperadmin && activeTab !== 'security')) && (
             <div className="space-y-6">
               <div>
                 <label htmlFor="profile-fullname" className="block text-sm font-bold text-content mb-1.5">
