@@ -32,12 +32,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
 
     # --- Autentikasi ---
-    # WAJIB diisi di produksi. Bila kosong, sebuah secret acak dibuat saat startup,
-    # yang berarti semua token menjadi tidak valid setiap kali proses di-restart
-    # (dan tidak konsisten antar worker uvicorn).
-    jwt_secret: str = ""
+    # Jika tidak diset di .env, gunakan secret default yang stabil agar token tidak gugur setiap kali restart.
+    jwt_secret: str = "sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 720  # 12 jam
+    jwt_expire_minutes: int = 43200  # 30 hari (tetap login stabil tanpa terputus)
 
     # --- Deployment ---
     # Daftar origin yang diizinkan, dipisahkan koma. "*" hanya untuk pengembangan.
