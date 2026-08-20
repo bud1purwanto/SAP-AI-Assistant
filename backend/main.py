@@ -6,7 +6,7 @@ from datetime import date
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from agent import process_chat
@@ -503,13 +503,64 @@ def _guest_client_key(request: Request) -> str:
     return _client_ip(request)
 
 
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(
     request: Request,
     chat_req: ChatRequest,
     user: dict = Depends(get_current_user_optional),
 ):
-    """Endpoint utama untuk memproses chat dari user."""
+    """Sama seperti /api/chat, tetapi melaporkan progres selama diproses.
+
+    Dikirim sebagai Server-Sent Events sehingga pengguna melihat tahapan yang
+    sedang berjalan alih-alih menunggu tanpa keterangan. Tidak ada perkiraan
+    waktu: yang dilaporkan adalah langkah keberapa dari batas iterasi agen dan
+    apa yang sedang dikerjakan.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def on_progress(**event):
+        await queue.put({"type": "progress", **event})
+
+    async def run():
+        try:
+            response = await _run_chat(request, chat_req, user, on_progress=on_progress)
+            await queue.put({"type": "result", "data": response.model_dump()})
+        except HTTPException as e:
+            await queue.put({"type": "error", "status": e.status_code, "detail": e.detail})
+        except Exception as e:
+            logger.error(f"Chat streaming gagal: {e}")
+            await queue.put({"type": "error", "status": 500, "detail": "Terjadi kesalahan saat memproses permintaan."})
+        finally:
+            await queue.put(None)
+
+    async def event_source():
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            # Klien menutup koneksi (mis. menekan "Hentikan"): batalkan pekerjaan
+            # agar tidak ada permintaan model yang berjalan tanpa penerima.
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # Cegah buffering di proxy yang belum dikonfigurasi.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_progress=None) -> ChatResponse:
+    """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
     is_guest = user.get("is_guest", True)
 
     if is_guest:
@@ -587,7 +638,9 @@ async def chat_endpoint(
                 f"{active_session_id} untuk konteks percakapan."
             )
 
-    response = await process_chat(chat_req, user_role, user_persona, username=user["username"])
+    response = await process_chat(
+        chat_req, user_role, user_persona, username=user["username"], on_progress=on_progress
+    )
 
     if not is_guest and active_session_id:
         sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
@@ -598,6 +651,16 @@ async def chat_endpoint(
 
     response.session_id = active_session_id
     return response
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat_endpoint(
+    request: Request,
+    chat_req: ChatRequest,
+    user: dict = Depends(get_current_user_optional),
+):
+    """Endpoint utama untuk memproses chat dari user."""
+    return await _run_chat(request, chat_req, user)
 
 
 @app.post("/api/uploads")

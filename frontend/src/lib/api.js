@@ -207,3 +207,81 @@ export async function fetchAttachmentBlob(uploadId) {
   if (!res.ok) throw new ApiError('Lampiran tidak dapat dimuat.', res.status);
   return res.blob();
 }
+
+/**
+ * Kirim pesan chat sambil menerima progres pengerjaannya.
+ *
+ * EventSource tidak dipakai karena tidak dapat mengirim POST maupun header
+ * Authorization; aliran SSE dibaca langsung dari body respons fetch.
+ *
+ * `onProgress` dipanggil untuk setiap tahap. Mengembalikan hasil akhir chat.
+ */
+export async function chatWithProgress(payload, { onProgress, signal } = {}) {
+  const token = getToken();
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw err;
+    throw new ApiError('Tidak dapat terhubung ke server. Periksa koneksi jaringan Anda.', 0);
+  }
+
+  if (res.status === 401) {
+    clearSession();
+    onUnauthorized();
+    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    let detail = `Permintaan gagal (HTTP ${res.status}).`;
+    try {
+      detail = JSON.parse(text).detail || detail;
+    } catch { /* respons bukan JSON */ }
+    throw new ApiError(detail, res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result = null;
+  let failure = null;
+
+  // SSE memisahkan peristiwa dengan baris kosong; potongan dapat terbelah
+  // sembarang tempat sehingga sisa buffer harus disimpan antar pembacaan.
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split('\n\n');
+    buffer = chunks.pop() || '';
+
+    for (const chunk of chunks) {
+      const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+      if (!line) continue;
+
+      let event;
+      try {
+        event = JSON.parse(line.slice(6));
+      } catch {
+        continue;
+      }
+
+      if (event.type === 'progress') onProgress?.(event);
+      else if (event.type === 'result') result = event.data;
+      else if (event.type === 'error') failure = new ApiError(event.detail, event.status || 500);
+    }
+  }
+
+  if (failure) throw failure;
+  if (!result) throw new ApiError('Server menutup koneksi sebelum jawaban selesai.', 500);
+  return result;
+}

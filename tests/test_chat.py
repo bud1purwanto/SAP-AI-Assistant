@@ -12,7 +12,7 @@ def stub_agent(monkeypatch):
     import main
     from artifacts import extract_and_build
 
-    async def fake_process(chat_req, role, persona, username="Guest"):
+    async def fake_process(chat_req, role, persona, username="Guest", **kwargs):
         spec = {
             "type": "xlsx",
             "filename": "hasil.xlsx",

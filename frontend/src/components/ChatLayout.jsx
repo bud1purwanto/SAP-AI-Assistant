@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Square, Sun, Trash2, X,
+  AlertTriangle, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -8,8 +8,11 @@ import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
+import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
-import { api, ApiError, clearSession, getStoredUser, saveSession, setUnauthorizedHandler } from '../lib/api';
+import {
+  api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
+} from '../lib/api';
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
@@ -58,6 +61,8 @@ const ChatLayout = () => {
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Progres pengerjaan jawaban: tahap yang sedang berjalan, bukan perkiraan waktu.
+  const [progress, setProgress] = useState(null);
   const [isSessionsLoading, setIsSessionsLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -239,6 +244,7 @@ const ChatLayout = () => {
     abortRef.current?.abort();
     abortRef.current = null;
     setIsLoading(false);
+    setProgress(null);
   };
 
   const handleSendMessage = async (text, attachments = []) => {
@@ -251,6 +257,7 @@ const ChatLayout = () => {
     setMessages(outgoing);
     setIsLoading(true);
     setError(null);
+    setProgress({ stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 });
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -260,7 +267,7 @@ const ChatLayout = () => {
         .filter((m) => !m.isWelcome)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
-      const data = await api.chat(
+      const data = await chatWithProgress(
         {
           message: text,
           history,
@@ -268,7 +275,10 @@ const ChatLayout = () => {
           active_server: activeServer,
           attachment_ids: attachments.map((a) => a.upload_id),
         },
-        controller.signal,
+        {
+          signal: controller.signal,
+          onProgress: (event) => setProgress(event),
+        },
       );
 
       setMessages([...outgoing, {
@@ -298,6 +308,7 @@ const ChatLayout = () => {
     } finally {
       abortRef.current = null;
       setIsLoading(false);
+      setProgress(null);
     }
   };
 
@@ -588,28 +599,7 @@ const ChatLayout = () => {
             ))}
 
             {isLoading && (
-              <div className="flex items-start gap-3.5 my-4" role="status" aria-live="polite">
-                <div className="w-8 h-8 rounded-full bg-accent text-accent-fg flex items-center justify-center mt-1 shrink-0">
-                  <Sparkles className="w-4 h-4 animate-pulse" aria-hidden="true" />
-                </div>
-                <div className="bg-surface-raised border border-line rounded-3xl rounded-tl-sm px-5 py-4 flex items-center gap-3 flex-wrap">
-                  <span className="flex gap-1.5" aria-hidden="true">
-                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-accent animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </span>
-                  <span className="text-sm text-content-muted">
-                    Sedang mengambil data…
-                  </span>
-                  <button
-                    onClick={stopGeneration}
-                    className="flex items-center gap-1.5 text-xs font-bold text-content-muted hover:text-danger border border-line rounded-lg px-2 py-1 transition-colors"
-                  >
-                    <Square className="w-3 h-3" aria-hidden="true" />
-                    Hentikan
-                  </button>
-                </div>
-              </div>
+              <ThinkingIndicator progress={progress} onStop={stopGeneration} />
             )}
 
             {messages.length <= 1 && !isLoading && (

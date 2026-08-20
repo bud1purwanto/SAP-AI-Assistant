@@ -60,6 +60,27 @@ def _extract_text(content) -> str:
         
     return _clean_thinking_process(raw_text)
 
+def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
+    """Terjemahkan pemanggilan tool menjadi keterangan yang dipahami pengguna."""
+    name = (tool_name or "").lower()
+    if server == "rag":
+        return "Mencari di dokumen internal…"
+
+    table = ""
+    if isinstance(args, dict):
+        table = args.get("table") or args.get("table_name") or ""
+
+    if "read_table" in name:
+        return f"Membaca tabel {table} di SAP…" if table else "Membaca tabel data SAP…"
+    if "program" in name:
+        return "Membaca program ABAP…"
+    if "function" in name:
+        return "Menjalankan fungsi SAP…"
+    if "search" in name:
+        return "Mencari data di SAP…"
+    return "Mengambil data dari SAP…"
+
+
 def _looks_like_vision_error(error: Exception) -> bool:
     """Tebak apakah kegagalan disebabkan lampiran gambar, bukan hal lain."""
     text = str(error).lower()
@@ -89,8 +110,25 @@ def _strip_images(messages: list) -> list:
     return cleaned
 
 
+async def _noop_progress(**kwargs):
+    """Penerima progres bawaan untuk pemanggil yang tidak memerlukannya."""
+
+
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
-                       username: str = "Guest") -> ChatResponse:
+                       username: str = "Guest", on_progress=None) -> ChatResponse:
+    # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
+    # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
+    progress = on_progress or _noop_progress
+    MAX_ITERATIONS = 6
+
+    async def report(stage: str, label: str, step: int = 0):
+        try:
+            await progress(stage=stage, label=label, step=step, max_steps=MAX_ITERATIONS)
+        except Exception as e:  # progres tidak boleh menjatuhkan percakapan
+            logger.warning(f"Gagal mengirim progres: {e}")
+
+    await report("connecting", "Menyiapkan permintaan…")
+
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
     # Target SAP dibawa per-request dan diterapkan ulang di setiap pemanggilan
@@ -396,6 +434,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             text_block, attachment_images = build_context_blocks(loaded)
             names = ", ".join(item["filename"] for item in loaded)
             logger.info(f"Menyertakan {len(loaded)} lampiran sebagai konteks: {names}")
+            await report("reading", f"Membaca lampiran ({len(loaded)} berkas)…")
 
             if text_block:
                 user_content = (
@@ -422,11 +461,16 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
     # 5. Agentic Loop
     sources = []
-    max_iterations = 6
+    max_iterations = MAX_ITERATIONS
     iteration = 0
     
     while iteration < max_iterations:
         iteration += 1
+        await report(
+            "thinking",
+            "Menganalisis pertanyaan…" if iteration == 1 else "Menyusun jawaban dari data…",
+            iteration,
+        )
         active_primary = llm_primary_auto
         active_fallback = llm_fallback_auto
         
@@ -502,6 +546,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
+                    await report("tool", _describe_tool(server_name, actual_tool_name, t_args), iteration)
                     tool_result = await mcp_manager.call_tool(
                         server_name, actual_tool_name, t_args, sap_target=sap_target
                     )
@@ -571,6 +616,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             mcp_name = mapping["mcp_name"]
             
             try:
+                await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)
                 result = await mcp_manager.call_tool(
                     server_name, mcp_name, tool_args, sap_target=sap_target
                 )
@@ -610,7 +656,11 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         except Exception as e:
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
 
+    if "```sap-artifact" in (reply_text or ""):
+        await report("building", "Menyiapkan berkas hasil…", max_iterations)
+
     # Ubah blok spesifikasi berkas dari model menjadi berkas Excel/CSV sungguhan.
     reply_text, artifacts = extract_and_build(reply_text, owner=username)
+    await report("done", "Selesai", max_iterations)
 
     return ChatResponse(reply=reply_text, sources=sources, artifacts=artifacts)
