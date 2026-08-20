@@ -55,6 +55,7 @@ const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
 const THEME_LABEL = { light: 'Tema terang', dark: 'Tema gelap', system: 'Ikuti tema sistem' };
 
 const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
+const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 
 const ChatLayout = () => {
   const [messages, setMessages] = useState(() => [buildWelcome(getStoredUser())]);
@@ -68,7 +69,13 @@ const ChatLayout = () => {
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
 
-  const [activeServer, setActiveServer] = useState('sap:sandbox-new');
+  const [activeServer, setActiveServer] = useState(() => {
+    try {
+      return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || 'sap:sandbox-new';
+    } catch {
+      return 'sap:sandbox-new';
+    }
+  });
   const [sapSubServers, setSapSubServers] = useState([]);
 
   const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
@@ -107,13 +114,30 @@ const ChatLayout = () => {
       const subs = data?.sap?.sub_servers;
       if (Array.isArray(subs) && subs.length > 0) {
         setSapSubServers(subs);
-        const activeOne = subs.find((s) => s.active);
-        if (activeOne) setActiveServer(`sap:${aliasOf(activeOne)}`);
+        const savedServer = localStorage.getItem(SAP_SERVER_STORAGE_KEY);
+        const exists = savedServer && subs.some((s) => `sap:${aliasOf(s)}` === savedServer);
+        if (!exists) {
+          const activeOne = subs.find((s) => s.active) || subs[0];
+          if (activeOne) {
+            const defaultKey = `sap:${aliasOf(activeOne)}`;
+            setActiveServer(defaultKey);
+            localStorage.setItem(SAP_SERVER_STORAGE_KEY, defaultKey);
+          }
+        }
       }
     } catch (e) {
       console.error('Gagal mengambil data server MCP:', e);
     }
   }, []);
+
+  const handleServerChange = (newServer) => {
+    setActiveServer(newServer);
+    try {
+      localStorage.setItem(SAP_SERVER_STORAGE_KEY, newServer);
+    } catch (e) {
+      console.error('Gagal menyimpan target server ke localStorage:', e);
+    }
+  };
 
   useEffect(() => {
     fetchServers();
@@ -371,7 +395,7 @@ const ChatLayout = () => {
   const ThemeIcon = THEME_ICON[theme];
 
   return (
-    <div className="fixed inset-0 h-full h-[100dvh] w-full bg-surface text-content overflow-hidden font-sans select-none overscroll-none">
+    <div className="fixed inset-0 h-full h-[100dvh] w-full flex bg-surface text-content overflow-hidden font-sans select-none overscroll-none">
 
       {/* Latar gelap untuk drawer sidebar di layar sempit */}
       {isSidebarOpen && (
@@ -593,7 +617,7 @@ const ChatLayout = () => {
                 <select
                   id="sap-target"
                   value={activeServer}
-                  onChange={(e) => setActiveServer(e.target.value)}
+                  onChange={(e) => handleServerChange(e.target.value)}
                   className={`bg-surface-sunken text-content text-sm font-medium py-2 px-3 rounded-xl border cursor-pointer max-w-[15rem] sm:max-w-[17rem] truncate ${
                     isProductionTarget ? 'border-danger text-danger' : 'border-line'
                   }`}
@@ -684,8 +708,8 @@ const ChatLayout = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-8 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
-          <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 sm:py-8 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
+          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
             {messages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
             ))}

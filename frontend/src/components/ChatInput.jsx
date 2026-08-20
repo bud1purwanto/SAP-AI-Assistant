@@ -126,14 +126,14 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-2.5 sm:px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-4">
+    <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 pb-[max(0.25rem,env(safe-area-inset-bottom))] sm:pb-3">
       <form
         onSubmit={handleSubmit}
         onDragEnter={onDragEnter}
         onDragOver={(e) => e.preventDefault()}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`relative bg-surface-raised backdrop-blur-xl rounded-2xl sm:rounded-3xl border shadow-lg sm:shadow-xl p-1 sm:p-2.5 transition-all ${
+        className={`relative bg-surface-raised backdrop-blur-xl rounded-2xl sm:rounded-3xl border shadow-md sm:shadow-xl p-1 sm:p-2.5 transition-all ${
           isDragging ? 'border-accent border-dashed bg-accent-soft' : 'border-line focus-within:border-accent'
         }`}
       >
@@ -190,7 +190,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 sm:p-2.5 mb-0.5 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
+            className="p-1.5 sm:p-2.5 mb-0.5 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
             aria-label="Lampirkan gambar atau dokumen"
             title="Lampirkan gambar atau dokumen"
           >
@@ -206,7 +206,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder="Tanyakan sesuatu tentang SAP…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[140px] sm:max-h-[180px] py-2 sm:py-2.5 px-1.5 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-base sm:text-[15px] focus:outline-none resize-none leading-relaxed"
+            className="flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] focus:outline-none resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
@@ -214,7 +214,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
-              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
+              className={`p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
                 !busy && (input.trim() || attachments.length > 0)
                   ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
@@ -235,8 +235,8 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[10px] sm:text-[11px] text-content-subtle mt-1.5 sm:mt-2.5 mb-0.5 sm:mb-1 px-2 select-none leading-tight tracking-normal">
-        SAP AI Assistant adalah AI dan dapat membuat kesalahan. Harap selalu verifikasi data penting dan transaksi di SAP GUI.
+      <p className="text-center text-[9px] sm:text-[11px] text-content-subtle mt-1 sm:mt-2 mb-0 px-2 select-none leading-tight tracking-normal">
+        SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
       </p>
     </div>
   );
