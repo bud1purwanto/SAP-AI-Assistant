@@ -45,12 +45,12 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain"
+      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain animate-modal-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-line relative my-auto">
+      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-line relative my-auto animate-modal-content transition-all">
 
         {onClose && (
           <button
