@@ -206,7 +206,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder="Tanyakan sesuatu tentang SAP…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-0 outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
+            className="no-focus-outline flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
