@@ -385,7 +385,7 @@ const ChatLayout = () => {
       {/* ================= SIDEBAR ================= */}
       <aside
         className={`fixed md:static inset-y-0 left-0 w-72 max-w-[85vw] bg-surface-raised/95 backdrop-blur-xl border-r border-line
-          flex flex-col z-40 shrink-0 transition-transform duration-200 pt-safe pb-safe
+          flex flex-col z-40 shrink-0 transition-transform duration-200 pt-safe
           ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}
         aria-label="Navigasi percakapan"
       >
@@ -522,7 +522,7 @@ const ChatLayout = () => {
           )}
         </nav>
 
-        <div className="p-2.5 sm:p-3 border-t border-line bg-surface-sunken">
+        <div className="p-2.5 sm:p-3 border-t border-line bg-surface-sunken pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
