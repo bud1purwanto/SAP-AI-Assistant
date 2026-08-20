@@ -1,4 +1,4 @@
-impkert React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
 } from 'lucide-react';
@@ -395,7 +395,7 @@ const ChatLayout = () => {
   const ThemeIcon = THEME_ICON[theme];
 
   return (
-    <div className="fixed inset-0 h-full h-[100dvh] w-full flex bg-surface text-content overflow-hidden font-sans select-none overscroll-none">
+    <div className="fixed inset-0 h-full h-[100dvh] w-full flex bg-surface text-content overflow-hidden font-sans overscroll-none">
 
       {/* Latar gelap untuk drawer sidebar di layar sempit */}
       {isSidebarOpen && (

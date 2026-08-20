@@ -145,8 +145,16 @@ const ChatMessage = ({ message }) => {
           )}
 
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
-          <div className="relative px-5 py-3.5 rounded-3xl rounded-tr-sm text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20">
-            <p className="whitespace-pre-wrap font-normal">{message.content}</p>
+          <div className="relative group/userbubble px-5 py-3.5 rounded-3xl rounded-tr-sm text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text">
+            <p className="whitespace-pre-wrap font-normal select-text">{message.content}</p>
+            <button
+              onClick={handleCopy}
+              className="absolute top-2 right-2 p-1 rounded-lg bg-black/20 text-white/80 hover:text-white hover:bg-black/40 opacity-0 group-hover/userbubble:opacity-100 transition-all"
+              title="Salin pesan"
+              aria-label="Salin pesan"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
 
@@ -177,9 +185,9 @@ const ChatMessage = ({ message }) => {
         </div>
 
         {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
-        <div className="relative px-6 py-5 rounded-3xl rounded-tl-sm text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80">
+        <div className="relative px-6 py-5 rounded-3xl rounded-tl-sm text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80 select-text">
           
-          <div className="prose prose-sm max-w-none text-content-secondary">
+          <div className="prose prose-sm max-w-none text-content-secondary select-text">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
