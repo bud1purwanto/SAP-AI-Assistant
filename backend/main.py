@@ -619,10 +619,22 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
                 active_session_id, "user", chat_req.message, attachments=attachments_str
             )
 
-    # Lengkapi konteks percakapan dari database bila request tidak membawa histori.
-    if active_session_id and not chat_req.history:
-        raw_msgs = get_chat_messages(active_session_id, username=user["username"])
-        db_history = [
+    # Sumber riwayat percakapan.
+    #
+    # Untuk user yang login, riwayat SELALU diambil dari database dan riwayat
+    # yang dikirim klien diabaikan. Sebelumnya browser yang menentukan berapa
+    # banyak riwayat ikut dikirim ke model — artinya biaya token dikendalikan
+    # dari sisi klien, dan dapat dibengkakkan dengan sengaja.
+    #
+    # Tamu tidak punya sesi tersimpan, sehingga riwayatnya memang harus datang
+    # dari klien; besarnya tetap dibatasi anggaran token di dalam agen.
+    if active_session_id:
+        raw_msgs = get_chat_messages(
+            active_session_id,
+            username=user["username"],
+            limit=settings.history_max_messages,
+        )
+        chat_req.history = [
             {
                 "role": "assistant" if m["role"] in ("ai", "assistant") else "user",
                 "content": m["content"],
@@ -630,13 +642,9 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
             # Pesan terakhir adalah prompt yang baru saja disimpan di atas.
             for m in raw_msgs[:-1]
         ]
-        if db_history:
-            # Ambil maksimal 12 pesan terakhir untuk efisiensi context window
-            chat_req.history = db_history[-12:]
-            logger.info(
-                f"Dimuat {len(chat_req.history)} pesan histori dari session "
-                f"{active_session_id} untuk konteks percakapan."
-            )
+        logger.info(
+            f"Riwayat sesi {active_session_id}: {len(chat_req.history)} pesan diambil dari database."
+        )
 
     response = await process_chat(
         chat_req, user_role, user_persona, username=user["username"], on_progress=on_progress

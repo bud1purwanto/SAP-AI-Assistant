@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
+from conversation import trim_history
 from models import ChatRequest, ChatResponse, SourceReference
 from config import settings
 
@@ -407,8 +408,21 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         system_prompt += "Patuhi persona di atas secara konsisten pada setiap balasan.\n"
 
     messages = [SystemMessage(content=system_prompt)]
-    
-    for msg in chat_req.history:
+
+    # Anggaran riwayat ditegakkan di sini agar berlaku untuk semua pemanggil,
+    # bukan bergantung pada berapa banyak yang dikirim klien.
+    trimmed_history, trim_stats = trim_history(
+        chat_req.history,
+        token_budget=settings.history_token_budget,
+        verbatim_turns=settings.history_verbatim_turns,
+    )
+    if trim_stats["before"] != trim_stats["after"]:
+        logger.info(
+            f"Riwayat dipangkas: ~{trim_stats['before']} -> ~{trim_stats['after']} token "
+            f"({trim_stats['dropped']} pesan dibuang, {trim_stats['compacted']} dipadatkan)."
+        )
+
+    for msg in trimmed_history:
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
         content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
         if not content:

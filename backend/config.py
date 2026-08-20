@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     login_lock_seconds: int = 900  # 15 menit
     # Jumlah berkas hasil generate yang disimpan per user; yang terlama dibuang.
     artifact_max_per_user: int = 20
+
+    # --- Riwayat percakapan ---
+    # Anggaran token untuk riwayat yang disertakan ke model. Membatasi per token
+    # (bukan per jumlah pesan) karena satu jawaban bertabel bisa setara puluhan
+    # pesan pendek.
+    history_token_budget: int = 3000
+    # Jumlah giliran terakhir yang selalu dikirim apa adanya, tanpa dipadatkan.
+    history_verbatim_turns: int = 3
+    # Batas pesan yang diambil dari database sebelum penganggaran token; mencegah
+    # sesi yang sangat panjang membebani query maupun memori.
+    history_max_messages: int = 60
     # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel
     # users masih kosong. Harus segera diganti setelah login pertama.
     bootstrap_admin_password: str = "ChangeMe!2024"

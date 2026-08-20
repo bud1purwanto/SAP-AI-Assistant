@@ -73,3 +73,72 @@ def test_guest_quota_enforced_server_side(client):
         for i in range(settings.guest_daily_limit + 2)
     ]
     assert 429 in codes
+
+
+# --- Sumber dan ukuran riwayat percakapan ---
+
+def test_client_supplied_history_is_ignored_for_logged_in_users(client, make_user, db, monkeypatch):
+    """Riwayat berasal dari database, bukan dari apa yang dikirim browser.
+
+    Sebelumnya klien yang menentukan berapa banyak riwayat ikut dikirim ke
+    model, sehingga biaya token dapat dibengkakkan dari sisi browser.
+    """
+    import main
+    from models import ChatResponse
+
+    dilihat = {}
+
+    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None):
+        dilihat["history"] = list(chat_req.history)
+        return ChatResponse(reply="ok", sources=[], artifacts=[])
+
+    monkeypatch.setattr(main, "process_chat", tangkap)
+
+    auth = make_user("hist_user")
+    sesi = client.post("/api/sessions", json={"title": "Uji"}, headers=auth).json()["session_id"]
+    db.add_chat_message(sesi, "user", "pesan asli dari database")
+    db.add_chat_message(sesi, "ai", "jawaban asli dari database")
+
+    palsu = [{"role": "user", "content": "RIWAYAT PALSU " + "x" * 5000}]
+    client.post(
+        "/api/chat",
+        json={"message": "lanjutkan", "session_id": sesi, "history": palsu},
+        headers=auth,
+    )
+
+    gabungan = " ".join(m["content"] for m in dilihat["history"])
+    assert "RIWAYAT PALSU" not in gabungan
+    assert "pesan asli dari database" in gabungan
+
+
+def test_history_sent_to_model_stays_within_budget(client, make_user, db, monkeypatch):
+    import main
+    from config import settings
+    from conversation import estimate_history_tokens
+    from models import ChatResponse
+
+    dilihat = {}
+
+    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None):
+        from conversation import trim_history
+
+        dipangkas, _ = trim_history(
+            chat_req.history,
+            token_budget=settings.history_token_budget,
+            verbatim_turns=settings.history_verbatim_turns,
+        )
+        dilihat["tokens"] = estimate_history_tokens(dipangkas)
+        return ChatResponse(reply="ok", sources=[], artifacts=[])
+
+    monkeypatch.setattr(main, "process_chat", tangkap)
+
+    auth = make_user("budget_user")
+    sesi = client.post("/api/sessions", json={"title": "Panjang"}, headers=auth).json()["session_id"]
+    tabel = "| A | B |\n|---|---|\n" + "\n".join(f"| baris-{i} | {i * 7} |" for i in range(40))
+    for i in range(40):
+        db.add_chat_message(sesi, "user", f"pertanyaan {i}")
+        db.add_chat_message(sesi, "ai", tabel)
+
+    client.post("/api/chat", json={"message": "lanjutkan", "session_id": sesi}, headers=auth)
+
+    assert dilihat["tokens"] <= settings.history_token_budget, dilihat
