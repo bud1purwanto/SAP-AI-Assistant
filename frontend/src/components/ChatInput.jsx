@@ -234,6 +234,11 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <Sparkles className="w-3 h-3 inline sm:hidden" aria-hidden="true" />
         </div>
       </form>
+
+      {/* AI Disclaimer Footer */}
+      <p className="text-center text-[11px] text-content-subtle mt-2 pb-1 select-none">
+        SAP AI Assistant adalah AI dan dapat membuat kesalahan. Harap selalu verifikasi data penting dan transaksi di SAP GUI.
+      </p>
     </div>
   );
 };
