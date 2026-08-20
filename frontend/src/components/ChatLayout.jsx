@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
+  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -56,14 +56,25 @@ const THEME_LABEL = { light: 'Tema terang', dark: 'Tema gelap', system: 'Ikuti t
 
 const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
 const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
+const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
-  const [messages, setMessages] = useState(() => [buildWelcome(getStoredUser())]);
+  const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
+  const isGuest = user.role === 'guest';
+
+  // Menyimpan riwayat pesan per session id agar independen & multi-chat
+  const [messagesMap, setMessagesMap] = useState(() => ({
+    [DRAFT_SESSION_KEY]: [buildWelcome(getStoredUser())],
+  }));
+
+  // Status loading, progress, error, dan controller per session
+  const [sessionLoadingMap, setSessionLoadingMap] = useState({});
+  const [sessionProgressMap, setSessionProgressMap] = useState({});
+  const [sessionErrorMap, setSessionErrorMap] = useState({});
+  const abortControllersRef = useRef({});
+
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  // Progres pengerjaan jawaban: tahap yang sedang berjalan, bukan perkiraan waktu.
-  const [progress, setProgress] = useState(null);
   const [isSessionsLoading, setIsSessionsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
@@ -78,7 +89,6 @@ const ChatLayout = () => {
   });
   const [sapSubServers, setSapSubServers] = useState([]);
 
-  const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -88,9 +98,13 @@ const ChatLayout = () => {
   const { theme, cycleTheme } = useTheme();
 
   const messagesEndRef = useRef(null);
-  const abortRef = useRef(null);
 
-  const isGuest = user.role === 'guest';
+  // Key aktif untuk session yang sedang dibuka
+  const activeSessionKey = currentSessionId || DRAFT_SESSION_KEY;
+  const currentMessages = messagesMap[activeSessionKey] || [buildWelcome(user)];
+  const isCurrentLoading = Boolean(sessionLoadingMap[activeSessionKey]);
+  const currentProgress = sessionProgressMap[activeSessionKey] || null;
+  const currentSessionError = sessionErrorMap[activeSessionKey] || null;
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
@@ -102,6 +116,10 @@ const ChatLayout = () => {
       setUser(GUEST_USER);
       setSessions([]);
       setCurrentSessionId(null);
+      setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(GUEST_USER)] });
+      setSessionLoadingMap({});
+      setSessionProgressMap({});
+      setSessionErrorMap({});
       setCustomLoginMsg('Sesi Anda telah berakhir. Silakan login kembali.');
       setIsLoginModalOpen(true);
     });
@@ -155,7 +173,7 @@ const ChatLayout = () => {
 
   useEffect(() => {
     scrollToBottom(true);
-  }, [messages, isLoading, scrollToBottom]);
+  }, [currentMessages, isCurrentLoading, scrollToBottom]);
 
   /** Kolom sources/artifacts disimpan sebagai JSON string di database. */
   const parseJsonList = (raw) => {
@@ -173,31 +191,41 @@ const ChatLayout = () => {
     setCurrentSessionId(sessionId);
     setIsSidebarOpen(false);
     setError(null);
+
+    // Jika sudah ada pesan di cache dan sedang loading, tetap pertahankan tampilan pesan
     try {
       const data = await api.sessionMessages(sessionId);
-      setMessages(
-        !data || data.length === 0
-          ? [buildWelcome(user)]
-          : data.map((m) => ({
-              role: m.role === 'user' ? 'user' : 'assistant',
-              content: m.content,
-              sources: parseJsonList(m.sources),
-              artifacts: parseJsonList(m.artifacts),
-              attachments: parseJsonList(m.attachments),
-              created_at: m.created_at,
-            })),
-      );
+      const formatted = !data || data.length === 0
+        ? [buildWelcome(user)]
+        : data.map((m) => ({
+            role: m.role === 'user' ? 'user' : 'assistant',
+            content: m.content,
+            sources: parseJsonList(m.sources),
+            artifacts: parseJsonList(m.artifacts),
+            attachments: parseJsonList(m.attachments),
+            created_at: m.created_at,
+          }));
+
+      setMessagesMap((prev) => {
+        // Jika sedang loading di session ini dan ada pesan user baru yang belum tersimpan ke db
+        const existing = prev[sessionId] || [];
+        const isSessLoading = sessionLoadingMap[sessionId];
+        if (isSessLoading && existing.length > formatted.length) {
+          return prev;
+        }
+        return { ...prev, [sessionId]: formatted };
+      });
     } catch (err) {
       setError({ message: err.message, retry: () => loadSession(sessionId) });
     }
-  }, [user]);
+  }, [user, sessionLoadingMap]);
 
   const fetchSessions = useCallback(async (keepCurrentId = false) => {
     if (isGuest) {
       setSessions([]);
       setIsSessionsLoading(false);
       setCurrentSessionId(null);
-      setMessages([buildWelcome(user)]);
+      setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(user)] });
       return;
     }
 
@@ -206,10 +234,15 @@ const ChatLayout = () => {
       const data = await api.listSessions();
       setSessions(data || []);
       if (data && data.length > 0) {
-        if (!keepCurrentId || !currentSessionId) loadSession(data[0].session_id);
+        if (!keepCurrentId || !currentSessionId) {
+          loadSession(data[0].session_id);
+        }
       } else {
         setCurrentSessionId(null);
-        setMessages([buildWelcome(user)]);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+        }));
       }
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) {
@@ -231,7 +264,10 @@ const ChatLayout = () => {
     setIsSidebarOpen(false);
     if (isGuest) {
       setCurrentSessionId(null);
-      setMessages([buildWelcome(user)]);
+      setMessagesMap((prev) => ({
+        ...prev,
+        [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+      }));
       return;
     }
     try {
@@ -239,7 +275,10 @@ const ChatLayout = () => {
       if (data?.session_id) {
         setSessions((prev) => [data, ...prev]);
         setCurrentSessionId(data.session_id);
-        setMessages([buildWelcome(user)]);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [data.session_id]: [buildWelcome(user)],
+        }));
       }
     } catch (err) {
       setError({ message: err.message, retry: createNewSession });
@@ -256,12 +295,42 @@ const ChatLayout = () => {
     }
     const remaining = sessions.filter((s) => s.session_id !== sessionId);
     setSessions(remaining);
+
+    // Bersihkan state & abort jika ada proses aktif di session yang dihapus
+    if (abortControllersRef.current[sessionId]) {
+      abortControllersRef.current[sessionId].abort();
+      delete abortControllersRef.current[sessionId];
+    }
+    setMessagesMap((prev) => {
+      const copy = { ...prev };
+      delete copy[sessionId];
+      return copy;
+    });
+    setSessionLoadingMap((prev) => {
+      const copy = { ...prev };
+      delete copy[sessionId];
+      return copy;
+    });
+    setSessionProgressMap((prev) => {
+      const copy = { ...prev };
+      delete copy[sessionId];
+      return copy;
+    });
+    setSessionErrorMap((prev) => {
+      const copy = { ...prev };
+      delete copy[sessionId];
+      return copy;
+    });
+
     if (currentSessionId === sessionId) {
       if (remaining.length > 0) {
         loadSession(remaining[0].session_id);
       } else {
         setCurrentSessionId(null);
-        setMessages([buildWelcome(user)]);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+        }));
       }
     }
   };
@@ -300,30 +369,44 @@ const ChatLayout = () => {
     }
   };
 
-  const stopGeneration = () => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setIsLoading(false);
-    setProgress(null);
+  const stopGeneration = (targetSessionKey = activeSessionKey) => {
+    const controller = abortControllersRef.current[targetSessionKey];
+    if (controller) {
+      controller.abort();
+      delete abortControllersRef.current[targetSessionKey];
+    }
+    setSessionLoadingMap((prev) => ({ ...prev, [targetSessionKey]: false }));
+    setSessionProgressMap((prev) => ({ ...prev, [targetSessionKey]: null }));
   };
 
   const handleSendMessage = async (text, attachments = []) => {
-    const outgoing = [...messages, {
+    const targetSessionId = currentSessionId;
+    const targetKey = targetSessionId || DRAFT_SESSION_KEY;
+
+    const prevMessages = messagesMap[targetKey] || [buildWelcome(user)];
+    const outgoing = [...prevMessages, {
       role: 'user',
       content: text,
       attachments,
       created_at: new Date().toISOString(),
     }];
-    setMessages(outgoing);
-    setIsLoading(true);
-    setError(null);
-    setProgress({ stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 });
+
+    setMessagesMap((prev) => ({
+      ...prev,
+      [targetKey]: outgoing,
+    }));
+    setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: true }));
+    setSessionProgressMap((prev) => ({
+      ...prev,
+      [targetKey]: { stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 },
+    }));
+    setSessionErrorMap((prev) => ({ ...prev, [targetKey]: null }));
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    abortControllersRef.current[targetKey] = controller;
 
     try {
-      const history = messages
+      const history = prevMessages
         .filter((m) => !m.isWelcome)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
@@ -331,44 +414,69 @@ const ChatLayout = () => {
         {
           message: text,
           history,
-          session_id: currentSessionId,
+          session_id: targetSessionId,
           active_server: activeServer,
           attachment_ids: attachments.map((a) => a.upload_id),
         },
         {
           signal: controller.signal,
-          onProgress: (event) => setProgress(event),
+          onProgress: (event) => {
+            setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
+          },
         },
       );
 
-      setMessages([...outgoing, {
+      const assistantMsg = {
         role: 'assistant',
         content: data.reply,
         sources: data.sources || [],
         artifacts: data.artifacts || [],
         created_at: new Date().toISOString(),
-      }]);
+      };
 
-      if (data.session_id) setCurrentSessionId(data.session_id);
+      const finalSessionId = data.session_id || targetSessionId;
+
+      setMessagesMap((prev) => {
+        const existingOutgoing = prev[targetKey] || outgoing;
+        const updated = [...existingOutgoing, assistantMsg];
+        if (finalSessionId && finalSessionId !== targetKey) {
+          const nextMap = { ...prev, [finalSessionId]: updated };
+          if (targetKey === DRAFT_SESSION_KEY) {
+            delete nextMap[DRAFT_SESSION_KEY];
+          }
+          return nextMap;
+        }
+        return { ...prev, [targetKey]: updated };
+      });
+
+      if (data.session_id && !targetSessionId) {
+        setCurrentSessionId(data.session_id);
+      }
       if (!isGuest) fetchSessions(true);
     } catch (err) {
       if (err.name === 'AbortError') {
-        setMessages([...outgoing, { role: 'assistant', content: '_Permintaan dibatalkan._' }]);
+        setMessagesMap((prev) => ({
+          ...prev,
+          [targetKey]: [...(prev[targetKey] || outgoing), { role: 'assistant', content: '_Permintaan dibatalkan._' }],
+        }));
         return;
       }
       // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
       if (err instanceof ApiError && err.status === 429) {
-        setMessages(messages);
+        setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
         setCustomLoginMsg(err.message);
         setIsLoginModalOpen(true);
         return;
       }
-      setMessages(outgoing);
-      setError({ message: err.message, retry: () => { setMessages(messages); handleSendMessage(text); } });
+      setMessagesMap((prev) => ({ ...prev, [targetKey]: outgoing }));
+      setSessionErrorMap((prev) => ({
+        ...prev,
+        [targetKey]: { message: err.message, retry: () => { setMessagesMap((p) => ({ ...p, [targetKey]: prevMessages })); handleSendMessage(text); } },
+      }));
     } finally {
-      abortRef.current = null;
-      setIsLoading(false);
-      setProgress(null);
+      delete abortControllersRef.current[targetKey];
+      setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: false }));
+      setSessionProgressMap((prev) => ({ ...prev, [targetKey]: null }));
     }
   };
 
@@ -385,7 +493,10 @@ const ChatLayout = () => {
     setUser(GUEST_USER);
     setSessions([]);
     setCurrentSessionId(null);
-    setMessages([buildWelcome(user)]);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(GUEST_USER)] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
   };
 
   // Peringatan bila target yang dipilih adalah sistem SAP produksi.
@@ -505,6 +616,8 @@ const ChatLayout = () => {
                 );
               }
 
+              const isThisSessionProcessing = Boolean(sessionLoadingMap[sid]);
+
               return (
                 <div
                   key={sid}
@@ -519,7 +632,11 @@ const ChatLayout = () => {
                     className="flex items-center gap-2 truncate flex-1 text-left px-2.5 sm:px-3 py-2 sm:py-2.5"
                     aria-current={isActive ? 'page' : undefined}
                   >
-                    <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    {isThisSessionProcessing ? (
+                      <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label="Sedang memproses" />
+                    ) : (
+                      <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                    )}
                     <span className="truncate">{session.title || 'Percakapan SAP'}</span>
                   </button>
                   <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -689,23 +806,31 @@ const ChatLayout = () => {
         )}
 
         {/* Error ditampilkan sebagai komponen tersendiri, bukan gelembung chat palsu. */}
-        {error && (
+        {(error || currentSessionError) && (
           <div
             role="alert"
             className="bg-danger-soft border-b border-danger/40 px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3"
           >
             <span className="flex items-center gap-2 text-xs font-semibold text-danger min-w-0">
               <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{error.message}</span>
+              <span className="truncate">{(error || currentSessionError).message}</span>
             </span>
             <span className="flex items-center gap-2 shrink-0">
-              {error.retry && (
-                <button onClick={() => { const r = error.retry; setError(null); r(); }}
+              {(error || currentSessionError).retry && (
+                <button onClick={() => {
+                  const r = (error || currentSessionError).retry;
+                  setError(null);
+                  setSessionErrorMap((prev) => ({ ...prev, [activeSessionKey]: null }));
+                  r();
+                }}
                   className="text-xs font-bold bg-danger text-surface px-3 py-1 rounded-lg">
                   Coba lagi
                 </button>
               )}
-              <button onClick={() => setError(null)} className="p-1 text-danger" aria-label="Tutup pesan kesalahan">
+              <button onClick={() => {
+                setError(null);
+                setSessionErrorMap((prev) => ({ ...prev, [activeSessionKey]: null }));
+              }} className="p-1 text-danger" aria-label="Tutup pesan kesalahan">
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </span>
@@ -714,15 +839,15 @@ const ChatLayout = () => {
 
         <div className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 sm:py-8 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
           <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
-            {messages.map((msg, index) => (
+            {currentMessages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
             ))}
 
-            {isLoading && (
-              <ThinkingIndicator progress={progress} onStop={stopGeneration} />
+            {isCurrentLoading && (
+              <ThinkingIndicator progress={currentProgress} onStop={() => stopGeneration(activeSessionKey)} />
             )}
 
-            {messages.length <= 1 && !isLoading && (
+            {currentMessages.length <= 1 && !isCurrentLoading && (
               <div className="pt-8 pb-4">
                 <div className="text-center mb-6">
                   <div className="inline-flex items-center justify-center p-3 bg-accent-soft rounded-2xl text-accent-soft-fg mb-3">
@@ -761,7 +886,7 @@ const ChatLayout = () => {
           </div>
         </div>
 
-        <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+        <ChatInput onSendMessage={handleSendMessage} isLoading={isCurrentLoading} />
       </main>
 
       {/* Modals */}
