@@ -6,6 +6,7 @@ import {
 import AdminDashboard from './AdminDashboard';
 import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
+import ConfirmModal from './ConfirmModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import ThinkingIndicator from './ThinkingIndicator';
@@ -94,6 +95,15 @@ const ChatLayout = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // State untuk konfirmasi popup logout & hapus percakapan
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [deleteConfirmState, setDeleteConfirmState] = useState({
+    isOpen: false,
+    sessionId: null,
+    title: '',
+    isLoading: false,
+  });
 
   const { theme, cycleTheme } = useTheme();
 
@@ -285,15 +295,31 @@ const ChatLayout = () => {
     }
   };
 
-  const deleteSession = async (e, sessionId) => {
+  const promptDeleteSession = (e, session) => {
     e.stopPropagation();
+    const sid = session.session_id || session.id;
+    setDeleteConfirmState({
+      isOpen: true,
+      sessionId: sid,
+      title: session.title || 'Percakapan SAP',
+      isLoading: false,
+    });
+  };
+
+  const handleConfirmDeleteSession = async () => {
+    const sessionId = deleteConfirmState.sessionId;
+    if (!sessionId) return;
+
+    setDeleteConfirmState((prev) => ({ ...prev, isLoading: true }));
     try {
       await api.deleteSession(sessionId);
     } catch (err) {
       setError({ message: err.message });
+      setDeleteConfirmState({ isOpen: false, sessionId: null, title: '', isLoading: false });
       return;
     }
-    const remaining = sessions.filter((s) => s.session_id !== sessionId);
+
+    const remaining = sessions.filter((s) => (s.session_id || s.id) !== sessionId);
     setSessions(remaining);
 
     // Bersihkan state & abort jika ada proses aktif di session yang dihapus
@@ -324,7 +350,7 @@ const ChatLayout = () => {
 
     if (currentSessionId === sessionId) {
       if (remaining.length > 0) {
-        loadSession(remaining[0].session_id);
+        loadSession(remaining[0].session_id || remaining[0].id);
       } else {
         setCurrentSessionId(null);
         setMessagesMap((prev) => ({
@@ -333,6 +359,8 @@ const ChatLayout = () => {
         }));
       }
     }
+
+    setDeleteConfirmState({ isOpen: false, sessionId: null, title: '', isLoading: false });
   };
 
   const startRenameSession = (e, session) => {
@@ -526,13 +554,21 @@ const ChatLayout = () => {
       >
         <div className="p-3.5 sm:p-4 border-b border-line flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-accent flex items-center justify-center shadow-md text-accent-fg">
-              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md border border-blue-400/30 shrink-0 overflow-hidden">
+              <div className="flex items-center font-black text-[11px] sm:text-xs text-white tracking-tighter">
+                <span>SAP</span>
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 bg-gradient-to-r from-sky-400 to-indigo-500 rounded-tl-md px-1 py-0.2">
+                <span className="text-[8px] font-black text-white leading-none tracking-tight">AI</span>
+              </div>
             </div>
             <div>
-              <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content">SAP AI Co-Pilot</h1>
+              <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content flex items-center gap-1.5">
+                <span>SAP AI</span>
+                <span className="text-[10px] uppercase font-semibold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md">Co-Pilot</span>
+              </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-success" />
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
                 <span className="text-[11px] sm:text-xs text-content-muted">Siap membantu</span>
               </div>
             </div>
@@ -649,7 +685,7 @@ const ChatLayout = () => {
                       <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
                     </button>
                     <button
-                      onClick={(e) => deleteSession(e, sid)}
+                      onClick={(e) => promptDeleteSession(e, session)}
                       className="p-1 text-content-subtle hover:text-danger rounded-lg transition-colors"
                       title="Hapus percakapan"
                       aria-label={`Hapus percakapan ${session.title || ''}`}
@@ -663,11 +699,11 @@ const ChatLayout = () => {
           )}
         </nav>
 
-        <div className="p-2.5 sm:p-3 border-t border-line bg-surface-sunken pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]">
+        <div className="p-3 border-t border-line bg-surface-raised/80 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-warning-soft border border-warning/40 text-warning hover:brightness-110 transition-all mb-2"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-warning-soft border border-warning/40 text-warning hover:brightness-110 transition-all shadow-2xs"
             >
               <span className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4" aria-hidden="true" />
@@ -677,38 +713,50 @@ const ChatLayout = () => {
             </button>
           )}
 
-          <div className="flex items-center justify-between bg-surface-raised p-2.5 rounded-2xl border border-line">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-full bg-accent text-accent-fg flex items-center justify-center font-bold text-xs shrink-0">
+          <div className="flex items-center justify-between p-2 rounded-2xl bg-surface-sunken/60 hover:bg-surface-sunken border border-line/80 transition-colors">
+            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+              <div className="w-8 h-8 rounded-xl bg-accent text-accent-fg flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
                 {user.username.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-semibold truncate text-content">
+                <div className="text-xs sm:text-sm font-semibold truncate text-content leading-tight">
                   {user.full_name || user.username}
                 </div>
-                <div className="text-xs text-content-muted">
+                <div className="text-[11px] text-content-muted mt-0.5 truncate">
                   {user.role === 'superadmin' ? 'Administrator' : user.role === 'guest' ? 'Tamu' : 'Pengguna'}
                 </div>
               </div>
             </div>
 
-            {isGuest ? (
+            <div className="flex items-center gap-1 shrink-0">
               <button
-                onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-                className="p-1.5 bg-accent-soft text-accent-soft-fg rounded-xl hover:brightness-95 transition-all"
-                aria-label="Login ke akun SAP"
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors md:hidden"
+                aria-label="Buka pengaturan"
+                title="Pengaturan"
               >
-                <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                <Settings className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
-            ) : (
-              <button
-                onClick={handleLogout}
-                className="p-1.5 text-content-subtle hover:text-danger rounded-xl hover:bg-surface-hover transition-colors"
-                aria-label="Keluar dari akun"
-              >
-                <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            )}
+              {isGuest ? (
+                <button
+                  onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
+                  className="p-1.5 bg-accent text-accent-fg rounded-lg hover:brightness-110 transition-all shadow-xs"
+                  aria-label="Login ke akun SAP"
+                  title="Login"
+                >
+                  <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setConfirmLogoutOpen(true)}
+                  className="p-1.5 text-content-subtle hover:text-danger rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
+                  aria-label="Keluar dari akun"
+                  title="Keluar"
+                >
+                  <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </aside>
@@ -908,6 +956,38 @@ const ChatLayout = () => {
         onClose={() => setIsAdminOpen(false)}
         user={user}
         onRefreshMcpServers={fetchServers}
+      />
+
+      {/* Confirmation Modal - Logout */}
+      <ConfirmModal
+        isOpen={confirmLogoutOpen}
+        onClose={() => setConfirmLogoutOpen(false)}
+        onConfirm={() => {
+          setConfirmLogoutOpen(false);
+          handleLogout();
+        }}
+        variant="logout"
+        title="Keluar dari Akun?"
+        message="Anda akan keluar dari sesi SAP AI Co-Pilot saat ini. Anda dapat masuk kembali kapan saja dengan kredensial SAP Anda."
+        confirmText="Keluar"
+        cancelText="Tetap Masuk"
+      />
+
+      {/* Confirmation Modal - Hapus Percakapan */}
+      <ConfirmModal
+        isOpen={deleteConfirmState.isOpen}
+        onClose={() => {
+          if (!deleteConfirmState.isLoading) {
+            setDeleteConfirmState({ isOpen: false, sessionId: null, title: '', isLoading: false });
+          }
+        }}
+        onConfirm={handleConfirmDeleteSession}
+        isLoading={deleteConfirmState.isLoading}
+        variant="danger"
+        title="Hapus Percakapan?"
+        message={`Percakapan "${deleteConfirmState.title}" beserta seluruh riwayat respons SAP di dalamnya akan dihapus secara permanen.`}
+        confirmText="Hapus Percakapan"
+        cancelText="Batal"
       />
     </div>
   );

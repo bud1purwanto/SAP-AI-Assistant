@@ -1,32 +1,141 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
+    <!-- Background Gradient -->
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F172A"/>
-      <stop offset="100%" stop-color="#1E1B4B"/>
+      <stop offset="0%" stop-color="#090D16"/>
+      <stop offset="50%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#030712"/>
     </linearGradient>
-    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+
+    <!-- Ambient Glow Radial -->
+    <radialGradient id="ambientGlow" cx="50%" cy="46%" r="50%">
+      <stop offset="0%" stop-color="#1D4ED8" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#0284C7" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0284C7" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- SAP Primary Metallic Gradient -->
+    <linearGradient id="sapBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="50%" stop-color="#60A5FA"/>
+      <stop offset="35%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+
+    <!-- Shield Plate Gradient -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- AI Electric Spark Gradient -->
+    <linearGradient id="aiSparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="30%" stop-color="#67E8F9"/>
+      <stop offset="70%" stop-color="#38BDF8"/>
       <stop offset="100%" stop-color="#818CF8"/>
     </linearGradient>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="5.3999999999999995" result="blur" />
+
+    <!-- AI Accent Badge Gradient -->
+    <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="50%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#9333EA"/>
+    </linearGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#1E293B" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#6366F1" stop-opacity="0.5"/>
+    </linearGradient>
+
+    <!-- Filter for Deep Glow -->
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
+
+    <!-- Filter for Intense Spark Glow -->
+    <filter id="intenseGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="8" result="blur1"/>
+      <feGaussianBlur stdDeviation="20" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
+
+  <!-- Background Base -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bgGrad)"/>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#ambientGlow)"/>
   
-  <!-- Background -->
-  <rect x="9" y="9" width="162" height="162" rx="39.6" fill="url(#bgGrad)" stroke="#334155" stroke-width="3.6"/>
-  
-  <!-- Outer Glow Circle -->
-  <circle cx="90" cy="90" r="62.99999999999999" fill="none" stroke="url(#aiGrad)" stroke-width="3.2399999999999998" opacity="0.35"/>
-  
-  <!-- Main AI Spark Center -->
-  <path d="M90 32.4 C90 64.8 64.8 90 32.4 90 C64.8 90 90 115.2 90 147.6 C90 115.2 115.2 90 147.6 90 C115.2 90 90 64.8 90 32.4 Z" fill="url(#aiGrad)" filter="url(#glow)"/>
-  
-  <!-- Mini Secondary Spark -->
-  <path d="M129.6 39.6 C129.6 50.400000000000006 118.80000000000001 59.400000000000006 108 59.400000000000006 C118.80000000000001 59.400000000000006 129.6 68.4 129.6 79.2 C129.6 68.4 140.4 59.400000000000006 151.2 59.400000000000006 C140.4 59.400000000000006 129.6 50.400000000000006 129.6 39.6 Z" fill="#60A5FA" opacity="0.9"/>
-  
-  <!-- Center Core Node -->
-  <circle cx="90" cy="90" r="9.9" fill="#FFFFFF"/>
+  <!-- Subtle Outer Border -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="none" stroke="url(#borderGrad)" stroke-width="3"/>
+
+  <!-- Geometric Tech Grid Accents -->
+  <g opacity="0.12" stroke="#38BDF8" stroke-width="1.5">
+    <line x1="80" y1="140" x2="432" y2="140" stroke-dasharray="6,8"/>
+    <line x1="80" y1="372" x2="432" y2="372" stroke-dasharray="6,8"/>
+    <line x1="140" y1="80" x2="140" y2="432" stroke-dasharray="6,8"/>
+    <line x1="372" y1="80" x2="372" y2="432" stroke-dasharray="6,8"/>
+  </g>
+
+  <!-- Center Enterprise Shield / Card -->
+  <g transform="translate(0, -8)">
+    <!-- Shield Shadow / Outer Rim -->
+    <path d="M120 135 L392 135 L392 275 C392 345 256 395 256 395 C256 395 120 345 120 275 Z" 
+          fill="url(#shieldGrad)" stroke="url(#borderGrad)" stroke-width="2.5"/>
+    
+    <!-- SAP Iconic Trapezoid Shape Header -->
+    <path d="M135 150 L377 150 L345 228 L167 228 Z" 
+          fill="url(#sapBlueGrad)" opacity="0.95"/>
+    
+    <!-- Bold Typography: SAP -->
+    <g fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="900" font-size="44" letter-spacing="4">
+      <text x="256" y="206" text-anchor="middle">SAP</text>
+    </g>
+
+    <!-- AI Dynamic Badge / Bridge Container -->
+    <g transform="translate(256, 280)">
+      <!-- AI Pill Background -->
+      <rect x="-85" y="-22" width="170" height="44" rx="22" 
+            fill="url(#badgeGrad)" stroke="#67E8F9" stroke-width="2" filter="url(#softGlow)"/>
+      
+      <!-- AI Text with Spark Icon -->
+      <text x="-14" y="9" fill="#FFFFFF" 
+            font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+            font-weight="800" font-size="24" letter-spacing="3" text-anchor="middle">AI</text>
+      
+      <!-- Mini Spark inside Pill -->
+      <path d="M22 0 C22 -8 26 -12 34 -12 C26 -12 22 -16 22 -24 C22 -16 18 -12 10 -12 C18 -12 22 -8 22 0 Z" 
+            transform="translate(8, 12) scale(0.65)" fill="#FFFFFF"/>
+    </g>
+
+    <!-- Subtitle / Co-Pilot Indicator -->
+    <text x="256" y="342" fill="#94A3B8" 
+          font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
+          font-weight="600" font-size="14" letter-spacing="5" text-anchor="middle" opacity="0.9">CO-PILOT</text>
+  </g>
+
+  <!-- Top-Right AI Brilliance Spark -->
+  <g transform="translate(372, 100)" filter="url(#intenseGlow)">
+    <path d="M0 -36 C0 -12 12 0 36 0 C12 0 0 12 0 36 C0 12 -12 0 -36 0 C-12 0 0 -12 0 -36 Z" 
+          fill="url(#aiSparkGrad)"/>
+    <circle cx="0" cy="0" r="5" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Bottom-Left Micro AI Spark -->
+  <g transform="translate(132, 380)" filter="url(#softGlow)" opacity="0.85">
+    <path d="M0 -18 C0 -6 6 0 18 0 C6 0 0 6 0 18 C0 6 -6 0 -18 0 C-6 0 0 -6 0 -18 Z" 
+          fill="url(#aiSparkGrad)"/>
+    <circle cx="0" cy="0" r="3" fill="#FFFFFF"/>
+  </g>
+
+  <!-- Top-Left Subtle Light Flare Node -->
+  <circle cx="120" cy="115" r="4" fill="#38BDF8" opacity="0.7"/>
+  <line x1="105" y1="115" x2="135" y2="115" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
+  <line x1="120" y1="100" x2="120" y2="130" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
 </svg>

@@ -1,4 +1,20 @@
-<?xml version="1.0" encoding="UTF-8"?>
+yang eimport sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, 'public');
+
+// SVG Generator function
+function createIconSvg({ isMaskable = false } = {}) {
+  // Maskable icons need safe zone (outer 10% is safe padding)
+  const bgRx = isMaskable ? '0' : '112';
+  const bgSize = isMaskable ? '512' : '464';
+  const bgPos = isMaskable ? '0' : '24';
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
     <!-- Background Gradient -->
@@ -69,11 +85,11 @@
   </defs>
 
   <!-- Background Base -->
-  <rect x="0" y="0" width="512" height="512" rx="0" fill="url(#bgGrad)"/>
-  <rect x="0" y="0" width="512" height="512" rx="0" fill="url(#ambientGlow)"/>
+  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="url(#bgGrad)"/>
+  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="url(#ambientGlow)"/>
   
   <!-- Subtle Outer Border -->
-  <rect x="0" y="0" width="512" height="512" rx="0" fill="none" stroke="url(#borderGrad)" stroke-width="3"/>
+  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="none" stroke="url(#borderGrad)" stroke-width="3"/>
 
   <!-- Geometric Tech Grid Accents -->
   <g opacity="0.12" stroke="#38BDF8" stroke-width="1.5">
@@ -138,4 +154,51 @@
   <circle cx="120" cy="115" r="4" fill="#38BDF8" opacity="0.7"/>
   <line x1="105" y1="115" x2="135" y2="115" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
   <line x1="120" y1="100" x2="120" y2="130" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
-</svg>
+</svg>`;
+}
+
+async function run() {
+  console.log('Generating enterprise SAP + AI Icons...');
+
+  const standardSvg = createIconSvg({ isMaskable: false });
+  const maskableSvg = createIconSvg({ isMaskable: true });
+
+  // Write SVGs
+  fs.writeFileSync(path.join(publicDir, 'favicon.svg'), standardSvg);
+  fs.writeFileSync(path.join(publicDir, 'pwa-192x192.svg'), standardSvg);
+  fs.writeFileSync(path.join(publicDir, 'pwa-512x512.svg'), standardSvg);
+  fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.svg'), standardSvg);
+  fs.writeFileSync(path.join(publicDir, 'pwa-maskable-512x512.svg'), maskableSvg);
+
+  // Generate PNGs using sharp
+  await sharp(Buffer.from(standardSvg))
+    .resize(192, 192)
+    .png()
+    .toFile(path.join(publicDir, 'pwa-192x192.png'));
+  console.log('✔ Generated pwa-192x192.png');
+
+  await sharp(Buffer.from(standardSvg))
+    .resize(512, 512)
+    .png()
+    .toFile(path.join(publicDir, 'pwa-512x512.png'));
+  console.log('✔ Generated pwa-512x512.png');
+
+  await sharp(Buffer.from(maskableSvg))
+    .resize(512, 512)
+    .png()
+    .toFile(path.join(publicDir, 'pwa-maskable-512x512.png'));
+  console.log('✔ Generated pwa-maskable-512x512.png');
+
+  await sharp(Buffer.from(standardSvg))
+    .resize(180, 180)
+    .png()
+    .toFile(path.join(publicDir, 'apple-touch-icon.png'));
+  console.log('✔ Generated apple-touch-icon.png');
+
+  console.log('All icons created successfully!');
+}
+
+run().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
