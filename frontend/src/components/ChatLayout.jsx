@@ -17,18 +17,6 @@ import {
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
-/** Sapaan dibuat personal bila nama pengguna diketahui. */
-const buildWelcome = (user) => {
-  const name = (user?.full_name || '').trim().split(' ')[0]
-    || (user?.role === 'guest' ? '' : user?.username || '');
-  const greeting = name ? `Halo, ${name}!` : 'Halo!';
-  return {
-    role: 'assistant',
-    isWelcome: true,
-    content: `${greeting} Saya asisten SAP Anda. Tanyakan apa saja soal data SAP, prosedur kerja, atau minta saya menyusun laporan dan berkas Excel.`,
-  };
-};
-
 // Contoh ditulis sebagai pertanyaan kerja sehari-hari, bukan potongan
 // nomor dokumen yang hanya bermakna bagi pengguna teknis.
 const SUGGESTIONS = [
@@ -65,7 +53,7 @@ const ChatLayout = () => {
 
   // Menyimpan riwayat pesan per session id agar independen & multi-chat
   const [messagesMap, setMessagesMap] = useState(() => ({
-    [DRAFT_SESSION_KEY]: [buildWelcome(getStoredUser())],
+    [DRAFT_SESSION_KEY]: [],
   }));
 
   // Status loading, progress, error, dan controller per session
@@ -111,7 +99,7 @@ const ChatLayout = () => {
 
   // Key aktif untuk session yang sedang dibuka
   const activeSessionKey = currentSessionId || DRAFT_SESSION_KEY;
-  const currentMessages = messagesMap[activeSessionKey] || [buildWelcome(user)];
+  const currentMessages = messagesMap[activeSessionKey] || [];
   const isCurrentLoading = Boolean(sessionLoadingMap[activeSessionKey]);
   const currentProgress = sessionProgressMap[activeSessionKey] || null;
   const currentSessionError = sessionErrorMap[activeSessionKey] || null;
@@ -126,7 +114,7 @@ const ChatLayout = () => {
       setUser(GUEST_USER);
       setSessions([]);
       setCurrentSessionId(null);
-      setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(GUEST_USER)] });
+      setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
       setSessionLoadingMap({});
       setSessionProgressMap({});
       setSessionErrorMap({});
@@ -206,7 +194,7 @@ const ChatLayout = () => {
     try {
       const data = await api.sessionMessages(sessionId);
       const formatted = !data || data.length === 0
-        ? [buildWelcome(user)]
+        ? []
         : data.map((m) => ({
             role: m.role === 'user' ? 'user' : 'assistant',
             content: m.content,
@@ -235,7 +223,7 @@ const ChatLayout = () => {
       setSessions([]);
       setIsSessionsLoading(false);
       setCurrentSessionId(null);
-      setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(user)] });
+      setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
       return;
     }
 
@@ -251,7 +239,7 @@ const ChatLayout = () => {
         setCurrentSessionId(null);
         setMessagesMap((prev) => ({
           ...prev,
-          [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+          [DRAFT_SESSION_KEY]: [],
         }));
       }
     } catch (err) {
@@ -276,7 +264,7 @@ const ChatLayout = () => {
       setCurrentSessionId(null);
       setMessagesMap((prev) => ({
         ...prev,
-        [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+        [DRAFT_SESSION_KEY]: [],
       }));
       return;
     }
@@ -287,7 +275,7 @@ const ChatLayout = () => {
         setCurrentSessionId(data.session_id);
         setMessagesMap((prev) => ({
           ...prev,
-          [data.session_id]: [buildWelcome(user)],
+          [data.session_id]: [],
         }));
       }
     } catch (err) {
@@ -355,7 +343,7 @@ const ChatLayout = () => {
         setCurrentSessionId(null);
         setMessagesMap((prev) => ({
           ...prev,
-          [DRAFT_SESSION_KEY]: [buildWelcome(user)],
+          [DRAFT_SESSION_KEY]: [],
         }));
       }
     }
@@ -411,7 +399,7 @@ const ChatLayout = () => {
     const targetSessionId = currentSessionId;
     const targetKey = targetSessionId || DRAFT_SESSION_KEY;
 
-    const prevMessages = messagesMap[targetKey] || [buildWelcome(user)];
+    const prevMessages = messagesMap[targetKey] || [];
     const outgoing = [...prevMessages, {
       role: 'user',
       content: text,
@@ -521,7 +509,7 @@ const ChatLayout = () => {
     setUser(GUEST_USER);
     setSessions([]);
     setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [buildWelcome(GUEST_USER)] });
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
     setSessionLoadingMap({});
     setSessionProgressMap({});
     setSessionErrorMap({});
@@ -895,34 +883,38 @@ const ChatLayout = () => {
               <ThinkingIndicator progress={currentProgress} onStop={() => stopGeneration(activeSessionKey)} />
             )}
 
-            {currentMessages.length <= 1 && !isCurrentLoading && (
-              <div className="pt-8 pb-4">
-                <div className="text-center mb-6">
-                  <div className="inline-flex items-center justify-center p-3 bg-accent-soft rounded-2xl text-accent-soft-fg mb-3">
-                    <Cpu className="w-6 h-6" aria-hidden="true" />
+            {currentMessages.length === 0 && !isCurrentLoading && (
+              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4">
+                <div className="text-center mb-4 sm:mb-6">
+                  <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-3">
+                    <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
                   </div>
-                  <h3 className="text-lg font-bold text-content font-display">Mulai dari sini</h3>
-                  <p className="text-sm text-content-muted mt-1.5">
+                  <h3 className="text-base sm:text-lg font-bold text-content font-display">Mulai dari sini</h3>
+                  <p className="text-xs sm:text-sm text-content-muted mt-1 sm:mt-1.5">
                     Pilih salah satu contoh, atau tulis pertanyaan Anda sendiri di bawah
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
                   {SUGGESTIONS.map((item) => {
                     const IconComp = item.icon;
                     return (
                       <button
                         key={item.title}
                         onClick={() => handleSendMessage(item.query)}
-                        className="flex flex-col text-left p-5 rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99]"
+                        className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
                       >
-                        <span className="p-2.5 w-fit rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors mb-3.5">
-                          <IconComp className="w-5 h-5" aria-hidden="true" />
+                        <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors sm:mb-3.5 shrink-0">
+                          <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
                         </span>
-                        <span className="text-sm font-bold text-content group-hover:text-accent transition-colors">
-                          {item.title}
-                        </span>
-                        <span className="text-xs text-content-muted mt-1.5 leading-relaxed">{item.subtitle}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block">
+                            {item.title}
+                          </span>
+                          <span className="text-[11px] sm:text-xs text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed block truncate sm:whitespace-normal">
+                            {item.subtitle}
+                          </span>
+                        </div>
                       </button>
                     );
                   })}

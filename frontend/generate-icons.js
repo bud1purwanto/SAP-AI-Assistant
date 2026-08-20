@@ -1,4 +1,4 @@
-yang eimport sharp from 'sharp';
+import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,170 +7,159 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.join(__dirname, 'public');
 
-// SVG Generator function
-function createIconSvg({ isMaskable = false } = {}) {
-  // Maskable icons need safe zone (outer 10% is safe padding)
-  const bgRx = isMaskable ? '0' : '112';
-  const bgSize = isMaskable ? '512' : '464';
-  const bgPos = isMaskable ? '0' : '24';
+/**
+ * Generate standard and maskable SVG matching the SAP AI icon design:
+ * Gradient Blue-to-Indigo background, bold white "SAP" typography,
+ * and a glowing Cyan-Indigo "AI" badge on the bottom-right corner.
+ */
+function createSapAiSvg({ isMaskable = false, isAppleTouch = false } = {}) {
+  // Safe margins for maskable / standard icons
+  const cornerRadius = isMaskable || isAppleTouch ? '0' : '108';
+  const viewBoxSize = 512;
+  const padding = isMaskable ? 48 : 20;
+  const cardSize = viewBoxSize - (padding * 2);
+  const cardRadius = isMaskable ? 80 : 96;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" width="${viewBoxSize}" height="${viewBoxSize}">
   <defs>
-    <!-- Background Gradient -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Outer Dark Ambient Gradient for PWA Canvas -->
+    <linearGradient id="canvasBg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#090D16"/>
-      <stop offset="50%" stop-color="#0F172A"/>
-      <stop offset="100%" stop-color="#030712"/>
+      <stop offset="100%" stop-color="#0F172A"/>
     </linearGradient>
 
-    <!-- Ambient Glow Radial -->
-    <radialGradient id="ambientGlow" cx="50%" cy="46%" r="50%">
-      <stop offset="0%" stop-color="#1D4ED8" stop-opacity="0.45"/>
-      <stop offset="60%" stop-color="#0284C7" stop-opacity="0.15"/>
-      <stop offset="100%" stop-color="#0284C7" stop-opacity="0"/>
-    </radialGradient>
+    <!-- Main Icon Brand Gradient: Blue to Indigo (same as App Header) -->
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="50%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#4338CA"/>
+    </linearGradient>
 
-    <!-- SAP Primary Metallic Gradient -->
-    <linearGradient id="sapBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Light reflection shine on top half -->
+    <linearGradient id="topShine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- AI Corner Badge Gradient -->
+    <linearGradient id="aiBadgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="35%" stop-color="#0284C7"/>
-      <stop offset="100%" stop-color="#1D4ED8"/>
-    </linearGradient>
-
-    <!-- Shield Plate Gradient -->
-    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95"/>
-    </linearGradient>
-
-    <!-- AI Electric Spark Gradient -->
-    <linearGradient id="aiSparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="30%" stop-color="#67E8F9"/>
-      <stop offset="70%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#6366F1"/>
       <stop offset="100%" stop-color="#818CF8"/>
     </linearGradient>
 
-    <!-- AI Accent Badge Gradient -->
-    <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0284C7"/>
-      <stop offset="50%" stop-color="#6366F1"/>
-      <stop offset="100%" stop-color="#9333EA"/>
+    <!-- AI Spark Glow -->
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#BAE6FD"/>
     </linearGradient>
 
-    <!-- Border Glow Gradient -->
-    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6"/>
-      <stop offset="50%" stop-color="#1E293B" stop-opacity="0.3"/>
-      <stop offset="100%" stop-color="#6366F1" stop-opacity="0.5"/>
-    </linearGradient>
-
-    <!-- Filter for Deep Glow -->
-    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="12" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    <!-- Filters for crisp shadow & glow -->
+    <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="-2" dy="-2" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.6"/>
     </filter>
 
-    <!-- Filter for Intense Spark Glow -->
-    <filter id="intenseGlow" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="8" result="blur1"/>
-      <feGaussianBlur stdDeviation="20" result="blur2"/>
+    <filter id="sparkGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
       <feMerge>
-        <feMergeNode in="blur2"/>
-        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
   </defs>
 
-  <!-- Background Base -->
-  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="url(#bgGrad)"/>
-  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="url(#ambientGlow)"/>
-  
-  <!-- Subtle Outer Border -->
-  <rect x="${bgPos}" y="${bgPos}" width="${bgSize}" height="${bgSize}" rx="${bgRx}" fill="none" stroke="url(#borderGrad)" stroke-width="3"/>
+  ${isMaskable ? `<rect width="512" height="512" fill="url(#canvasBg)"/>` : ''}
 
-  <!-- Geometric Tech Grid Accents -->
-  <g opacity="0.12" stroke="#38BDF8" stroke-width="1.5">
-    <line x1="80" y1="140" x2="432" y2="140" stroke-dasharray="6,8"/>
-    <line x1="80" y1="372" x2="432" y2="372" stroke-dasharray="6,8"/>
-    <line x1="140" y1="80" x2="140" y2="432" stroke-dasharray="6,8"/>
-    <line x1="372" y1="80" x2="372" y2="432" stroke-dasharray="6,8"/>
-  </g>
+  <!-- Main Rounded App Icon Container -->
+  <g transform="${isMaskable ? 'translate(48, 48)' : 'translate(20, 20)'}">
+    <!-- Base Icon Box -->
+    <rect width="${cardSize}" height="${cardSize}" rx="${cardRadius}" fill="url(#brandGrad)"/>
+    
+    <!-- Top Glass Highlight -->
+    <rect width="${cardSize}" height="${cardSize / 2}" rx="${cardRadius}" fill="url(#topShine)" opacity="0.4"/>
+    
+    <!-- Subtle Border Stroke -->
+    <rect width="${cardSize}" height="${cardSize}" rx="${cardRadius}" fill="none" stroke="#60A5FA" stroke-width="4" stroke-opacity="0.4"/>
 
-  <!-- Center Enterprise Shield / Card -->
-  <g transform="translate(0, -8)">
-    <!-- Shield Shadow / Outer Rim -->
-    <path d="M120 135 L392 135 L392 275 C392 345 256 395 256 395 C256 395 120 345 120 275 Z" 
-          fill="url(#shieldGrad)" stroke="url(#borderGrad)" stroke-width="2.5"/>
-    
-    <!-- SAP Iconic Trapezoid Shape Header -->
-    <path d="M135 150 L377 150 L345 228 L167 228 Z" 
-          fill="url(#sapBlueGrad)" opacity="0.95"/>
-    
-    <!-- Bold Typography: SAP -->
-    <g fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="900" font-size="44" letter-spacing="4">
-      <text x="256" y="206" text-anchor="middle">SAP</text>
+    <!-- Subtle Tech Grid / Circuit Accents in Background -->
+    <g opacity="0.15" stroke="#FFFFFF" stroke-width="2">
+      <circle cx="90" cy="90" r="45" fill="none" stroke-dasharray="8,6"/>
+      <line x1="135" y1="90" x2="220" y2="90"/>
+      <circle cx="220" cy="90" r="4" fill="#FFFFFF"/>
     </g>
 
-    <!-- AI Dynamic Badge / Bridge Container -->
-    <g transform="translate(256, 280)">
-      <!-- AI Pill Background -->
-      <rect x="-85" y="-22" width="170" height="44" rx="22" 
-            fill="url(#badgeGrad)" stroke="#67E8F9" stroke-width="2" filter="url(#softGlow)"/>
-      
-      <!-- AI Text with Spark Icon -->
-      <text x="-14" y="9" fill="#FFFFFF" 
-            font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="800" font-size="24" letter-spacing="3" text-anchor="middle">AI</text>
-      
-      <!-- Mini Spark inside Pill -->
-      <path d="M22 0 C22 -8 26 -12 34 -12 C26 -12 22 -16 22 -24 C22 -16 18 -12 10 -12 C18 -12 22 -8 22 0 Z" 
-            transform="translate(8, 12) scale(0.65)" fill="#FFFFFF"/>
+    <!-- Center Typography: "SAP" (Heavy Enterprise Font) -->
+    <!-- Clip path to keep AI badge inside rounded bounds -->
+    <g clip-path="url(#cardClip)">
+      <!-- Main "SAP" Wordmark -->
+      <text 
+        x="${cardSize / 2}" 
+        y="${cardSize / 2 + 38}" 
+        fill="#FFFFFF" 
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif" 
+        font-weight="900" 
+        font-size="${isMaskable ? '145' : '165'}" 
+        letter-spacing="-4" 
+        text-anchor="middle"
+        style="text-shadow: 0 4px 16px rgba(0,0,0,0.35);"
+      >SAP</text>
     </g>
 
-    <!-- Subtitle / Co-Pilot Indicator -->
-    <text x="256" y="342" fill="#94A3B8" 
-          font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" 
-          font-weight="600" font-size="14" letter-spacing="5" text-anchor="middle" opacity="0.9">CO-PILOT</text>
-  </g>
+    <!-- Top-Left AI Star Sparkle -->
+    <g transform="translate(60, 60)" filter="url(#sparkGlow)">
+      <path d="M 0 -18 C 0 -6 6 0 18 0 C 6 0 0 6 0 18 C 0 6 -6 0 -18 0 C -6 0 0 -6 0 -18 Z" fill="url(#sparkGrad)"/>
+      <circle cx="0" cy="0" r="3" fill="#FFFFFF"/>
+    </g>
 
-  <!-- Top-Right AI Brilliance Spark -->
-  <g transform="translate(372, 100)" filter="url(#intenseGlow)">
-    <path d="M0 -36 C0 -12 12 0 36 0 C12 0 0 12 0 36 C0 12 -12 0 -36 0 C-12 0 0 -12 0 -36 Z" 
-          fill="url(#aiSparkGrad)"/>
-    <circle cx="0" cy="0" r="5" fill="#FFFFFF"/>
+    <!-- Bottom-Right "AI" Badge (Integrated in Corner) -->
+    <g transform="translate(${cardSize - (isMaskable ? 140 : 160)}, ${cardSize - (isMaskable ? 78 : 90)})" filter="url(#badgeShadow)">
+      <!-- Badge Pillow with Cyan-Indigo Gradient -->
+      <path 
+        d="M 28 0 L ${isMaskable ? 140 : 160} 0 L ${isMaskable ? 140 : 160} ${isMaskable ? 78 : 90} L 0 ${isMaskable ? 78 : 90} C 0 ${isMaskable ? 50 : 60} 10 0 28 0 Z" 
+        fill="url(#aiBadgeGrad)"
+        opacity="0.96"
+      />
+      <!-- Inner Border Glow -->
+      <path 
+        d="M 28 0 L ${isMaskable ? 140 : 160} 0 L ${isMaskable ? 140 : 160} ${isMaskable ? 78 : 90} L 0 ${isMaskable ? 78 : 90} C 0 ${isMaskable ? 50 : 60} 10 0 28 0 Z" 
+        fill="none" 
+        stroke="#E0F2FE" 
+        stroke-width="2.5" 
+        stroke-opacity="0.8"
+      />
+      <!-- AI Text -->
+      <text 
+        x="${(isMaskable ? 140 : 160) / 2 + 10}" 
+        y="${(isMaskable ? 78 : 90) / 2 + 19}" 
+        fill="#FFFFFF" 
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif" 
+        font-weight="900" 
+        font-size="${isMaskable ? '48' : '56'}" 
+        letter-spacing="1" 
+        text-anchor="middle"
+        style="text-shadow: 0 2px 8px rgba(0,0,0,0.3);"
+      >AI</text>
+    </g>
   </g>
-
-  <!-- Bottom-Left Micro AI Spark -->
-  <g transform="translate(132, 380)" filter="url(#softGlow)" opacity="0.85">
-    <path d="M0 -18 C0 -6 6 0 18 0 C6 0 0 6 0 18 C0 6 -6 0 -18 0 C-6 0 0 -6 0 -18 Z" 
-          fill="url(#aiSparkGrad)"/>
-    <circle cx="0" cy="0" r="3" fill="#FFFFFF"/>
-  </g>
-
-  <!-- Top-Left Subtle Light Flare Node -->
-  <circle cx="120" cy="115" r="4" fill="#38BDF8" opacity="0.7"/>
-  <line x1="105" y1="115" x2="135" y2="115" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
-  <line x1="120" y1="100" x2="120" y2="130" stroke="#38BDF8" stroke-width="1.5" opacity="0.5"/>
 </svg>`;
 }
 
 async function run() {
-  console.log('Generating enterprise SAP + AI Icons...');
+  console.log('Generating official SAP AI icon suite...');
 
-  const standardSvg = createIconSvg({ isMaskable: false });
-  const maskableSvg = createIconSvg({ isMaskable: true });
+  const standardSvg = createSapAiSvg({ isMaskable: false, isAppleTouch: false });
+  const appleSvg = createSapAiSvg({ isMaskable: false, isAppleTouch: true });
+  const maskableSvg = createSapAiSvg({ isMaskable: true, isAppleTouch: false });
 
   // Write SVGs
   fs.writeFileSync(path.join(publicDir, 'favicon.svg'), standardSvg);
   fs.writeFileSync(path.join(publicDir, 'pwa-192x192.svg'), standardSvg);
   fs.writeFileSync(path.join(publicDir, 'pwa-512x512.svg'), standardSvg);
-  fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.svg'), standardSvg);
+  fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.svg'), appleSvg);
   fs.writeFileSync(path.join(publicDir, 'pwa-maskable-512x512.svg'), maskableSvg);
 
-  // Generate PNGs using sharp
+  // Generate high-resolution PNGs using sharp
   await sharp(Buffer.from(standardSvg))
     .resize(192, 192)
     .png()
@@ -189,16 +178,22 @@ async function run() {
     .toFile(path.join(publicDir, 'pwa-maskable-512x512.png'));
   console.log('✔ Generated pwa-maskable-512x512.png');
 
-  await sharp(Buffer.from(standardSvg))
+  await sharp(Buffer.from(appleSvg))
     .resize(180, 180)
     .png()
     .toFile(path.join(publicDir, 'apple-touch-icon.png'));
   console.log('✔ Generated apple-touch-icon.png');
 
-  console.log('All icons created successfully!');
+  await sharp(Buffer.from(standardSvg))
+    .resize(32, 32)
+    .png()
+    .toFile(path.join(publicDir, 'favicon-32x32.png'));
+  console.log('✔ Generated favicon-32x32.png');
+
+  console.log('All SAP AI icons generated successfully!');
 }
 
-run().catch(err => {
-  console.error(err);
+run().catch((err) => {
+  console.error('Failed to generate icons:', err);
   process.exit(1);
 });
