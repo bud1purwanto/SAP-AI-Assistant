@@ -45,54 +45,54 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain"
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div className="bg-surface-raised rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-line relative">
+      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-line relative my-auto">
 
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-2 rounded-full transition-all z-10"
+            className="absolute top-3 right-3 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition-all z-10"
             aria-label="Tutup dialog login"
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
         )}
 
-        <div className="bg-accent px-6 py-8 text-center text-accent-fg">
-          <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-white/20">
-            <Lock className="w-7 h-7" aria-hidden="true" />
+        <div className="bg-accent px-5 py-4 sm:py-6 text-center text-accent-fg">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-2 border border-white/20">
+            <Lock className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
           </div>
-          <h2 id="login-title" className="text-xl font-bold font-display">SAP AI Co-Pilot Login</h2>
-          <p className="text-xs opacity-90 mt-1 max-w-xs mx-auto">
-            Masuk untuk mengakses layanan Enterprise SAP &amp; Knowledge Base tanpa batas prompt
+          <h2 id="login-title" className="text-base sm:text-lg font-bold font-display leading-tight">SAP AI Co-Pilot Login</h2>
+          <p className="text-[11px] sm:text-xs opacity-90 mt-1 max-w-xs mx-auto leading-normal">
+            Masuk untuk mengakses layanan Enterprise SAP & Knowledge Base tanpa batas prompt
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-3 sm:space-y-4">
           {customMessage && (
-            <div className="flex items-center gap-2.5 p-3.5 bg-warning-soft border border-warning/40 rounded-2xl text-warning text-xs font-medium leading-relaxed">
-              <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <div className="flex items-center gap-2 p-2.5 sm:p-3 bg-warning-soft border border-warning/40 rounded-xl text-warning text-xs font-medium leading-relaxed">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>{customMessage}</span>
             </div>
           )}
 
           {error && (
-            <div role="alert" className="flex items-center gap-2 p-3 bg-danger-soft border border-danger/40 rounded-2xl text-danger text-xs font-medium">
-              <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <div role="alert" className="flex items-center gap-2 p-2.5 sm:p-3 bg-danger-soft border border-danger/40 rounded-xl text-danger text-xs font-medium">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
 
           <div>
-            <label htmlFor="login-username" className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">
+            <label htmlFor="login-username" className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
               Username SAP
             </label>
             <div className="relative">
-              <User className="w-4 h-4 absolute left-3.5 top-3.5 text-content-subtle" aria-hidden="true" />
+              <User className="w-4 h-4 absolute left-3 top-3 text-content-subtle" aria-hidden="true" />
               <input
                 id="login-username"
                 ref={usernameRef}
@@ -101,18 +101,18 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-surface-sunken border border-line rounded-2xl pl-10 pr-4 py-2.5 text-sm text-content focus:border-accent transition-all font-mono"
+                className="w-full bg-surface-sunken border border-line rounded-xl pl-9 pr-3 py-2 text-sm text-content focus:border-accent transition-all font-mono"
                 placeholder="Masukkan username SAP"
               />
             </div>
           </div>
 
           <div>
-            <label htmlFor="login-password" className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">
+            <label htmlFor="login-password" className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
               Password
             </label>
             <div className="relative">
-              <KeyRound className="w-4 h-4 absolute left-3.5 top-3.5 text-content-subtle" aria-hidden="true" />
+              <KeyRound className="w-4 h-4 absolute left-3 top-3 text-content-subtle" aria-hidden="true" />
               <input
                 id="login-password"
                 type="password"
@@ -120,7 +120,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-surface-sunken border border-line rounded-2xl pl-10 pr-4 py-2.5 text-sm text-content focus:border-accent transition-all font-mono"
+                className="w-full bg-surface-sunken border border-line rounded-xl pl-9 pr-3 py-2 text-sm text-content focus:border-accent transition-all font-mono"
                 placeholder="••••••••"
               />
             </div>
@@ -129,9 +129,9 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-2 flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-accent-fg font-bold py-3 px-4 rounded-2xl shadow-lg transition-all active:scale-[0.98] disabled:opacity-70 text-sm"
+            className="w-full mt-2 flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-accent-fg font-bold py-2.5 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-70 text-xs sm:text-sm"
           >
-            <LogIn className="w-4 h-4" aria-hidden="true" />
+            <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             <span>{isLoading ? 'Memverifikasi…' : 'Masuk Aplikasi'}</span>
           </button>
 

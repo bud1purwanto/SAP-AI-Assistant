@@ -126,48 +126,48 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-3 sm:px-4 pb-2 sm:pb-4 pb-safe">
+    <div className="w-full max-w-3xl mx-auto px-2.5 sm:px-4 pb-1.5 sm:pb-4 pb-safe">
       <form
         onSubmit={handleSubmit}
         onDragEnter={onDragEnter}
         onDragOver={(e) => e.preventDefault()}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`relative bg-surface-raised backdrop-blur-xl rounded-3xl border shadow-xl p-1.5 sm:p-2.5 transition-all ${
+        className={`relative bg-surface-raised backdrop-blur-xl rounded-2xl sm:rounded-3xl border shadow-lg sm:shadow-xl p-1 sm:p-2.5 transition-all ${
           isDragging ? 'border-accent border-dashed bg-accent-soft' : 'border-line focus-within:border-accent'
         }`}
       >
         {isDragging && (
-          <div className="absolute inset-0 rounded-3xl flex items-center justify-center bg-accent-soft/90 pointer-events-none z-10">
-            <span className="text-sm font-semibold text-accent-soft-fg">Lepaskan berkas untuk melampirkan</span>
+          <div className="absolute inset-0 rounded-2xl sm:rounded-3xl flex items-center justify-center bg-accent-soft/90 pointer-events-none z-10">
+            <span className="text-xs sm:text-sm font-semibold text-accent-soft-fg">Lepaskan berkas untuk melampirkan</span>
           </div>
         )}
 
         {/* Lampiran terpilih */}
         {(attachments.length > 0 || uploading > 0) && (
-          <div className="flex flex-wrap gap-2 px-2 pt-1.5 pb-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2 px-1.5 sm:px-2 pt-1 pb-1.5 sm:pb-2">
             {attachments.map((item) => (
               <span
                 key={item.upload_id}
-                className="flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 bg-surface-sunken border border-line rounded-xl text-xs"
+                className="flex items-center gap-1.5 sm:gap-2 pl-2 pr-1 sm:pl-2.5 sm:pr-1.5 py-1 sm:py-1.5 bg-surface-sunken border border-line rounded-lg sm:rounded-xl text-[11px] sm:text-xs"
               >
                 <span className="text-content-muted">{iconFor(item)}</span>
-                <span className="max-w-[12rem] truncate text-content font-medium">{item.filename}</span>
-                <span className="text-content-subtle">{formatSize(item.size)}</span>
+                <span className="max-w-[8rem] sm:max-w-[12rem] truncate text-content font-medium">{item.filename}</span>
+                <span className="text-content-subtle text-[10px] sm:text-xs">{formatSize(item.size)}</span>
                 {item.note && <span className="text-warning" title={item.note}>!</span>}
                 <button
                   type="button"
                   onClick={() => removeAttachment(item.upload_id)}
-                  className="p-0.5 rounded-lg text-content-subtle hover:text-danger hover:bg-surface-hover"
+                  className="p-0.5 rounded-md sm:rounded-lg text-content-subtle hover:text-danger hover:bg-surface-hover"
                   aria-label={`Hapus lampiran ${item.filename}`}
                 >
-                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                  <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
                 </button>
               </span>
             ))}
             {uploading > 0 && (
-              <span className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-sunken border border-line rounded-xl text-xs text-content-muted">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              <span className="flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-2.5 sm:py-1.5 bg-surface-sunken border border-line rounded-lg sm:rounded-xl text-[11px] sm:text-xs text-content-muted">
+                <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" aria-hidden="true" />
                 Mengunggah {uploading} berkas…
               </span>
             )}
@@ -175,10 +175,10 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
         )}
 
         {uploadError && (
-          <p role="alert" className="px-3 pb-1.5 text-xs text-danger">{uploadError}</p>
+          <p role="alert" className="px-2.5 pb-1 text-[11px] sm:text-xs text-danger">{uploadError}</p>
         )}
 
-        <div className="flex items-end gap-1">
+        <div className="flex items-end gap-0.5 sm:gap-1">
           <input
             ref={fileInputRef}
             type="file"
@@ -190,7 +190,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 mb-1 rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
+            className="p-2 sm:p-2.5 mb-0.5 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
             aria-label="Lampirkan gambar atau dokumen"
             title="Lampirkan gambar atau dokumen"
           >
@@ -204,17 +204,17 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Tanyakan sesuatu, lampirkan berkas, atau minta saya menyusun laporan…"
+            placeholder="Tanyakan sesuatu tentang SAP…"
             aria-label="Tulis pertanyaan Anda"
-            className="flex-1 max-h-[180px] py-2.5 px-2 bg-transparent text-content placeholder:text-content-subtle text-base sm:text-[15px] focus:outline-none resize-none leading-relaxed"
+            className="flex-1 max-h-[140px] sm:max-h-[180px] py-2 sm:py-2.5 px-1.5 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-base sm:text-[15px] focus:outline-none resize-none leading-relaxed"
             disabled={isLoading}
           />
 
-          <div className="flex items-center gap-1.5 pb-1">
+          <div className="flex items-center gap-1 sm:gap-1.5 pb-0.5 sm:pb-1">
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
-              className={`p-2.5 rounded-2xl flex items-center justify-center transition-all ${
+              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
                 !busy && (input.trim() || attachments.length > 0)
                   ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
@@ -227,11 +227,10 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           </div>
         </div>
 
-        <div className="px-3 pt-1 text-xs text-content-subtle">
-          <span className="hidden sm:inline">
+        <div className="px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
+          <span>
             Enter untuk mengirim • Shift + Enter baris baru • seret berkas ke sini atau tempel gambar
           </span>
-          <Sparkles className="w-3 h-3 inline sm:hidden" aria-hidden="true" />
         </div>
       </form>
 
