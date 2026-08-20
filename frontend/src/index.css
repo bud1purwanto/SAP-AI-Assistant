@@ -317,3 +317,26 @@ code, pre, .font-mono {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   PWA & STANDALONE APP DISPLAY TWEAKS (iOS Safari & Android PWA)
+   ========================================================================== */
+
+/* Khusus saat dijalankan sebagai PWA Standalone (tanpa browser address bar) */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .pwa-chat-input-bar {
+    padding-bottom: max(0.5rem, calc(env(safe-area-inset-bottom, 0px) * 0.75 + 2px)) !important;
+  }
+
+  .pwa-sidebar-footer {
+    padding-bottom: max(0.75rem, calc(env(safe-area-inset-bottom, 0px) * 0.85 + 2px)) !important;
+  }
+}
+
+.is-pwa-standalone .pwa-chat-input-bar {
+  padding-bottom: max(0.5rem, calc(env(safe-area-inset-bottom, 0px) * 0.75 + 2px)) !important;
+}
+
+.is-pwa-standalone .pwa-sidebar-footer {
+  padding-bottom: max(0.75rem, calc(env(safe-area-inset-bottom, 0px) * 0.85 + 2px)) !important;
+}

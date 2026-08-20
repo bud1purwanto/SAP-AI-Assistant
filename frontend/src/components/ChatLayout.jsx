@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
+  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sun, Trash2, X,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -267,15 +267,21 @@ const ChatLayout = () => {
     try {
       const data = await api.listSessions();
       setSessions(data || []);
-      if (data && data.length > 0) {
-        if (!keepCurrentId || !currentSessionId) {
-          loadSession(data[0].session_id);
+      if (keepCurrentId && currentSessionId) {
+        const exists = data?.some((s) => (s.session_id || s.id) === currentSessionId);
+        if (!exists) {
+          setCurrentSessionId(null);
+          setMessagesMap((prev) => ({
+            ...prev,
+            [DRAFT_SESSION_KEY]: [],
+          }));
         }
-      } else {
+      } else if (!keepCurrentId) {
+        // Saat pertama kali login atau refresh, selalu tampilkan New Chat
         setCurrentSessionId(null);
         setMessagesMap((prev) => ({
           ...prev,
-          [DRAFT_SESSION_KEY]: [],
+          [DRAFT_SESSION_KEY]: prev[DRAFT_SESSION_KEY] || [],
         }));
       }
     } catch (err) {
@@ -286,37 +292,33 @@ const ChatLayout = () => {
       setIsSessionsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isGuest, currentSessionId, loadSession]);
+  }, [isGuest, currentSessionId]);
 
   useEffect(() => {
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.username, user.role]);
 
-  const createNewSession = async () => {
+  const createNewSession = () => {
     setError(null);
     setIsSidebarOpen(false);
-    if (isGuest) {
-      setCurrentSessionId(null);
-      setMessagesMap((prev) => ({
-        ...prev,
-        [DRAFT_SESSION_KEY]: [],
-      }));
-      return;
-    }
-    try {
-      const data = await api.createSession('Percakapan Baru');
-      if (data?.session_id) {
-        setSessions((prev) => [data, ...prev]);
-        setCurrentSessionId(data.session_id);
-        setMessagesMap((prev) => ({
-          ...prev,
-          [data.session_id]: [],
-        }));
-      }
-    } catch (err) {
-      setError({ message: err.message, retry: createNewSession });
-    }
+    setCurrentSessionId(null);
+    setMessagesMap((prev) => ({
+      ...prev,
+      [DRAFT_SESSION_KEY]: [],
+    }));
+    setSessionLoadingMap((prev) => ({
+      ...prev,
+      [DRAFT_SESSION_KEY]: false,
+    }));
+    setSessionProgressMap((prev) => ({
+      ...prev,
+      [DRAFT_SESSION_KEY]: null,
+    }));
+    setSessionErrorMap((prev) => ({
+      ...prev,
+      [DRAFT_SESSION_KEY]: null,
+    }));
   };
 
   const promptDeleteSession = (e, session) => {
@@ -535,6 +537,8 @@ const ChatLayout = () => {
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
     saveSession(token, userData);
     setUser(userData);
+    setCurrentSessionId(null);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
     setIsLoginModalOpen(false);
     setCustomLoginMsg('');
     setError(null);
@@ -728,7 +732,7 @@ const ChatLayout = () => {
           )}
         </nav>
 
-        <div className="p-3 border-t border-line bg-surface-raised/90 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
+        <div className="pwa-sidebar-footer p-3 border-t border-line bg-surface-raised/90 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}

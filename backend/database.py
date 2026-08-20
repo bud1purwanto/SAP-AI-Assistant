@@ -677,15 +677,19 @@ def create_chat_session(username: str, title: str = "Percakapan Baru"):
         return None
 
 def get_chat_sessions(username: str):
-    """Ambil semua daftar sesi percakapan milik user."""
+    """Ambil semua daftar sesi percakapan milik user yang memiliki pesan."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT session_id, title, created_at, updated_at
-                FROM ai_assistant.chat_sessions
-                WHERE LOWER(username) = LOWER(:u)
-                ORDER BY updated_at DESC
+                SELECT s.session_id, s.title, s.created_at, s.updated_at
+                FROM ai_assistant.chat_sessions s
+                WHERE LOWER(s.username) = LOWER(:u)
+                  AND EXISTS (
+                      SELECT 1 FROM ai_assistant.chat_messages m
+                      WHERE m.session_id = s.session_id
+                  )
+                ORDER BY s.updated_at DESC
             """), {"u": username.strip()}).fetchall()
             return [
                 {

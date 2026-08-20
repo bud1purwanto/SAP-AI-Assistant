@@ -17,12 +17,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
     <script>
-      // Terapkan tema sebelum React dimuat agar tidak terjadi kedipan warna.
+      // Terapkan tema dan deteksi mode PWA sebelum React dimuat agar tidak terjadi kedipan warna/layout.
       (function () {
         try {
+          var root = document.documentElement;
+          var isStandalone = window.navigator.standalone === true ||
+            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+            (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches);
+          if (isStandalone) {
+            root.classList.add('is-pwa-standalone');
+          }
           var t = localStorage.getItem('sap_assistant_theme');
           if (t !== 'light' && t !== 'dark') t = 'system';
-          var root = document.documentElement;
           if (t === 'system') {
             root.removeAttribute('data-theme');
           } else {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FileSpreadsheet, FileText, FileType, Image, Loader2, Paperclip, Send, Sparkles, X } from 'lucide-react';
+import { FileSpreadsheet, FileText, FileType, Image, Loader2, Paperclip, Send, X } from 'lucide-react';
 
 import { uploadAttachment } from '../lib/api';
 
@@ -126,7 +126,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="px-2.5 sm:px-6 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
+    <div className="pwa-chat-input-bar px-2.5 sm:px-6 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
       <form
         onSubmit={handleSubmit}
         onDragOver={(e) => e.preventDefault()}
