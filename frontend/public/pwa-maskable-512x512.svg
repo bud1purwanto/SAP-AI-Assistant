@@ -1,122 +1,54 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <!-- Outer Dark Ambient Gradient for PWA Canvas -->
-    <linearGradient id="canvasBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#090D16"/>
-      <stop offset="100%" stop-color="#0F172A"/>
-    </linearGradient>
-
-    <!-- Main Icon Brand Gradient: Blue to Indigo (same as App Header) -->
-    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#2563EB"/>
-      <stop offset="50%" stop-color="#1D4ED8"/>
       <stop offset="100%" stop-color="#4338CA"/>
     </linearGradient>
-
-    <!-- Light reflection shine on top half -->
-    <linearGradient id="topShine" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-
-    <!-- AI Corner Badge Gradient -->
-    <linearGradient id="aiBadgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38BDF8"/>
-      <stop offset="50%" stop-color="#6366F1"/>
-      <stop offset="100%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#6366F1"/>
     </linearGradient>
-
-    <!-- AI Spark Glow -->
-    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#BAE6FD"/>
-    </linearGradient>
-
-    <!-- Filters for crisp shadow & glow -->
-    <filter id="badgeShadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="-2" dy="-2" stdDeviation="6" flood-color="#0F172A" flood-opacity="0.6"/>
-    </filter>
-
-    <filter id="sparkGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
   </defs>
 
-  <rect width="512" height="512" fill="url(#canvasBg)"/>
+  <!-- Full Background for Maskable Icon -->
+  <rect width="512" height="512" fill="url(#bgGrad)"/>
 
-  <!-- Main Rounded App Icon Container -->
-  <g transform="translate(48, 48)">
-    <!-- Base Icon Box -->
-    <rect width="416" height="416" rx="80" fill="url(#brandGrad)"/>
-    
-    <!-- Top Glass Highlight -->
-    <rect width="416" height="208" rx="80" fill="url(#topShine)" opacity="0.4"/>
-    
-    <!-- Subtle Border Stroke -->
-    <rect width="416" height="416" rx="80" fill="none" stroke="#60A5FA" stroke-width="4" stroke-opacity="0.4"/>
+  <!-- Main Content centered within Safe Zone (circle radius ~200px) -->
+  <g transform="translate(256, 256)">
+    <!-- SAP Main Text -->
+    <text
+      x="-18"
+      y="18"
+      fill="#FFFFFF"
+      font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+      font-weight="900"
+      font-size="160"
+      letter-spacing="-7"
+      text-anchor="middle"
+      dominant-baseline="central"
+    >SAP</text>
 
-    <!-- Subtle Tech Grid / Circuit Accents in Background -->
-    <g opacity="0.15" stroke="#FFFFFF" stroke-width="2">
-      <circle cx="90" cy="90" r="45" fill="none" stroke-dasharray="8,6"/>
-      <line x1="135" y1="90" x2="220" y2="90"/>
-      <circle cx="220" cy="90" r="4" fill="#FFFFFF"/>
-    </g>
-
-    <!-- Center Typography: "SAP" (Heavy Enterprise Font) -->
-    <!-- Clip path to keep AI badge inside rounded bounds -->
-    <g clip-path="url(#cardClip)">
-      <!-- Main "SAP" Wordmark -->
-      <text 
-        x="208" 
-        y="246" 
-        fill="#FFFFFF" 
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif" 
-        font-weight="900" 
-        font-size="145" 
-        letter-spacing="-4" 
-        text-anchor="middle"
-        style="text-shadow: 0 4px 16px rgba(0,0,0,0.35);"
-      >SAP</text>
-    </g>
-
-    <!-- Top-Left AI Star Sparkle -->
-    <g transform="translate(60, 60)" filter="url(#sparkGlow)">
-      <path d="M 0 -18 C 0 -6 6 0 18 0 C 6 0 0 6 0 18 C 0 6 -6 0 -18 0 C -6 0 0 -6 0 -18 Z" fill="url(#sparkGrad)"/>
-      <circle cx="0" cy="0" r="3" fill="#FFFFFF"/>
-    </g>
-
-    <!-- Bottom-Right "AI" Badge (Integrated in Corner) -->
-    <g transform="translate(276, 338)" filter="url(#badgeShadow)">
-      <!-- Badge Pillow with Cyan-Indigo Gradient -->
-      <path 
-        d="M 28 0 L 140 0 L 140 78 L 0 78 C 0 50 10 0 28 0 Z" 
-        fill="url(#aiBadgeGrad)"
-        opacity="0.96"
+    <!-- AI Badge in Bottom Right of Safe Area -->
+    <g transform="translate(68, 52)">
+      <rect
+        x="0"
+        y="0"
+        width="118"
+        height="76"
+        rx="22"
+        fill="url(#badgeGrad)"
       />
-      <!-- Inner Border Glow -->
-      <path 
-        d="M 28 0 L 140 0 L 140 78 L 0 78 C 0 50 10 0 28 0 Z" 
-        fill="none" 
-        stroke="#E0F2FE" 
-        stroke-width="2.5" 
-        stroke-opacity="0.8"
-      />
-      <!-- AI Text -->
-      <text 
-        x="80" 
-        y="58" 
-        fill="#FFFFFF" 
-        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, sans-serif" 
-        font-weight="900" 
-        font-size="48" 
-        letter-spacing="1" 
+      <text
+        x="59"
+        y="38"
+        fill="#FFFFFF"
+        font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+        font-weight="900"
+        font-size="52"
+        letter-spacing="-1"
         text-anchor="middle"
-        style="text-shadow: 0 2px 8px rgba(0,0,0,0.3);"
+        dominant-baseline="central"
       >AI</text>
     </g>
   </g>
