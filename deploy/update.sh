@@ -15,8 +15,12 @@ git reset --hard origin/main
 
 echo "🐍 [2/4] Memeriksa & mengupdate dependensi backend..."
 cd "${PROJECT_DIR}/backend"
-if [ -d "venv" ]; then
+if [ -f "venv/bin/pip" ]; then
     ./venv/bin/pip install -r requirements.txt --quiet
+elif [ -f "/var/www/SAP-AI-Assistant/backend/venv/bin/pip" ]; then
+    /var/www/SAP-AI-Assistant/backend/venv/bin/pip install -r requirements.txt --quiet
+else
+    pip install -r requirements.txt --quiet 2>/dev/null || pip3 install -r requirements.txt --quiet || true
 fi
 
 echo "⚛️ [3/4] Melakukan build ulang Frontend..."
