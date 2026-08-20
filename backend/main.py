@@ -45,6 +45,7 @@ from database import (
     purge_expired_artifacts,
     purge_expired_uploads,
     register_login_failure,
+    rename_chat_session,
     session_belongs_to,
     update_system_config,
     update_user_by_admin,
@@ -334,6 +335,10 @@ class CreateSessionRequest(BaseModel):
     title: str = "Percakapan Baru"
 
 
+class RenameSessionRequest(BaseModel):
+    title: str
+
+
 @app.get("/api/sessions")
 async def get_sessions_endpoint(user: dict = Depends(get_current_user)):
     return get_chat_sessions(user["username"])
@@ -348,6 +353,22 @@ async def create_session_endpoint(
     if not session:
         raise HTTPException(status_code=500, detail="Gagal membuat sesi percakapan.")
     return session
+
+
+@app.patch("/api/sessions/{session_id}")
+@app.put("/api/sessions/{session_id}")
+async def rename_session_endpoint(
+    session_id: str,
+    req: RenameSessionRequest,
+    user: dict = Depends(get_current_user),
+):
+    title_clean = (req.title or "").strip()
+    if not title_clean:
+        raise HTTPException(status_code=400, detail="Judul sesi tidak boleh kosong.")
+    success = rename_chat_session(session_id, user["username"], title_clean[:100])
+    if not success:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau bukan milik Anda.")
+    return {"status": "success", "session_id": session_id, "title": title_clean[:100]}
 
 
 @app.delete("/api/sessions/{session_id}")

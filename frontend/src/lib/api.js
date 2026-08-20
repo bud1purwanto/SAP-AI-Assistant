@@ -120,6 +120,7 @@ export const api = {
 
   listSessions: () => apiFetch('/api/sessions'),
   createSession: (title) => apiFetch('/api/sessions', { method: 'POST', body: { title } }),
+  renameSession: (id, title) => apiFetch(`/api/sessions/${id}`, { method: 'PATCH', body: { title } }),
   deleteSession: (id) => apiFetch(`/api/sessions/${id}`, { method: 'DELETE' }),
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 

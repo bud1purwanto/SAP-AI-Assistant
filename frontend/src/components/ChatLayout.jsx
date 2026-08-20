@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
+  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, X,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -65,6 +65,8 @@ const ChatLayout = () => {
   const [progress, setProgress] = useState(null);
   const [isSessionsLoading, setIsSessionsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState('');
 
   const [activeServer, setActiveServer] = useState('sap:sandbox-new');
   const [sapSubServers, setSapSubServers] = useState([]);
@@ -240,6 +242,40 @@ const ChatLayout = () => {
     }
   };
 
+  const startRenameSession = (e, session) => {
+    e.stopPropagation();
+    setEditingSessionId(session.session_id || session.id);
+    setEditingTitle(session.title || 'Percakapan SAP');
+  };
+
+  const cancelRenameSession = (e) => {
+    if (e) e.stopPropagation();
+    setEditingSessionId(null);
+    setEditingTitle('');
+  };
+
+  const saveRenameSession = async (e, sessionId) => {
+    if (e) e.stopPropagation();
+    const cleanTitle = editingTitle.trim();
+    if (!cleanTitle) {
+      cancelRenameSession();
+      return;
+    }
+    try {
+      await api.renameSession(sessionId, cleanTitle);
+      setSessions((prev) =>
+        prev.map((s) =>
+          (s.session_id === sessionId || s.id === sessionId) ? { ...s, title: cleanTitle } : s
+        )
+      );
+    } catch (err) {
+      setError({ message: err.message });
+    } finally {
+      setEditingSessionId(null);
+      setEditingTitle('');
+    }
+  };
+
   const stopGeneration = () => {
     abortRef.current?.abort();
     abortRef.current = null;
@@ -404,6 +440,47 @@ const ChatLayout = () => {
             sessions.map((session) => {
               const sid = session.session_id || session.id;
               const isActive = sid === currentSessionId;
+              const isEditing = sid === editingSessionId;
+
+              if (isEditing) {
+                return (
+                  <div
+                    key={sid}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-surface-raised border border-accent/50 shadow-xs"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') saveRenameSession(e, sid);
+                        if (e.key === 'Escape') cancelRenameSession(e);
+                      }}
+                      autoFocus
+                      maxLength={100}
+                      className="flex-1 min-w-0 bg-transparent text-xs text-content font-medium px-1.5 py-0.5 focus:outline-none"
+                    />
+                    <button
+                      onClick={(e) => saveRenameSession(e, sid)}
+                      className="p-1 text-accent hover:bg-surface-hover rounded-md transition-colors"
+                      title="Simpan"
+                      aria-label="Simpan perubahan nama percakapan"
+                    >
+                      <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={(e) => cancelRenameSession(e)}
+                      className="p-1 text-content-subtle hover:bg-surface-hover rounded-md transition-colors"
+                      title="Batal"
+                      aria-label="Batal ubah nama"
+                    >
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={sid}
@@ -421,13 +498,24 @@ const ChatLayout = () => {
                     <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span className="truncate">{session.title || 'Percakapan SAP'}</span>
                   </button>
-                  <button
-                    onClick={(e) => deleteSession(e, sid)}
-                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 mr-2 text-content-subtle hover:text-danger rounded-lg transition-opacity"
-                    aria-label={`Hapus percakapan ${session.title || ''}`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  </button>
+                  <div className="flex items-center gap-0.5 pr-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => startRenameSession(e, session)}
+                      className="p-1 text-content-subtle hover:text-accent rounded-lg transition-colors"
+                      title="Ubah nama percakapan"
+                      aria-label={`Ubah nama percakapan ${session.title || ''}`}
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={(e) => deleteSession(e, sid)}
+                      className="p-1 text-content-subtle hover:text-danger rounded-lg transition-colors"
+                      title="Hapus percakapan"
+                      aria-label={`Hapus percakapan ${session.title || ''}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
               );
             })

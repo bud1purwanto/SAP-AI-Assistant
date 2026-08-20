@@ -724,6 +724,22 @@ def delete_chat_session(session_id: str, username: str):
         logger.error(f"Error delete_chat_session: {e}")
         return False
 
+def rename_chat_session(session_id: str, username: str, new_title: str):
+    """Mengubah judul sesi percakapan milik user tertentu."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("""
+                UPDATE ai_assistant.chat_sessions
+                SET title = :t, updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
+            """), {"t": new_title.strip()[:100], "sid": session_id, "u": username.strip()})
+            conn.commit()
+            return res.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error rename_chat_session: {e}")
+        return False
+
 def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
                      artifacts: str = None, attachments: str = None):
     """Tambah pesan (user / ai) ke dalam sesi percakapan."""
