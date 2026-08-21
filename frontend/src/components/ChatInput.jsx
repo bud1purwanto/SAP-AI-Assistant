@@ -126,14 +126,14 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="pwa-chat-input-bar px-2.5 sm:px-6 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
+    <div className="pwa-chat-input-bar px-3 sm:px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
       <form
         onSubmit={handleSubmit}
         onDragOver={(e) => e.preventDefault()}
         onDragEnter={onDragEnter}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`relative bg-surface-raised rounded-2xl sm:rounded-3xl border transition-all duration-200 p-1 sm:p-2 max-w-3xl mx-auto focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent shadow-xs hover:shadow-sm ${
+        className={`relative bg-surface-raised rounded-2xl sm:rounded-3xl border transition-all duration-200 p-1.5 sm:p-2 max-w-3xl mx-auto focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent shadow-xs hover:shadow-sm ${
           isDragging ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/20' : 'border-line'
         }`}
       >
@@ -178,7 +178,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <p role="alert" className="px-2.5 pb-1 text-[11px] sm:text-xs text-danger">{uploadError}</p>
         )}
 
-        <div className="flex items-end gap-0.5 sm:gap-1">
+        <div className="flex items-end gap-1">
           <input
             ref={fileInputRef}
             type="file"
@@ -190,7 +190,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-1.5 sm:p-2.5 mb-0.5 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
+            className="p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
             aria-label="Lampirkan gambar atau dokumen"
             title="Lampirkan gambar atau dokumen"
           >
@@ -206,15 +206,15 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder="Tanyakan sesuatu tentang SAP…"
             aria-label="Tulis pertanyaan Anda"
-            className="no-focus-outline flex-1 max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2.5 px-1 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
+            className="no-focus-outline flex-1 max-h-[120px] sm:max-h-[180px] py-2 sm:py-2.5 px-1.5 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
-          <div className="flex items-center gap-1 sm:gap-1.5 pb-0.5 sm:pb-1">
+          <div className="flex items-center gap-1 sm:gap-1.5 pb-0.5">
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
-              className={`p-1.5 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
+              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
                 !busy && (input.trim() || attachments.length > 0)
                   ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
@@ -235,7 +235,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[9px] sm:text-[10.5px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
+      <p className="text-center text-[9.5px] sm:text-[10.5px] text-content-subtle mt-1.5 mb-0 px-2 select-none leading-tight tracking-normal">
         SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
       </p>
     </div>
