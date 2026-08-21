@@ -233,6 +233,19 @@ def init_db():
                 );
             """))
 
+            # 5e. Katalog Skill Asisten (Panduan & SOP Modul SAP)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.skills (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    description VARCHAR(255),
+                    content TEXT NOT NULL,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
             res_dev = conn.execute(text("SELECT username FROM ai_assistant.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
             if not res_dev:
@@ -260,6 +273,14 @@ def init_db():
                     VALUES ('mcp_rag_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON})
+
+            res_email = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_email_config_json'")).fetchone()
+            if not res_email or not res_email.value:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('mcp_email_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": settings.mcp_email_config_json or DEFAULT_MCP_EMAIL_JSON})
 
             # 9Router Config Defaults
             res_9r_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_enabled'")).fetchone()
@@ -318,6 +339,20 @@ def init_db():
                     INSERT INTO ai_assistant.system_config (key, value)
                     VALUES ('openrouter_api_key', :val)
                 """), {"val": settings.openrouter_api_key or ""})
+
+            # Seed default skills (SAP ABAP & SAP PP) jika tabel skills masih kosong
+            skill_cnt = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.skills")).scalar()
+            if skill_cnt == 0:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.skills (name, description, content, enabled)
+                    VALUES 
+                    ('SAP ABAP', 'Standar penulisan kode ABAP, function module, BAPI, dan best practice clean code', :abap_content, true),
+                    ('SAP PP', 'Panduan modul Production Planning, Bill of Materials (BOM), Routing, dan Work Center', :pp_content, true)
+                """), {
+                    "abap_content": DEFAULT_SKILL_ABAP,
+                    "pp_content": DEFAULT_SKILL_PP
+                })
+                logger.info("Default skills (SAP ABAP, SAP PP) berhasil di-seed.")
 
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
@@ -498,10 +533,23 @@ DEFAULT_MCP_RAG_JSON = '''{
   }
 }'''
 
+DEFAULT_MCP_EMAIL_JSON = '''{
+  "mcpServers": {
+    "email-mcp": {
+      "type": "http",
+      "url": "http://192.168.1.162:8092/mcp",
+      "headers": {
+        "Authorization": "Bearer Trias123"
+      }
+    }
+  }
+}'''
+
 def get_system_config():
-    """Ambil konfigurasi MCP SAP, MCP RAG, 9Router, dan OpenRouter dari database."""
+    """Ambil konfigurasi MCP SAP, MCP RAG, MCP Email, 9Router, dan OpenRouter dari database."""
     sap_cfg = settings.mcp_sap_config_json or DEFAULT_MCP_SAP_JSON
     rag_cfg = settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON
+    email_cfg = settings.mcp_email_config_json or DEFAULT_MCP_EMAIL_JSON
     
     nine_router_enabled = settings.nine_router_enabled
     nine_router_base_url = settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
@@ -525,6 +573,8 @@ def get_system_config():
                     sap_cfg = r.value
                 elif r.key == 'mcp_rag_config_json' and r.value is not None:
                     rag_cfg = r.value
+                elif r.key == 'mcp_email_config_json' and r.value is not None:
+                    email_cfg = r.value
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -548,6 +598,7 @@ def get_system_config():
     return {
         "mcp_sap_config_json": sap_cfg,
         "mcp_rag_config_json": rag_cfg,
+        "mcp_email_config_json": email_cfg,
         "nine_router_enabled": nine_router_enabled,
         "nine_router_base_url": nine_router_base_url,
         "nine_router_model": nine_router_model,
@@ -562,6 +613,7 @@ def get_system_config():
 def update_system_config(
     mcp_sap_json: str = None, 
     mcp_rag_json: str = None,
+    mcp_email_json: str = None,
     nine_router_enabled: bool = None,
     nine_router_base_url: str = None,
     nine_router_model: str = None,
@@ -589,6 +641,13 @@ def update_system_config(
                     VALUES ('mcp_rag_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": mcp_rag_json})
+
+            if mcp_email_json is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('mcp_email_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": mcp_email_json})
 
             if nine_router_enabled is not None:
                 conn.execute(text("""
@@ -1363,3 +1422,193 @@ def purge_expired_uploads() -> int:
     except Exception as e:
         logger.error(f"Error purge_expired_uploads: {e}")
         return 0
+
+
+# --- SKILL MANAGEMENT (KATALOG SKILL) ---
+
+DEFAULT_SKILL_ABAP = """# Panduan Keahlian: SAP ABAP Development
+
+## 1. Naming Convention
+- Program custom diawali dengan huruf `Z` atau `Y` (contoh: `ZREP_MM_STOCK_SUMMARY`).
+- Struktur data: `TY_` untuk type, `WA_` / `LS_` untuk work area / local structure, `GT_` / `LT_` untuk internal table.
+- Function Module & BAPI: gunakan namespace perusahaan atau `Z_...`.
+
+## 2. Performance & Best Practices
+- Hindari penggunaan `SELECT *`. Selalu tentukan daftar field spesifik yang diperlukan.
+- Gunakan `FOR ALL ENTRIES` hanya setelah memastikan internal table tidak kosong (`IF itab IS NOT INITIAL`).
+- Selalu evaluasi `SY-SUBRC` setelah query database atau pemanggilan function.
+- Gunakan BAPI resmi (seperti `BAPI_MATERIAL_SAVEDATA`, `BAPI_PO_CREATE1`) daripada direct update ke tabel SAP.
+
+## 3. Format Penjelasan ABAP
+- Berikan penjelasan alur logika program secara terstruktur.
+- Sertakan contoh deklarasi data (`DATA: ...`) yang lengkap dan siap dijalankan di SE38 / Eclipse ADT.
+"""
+
+DEFAULT_SKILL_PP = """# Panduan Keahlian: SAP PP (Production Planning)
+
+## 1. Master Data & Tabel Utama
+- **BOM (Bill of Materials):** `MAST` (Link Material to BOM), `STKO` (BOM Header), `STPO` (BOM Item). T-Codes: `CS01`, `CS02`, `CS03`.
+- **Routing:** `PLKO` (Routing Header), `PLAS` (Task List - Operation Selection), `PLPO` (Routing Operation). T-Codes: `CA01`, `CA02`, `CA03`.
+- **Work Center:** `CRHD` (Header Work Center), `CRTX` (Text), `KAKO` (Capacity). T-Codes: `CR01`, `CR02`, `CR03`.
+- **Production Order:** `AFKO` (Order Header), `AFPO` (Order Item), `AUFK` (Order Master Data), `RESB` (Reservation/Component). T-Codes: `CO01`, `CO02`, `CO03`.
+
+## 2. Analisis & Troubleshooting PP
+- Cek ketersediaan komponen material via reservation (`RESB`) dan Stock Requirements List (`MD04`).
+- Verifikasi status order pada tabel `JEST` / `TJ02T` (misal: `CRTD` Created, `REL` Released, `PCNF` Partially Confirmed, `CNF` Confirmed, `TECO` Technically Completed).
+- Untuk issue settlement atau costing order produksi, pastikan work center memiliki cost center dan activity type yang valid.
+"""
+
+def get_skills(enabled_only: bool = False) -> list[dict]:
+    """Mengambil daftar skill dari database."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if enabled_only:
+                stmt = text("""
+                    SELECT id, name, description, content, enabled, created_at, updated_at
+                    FROM ai_assistant.skills
+                    WHERE enabled = true
+                    ORDER BY name ASC
+                """)
+            else:
+                stmt = text("""
+                    SELECT id, name, description, content, enabled, created_at, updated_at
+                    FROM ai_assistant.skills
+                    ORDER BY id ASC
+                """)
+            rows = conn.execute(stmt).fetchall()
+            return [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "description": r.description or "",
+                    "content": r.content or "",
+                    "enabled": bool(r.enabled),
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error get_skills: {e}")
+        return []
+
+
+def get_skill_by_id(skill_id: int) -> dict | None:
+    """Mengambil satu skill berdasarkan ID."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            r = conn.execute(text("""
+                SELECT id, name, description, content, enabled, created_at, updated_at
+                FROM ai_assistant.skills
+                WHERE id = :id
+            """), {"id": skill_id}).fetchone()
+            if not r:
+                return None
+            return {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description or "",
+                "content": r.content or "",
+                "enabled": bool(r.enabled),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+    except Exception as e:
+        logger.error(f"Error get_skill_by_id: {e}")
+        return None
+
+
+def create_skill(name: str, description: str = "", content: str = "", enabled: bool = True) -> dict:
+    """Membuat skill baru di database."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            r = conn.execute(text("""
+                INSERT INTO ai_assistant.skills (name, description, content, enabled, updated_at)
+                VALUES (:name, :description, :content, :enabled, CURRENT_TIMESTAMP)
+                RETURNING id, name, description, content, enabled, created_at, updated_at
+            """), {
+                "name": name.strip(),
+                "description": (description or "").strip(),
+                "content": (content or "").strip(),
+                "enabled": bool(enabled)
+            }).fetchone()
+            conn.commit()
+            return {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description or "",
+                "content": r.content or "",
+                "enabled": bool(r.enabled),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+    except Exception as e:
+        logger.error(f"Error create_skill: {e}")
+        raise
+
+
+def update_skill(
+    skill_id: int,
+    name: str = None,
+    description: str = None,
+    content: str = None,
+    enabled: bool = None
+) -> dict | None:
+    """Memperbarui skill yang ada."""
+    try:
+        current = get_skill_by_id(skill_id)
+        if not current:
+            return None
+
+        new_name = name.strip() if name is not None else current["name"]
+        new_desc = description.strip() if description is not None else current["description"]
+        new_content = content if content is not None else current["content"]
+        new_enabled = enabled if enabled is not None else current["enabled"]
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            r = conn.execute(text("""
+                UPDATE ai_assistant.skills
+                SET name = :name, description = :description, content = :content, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+                RETURNING id, name, description, content, enabled, created_at, updated_at
+            """), {
+                "id": skill_id,
+                "name": new_name,
+                "description": new_desc,
+                "content": new_content,
+                "enabled": new_enabled
+            }).fetchone()
+            conn.commit()
+            return {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description or "",
+                "content": r.content or "",
+                "enabled": bool(r.enabled),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+    except Exception as e:
+        logger.error(f"Error update_skill: {e}")
+        raise
+
+
+def delete_skill(skill_id: int) -> bool:
+    """Menghapus skill berdasarkan ID."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("""
+                DELETE FROM ai_assistant.skills
+                WHERE id = :id
+            """), {"id": skill_id})
+            conn.commit()
+            return (res.rowcount or 0) > 0
+    except Exception as e:
+        logger.error(f"Error delete_skill: {e}")
+        return False
+

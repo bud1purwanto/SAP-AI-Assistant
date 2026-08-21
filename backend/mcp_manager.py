@@ -180,6 +180,18 @@ class MCPManager:
                 return rag_config.get("url", "http://192.168.1.162:8090/mcp"), rag_config.get("headers", {"Authorization": "Bearer Trias123"})
             except Exception:
                 return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
+
+        elif name == "email":
+            config_json_str = db_cfg.get("mcp_email_config_json") or getattr(settings, "mcp_email_config_json", "")
+            if not config_json_str:
+                return "http://192.168.1.162:8092/mcp", {"Authorization": "Bearer Trias123"}
+            try:
+                config = json.loads(config_json_str)
+                mcp_servers = config.get("mcpServers", {})
+                email_config = mcp_servers.get("email-mcp", list(mcp_servers.values())[0] if mcp_servers else {})
+                return email_config.get("url", "http://192.168.1.162:8092/mcp"), email_config.get("headers", {"Authorization": "Bearer Trias123"})
+            except Exception:
+                return "http://192.168.1.162:8092/mcp", {"Authorization": "Bearer Trias123"}
         else:
             raise ValueError(f"Unknown MCP server name: {name}")
 
@@ -263,6 +275,32 @@ class MCPManager:
                     "error": str(e)
                 }
 
+            # Email Server status
+            try:
+                email_client = self.get_client("email")
+                email_tools = await email_client.list_tools(http_client)
+                status["email"] = {
+                    "id": "email",
+                    "name": "Email MCP Gateway",
+                    "description": "Email Notification & Mail Dispatcher",
+                    "online": True,
+                    "status": "online",
+                    "tool_count": len(email_tools),
+                    "tools_count": len(email_tools)
+                }
+            except Exception as e:
+                logger.error(f"Error checking Email MCP server: {e}")
+                status["email"] = {
+                    "id": "email",
+                    "name": "Email MCP Gateway",
+                    "description": "Email Notification & Mail Dispatcher",
+                    "online": False,
+                    "status": "offline",
+                    "tool_count": 0,
+                    "tools_count": 0,
+                    "error": str(e)
+                }
+
         return status
 
     async def _set_active_sap_server_unlocked(self, http_client, target_sap: str):
@@ -312,6 +350,15 @@ class MCPManager:
                         tools.append({"server": "rag", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching RAG tools: {e}")
+
+            # Email Tools
+            try:
+                email_client = self.get_client("email")
+                email_tools = await email_client.list_tools(http_client)
+                for t in email_tools:
+                    tools.append({"server": "email", "tool": t})
+            except Exception as e:
+                logger.warning(f"Error fetching Email tools (MCP email offline or unavailable): {e}")
 
         return tools
 

@@ -29,27 +29,22 @@ Skrip ini akan otomatis melakukan:
 5. Konfigurasi Nginx Web Server reverse proxy ke port 8080.
 6. Konfigurasi firewall UFW.
 
-### 3. Konfigurasi Environment Variable
-### Variabel wajib di produksi
+### 3. Konfigurasi Environment Variable & Database
 
+#### Variabel Wajib di `.env` (Level Server / Infrastruktur):
 | Variabel | Kegunaan |
 | :--- | :--- |
-| `JWT_SECRET` | Kunci penandatangan token login. Wajib diisi dan sama di semua worker — bila kosong, server memakai secret acak sehingga semua sesi gugur tiap restart. Buat dengan `openssl rand -base64 48`. |
-| `DATABASE_URL` | Koneksi PostgreSQL. **Wajib** — aplikasi tidak berjalan tanpa database ini; tidak ada fallback lokal. |
-| `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (hindari `*`). |
-| `BOOTSTRAP_ADMIN_PASSWORD` | Password superadmin awal saat instalasi pertama. |
-| `GUEST_DAILY_LIMIT` | Kuota prompt harian untuk pengunjung tanpa login. |
+| `DATABASE_URL` | Koneksi PostgreSQL (**Wajib**). Semua riwayat chat, user, config MCP, dan skill disimpan di sini. |
+| `JWT_SECRET` | Kunci penandatangan token login JWT (**Wajib** di produksi). Buat dengan `openssl rand -base64 48`. |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Password akun superadmin awal `TRSTDEV` saat tabel users pertama kali diinisialisasi. |
+| `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (gunakan `*` atau domain/IP Anda). |
 
-> **Catatan keamanan:** aplikasi ini melayani beberapa user, sehingga password dan
-> token melintas jaringan. Terminasikan TLS (HTTPS) di depan Nginx sebelum
-> membukanya ke pengguna; konfigurasi bawaan masih `listen 8080` tanpa TLS.
+> **Catatan Keamanan & Kemudahan:**
+> Konfigurasi **AI Provider (9Router, OpenRouter API Keys)**, **Server MCP (SAP, RAG, Email)**, **Persona Organisasi**, dan **Katalog Skill** disimpan di Database PostgreSQL dan dapat diatur langsung secara visual lewat menu **Dashboard Admin (UI)** di browser. Anda **tidak perlu mengedit `.env` atau merestart service** untuk mengganti model AI atau server MCP!
 
-Edit file `.env` di backend jika ingin menyesuaikan API Key atau MCP endpoint:
+Jika ingin mengubah konfigurasi level server (misal database atau secret key):
 ```bash
 nano backend/.env
-```
-Setelah mengubah `.env`, cukup restart service:
-```bash
 sudo systemctl restart sap-ai-backend
 ```
 

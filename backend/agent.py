@@ -66,6 +66,10 @@ def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
     name = (tool_name or "").lower()
     if server == "rag":
         return "Mencari di dokumen internal…"
+    if server == "email":
+        if "send" in name:
+            return "Mengirim email via MCP Email…"
+        return "Memproses layanan MCP Email…"
 
     table = ""
     if isinstance(args, dict):
@@ -155,6 +159,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         
     has_sap = any(item["server"] == "sap" for item in all_mcp_tools)
     has_rag = any(item["server"] == "rag" for item in all_mcp_tools)
+    has_email = any(item["server"] == "email" for item in all_mcp_tools)
     
     # 2. Konversi tools MCP ke format OpenAI tools
     openai_tools = []
@@ -311,6 +316,8 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         tool_inventory.append(f"data live SAP pada server **{sap_server_name} (SID: {sap_sid})**")
     if has_rag:
         tool_inventory.append("basis pengetahuan dokumen (RAG)")
+    if has_email:
+        tool_inventory.append("layanan MCP Email")
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
 
     system_prompt = (
@@ -406,6 +413,34 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         )
     elif global_persona or personal_persona:
         system_prompt += "Patuhi persona di atas secara konsisten pada setiap balasan.\n"
+
+    # --- KATALOG SKILL & SPESIALISASI ---
+    try:
+        from database import get_skills
+        active_skills = get_skills(enabled_only=True)
+    except Exception as e:
+        logger.warning(f"Gagal memuat skill dari database: {e}")
+        active_skills = []
+
+    if active_skills:
+        system_prompt += (
+            "\n\n## PANDUAN KEAHLIAN / SKILL KHUSUS (STANDAR OPERASIONAL PROSEDUR)\n"
+            "Berikut adalah panduan keahlian dan SOP teknis modul spesialisasi yang telah didefinisikan organisasi.\n"
+            "HIRARKI PRIORITAS ATURAN:\n"
+            "1. **SKILL (SOP Teknis Modul)**: Memiliki prioritas TERTINGGI untuk urusan teknis SAP, standar coding/penamaan, referensi tabel/T-code, dan alur investigasi modul.\n"
+            "2. **PERSONA ORGANISASI**: Mengatur identitas dasar peran asisten (misal SAP Leader), kepatuhan data, dan tone perusahaan.\n"
+            "3. **PREFERENSI PRIBADI PENGGUNA**: Mengatur penyesuaian gaya penyampaian user, tanpa boleh melanggar SOP Teknis Skill maupun Persona Organisasi.\n\n"
+            "Bila permintaan atau topik pengguna berkaitan dengan salah satu skill di bawah ini, "
+            "Anda WAJIB membaca, memprioritaskan, dan mematuhi panduan/aturan teknis di dalam skill tersebut terlebih dahulu:\n"
+        )
+        for sk in active_skills:
+            system_prompt += (
+                f"\n### [SKILL] {sk['name']}\n"
+                f"**Deskripsi:** {sk['description']}\n"
+                f"**Pedoman & SOP:**\n"
+                f"{sk['content']}\n"
+            )
+        system_prompt += "\n----------------------------------------------------------------\n"
 
     messages = [SystemMessage(content=system_prompt)]
 
@@ -550,7 +585,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             
             # Cek apakah LLM mencoba menulis panggilan tool dalam teks alih-alih function call native
             # Pola seperti: sap__read_table({"table": "AUFK"}) atau rag__rag_search({"query": "..."})
-            text_tool_match = re.search(r'(?:call:\s*)?(sap__[a-zA-Z0-9_]+|rag__[a-zA-Z0-9_]+)\s*\(\s*({.*?})\s*\)', raw_content, flags=re.DOTALL)
+            text_tool_match = re.search(r'(?:call:\s*)?(sap__[a-zA-Z0-9_]+|rag__[a-zA-Z0-9_]+|email__[a-zA-Z0-9_]+)\s*\(\s*({.*?})\s*\)', raw_content, flags=re.DOTALL)
             if text_tool_match and iteration < max_iterations:
                 t_name = text_tool_match.group(1)
                 t_args_str = text_tool_match.group(2)

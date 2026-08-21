@@ -159,6 +159,11 @@ export const api = {
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   adminSessions: (limit = 50) => apiFetch(`/api/admin/sessions?limit=${limit}`),
   adminSessionMessages: (id) => apiFetch(`/api/admin/sessions/${id}/messages`),
+
+  adminSkills: () => apiFetch('/api/admin/skills'),
+  adminCreateSkill: (payload) => apiFetch('/api/admin/skills', { method: 'POST', body: payload }),
+  adminUpdateSkill: (id, payload) => apiFetch(`/api/admin/skills/${id}`, { method: 'PUT', body: payload }),
+  adminDeleteSkill: (id) => apiFetch(`/api/admin/skills/${id}`, { method: 'DELETE' }),
 };
 
 /**

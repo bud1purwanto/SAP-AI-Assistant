@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, CheckCircle, Database, Edit3, History, Key, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, Code, Database, Edit3, FileText, History, Key, Mail, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
@@ -20,6 +20,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '', full_name: '' });
 
+  // Skills State
+  const [skillsList, setSkillsList] = useState([]);
+  const [skillSearch, setSkillSearch] = useState('');
+  const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState(null);
+  const [newSkillForm, setNewSkillForm] = useState({ name: '', description: '', content: '', enabled: true });
+  const [editSkillForm, setEditSkillForm] = useState({ name: '', description: '', content: '', enabled: true });
+  const [skillSaving, setSkillSaving] = useState(false);
+
   // AI & MCP Config State
   const [nineRouterEnabled, setNineRouterEnabled] = useState(true);
   const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('http://192.168.88.83:20128/v1');
@@ -33,6 +42,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const [mcpSapConfig, setMcpSapConfig] = useState('');
   const [mcpRagConfig, setMcpRagConfig] = useState('');
+  const [mcpEmailConfig, setMcpEmailConfig] = useState('');
   const [mcpSaving, setMcpSaving] = useState(false);
 
   // Audit Logs State
@@ -64,6 +74,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         setGlobalPersona(data.global_assistant_persona || '');
         setMcpSapConfig(data.mcp_sap_config_json || '');
         setMcpRagConfig(data.mcp_rag_config_json || '');
+        setMcpEmailConfig(data.mcp_email_config_json || '');
         setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
         setNineRouterBaseUrl(data.nine_router_base_url || 'http://192.168.88.83:20128/v1');
         setNineRouterModel(data.nine_router_model || 'ag/gemini-3.7-flash-medium');
@@ -75,6 +86,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       }
     } catch (err) {
       console.error("Gagal load config:", err);
+    }
+  };
+
+  const fetchSkills = async () => {
+    try {
+      setSkillsList(await api.adminSkills());
+    } catch (err) {
+      console.error("Gagal load skills:", err);
     }
   };
 
@@ -100,6 +119,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       setActionError('');
       fetchStats();
       fetchUsers();
+      fetchSkills();
       fetchConfig();
       fetchAuditSessions();
     }
@@ -161,6 +181,67 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const handleCreateSkill = async (e) => {
+    e.preventDefault();
+    setActionError('');
+    setActionSuccess('');
+    setSkillSaving(true);
+    try {
+      const created = await api.adminCreateSkill(newSkillForm);
+      setActionSuccess(`Skill '${created.name}' berhasil ditambahkan!`);
+      setNewSkillForm({ name: '', description: '', content: '', enabled: true });
+      setIsAddSkillOpen(false);
+      fetchSkills();
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setSkillSaving(false);
+    }
+  };
+
+  const handleUpdateSkill = async (e) => {
+    e.preventDefault();
+    if (!editingSkill) return;
+    setActionError('');
+    setActionSuccess('');
+    setSkillSaving(true);
+    try {
+      await api.adminUpdateSkill(editingSkill.id, editSkillForm);
+      setActionSuccess(`Skill '${editSkillForm.name}' berhasil diperbarui!`);
+      setEditingSkill(null);
+      fetchSkills();
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setSkillSaving(false);
+    }
+  };
+
+  const handleToggleSkill = async (skill) => {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await api.adminUpdateSkill(skill.id, { enabled: !skill.enabled });
+      setActionSuccess(`Status skill '${skill.name}' diubah menjadi ${!skill.enabled ? 'Aktif' : 'Nonaktif'}.`);
+      fetchSkills();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const handleDeleteSkill = async (skillId, skillName) => {
+    if (!window.confirm(`Yakin ingin menghapus skill '${skillName}'?`)) return;
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await api.adminDeleteSkill(skillId);
+      setActionSuccess(`Skill '${skillName}' berhasil dihapus.`);
+      fetchSkills();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
   const handleSaveGlobalPersona = async () => {
     setPersonaSaving(true);
     setActionSuccess('');
@@ -183,6 +264,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       await api.saveConfig({
         mcp_sap_config_json: mcpSapConfig,
         mcp_rag_config_json: mcpRagConfig,
+        mcp_email_config_json: mcpEmailConfig,
         nine_router_enabled: nineRouterEnabled,
         nine_router_base_url: nineRouterBaseUrl,
         nine_router_model: nineRouterModel,
@@ -212,141 +294,161 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     u.role.toLowerCase().includes(userSearch.toLowerCase())
   );
 
+  const filteredSkills = skillsList.filter(s =>
+    s.name.toLowerCase().includes(skillSearch.toLowerCase()) ||
+    s.description.toLowerCase().includes(skillSearch.toLowerCase()) ||
+    s.content.toLowerCase().includes(skillSearch.toLowerCase())
+  );
+
   const filteredAuditSessions = auditSessions.filter(s => 
     s.username.toLowerCase().includes(auditSearch.toLowerCase()) ||
     s.title.toLowerCase().includes(auditSearch.toLowerCase())
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-      {/* Modal Container: Fullscreen on mobile, rounded card on desktop */}
-      <div className="bg-surface-raised border border-line sm:rounded-2xl shadow-2xl w-full max-w-[1600px] h-full sm:h-[94vh] flex flex-col overflow-hidden text-content">
-        
-        {/* Header Modal */}
-        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-line bg-surface pt-safe">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
-            <div className="p-2 sm:p-2.5 bg-gradient-to-tr from-amber-500 to-indigo-600 rounded-xl text-white shadow-md shadow-indigo-500/20 shrink-0">
-              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-xl font-bold tracking-tight text-content truncate font-display">
-                Super Admin Control Center
-              </h2>
-              <p className="text-[11px] sm:text-xs text-content-muted truncate">
-                Kelola User, Server MCP, Audit Riwayat Chat, dan Metrik Sistem
-              </p>
-            </div>
+    <div className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen h-screen overflow-hidden text-content animate-fadeIn">
+      {/* Header Modal */}
+      <div className="flex items-center justify-between px-5 sm:px-8 py-3.5 border-b border-line bg-surface shrink-0">
+        <div className="flex items-center gap-3 min-w-0 pr-4">
+          <div className="p-2 rounded-xl bg-indigo-600/15 text-indigo-500 border border-indigo-500/25 flex items-center justify-center shrink-0 shadow-sm">
+            <ShieldCheck className="w-5 h-5" />
           </div>
-          
-          <button 
-            onClick={onClose}
-            className="p-1.5 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors shrink-0 cursor-pointer"
-            aria-label="Tutup Dashboard"
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-bold tracking-tight text-content truncate font-display leading-tight">
+              Super Admin Control Center
+            </h2>
+            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
+              Kelola User, Katalog Skill, Server MCP, Audit Riwayat Chat, dan Metrik Sistem
+            </p>
+          </div>
+        </div>
+        
+        <button 
+          onClick={onClose}
+          className="p-1.5 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
+          aria-label="Tutup Dashboard"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Global Notifications Alert */}
+      {actionSuccess && (
+        <div className="mx-4 sm:mx-8 mt-3 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/80 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate">{actionSuccess}</span>
+          </div>
+          <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline shrink-0">Tutup</button>
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mx-4 sm:mx-8 mt-3 px-4 py-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/80 rounded-xl text-rose-800 dark:text-rose-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <span className="truncate">{actionError}</span>
+          </div>
+          <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline shrink-0">Tutup</button>
+        </div>
+      )}
+
+      {/* Main Content Area: Horizontal tabs on mobile, Vertical sidebar on desktop */}
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+        
+        {/* Navigation Tabs */}
+        <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-line bg-surface p-3 sm:p-4 flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
+          <button
+            onClick={() => { setActiveTab('overview'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'overview'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
           >
-            <X className="w-5 h-5" />
+            <Activity className="w-4 h-4 shrink-0" />
+            <span>Overview &amp; Stats</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('users'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'users'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <Users className="w-4 h-4 shrink-0" />
+            <span>User Management</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('persona'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'persona'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>Persona Organisasi</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('skills'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'skills'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <BookOpen className="w-4 h-4 shrink-0" />
+            <span>Katalog Skill</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('mcp'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'mcp'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <Server className="w-4 h-4 shrink-0" />
+            <span>MCP &amp; AI Provider</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('audit'); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'audit'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <History className="w-4 h-4 shrink-0" />
+            <span>Audit Log &amp; Chats</span>
           </button>
         </div>
 
-        {/* Global Notifications Alert */}
-        {actionSuccess && (
-          <div className="mx-3.5 sm:mx-6 mt-2.5 sm:mt-3 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/80 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
-            <div className="flex items-center gap-2 min-w-0 pr-2">
-              <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span className="truncate">{actionSuccess}</span>
-            </div>
-            <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline shrink-0">Tutup</button>
-          </div>
-        )}
-
-        {actionError && (
-          <div className="mx-3.5 sm:mx-6 mt-2.5 sm:mt-3 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/80 rounded-xl text-rose-800 dark:text-rose-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
-            <div className="flex items-center gap-2 min-w-0 pr-2">
-              <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-              <span className="truncate">{actionError}</span>
-            </div>
-            <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline shrink-0">Tutup</button>
-          </div>
-        )}
-
-        {/* Main Content Area: Horizontal tabs on mobile, Vertical sidebar on desktop */}
-        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
-          
-          {/* Navigation Tabs */}
-          <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-line bg-surface p-2 sm:p-4 flex flex-row md:flex-col gap-1.5 md:gap-1.5 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
-            <button
-              onClick={() => { setActiveTab('overview'); setSelectedAuditSession(null); }}
-              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-                activeTab === 'overview'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
-              }`}
-            >
-              <Activity className="w-4 h-4 shrink-0" />
-              <span>Overview &amp; Stats</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('users'); setSelectedAuditSession(null); }}
-              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-                activeTab === 'users'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
-              }`}
-            >
-              <Users className="w-4 h-4 shrink-0" />
-              <span>User Management</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('persona'); setSelectedAuditSession(null); }}
-              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-                activeTab === 'persona'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span>Persona Organisasi</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('mcp'); setSelectedAuditSession(null); }}
-              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-                activeTab === 'mcp'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
-              }`}
-            >
-              <Server className="w-4 h-4 shrink-0" />
-              <span>MCP &amp; AI Provider</span>
-            </button>
-
-            <button
-              onClick={() => { setActiveTab('audit'); }}
-              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-                activeTab === 'audit'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
-              }`}
-            >
-              <History className="w-4 h-4 shrink-0" />
-              <span>Audit Log &amp; Chats</span>
-            </button>
-          </div>
-
-          {/* Tab Content Panel */}
-          <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 bg-surface-raised pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {/* Tab Content Panel */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-surface-raised pb-[max(2rem,env(safe-area-inset-bottom))]">
             
             {/* TAB 1: OVERVIEW & STATS */}
             {activeTab === 'overview' && (
-              <div className="space-y-4 sm:space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
-                    <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Ringkasan Sistem
-                  </h3>
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Ringkasan &amp; Metrik Sistem
+                    </h3>
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Statistik aktivitas percakapan, kepuasan pengguna, dan status live server MCP.
+                    </p>
+                  </div>
                   <button 
                     onClick={fetchStats}
-                    className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer w-fit"
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer w-fit"
                   >
                     <RefreshCw className="w-3.5 h-3.5" /> Refresh Status
                   </button>
@@ -443,7 +545,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
                     <Server className="w-4 h-4 text-emerald-500" /> Status Live MCP Servers
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     {/* MCP SAP Card */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
@@ -481,6 +583,25 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} Vector Search &amp; Document Tools
                       </p>
                     </div>
+
+                    {/* MCP Email Card */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs sm:text-sm text-content">MCP Email Gateway</span>
+                        {(stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.email?.error || ''}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
+                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} Email &amp; Dispatcher Tools
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -514,16 +635,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB 2: USER MANAGEMENT (CRUD) */}
             {activeTab === 'users' && (
-              <div className="space-y-4 sm:space-y-5 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
-                      <Users className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Manajemen User ({usersList.length})
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Manajemen Pengguna ({usersList.length})
                     </h3>
-                    <p className="text-xs text-content-muted">Tambah akun baru, ubah role / password, atau hapus user.</p>
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Tambah akun baru, kelola role superadmin/user, reset password, atau atur persona pribadi.
+                    </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5">
                     <div className="relative flex-1 sm:flex-initial">
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                       <input 
@@ -531,12 +654,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         placeholder="Cari user..."
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48"
+                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-56 text-content"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddUserOpen(true)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" /> User Baru
                     </button>
@@ -805,74 +928,367 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB: PERSONA ORGANISASI */}
             {activeTab === 'persona' && (
-              <div className="space-y-4 sm:space-y-5 animate-fadeIn max-w-4xl">
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
-                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Persona Organisasi
-                  </h3>
-                  <p className="text-xs text-content-muted mt-1">
-                    Aturan dasar yang berlaku untuk jawaban AI ke <strong>seluruh pengguna</strong>.
-                  </p>
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Persona Organisasi
+                    </h3>
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Aturan dasar dan gaya respons yang berlaku sebagai pedoman AI ke <strong>seluruh pengguna</strong>.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleSaveGlobalPersona}
+                    disabled={personaSaving}
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-60 cursor-pointer shrink-0"
+                  >
+                    <Save className="w-4 h-4" />
+                    {personaSaving ? 'Menyimpan…' : 'Simpan Persona Organisasi'}
+                  </button>
                 </div>
 
-                <div className="bg-surface-sunken border border-line rounded-xl sm:rounded-2xl p-3.5 sm:p-4 text-xs text-content-secondary leading-relaxed">
-                  <p className="font-semibold text-content mb-1.5">Cara persona diterapkan</p>
+                <div className="bg-surface-sunken border border-line rounded-2xl p-4 sm:p-5 text-xs text-content-secondary leading-relaxed space-y-2">
+                  <p className="font-semibold text-content text-sm">Cara persona diterapkan</p>
                   <p>
                     Persona organisasi menjadi <strong>lapisan dasar</strong>. Di atasnya, persona pribadi
                     yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.
                   </p>
-                  <p className="mt-2">
+                  <p>
                     Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang
                     jawaban — preferensi pribadi yang menang. Namun untuk aturan <strong>keakuratan data,
                     keamanan, dan kepatuhan</strong>, persona organisasi selalu diutamakan.
                   </p>
                 </div>
 
-                <div>
-                  <label htmlFor="global-persona" className="block text-xs font-semibold text-content-muted mb-1.5">
-                    Instruksi persona organisasi
+                <div className="space-y-2">
+                  <label htmlFor="global-persona" className="block text-xs font-semibold text-content-muted">
+                    Instruksi persona organisasi (System Prompt Global)
                   </label>
                   <textarea
                     id="global-persona"
-                    rows="8"
+                    rows="12"
                     value={globalPersona}
                     onChange={(e) => setGlobalPersona(e.target.value)}
-                    className="w-full px-3 sm:px-3.5 py-2.5 sm:py-3 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed text-content"
+                    className="w-full px-4 py-3 text-xs font-mono bg-surface-sunken border border-line rounded-2xl outline-none resize-y leading-relaxed text-content focus:ring-2 focus:ring-indigo-500"
                     placeholder={'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
                   />
-                  <p className="text-[11px] text-content-subtle mt-1.5">
+                  <p className="text-[11px] text-content-subtle">
                     Kosongkan untuk memakai perilaku bawaan asisten.
                   </p>
                 </div>
+              </div>
+            )}
 
-                <div className="flex justify-end">
-                  <button
-                    onClick={handleSaveGlobalPersona}
-                    disabled={personaSaving}
-                    className="w-full sm:w-auto px-5 py-2.5 sm:py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
-                  >
-                    {personaSaving ? 'Menyimpan…' : 'Simpan Persona Organisasi'}
-                  </button>
+            {/* TAB: KATALOG SKILL (MODUL & SPESIALISASI) */}
+            {activeTab === 'skills' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Katalog Skill Asisten ({skillsList.length})
+                    </h3>
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Kelola modul keahlian dan SOP khusus (misal: SAP ABAP, SAP PP, dsb.) yang wajib dibaca &amp; dipatuhi AI saat melayani support.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <div className="relative flex-1 sm:flex-initial">
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                      <input 
+                        type="text"
+                        placeholder="Cari skill..."
+                        value={skillSearch}
+                        onChange={(e) => setSkillSearch(e.target.value)}
+                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48 text-content"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setIsAddSkillOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Skill Baru
+                    </button>
+                  </div>
                 </div>
+
+                {/* Skills Grid Cards */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {filteredSkills.length > 0 ? (
+                    filteredSkills.map((sk) => (
+                      <div key={sk.id} className="p-4 sm:p-5 rounded-2xl border border-line bg-surface flex flex-col justify-between space-y-3.5 hover:border-indigo-500/40 transition-all shadow-sm">
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold">
+                                <Code className="w-4 h-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <h4 className="font-bold text-sm sm:text-base text-content truncate font-display">
+                                  {sk.name}
+                                </h4>
+                                <p className="text-[11px] text-content-muted line-clamp-1">
+                                  {sk.description || 'Tidak ada deskripsi singkat'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleToggleSkill(sk)}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                                sk.enabled 
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-line'
+                              }`}
+                              title={sk.enabled ? 'Klik untuk nonaktifkan skill ini' : 'Klik untuk mengaktifkan skill ini'}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${sk.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                              {sk.enabled ? 'Aktif' : 'Nonaktif'}
+                            </button>
+                          </div>
+
+                          {/* Markdown Snippet Box */}
+                          <div className="p-3 bg-surface-sunken border border-line rounded-xl text-xs font-mono text-content-secondary max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text">
+                            {sk.content}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-line text-xs">
+                          <span className="text-[11px] text-content-subtle">
+                            ID: #{sk.id}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingSkill(sk);
+                                setEditSkillForm({
+                                  name: sk.name,
+                                  description: sk.description,
+                                  content: sk.content,
+                                  enabled: sk.enabled
+                                });
+                              }}
+                              className="px-3 py-1.5 bg-surface-raised hover:bg-surface-hover border border-line text-content rounded-lg font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                            >
+                              <Edit3 className="w-3.5 h-3.5 text-indigo-500" /> Edit Skill
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSkill(sk.id, sk.name)}
+                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 rounded-lg cursor-pointer transition-colors"
+                              title="Hapus Skill"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="col-span-full py-12 text-center text-content-muted bg-surface rounded-2xl border border-line">
+                      <BookOpen className="w-8 h-8 mx-auto mb-2 text-content-subtle opacity-60" />
+                      <p className="text-sm font-medium">Belum ada skill yang ditemukan.</p>
+                      <p className="text-xs mt-1 text-content-subtle">Klik tombol "+ Skill Baru" untuk menambahkan modul panduan keahlian.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* MODAL: TAMBAH SKILL */}
+                {isAddSkillOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
+                          <Plus className="w-4 h-4 text-indigo-500" /> Tambah Skill Baru
+                        </h4>
+                        <button onClick={() => setIsAddSkillOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleCreateSkill} className="space-y-3 text-xs sm:text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-content-muted mb-1">Nama Skill *</label>
+                            <input 
+                              type="text"
+                              required
+                              value={newSkillForm.name}
+                              onChange={(e) => setNewSkillForm({ ...newSkillForm, name: e.target.value })}
+                              className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                              placeholder="misal: SAP ABAP, SAP PP, SAP MM"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-content-muted mb-1">Status</label>
+                            <label className="flex items-center gap-2 px-3 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={newSkillForm.enabled}
+                                onChange={(e) => setNewSkillForm({ ...newSkillForm, enabled: e.target.checked })}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <span className="text-xs font-medium text-content">{newSkillForm.enabled ? 'Aktif' : 'Nonaktif'}</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Deskripsi Singkat</label>
+                          <input
+                            type="text"
+                            value={newSkillForm.description}
+                            onChange={(e) => setNewSkillForm({ ...newSkillForm, description: e.target.value })}
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none text-content"
+                            placeholder="Ringkasan ruang lingkup skill ini (misal: Standar penulisan program ABAP dan best practice)"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            Panduan / SOP Keahlian (Format Markdown) *
+                          </label>
+                          <textarea 
+                            rows="10"
+                            required
+                            value={newSkillForm.content}
+                            onChange={(e) => setNewSkillForm({ ...newSkillForm, content: e.target.value })}
+                            className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
+                            placeholder={'# Panduan Keahlian: SAP ...\n\n## 1. Standar & Aturan\n- Selalu gunakan tabel X...\n- Cek field Y...\n\n## 2. Prosedur Support\n- Pastikan langkah investigasi...'}
+                          />
+                          <p className="text-[11px] text-content-subtle mt-1">
+                            Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.
+                          </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsAddSkillOpen(false)}
+                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={skillSaving}
+                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
+                          >
+                            {skillSaving ? 'Menyimpan…' : 'Simpan Skill'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL: EDIT SKILL */}
+                {editingSkill && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
+                          <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Skill '{editingSkill.name}'
+                        </h4>
+                        <button onClick={() => setEditingSkill(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleUpdateSkill} className="space-y-3 text-xs sm:text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-semibold text-content-muted mb-1">Nama Skill *</label>
+                            <input 
+                              type="text"
+                              required
+                              value={editSkillForm.name}
+                              onChange={(e) => setEditSkillForm({ ...editSkillForm, name: e.target.value })}
+                              className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-content-muted mb-1">Status</label>
+                            <label className="flex items-center gap-2 px-3 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
+                              <input 
+                                type="checkbox"
+                                checked={editSkillForm.enabled}
+                                onChange={(e) => setEditSkillForm({ ...editSkillForm, enabled: e.target.checked })}
+                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                              />
+                              <span className="text-xs font-medium text-content">{editSkillForm.enabled ? 'Aktif' : 'Nonaktif'}</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">Deskripsi Singkat</label>
+                          <input
+                            type="text"
+                            value={editSkillForm.description}
+                            onChange={(e) => setEditSkillForm({ ...editSkillForm, description: e.target.value })}
+                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none text-content"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            Panduan / SOP Keahlian (Format Markdown) *
+                          </label>
+                          <textarea 
+                            rows="10"
+                            required
+                            value={editSkillForm.content}
+                            onChange={(e) => setEditSkillForm({ ...editSkillForm, content: e.target.value })}
+                            className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
+                          />
+                          <p className="text-[11px] text-content-subtle mt-1">
+                            Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.
+                          </p>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingSkill(null)}
+                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={skillSaving}
+                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
+                          >
+                            {skillSaving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {/* TAB 3: MCP CONFIGURATION & AI MODEL */}
             {activeTab === 'mcp' && (
-              <div className="space-y-4 sm:space-y-5 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
-                      <Server className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Konfigurasi AI Model &amp; Server MCP
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Konfigurasi AI Provider &amp; Server MCP
                     </h3>
-                    <p className="text-xs text-content-muted">
-                      Edit Model AI utama, Model AI fallback/gratis, API Key OpenRouter, dan konfigurasi MCP di database.
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Edit Model AI utama, Model AI fallback, API Key OpenRouter, dan konfigurasi MCP di database.
                     </p>
                   </div>
                   <button
                     onClick={handleSaveMcpConfig}
                     disabled={mcpSaving}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
                     {mcpSaving ? 'Menyimpan...' : 'Simpan Konfigurasi'}
@@ -1072,20 +1488,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       Format konfigurasi SSE atau stdio untuk koneksi ke RAG Knowledge Base.
                     </p>
                   </div>
+
+                  {/* MCP Email Config JSON */}
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-blue-500" /> MCP EMAIL CONFIG (JSON)
+                    </label>
+                    <textarea 
+                      rows="5"
+                      value={mcpEmailConfig}
+                      onChange={(e) => setMcpEmailConfig(e.target.value)}
+                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                      placeholder='{\n  "mcpServers": {\n    "email-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8092/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
+                    />
+                    <p className="text-[11px] text-content-subtle mt-1">
+                      Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP Email Server.
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
 
             {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
             {activeTab === 'audit' && (
-              <div className="h-full flex flex-col space-y-3 sm:space-y-4 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+              <div className="h-full flex flex-col space-y-4 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line shrink-0">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
-                      <History className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Audit Log Percakapan
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                      Audit Log Percakapan
                     </h3>
-                    <p className="text-xs text-content-muted">
-                      Pantau percakapan dari seluruh user untuk keperluan audit dan troubleshooting.
+                    <p className="text-xs text-content-muted mt-0.5">
+                      Pantau riwayat percakapan dari seluruh user untuk keperluan audit dan troubleshooting.
                     </p>
                   </div>
 
@@ -1096,7 +1529,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       placeholder="Cari user / judul chat..."
                       value={auditSearch}
                       onChange={(e) => setAuditSearch(e.target.value)}
-                      className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
+                      className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-72 text-content"
                     />
                   </div>
                 </div>
@@ -1206,8 +1639,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
           </div>
         </div>
-
       </div>
-    </div>
   );
 }

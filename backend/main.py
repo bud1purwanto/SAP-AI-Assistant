@@ -53,6 +53,11 @@ from database import (
     update_user_by_admin,
     update_user_full_name,
     update_user_persona,
+    get_skills,
+    get_skill_by_id,
+    create_skill,
+    update_skill,
+    delete_skill,
 )
 from mcp_manager import mcp_manager
 from models import ChatRequest, ChatResponse
@@ -240,6 +245,7 @@ async def change_password_endpoint(
 class ConfigUpdate(BaseModel):
     mcp_sap_config_json: str = None
     mcp_rag_config_json: str = None
+    mcp_email_config_json: str = None
     nine_router_enabled: bool = None
     nine_router_base_url: str = None
     nine_router_model: str = None
@@ -276,6 +282,7 @@ async def get_config(user: dict = Depends(get_current_user)):
         payload.update({
             "mcp_sap_config_json": sys_cfg.get("mcp_sap_config_json", ""),
             "mcp_rag_config_json": sys_cfg.get("mcp_rag_config_json", ""),
+            "mcp_email_config_json": sys_cfg.get("mcp_email_config_json", ""),
             "nine_router_enabled": sys_cfg.get("nine_router_enabled", True),
             "nine_router_base_url": sys_cfg.get("nine_router_base_url", ""),
             "nine_router_model": sys_cfg.get("nine_router_model", ""),
@@ -317,6 +324,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
         update_system_config(
             mcp_sap_json=config.mcp_sap_config_json,
             mcp_rag_json=config.mcp_rag_config_json,
+            mcp_email_json=config.mcp_email_config_json,
             nine_router_enabled=config.nine_router_enabled,
             nine_router_base_url=config.nine_router_base_url,
             nine_router_model=config.nine_router_model,
@@ -515,8 +523,85 @@ async def get_admin_session_messages_endpoint(
     session_id: str,
     admin: dict = Depends(require_superadmin),
 ):
-    """Audit log: Mengambil riwayat pesan percakapan spesifik tanpa batasan user."""
     return get_chat_messages(session_id)
+
+
+# --- SKILL MANAGEMENT ENDPOINTS ---
+
+class AdminCreateSkillRequest(BaseModel):
+    name: str
+    description: str = ""
+    content: str
+    enabled: bool = True
+
+
+class AdminUpdateSkillRequest(BaseModel):
+    name: str = None
+    description: str = None
+    content: str = None
+    enabled: bool = None
+
+
+@app.get("/api/admin/skills")
+async def get_admin_skills_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil daftar seluruh skill modul/spesialisasi."""
+    return get_skills(enabled_only=False)
+
+
+@app.post("/api/admin/skills")
+async def create_skill_endpoint(
+    req: AdminCreateSkillRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Membuat skill baru (oleh Super Admin)."""
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Nama skill wajib diisi.")
+    if not req.content or not req.content.strip():
+        raise HTTPException(status_code=400, detail="Konten panduan skill (Markdown) wajib diisi.")
+
+    try:
+        new_skill = create_skill(
+            name=req.name.strip(),
+            description=req.description.strip(),
+            content=req.content.strip(),
+            enabled=req.enabled,
+        )
+        return new_skill
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membuat skill: {str(e)}")
+
+
+@app.put("/api/admin/skills/{skill_id}")
+async def update_skill_endpoint(
+    skill_id: int,
+    req: AdminUpdateSkillRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Memperbarui skill yang ada."""
+    try:
+        updated = update_skill(
+            skill_id=skill_id,
+            name=req.name,
+            description=req.description,
+            content=req.content,
+            enabled=req.enabled,
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Skill tidak ditemukan.")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal memperbarui skill: {str(e)}")
+
+
+@app.delete("/api/admin/skills/{skill_id}")
+async def delete_skill_endpoint(skill_id: int, admin: dict = Depends(require_superadmin)):
+    """Menghapus skill berdasarkan ID."""
+    ok = delete_skill(skill_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Skill tidak ditemukan atau gagal dihapus.")
+    return {"status": "success", "message": f"Skill ID {skill_id} berhasil dihapus."}
 
 
 # --- CHAT ---

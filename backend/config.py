@@ -9,11 +9,43 @@ ENV_PATH = Path(__file__).parent / ".env"
 
 class Settings(BaseSettings):
     """
-    Konfigurasi untuk aplikasi Enterprise SAP Chat Assistant.
-    Nilai akan diambil dari environment variables atau file .env.
+    Konfigurasi Enterprise SAP AI Assistant.
+    
+    Catatan Arsitektur:
+    - Infrastruktur server (Database URL, JWT Secret, CORS, Limits) dikonfigurasi via file .env / ENV server.
+    - AI Provider (9Router, OpenRouter), MCP Servers (SAP, RAG, Email), Persona Organisasi, dan Skills
+      disimpan secara dinamis di database PostgreSQL (tabel `ai_assistant.system_config` & `ai_assistant.skills`)
+      dan dapat diubah secara live lewat Dashboard Admin (UI).
     """
-    ai_provider: str = "9router"
+    # ==============================================================================
+    # 1. INFRASTRUKTUR SERVER & DATABASE (Wajib di .env untuk Level Server)
+    # ==============================================================================
+    database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
 
+    # --- Autentikasi & Keamanan JWT ---
+    jwt_secret: str = "sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 43200  # 30 hari
+
+    # --- Bootstrap Super Admin ---
+    # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel users masih kosong.
+    bootstrap_admin_password: str = "ChangeMe!2024"
+
+    # --- CORS & Rate Limiting ---
+    cors_allow_origins: str = "*"
+    guest_daily_limit: int = 1
+    login_max_failures: int = 8
+    login_lock_seconds: int = 900  # 15 menit
+    artifact_max_per_user: int = 20
+
+    # --- Penganggaran Riwayat Percakapan (History Context Limits) ---
+    history_token_budget: int = 3000
+    history_verbatim_turns: int = 3
+    history_max_messages: int = 60
+
+    # ==============================================================================
+    # 2. DEFAULT FALLBACK / SEEDING AWAL (Dikelola Dinamis di Database & Web Admin)
+    # ==============================================================================
     # 9Router (Primary / Local Gateway)
     nine_router_enabled: bool = True
     nine_router_base_url: str = "http://192.168.88.83:20128/v1"
@@ -26,41 +58,11 @@ class Settings(BaseSettings):
     openrouter_model: str = "openrouter/auto"
     openrouter_fallback_model: str = "openrouter/free"
 
+    # Persona & MCP Config JSON Defaults
     assistant_persona: str = ""
     mcp_sap_config_json: str = ""
     mcp_rag_config_json: str = ""
-    database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
-
-    # --- Autentikasi ---
-    # Jika tidak diset di .env, gunakan secret default yang stabil agar token tidak gugur setiap kali restart.
-    jwt_secret: str = "sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod"
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 43200  # 30 hari (tetap login stabil tanpa terputus)
-
-    # --- Deployment ---
-    # Daftar origin yang diizinkan, dipisahkan koma. "*" hanya untuk pengembangan.
-    cors_allow_origins: str = "*"
-    # Kuota prompt harian untuk pengunjung yang belum login (ditegakkan di server).
-    guest_daily_limit: int = 1
-    # Pembatasan percobaan login untuk menahan serangan tebak-password.
-    login_max_failures: int = 8
-    login_lock_seconds: int = 900  # 15 menit
-    # Jumlah berkas hasil generate yang disimpan per user; yang terlama dibuang.
-    artifact_max_per_user: int = 20
-
-    # --- Riwayat percakapan ---
-    # Anggaran token untuk riwayat yang disertakan ke model. Membatasi per token
-    # (bukan per jumlah pesan) karena satu jawaban bertabel bisa setara puluhan
-    # pesan pendek.
-    history_token_budget: int = 3000
-    # Jumlah giliran terakhir yang selalu dikirim apa adanya, tanpa dipadatkan.
-    history_verbatim_turns: int = 3
-    # Batas pesan yang diambil dari database sebelum penganggaran token; mencegah
-    # sesi yang sangat panjang membebani query maupun memori.
-    history_max_messages: int = 60
-    # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel
-    # users masih kosong. Harus segera diganti setelah login pertama.
-    bootstrap_admin_password: str = "ChangeMe!2024"
+    mcp_email_config_json: str = ""
 
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
