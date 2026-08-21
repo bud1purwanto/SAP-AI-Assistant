@@ -626,7 +626,7 @@ const ChatLayout = () => {
               </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-[11px] sm:text-xs text-content-muted">Siap membantu</span>
+                <span className="text-[11px] sm:text-xs text-content-muted">Online</span>
               </div>
             </div>
           </div>
