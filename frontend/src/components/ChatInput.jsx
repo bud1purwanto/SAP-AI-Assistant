@@ -126,7 +126,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="pwa-chat-input-bar px-3 sm:px-6 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
+    <div className="pwa-chat-input-bar px-3 sm:px-6 pt-1.5 sm:pt-2 pb-[max(0.35rem,calc(env(safe-area-inset-bottom,0px)*0.35+2px))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
       <form
         onSubmit={handleSubmit}
         onDragOver={(e) => e.preventDefault()}
@@ -235,7 +235,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[9.5px] sm:text-[10.5px] text-content-subtle mt-1.5 mb-0 px-2 select-none leading-tight tracking-normal">
+      <p className="text-center text-[9px] sm:text-[10px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
         SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
       </p>
     </div>
