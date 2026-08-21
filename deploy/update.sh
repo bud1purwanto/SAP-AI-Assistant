@@ -9,6 +9,7 @@ set -e
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 cd "${PROJECT_DIR}"
+git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 git stash --include-untracked 2>/dev/null || true
 git fetch origin main
 git reset --hard origin/main
