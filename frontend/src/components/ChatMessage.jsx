@@ -260,6 +260,25 @@ const ChatMessage = ({ message }) => {
         <div className="flex flex-col items-end max-w-[88%] sm:max-w-[75%] min-w-0">
           {/* Label Header */}
           <div className="flex items-center gap-2 mb-1.5 mr-1 text-xs text-content-muted">
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="flex items-center gap-1 py-0.5 px-1.5 rounded-md text-content-subtle hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-all cursor-pointer"
+              title="Salin pesan"
+              aria-label="Salin pesan"
+            >
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500" />
+                  <span className="text-[10px] text-emerald-500 font-medium">Tersalin</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span className="text-[10px] hidden group-hover:inline">Salin</span>
+                </>
+              )}
+            </button>
             <span className="font-semibold text-content-secondary">Anda</span>
             {timeLabel && <span>{timeLabel}</span>}
           </div>
@@ -276,15 +295,6 @@ const ChatMessage = ({ message }) => {
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
           <div className="relative group/userbubble px-4 sm:px-5 py-3 sm:py-3.5 rounded-3xl rounded-tr-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
             <p className="whitespace-pre-wrap font-normal select-text break-words [overflow-wrap:anywhere] max-w-full">{message.content}</p>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/25 text-white/85 hover:text-white hover:bg-black/45 opacity-80 sm:opacity-0 sm:group-hover/userbubble:opacity-100 transition-all cursor-pointer"
-              title="Salin pesan"
-              aria-label="Salin pesan"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
           </div>
         </div>
 
