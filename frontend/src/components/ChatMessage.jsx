@@ -256,8 +256,8 @@ const ChatMessage = ({ message }) => {
 
   if (isUser) {
     return (
-      <div className="flex justify-end items-start gap-3 my-4 group">
-        <div className="flex flex-col items-end max-w-[85%] sm:max-w-[75%]">
+      <div className="flex justify-end items-start gap-2.5 sm:gap-3 my-4 group max-w-full overflow-hidden">
+        <div className="flex flex-col items-end max-w-[88%] sm:max-w-[75%] min-w-0">
           {/* Label Header */}
           <div className="flex items-center gap-2 mb-1.5 mr-1 text-xs text-content-muted">
             <span className="font-semibold text-content-secondary">Anda</span>
@@ -266,7 +266,7 @@ const ChatMessage = ({ message }) => {
 
           {/* Lampiran yang disertakan pengguna */}
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap items-start gap-2 justify-end mb-2">
+            <div className="flex flex-wrap items-start gap-2 justify-end mb-2 max-w-full">
               {message.attachments.map((item) => (
                 <AttachmentChip key={item.upload_id} item={item} />
               ))}
@@ -274,8 +274,8 @@ const ChatMessage = ({ message }) => {
           )}
 
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
-          <div className="relative group/userbubble px-5 py-3.5 rounded-3xl rounded-tr-sm text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text">
-            <p className="whitespace-pre-wrap font-normal select-text">{message.content}</p>
+          <div className="relative group/userbubble px-4 sm:px-5 py-3 sm:py-3.5 rounded-3xl rounded-tr-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
+            <p className="whitespace-pre-wrap font-normal select-text break-words [overflow-wrap:anywhere] max-w-full">{message.content}</p>
             <button
               type="button"
               onClick={handleCopy}
@@ -289,25 +289,25 @@ const ChatMessage = ({ message }) => {
         </div>
 
         {/* User Avatar Circle */}
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm mt-1 border border-slate-600/30">
-          <User className="w-4 h-4" />
+        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-slate-700 to-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm mt-1 border border-slate-600/30">
+          <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-start gap-3.5 my-5 group">
+    <div className="flex items-start gap-2.5 sm:gap-3.5 my-4 sm:my-5 group max-w-full overflow-hidden">
       {/* AI Avatar with Glowing Gradient Ring */}
       <div className="relative mt-1 shrink-0">
-        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-teal-500 via-emerald-500 to-indigo-500 p-[1.5px] shadow-sm shadow-emerald-500/20">
+        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-teal-500 via-emerald-500 to-indigo-500 p-[1.5px] shadow-sm shadow-emerald-500/20">
           <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center text-emerald-400">
-            <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 animate-pulse" />
           </div>
         </div>
       </div>
       
-      <div className="flex flex-col gap-1.5 max-w-[90%] sm:max-w-[85%] min-w-0 flex-1">
+      <div className="flex flex-col gap-1.5 max-w-[88%] sm:max-w-[85%] min-w-0 flex-1 overflow-hidden">
         {/* Label Header */}
         <div className="flex items-center gap-2 mb-1.5 ml-1">
           <span className="text-xs font-semibold text-content-secondary">Asisten SAP</span>
@@ -315,16 +315,16 @@ const ChatMessage = ({ message }) => {
         </div>
 
         {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
-        <div className="relative px-6 py-5 rounded-3xl rounded-tl-sm text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80 select-text">
+        <div className="relative px-4 sm:px-6 py-4 sm:py-5 rounded-3xl rounded-tl-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
           
-          <div className="prose prose-sm max-w-none text-content-secondary select-text">
+          <div className="prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
-                p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary">{children}</p>,
-                ul: ({ children }) => <ul className="list-disc pl-5 my-2.5 space-y-1 text-content-secondary">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal pl-5 my-2.5 space-y-1 text-content-secondary">{children}</ol>,
-                li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary break-words [overflow-wrap:anywhere]">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>,
+                li: ({ children }) => <li className="leading-relaxed break-words [overflow-wrap:anywhere]">{children}</li>,
                 strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
                 code: ({ inline, className: _className, children, ...props }) => {
                   const codeString = String(children || '').replace(/\n$/, '');
@@ -334,7 +334,7 @@ const ChatMessage = ({ message }) => {
                   if (inline || isShort) {
                     return (
                       <code 
-                        className="inline-flex items-center font-mono text-[12.5px] px-2 py-0.5 mx-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-semibold shadow-2xs select-all" 
+                        className="inline-flex items-center font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-semibold shadow-2xs select-all break-all max-w-full whitespace-normal" 
                         {...props}
                       >
                         {codeString}
@@ -344,17 +344,17 @@ const ChatMessage = ({ message }) => {
 
                   return <CodeBlock codeString={codeString} {...props} />;
                 },
-                h1: ({ children }) => <h1 className="text-lg font-bold text-content mt-4 mb-2 font-display">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-base font-bold text-content mt-3 mb-1.5 font-display">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-sm font-bold text-content mt-2.5 mb-1 font-display">{children}</h3>,
+                h1: ({ children }) => <h1 className="text-base sm:text-lg font-bold text-content mt-4 mb-2 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-sm sm:text-base font-bold text-content mt-3 mb-1.5 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-xs sm:text-sm font-bold text-content mt-2.5 mb-1 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
                 table: ({ children }) => (
-                  <div className="overflow-x-auto my-3 rounded-xl border border-line shadow-sm">
+                  <div className="overflow-x-auto max-w-full my-3 rounded-xl border border-line shadow-sm no-scrollbar">
                     <table className="min-w-full divide-y divide-line text-xs">{children}</table>
                   </div>
                 ),
-                th: ({ children }) => <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content">{children}</th>,
+                th: ({ children }) => <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content">{children}</th>,
                 td: ({ children }) => (
-                  <td className="px-3.5 py-2 border-t border-line text-content-secondary tabular-nums">{children}</td>
+                  <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums">{children}</td>
                 ),
               }}
             >

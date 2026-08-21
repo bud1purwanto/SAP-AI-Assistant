@@ -826,11 +826,11 @@ const ChatLayout = () => {
       </aside>
 
       {/* ================= AREA CHAT UTAMA ================= */}
-      <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0">
+      <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
-        <header className="pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0">
-          <div className="h-14 px-4 sm:px-6 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+        <header className="pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0 max-w-full">
+          <div className="h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full overflow-hidden">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
                 className="md:hidden p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0"
@@ -847,7 +847,7 @@ const ChatLayout = () => {
                   id="sap-target"
                   value={activeServer}
                   onChange={(e) => handleServerChange(e.target.value)}
-                  className={`bg-surface-sunken text-sm font-medium py-2 px-3 rounded-xl border cursor-pointer max-w-[15rem] sm:max-w-[17rem] truncate transition-colors ${
+                  className={`bg-surface-sunken text-xs sm:text-sm font-medium py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl border cursor-pointer max-w-[13rem] sm:max-w-[17rem] truncate transition-colors ${
                     isProductionTarget ? 'border-danger text-danger font-semibold' : 'border-line text-content'
                   }`}
                 >
@@ -862,11 +862,11 @@ const ChatLayout = () => {
                   ))}
                 </select>
               ) : (
-                <span className="text-sm text-content-subtle">Menghubungkan…</span>
+                <span className="text-xs sm:text-sm text-content-subtle">Menghubungkan…</span>
               )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
@@ -949,8 +949,8 @@ const ChatLayout = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 sm:py-8 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}>
-          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
             {currentMessages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
             ))}
