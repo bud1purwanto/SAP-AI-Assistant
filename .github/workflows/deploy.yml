@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     name: Auto Deploy to Linux Server
-    runs-on: [self-hosted, sap-ai]
+    runs-on: self-hosted
     steps:
       - name: Execute Update Script on Server
         run: |
