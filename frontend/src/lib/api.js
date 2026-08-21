@@ -129,6 +129,12 @@ export const api = {
   chat: (payload, signal) =>
     apiFetch('/api/chat', { method: 'POST', body: payload, auth: true, signal }),
 
+  setMessageFeedback: (messageId, feedback) =>
+    apiFetch(`/api/messages/${messageId}/feedback`, {
+      method: 'POST',
+      body: { feedback },
+    }),
+
   adminStats: () => apiFetch('/api/admin/stats'),
   adminUsers: () => apiFetch('/api/admin/users'),
   adminCreateUser: (payload) => apiFetch('/api/admin/users', { method: 'POST', body: payload }),

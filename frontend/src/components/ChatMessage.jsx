@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
-import { fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
+import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 
 const ARTIFACT_ICON = {
   xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
@@ -110,19 +110,148 @@ const AttachmentChip = ({ item }) => {
   );
 };
 
+/**
+ * Salin teks ke clipboard secara universal (mendukung HTTPS, HTTP, iOS Safari, dan PWA).
+ */
+const copyToClipboard = async (text) => {
+  if (!text) return false;
+
+  // 1. Coba Modern Clipboard API jika tersedia & konteks aman
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn('Modern navigator.clipboard gagal, beralih ke fallback execCommand:', err);
+    }
+  }
+
+  // 2. Fallback untuk non-HTTPS / Safari iOS / PWA / browser lama
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '-9999px';
+    textArea.style.width = '2em';
+    textArea.style.height = '2em';
+    textArea.style.padding = '0';
+    textArea.style.border = 'none';
+    textArea.style.outline = 'none';
+    textArea.style.boxShadow = 'none';
+    textArea.style.background = 'transparent';
+    textArea.setAttribute('readonly', '');
+
+    document.body.appendChild(textArea);
+
+    // Khusus iOS Safari
+    if (navigator.userAgent.match(/ipad|iphone/i)) {
+      const range = document.createRange();
+      range.selectNodeContents(textArea);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      textArea.setSelectionRange(0, 999999);
+    } else {
+      textArea.focus();
+      textArea.select();
+    }
+
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.error('Fallback execCommand copy gagal:', err);
+    return false;
+  }
+};
+
+/**
+ * Komponen blok kode dengan tombol salin mandiri.
+ */
+const CodeBlock = ({ codeString, ...props }) => {
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  const handleCopyCode = async () => {
+    const ok = await copyToClipboard(codeString);
+    if (ok) {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 shadow-md">
+      {/* Code block terminal top bar */}
+      <div className="bg-slate-950 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] font-mono text-slate-400">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
+          <span className="ml-2 text-slate-400 font-medium flex items-center gap-1">
+            <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Source Code
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopyCode}
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
+          title="Salin potongan kode"
+          aria-label="Salin potongan kode"
+        >
+          {codeCopied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-400 font-sans font-medium">Tersalin</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" />
+              <span className="font-sans font-medium">Salin</span>
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed">
+        <code {...props}>{codeString}</code>
+      </pre>
+    </div>
+  );
+};
+
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
   const [openDetail, setOpenDetail] = useState(null);
-  const [feedback, setFeedback] = useState(null);
+  const [feedback, setFeedback] = useState(message.feedback || null);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (message.feedback !== undefined) {
+      setFeedback(message.feedback);
+    }
+  }, [message.feedback]);
 
   const timeLabel = formatTime(message.created_at);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(message.content);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleToggleFeedback = async (val) => {
+    const nextFeedback = feedback === val ? null : val;
+    setFeedback(nextFeedback);
+    if (message.id) {
+      try {
+        await api.setMessageFeedback(message.id, nextFeedback);
+      } catch (err) {
+        console.error('Gagal menyimpan feedback rating:', err);
+      }
+    }
   };
 
   if (isUser) {
@@ -148,8 +277,9 @@ const ChatMessage = ({ message }) => {
           <div className="relative group/userbubble px-5 py-3.5 rounded-3xl rounded-tr-sm text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text">
             <p className="whitespace-pre-wrap font-normal select-text">{message.content}</p>
             <button
+              type="button"
               onClick={handleCopy}
-              className="absolute top-2 right-2 p-1 rounded-lg bg-black/20 text-white/80 hover:text-white hover:bg-black/40 opacity-0 group-hover/userbubble:opacity-100 transition-all"
+              className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/25 text-white/85 hover:text-white hover:bg-black/45 opacity-80 sm:opacity-0 sm:group-hover/userbubble:opacity-100 transition-all cursor-pointer"
               title="Salin pesan"
               aria-label="Salin pesan"
             >
@@ -196,7 +326,6 @@ const ChatMessage = ({ message }) => {
                 ol: ({ children }) => <ol className="list-decimal pl-5 my-2.5 space-y-1 text-content-secondary">{children}</ol>,
                 li: ({ children }) => <li className="leading-relaxed">{children}</li>,
                 strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
-                // className sengaja diambil terpisah agar tidak ikut tersebar ke ...props
                 code: ({ inline, className: _className, children, ...props }) => {
                   const codeString = String(children || '').replace(/\n$/, '');
                   const isMultiLine = codeString.includes('\n');
@@ -213,24 +342,7 @@ const ChatMessage = ({ message }) => {
                     );
                   }
 
-                  return (
-                    <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 shadow-md">
-                      {/* Code block terminal top bar */}
-                      <div className="bg-slate-950 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] font-mono text-slate-400">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80"></div>
-                          <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
-                          <span className="ml-2 text-slate-400 font-medium flex items-center gap-1">
-                            <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Source Code
-                          </span>
-                        </div>
-                      </div>
-                      <pre className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed">
-                        <code {...props}>{codeString}</code>
-                      </pre>
-                    </div>
-                  );
+                  return <CodeBlock codeString={codeString} {...props} />;
                 },
                 h1: ({ children }) => <h1 className="text-lg font-bold text-content mt-4 mb-2 font-display">{children}</h1>,
                 h2: ({ children }) => <h2 className="text-base font-bold text-content mt-3 mb-1.5 font-display">{children}</h2>,
@@ -254,8 +366,9 @@ const ChatMessage = ({ message }) => {
           <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
             {message.sources && message.sources.length > 0 ? (
               <button 
+                type="button"
                 onClick={() => setShowSources(!showSources)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:brightness-110 bg-accent-soft px-3 py-1.5 rounded-xl transition-all border border-accent/20"
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:brightness-110 bg-accent-soft px-3 py-1.5 rounded-xl transition-all border border-accent/20 cursor-pointer"
               >
                 <Database className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>
@@ -264,28 +377,42 @@ const ChatMessage = ({ message }) => {
                 {showSources ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
               </button>
             ) : (
-              <div></div>
+              <div />
             )}
             
             <div className="flex items-center gap-1 bg-surface-sunken p-0.5 rounded-xl border border-line">
               <button 
+                type="button"
                 onClick={handleCopy}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white  transition-all"
-                title="Salin jawaban"
+                className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-all cursor-pointer"
+                title={copied ? 'Tersalin!' : 'Salin jawaban'}
+                aria-label="Salin jawaban"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               <button 
-                onClick={() => setFeedback('up')}
-                className={`p-1.5 rounded-lg transition-all ${feedback === 'up' ? 'text-teal-600 dark:text-teal-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-white '}`}
-                title="Jawaban membantu"
+                type="button"
+                onClick={() => handleToggleFeedback('like')}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  feedback === 'like' || feedback === 'up'
+                    ? 'text-teal-600 dark:text-teal-400 bg-surface-raised shadow-xs'
+                    : 'text-content-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-surface-raised'
+                }`}
+                title={feedback === 'like' || feedback === 'up' ? 'Batal beri nilai' : 'Jawaban membantu'}
+                aria-label="Beri nilai jawaban membantu"
               >
                 <ThumbsUp className="w-3.5 h-3.5" />
               </button>
               <button 
-                onClick={() => setFeedback('down')}
-                className={`p-1.5 rounded-lg transition-all ${feedback === 'down' ? 'text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-700 shadow-xs' : 'text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-white '}`}
-                title="Jawaban kurang sesuai"
+                type="button"
+                onClick={() => handleToggleFeedback('dislike')}
+                className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                  feedback === 'dislike' || feedback === 'down'
+                    ? 'text-rose-600 dark:text-rose-400 bg-surface-raised shadow-xs'
+                    : 'text-content-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-raised'
+                }`}
+                title={feedback === 'dislike' || feedback === 'down' ? 'Batal beri nilai' : 'Jawaban kurang sesuai'}
+                aria-label="Beri nilai jawaban kurang sesuai"
               >
                 <ThumbsDown className="w-3.5 h-3.5" />
               </button>

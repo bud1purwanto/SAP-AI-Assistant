@@ -47,6 +47,7 @@ from database import (
     register_login_failure,
     rename_chat_session,
     session_belongs_to,
+    update_message_feedback,
     update_system_config,
     update_user_by_admin,
     update_user_full_name,
@@ -676,7 +677,8 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
         # Metadata berkas ikut disimpan; tanpa ini tombol unduh hilang setelah
         # halaman dimuat ulang meski berkasnya masih tersimpan di database.
         artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
-        add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
+        msg_id = add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
+        response.message_id = msg_id
 
     response.session_id = active_session_id
     return response
@@ -690,6 +692,25 @@ async def chat_endpoint(
 ):
     """Endpoint utama untuk memproses chat dari user."""
     return await _run_chat(request, chat_req, user)
+
+
+class MessageFeedbackRequest(BaseModel):
+    feedback: Optional[str] = None  # 'like', 'dislike', or None
+
+
+@app.post("/api/messages/{message_id}/feedback")
+async def message_feedback_endpoint(
+    message_id: int,
+    req: MessageFeedbackRequest,
+    user: dict = Depends(get_current_user_optional),
+):
+    """Menyimpan feedback rating ('like' / 'dislike' / null) dari pengguna untuk pesan AI."""
+    if req.feedback not in (None, "", "like", "dislike"):
+        raise HTTPException(status_code=400, detail="Feedback harus bernilai 'like', 'dislike', atau null.")
+    fb_val = req.feedback if req.feedback in ("like", "dislike") else None
+    username = None if user.get("is_guest") else user.get("username")
+    ok = update_message_feedback(message_id, fb_val, username=username)
+    return {"success": ok, "message_id": message_id, "feedback": fb_val}
 
 
 @app.post("/api/uploads")

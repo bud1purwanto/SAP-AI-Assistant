@@ -22,8 +22,8 @@ const GUEST_USER = { username: 'Guest', role: 'guest' };
 const SUGGESTIONS = [
   {
     title: 'Cek stok barang',
-    subtitle: 'Lihat jumlah stok di pabrik tertentu',
-    query: 'Berapa stok material 100-100 di plant 1000?',
+    subtitle: 'Lihat ketersediaan stok di plant kita saat ini',
+    query: 'Berapa ketersediaan stok material di plant kita saat ini?',
     icon: Layers,
   },
   {
@@ -277,12 +277,11 @@ const ChatLayout = () => {
           }));
         }
       } else if (!keepCurrentId) {
-        // Saat pertama kali login atau refresh, selalu tampilkan New Chat
+        // Saat pertama kali login atau refresh, selalu tampilkan New Chat bersih
         setCurrentSessionId(null);
-        setMessagesMap((prev) => ({
-          ...prev,
-          [DRAFT_SESSION_KEY]: prev[DRAFT_SESSION_KEY] || [],
-        }));
+        setMessagesMap({
+          [DRAFT_SESSION_KEY]: [],
+        });
       }
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) {
@@ -295,9 +294,33 @@ const ChatLayout = () => {
   }, [isGuest, currentSessionId]);
 
   useEffect(() => {
+    setSessions([]);
+    setCurrentSessionId(null);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.username, user.role]);
+
+  // Sinkronisasi multi-tab: jika akun berubah di tab browser lain, update tab ini
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'sap_assistant_token' || e.key === 'sap_assistant_user') {
+        const currentUser = getStoredUser() || GUEST_USER;
+        setUser(currentUser);
+        setSessions([]);
+        setCurrentSessionId(null);
+        setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+        setSessionLoadingMap({});
+        setSessionProgressMap({});
+        setSessionErrorMap({});
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const createNewSession = () => {
     setError(null);
@@ -481,10 +504,12 @@ const ChatLayout = () => {
       );
 
       const assistantMsg = {
+        id: data.message_id,
         role: 'assistant',
         content: data.reply,
         sources: data.sources || [],
         artifacts: data.artifacts || [],
+        feedback: null,
         created_at: new Date().toISOString(),
       };
 
@@ -536,9 +561,13 @@ const ChatLayout = () => {
 
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
     saveSession(token, userData);
-    setUser(userData);
+    setSessions([]);
     setCurrentSessionId(null);
     setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
+    setUser(userData);
     setIsLoginModalOpen(false);
     setCustomLoginMsg('');
     setError(null);

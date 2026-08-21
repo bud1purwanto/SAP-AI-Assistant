@@ -143,6 +143,10 @@ def init_db():
             conn.execute(text(
                 "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT"
             ))
+            # Feedback rating ('like' | 'dislike' | null) untuk audit kepuasan pengguna.
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS feedback VARCHAR(10)"
+            ))
             # Kolom-kolom ini dibaca pada setiap pembukaan sesi dan render sidebar.
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_messages_session
@@ -745,17 +749,20 @@ def rename_chat_session(session_id: str, username: str, new_title: str):
         return False
 
 def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
-                     artifacts: str = None, attachments: str = None):
-    """Tambah pesan (user / ai) ke dalam sesi percakapan."""
+                     artifacts: str = None, attachments: str = None) -> Optional[int]:
+    """Tambah pesan (user / ai) ke dalam sesi percakapan. Mengembalikan ID pesan yang dibuat."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("""
+            res = conn.execute(text("""
                 INSERT INTO ai_assistant.chat_messages
                     (session_id, role, content, sources, artifacts, attachments)
                 VALUES (:sid, :r, :c, :s, :a, :att)
+                RETURNING id
             """), {"sid": session_id, "r": role, "c": content, "s": sources or "",
                    "a": artifacts or "", "att": attachments or ""})
+            row = res.fetchone()
+            msg_id = row[0] if row else None
             
             # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
             if role == 'user':
@@ -770,9 +777,38 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
                 """), {"title": (content or "").strip()[:40] or "Percakapan Baru", "sid": session_id})
             
             conn.commit()
-            return True
+            return msg_id
     except Exception as e:
         logger.error(f"Error add_chat_message: {e}")
+        return None
+
+def update_message_feedback(message_id: int, feedback: Optional[str], username: Optional[str] = None) -> bool:
+    """Update rating kepuasan pesan ('like', 'dislike', atau None).
+    
+    Bila username diberikan, pastikan pesan berasal dari sesi milik user tersebut.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if username is not None:
+                res = conn.execute(text("""
+                    UPDATE ai_assistant.chat_messages m
+                    SET feedback = :fb
+                    FROM ai_assistant.chat_sessions s
+                    WHERE m.id = :mid
+                      AND m.session_id = s.session_id
+                      AND LOWER(s.username) = LOWER(:u)
+                """), {"mid": message_id, "fb": feedback, "u": username.strip()})
+            else:
+                res = conn.execute(text("""
+                    UPDATE ai_assistant.chat_messages
+                    SET feedback = :fb
+                    WHERE id = :mid
+                """), {"mid": message_id, "fb": feedback})
+            conn.commit()
+            return res.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error update_message_feedback: {e}")
         return False
 
 def session_belongs_to(session_id: str, username: str) -> bool:
@@ -816,7 +852,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             if username is not None:
                 params["u"] = username.strip()
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
                     FROM ai_assistant.chat_messages m
                     JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
                     WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
@@ -825,7 +861,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                 """
             else:
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
                     FROM ai_assistant.chat_messages m
                     WHERE m.session_id = :sid {page_filter}
                     ORDER BY m.id DESC
@@ -841,6 +877,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                     "sources": r.sources if r.sources else None,
                     "artifacts": r.artifacts if r.artifacts else None,
                     "attachments": r.attachments if r.attachments else None,
+                    "feedback": r.feedback if (hasattr(r, 'feedback') and r.feedback) else None,
                     "created_at": _iso(r.created_at),
                 }
                 for r in reversed(rows)
@@ -955,6 +992,10 @@ def get_admin_system_stats():
             user_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.users")).scalar() or 0
             session_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_sessions")).scalar() or 0
             msg_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages")).scalar() or 0
+            likes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = 'like'")).scalar() or 0
+            dislikes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = 'dislike'")).scalar() or 0
+            total_feedback = likes_count + dislikes_count
+            satisfaction_rate = round((likes_count / total_feedback) * 100, 1) if total_feedback > 0 else None
             
             # 5 user teraktif
             top_users = conn.execute(text("""
@@ -969,6 +1010,10 @@ def get_admin_system_stats():
                 "total_users": user_count,
                 "total_sessions": session_count,
                 "total_messages": msg_count,
+                "likes_count": likes_count,
+                "dislikes_count": dislikes_count,
+                "total_feedback": total_feedback,
+                "satisfaction_rate": satisfaction_rate,
                 "top_users": [{"username": r.username, "sessions": r.session_count} for r in top_users]
             }
     except Exception as e:
@@ -977,6 +1022,10 @@ def get_admin_system_stats():
             "total_users": 0,
             "total_sessions": 0,
             "total_messages": 0,
+            "likes_count": 0,
+            "dislikes_count": 0,
+            "total_feedback": 0,
+            "satisfaction_rate": None,
             "top_users": []
         }
 

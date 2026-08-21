@@ -114,22 +114,22 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const isLoggedIn = user?.username && user?.username !== 'Guest';
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
-      <div className="bg-surface-raised rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-line animate-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 pt-safe pb-safe">
+      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-line animate-in zoom-in-95 duration-200 max-h-[92vh] sm:max-h-[90vh] flex flex-col">
         
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600 dark:text-indigo-400">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-line">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600 dark:text-indigo-400 shrink-0">
               <Sliders className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-base font-bold text-content font-display">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-base font-bold text-content font-display truncate">
                 Pengaturan
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-xs text-content-muted">User: <strong className="text-content-secondary">{user?.username || 'Guest'}</strong></span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                <span className="text-[11px] sm:text-xs text-content-muted truncate">User: <strong className="text-content-secondary">{user?.username || 'Guest'}</strong></span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${
                   isSuperadmin 
                     ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
                     : 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
@@ -141,13 +141,13 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </div>
           </div>
 
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-content rounded-full hover:bg-surface-hover  transition-colors">
+          <button onClick={onClose} className="p-1.5 sm:p-2 text-content-muted hover:text-content rounded-full hover:bg-surface-hover transition-colors shrink-0 cursor-pointer" aria-label="Tutup Pengaturan">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-line px-6 pt-2 gap-2 bg-surface overflow-x-auto">
+        <div className="flex border-b border-line px-3 sm:px-6 pt-2 gap-1.5 sm:gap-2 bg-surface overflow-x-auto">
           <button
             onClick={() => setActiveTab('persona')}
             className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${

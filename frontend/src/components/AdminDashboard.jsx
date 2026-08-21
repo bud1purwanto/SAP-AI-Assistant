@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, CheckCircle, Database, Edit3, History, Key, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, CheckCircle, Database, Edit3, History, Key, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
@@ -219,29 +219,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-md animate-fadeIn">
-      {/* Dashboard memakai hampir seluruh layar: tabel user, audit log, dan
-          editor konfigurasi sebelumnya berdesakan di dalam lebar max-w-6xl. */}
+      {/* Modal Container: Fullscreen on mobile, rounded card on desktop */}
       <div className="bg-surface-raised border border-line sm:rounded-2xl shadow-2xl w-full max-w-[1600px] h-full sm:h-[94vh] flex flex-col overflow-hidden text-content">
         
         {/* Header Modal */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-gradient-to-tr from-amber-500 to-indigo-600 rounded-xl text-white shadow-md shadow-indigo-500/20">
-              <ShieldCheck className="w-6 h-6" />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-line bg-surface pt-safe">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+            <div className="p-2 sm:p-2.5 bg-gradient-to-tr from-amber-500 to-indigo-600 rounded-xl text-white shadow-md shadow-indigo-500/20 shrink-0">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
-            <div>
-              <h2 className="text-xl font-bold tracking-tight text-content">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-xl font-bold tracking-tight text-content truncate font-display">
                 Super Admin Control Center
               </h2>
-              <p className="text-xs text-content-muted">
-                Kelola User, Konfigurasi Server MCP, Audit Riwayat Chat, dan Metrik Sistem
+              <p className="text-[11px] sm:text-xs text-content-muted truncate">
+                Kelola User, Server MCP, Audit Riwayat Chat, dan Metrik Sistem
               </p>
             </div>
           </div>
           
           <button 
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-content hover:bg-surface-hover  transition-colors"
+            className="p-1.5 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors shrink-0 cursor-pointer"
+            aria-label="Tutup Dashboard"
           >
             <X className="w-5 h-5" />
           </button>
@@ -249,213 +249,263 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
         {/* Global Notifications Alert */}
         {actionSuccess && (
-          <div className="mx-6 mt-3 px-4 py-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/80 rounded-xl text-emerald-800 dark:text-emerald-300 text-sm flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-              <span>{actionSuccess}</span>
+          <div className="mx-3.5 sm:mx-6 mt-2.5 sm:mt-3 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/80 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
+            <div className="flex items-center gap-2 min-w-0 pr-2">
+              <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span className="truncate">{actionSuccess}</span>
             </div>
-            <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline">Tutup</button>
+            <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline shrink-0">Tutup</button>
           </div>
         )}
 
         {actionError && (
-          <div className="mx-6 mt-3 px-4 py-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/80 rounded-xl text-rose-800 dark:text-rose-300 text-sm flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <XCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
-              <span>{actionError}</span>
+          <div className="mx-3.5 sm:mx-6 mt-2.5 sm:mt-3 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800/80 rounded-xl text-rose-800 dark:text-rose-300 text-xs sm:text-sm flex items-center justify-between animate-fadeIn shrink-0">
+            <div className="flex items-center gap-2 min-w-0 pr-2">
+              <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span className="truncate">{actionError}</span>
             </div>
-            <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline">Tutup</button>
+            <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline shrink-0">Tutup</button>
           </div>
         )}
 
-        {/* Main Content Area: Sidebar Navigation + Tab Pane */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* Main Content Area: Horizontal tabs on mobile, Vertical sidebar on desktop */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
           
-          {/* Internal Navigation Tabs */}
-          <div className="w-56 border-r border-line bg-surface p-4 space-y-1.5 flex-shrink-0">
+          {/* Navigation Tabs */}
+          <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-line bg-surface p-2 sm:p-4 flex flex-row md:flex-col gap-1.5 md:gap-1.5 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
             <button
               onClick={() => { setActiveTab('overview'); setSelectedAuditSession(null); }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
                 activeTab === 'overview'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover '
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
               }`}
             >
-              <Activity className="w-4 h-4" />
-              <span>Overview & Stats</span>
+              <Activity className="w-4 h-4 shrink-0" />
+              <span>Overview &amp; Stats</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('users'); setSelectedAuditSession(null); }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
                 activeTab === 'users'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover '
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
               }`}
             >
-              <Users className="w-4 h-4" />
+              <Users className="w-4 h-4 shrink-0" />
               <span>User Management</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('persona'); setSelectedAuditSession(null); }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
                 activeTab === 'persona'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover'
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
               }`}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 shrink-0" />
               <span>Persona Organisasi</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('mcp'); setSelectedAuditSession(null); }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
                 activeTab === 'mcp'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover '
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
               }`}
             >
-              <Server className="w-4 h-4" />
-              <span>MCP Configuration</span>
+              <Server className="w-4 h-4 shrink-0" />
+              <span>MCP &amp; AI Provider</span>
             </button>
 
             <button
               onClick={() => { setActiveTab('audit'); }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
                 activeTab === 'audit'
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                  : 'text-content-muted hover:bg-surface-hover '
+                  : 'text-content-muted hover:bg-surface-hover hover:text-content'
               }`}
             >
-              <History className="w-4 h-4" />
-              <span>Audit Log & Chats</span>
+              <History className="w-4 h-4 shrink-0" />
+              <span>Audit Log &amp; Chats</span>
             </button>
           </div>
 
           {/* Tab Content Panel */}
-          <div className="flex-1 overflow-y-auto p-6 bg-surface-raised">
+          <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 bg-surface-raised pb-[max(1rem,env(safe-area-inset-bottom))]">
             
             {/* TAB 1: OVERVIEW & STATS */}
             {activeTab === 'overview' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-content flex items-center gap-2">
-                    <Activity className="w-5 h-5 text-indigo-500" /> Ringkasan Sistem
+              <div className="space-y-4 sm:space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
+                    <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Ringkasan Sistem
                   </h3>
                   <button 
                     onClick={fetchStats}
-                    className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+                    className="flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer w-fit"
                   >
                     <RefreshCw className="w-3.5 h-3.5" /> Refresh Status
                   </button>
                 </div>
 
                 {/* Metrics Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200/70 dark:border-indigo-900/50">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200/70 dark:border-indigo-900/50">
                     <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
-                      <span className="text-xs font-semibold uppercase tracking-wider">Total User</span>
-                      <Users className="w-5 h-5" />
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total User</span>
+                      <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_users ?? '-'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Akun aktif terdaftar di PostgreSQL</p>
+                    <p className="text-[11px] text-content-muted mt-1">Akun aktif terdaftar di PostgreSQL</p>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/40 dark:to-slate-900 border border-purple-200/70 dark:border-purple-900/50">
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/40 dark:to-slate-900 border border-purple-200/70 dark:border-purple-900/50">
                     <div className="flex items-center justify-between text-purple-600 dark:text-purple-400">
-                      <span className="text-xs font-semibold uppercase tracking-wider">Total Sesi Chat</span>
-                      <MessageSquare className="w-5 h-5" />
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total Sesi Chat</span>
+                      <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_sessions ?? '-'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Percakapan tersimpan di sistem</p>
+                    <p className="text-[11px] text-content-muted mt-1">Percakapan tersimpan di sistem</p>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-slate-900 border border-emerald-200/70 dark:border-emerald-900/50">
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-slate-900 border border-emerald-200/70 dark:border-emerald-900/50">
                     <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-                      <span className="text-xs font-semibold uppercase tracking-wider">Total Pesan</span>
-                      <Database className="w-5 h-5" />
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total Pesan</span>
+                      <Database className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
-                    <p className="text-3xl font-extrabold mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_messages ?? '-'}
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">Query user & jawaban AI</p>
+                    <p className="text-[11px] text-content-muted mt-1">Query user &amp; jawaban AI</p>
+                  </div>
+                </div>
+
+                {/* User Satisfaction & Feedback Card */}
+                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted flex items-center gap-2 font-display">
+                      <ThumbsUp className="w-4 h-4 text-teal-500" /> Metrik Kepuasan Respon AI
+                    </h4>
+                    <span className="text-xs text-content-muted">
+                      Total {stats?.total_feedback ?? 0} Rating Pengguna
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    {/* Satisfaction Rate */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-100/50 dark:from-teal-950/40 dark:to-slate-900 border border-teal-200/70 dark:border-teal-900/50 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Tingkat Kepuasan</span>
+                        <Star className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 fill-amber-500" />
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
+                        {stats?.satisfaction_rate !== null && stats?.satisfaction_rate !== undefined ? `${stats.satisfaction_rate}%` : '100%'}
+                      </p>
+                      <p className="text-[11px] text-content-muted mt-1">Rasio respon yang dinilai membantu</p>
+                    </div>
+
+                    {/* Likes count */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Membantu (Like)</span>
+                        <ThumbsUp className="w-4 h-4" />
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-teal-600 dark:text-teal-400">
+                        {stats?.likes_count ?? 0}
+                      </p>
+                      <p className="text-[11px] text-content-muted mt-1">Jawaban yang memuaskan pengguna</p>
+                    </div>
+
+                    {/* Dislikes count */}
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-rose-600 dark:text-rose-400">
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Kurang Sesuai (Dislike)</span>
+                        <ThumbsDown className="w-4 h-4" />
+                      </div>
+                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-rose-600 dark:text-rose-400">
+                        {stats?.dislikes_count ?? 0}
+                      </p>
+                      <p className="text-[11px] text-content-muted mt-1">Jawaban yang perlu perbaikan/akurasi</p>
+                    </div>
                   </div>
                 </div>
 
                 {/* MCP Live Status Card */}
-                <div className="p-5 rounded-2xl border border-line bg-surface">
-                  <h4 className="text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2">
+                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
+                  <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
                     <Server className="w-4 h-4 text-emerald-500" /> Status Live MCP Servers
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {/* MCP SAP Card */}
-                    <div className="p-4 rounded-xl bg-surface-raised border border-line">
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-content">MCP SAP Gateway</span>
+                        <span className="font-bold text-xs sm:text-sm text-content">MCP SAP Gateway</span>
                         {(stats?.mcp_status?.sap?.status === 'online' || stats?.mcp_status?.sap?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.sap?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.sap?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-content-muted mt-2">
+                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
                         {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} Tools tersedia • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
                       </p>
                     </div>
 
                     {/* MCP RAG Card */}
-                    <div className="p-4 rounded-xl bg-surface-raised border border-line">
+                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-content">MCP RAG Knowledge</span>
+                        <span className="font-bold text-xs sm:text-sm text-content">MCP RAG Knowledge</span>
                         {(stats?.mcp_status?.rag?.status === 'online' || stats?.mcp_status?.rag?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.rag?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.rag?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-content-muted mt-2">
-                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} Vector Search & Document Tools
+                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
+                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} Vector Search &amp; Document Tools
                       </p>
                     </div>
                   </div>
                 </div>
 
                 {/* Top Active Users */}
-                <div className="p-5 rounded-2xl border border-line bg-surface-raised">
-                  <h4 className="text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2">
+                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface-raised">
+                  <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
                     <UserCheck className="w-4 h-4 text-indigo-500" /> User Paling Aktif
                   </h4>
                   <div className="divide-y divide-line">
                     {stats?.top_users?.length > 0 ? (
                       stats.top_users.map((u, i) => (
                         <div key={i} className="py-2.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center">
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0">
                               {i + 1}
                             </div>
-                            <span className="font-medium text-sm text-content">{u.username}</span>
+                            <span className="font-medium text-xs sm:text-sm text-content truncate">{u.username}</span>
                           </div>
-                          <span className="text-xs font-semibold px-2 py-0.5 bg-surface-sunken text-content-muted rounded-md">
+                          <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 bg-surface-sunken text-content-muted rounded-md shrink-0">
                             {u.sessions} Sesi Chat
                           </span>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-slate-400 py-3">Belum ada data aktivitas sesi.</p>
+                      <p className="text-xs text-content-muted py-3">Belum ada data aktivitas sesi.</p>
                     )}
                   </div>
                 </div>
@@ -464,126 +514,132 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB 2: USER MANAGEMENT (CRUD) */}
             {activeTab === 'users' && (
-              <div className="space-y-5 animate-fadeIn">
+              <div className="space-y-4 sm:space-y-5 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
-                      <Users className="w-5 h-5 text-indigo-500" /> Manajemen User ({usersList.length})
+                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
+                      <Users className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Manajemen User ({usersList.length})
                     </h3>
                     <p className="text-xs text-content-muted">Tambah akun baru, ubah role / password, atau hapus user.</p>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <div className="relative">
+                    <div className="relative flex-1 sm:flex-initial">
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                       <input 
                         type="text"
                         placeholder="Cari user..."
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40 sm:w-48"
+                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddUserOpen(true)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
                     >
                       <Plus className="w-4 h-4" /> User Baru
                     </button>
                   </div>
                 </div>
 
-                {/* Users Table */}
-                <div className="border border-line rounded-2xl overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-surface-sunken border-b border-line text-content-muted text-xs uppercase tracking-wider font-semibold">
-                      <tr>
-                        <th className="px-4 py-3">Username</th>
-                        <th className="px-4 py-3">Nama Lengkap</th>
-                        <th className="px-4 py-3">Role</th>
-                        <th className="px-4 py-3">Persona Pribadi</th>
-                        <th className="px-4 py-3 text-right">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line text-content-secondary">
-                      {filteredUsers.length > 0 ? (
-                        filteredUsers.map((u) => (
-                          <tr key={u.username} className="hover:bg-surface-hover transition-colors">
-                            <td className="px-4 py-3 font-semibold text-content flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-surface-sunken flex items-center justify-center text-xs font-bold text-indigo-600">
-                                {u.username.substring(0, 2).toUpperCase()}
-                              </div>
-                              {u.username}
-                              {u.username === user.username && (
-                                <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.5 rounded font-normal">Anda</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-content-secondary">
-                              {u.full_name || <span className="italic text-content-subtle">—</span>}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
-                                u.role === 'superadmin' 
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' 
-                                  : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                              }`}>
-                                {u.role}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
-                              {u.assistant_persona || <span className="italic text-content-subtle">Mengikuti persona organisasi</span>}
-                            </td>
-                            <td className="px-4 py-3 text-right space-x-1">
-                              <button
-                                onClick={() => {
-                                  setEditingUser(u);
-                                  setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
-                                }}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors"
-                                title="Edit user"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(u.username)}
-                                disabled={u.username === user.username}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  u.username === user.username 
-                                    ? 'text-content-subtle cursor-not-allowed' 
-                                    : 'text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-hover '
-                                }`}
-                                title="Hapus user"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                {/* Users Table: Responsive Scroll on Mobile */}
+                <div className="border border-line rounded-xl sm:rounded-2xl overflow-hidden shadow-sm bg-surface">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-surface-sunken border-b border-line text-content-muted text-[11px] sm:text-xs uppercase tracking-wider font-semibold whitespace-nowrap">
+                        <tr>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Username</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Nama Lengkap</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Role</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Persona Pribadi</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line text-content-secondary">
+                        {filteredUsers.length > 0 ? (
+                          filteredUsers.map((u) => (
+                            <tr key={u.username} className="hover:bg-surface-hover transition-colors">
+                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-content whitespace-nowrap">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-surface-sunken flex items-center justify-center text-xs font-bold text-indigo-600 shrink-0">
+                                    {u.username.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <span>{u.username}</span>
+                                  {u.username === user.username && (
+                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.2 rounded font-normal">Anda</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal">
+                                {u.full_name || <span className="italic text-content-subtle">—</span>}
+                              </td>
+                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-semibold ${
+                                  u.role === 'superadmin' 
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' 
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                }`}>
+                                  {u.role}
+                                </span>
+                              </td>
+                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-xs text-content-muted max-w-xs truncate">
+                                {u.assistant_persona || <span className="italic text-content-subtle">Mengikuti persona organisasi</span>}
+                              </td>
+                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right space-x-1 whitespace-nowrap">
+                                <button
+                                  onClick={() => {
+                                    setEditingUser(u);
+                                    setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
+                                  }}
+                                  className="p-1.5 text-content-muted hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
+                                  title="Edit user"
+                                  aria-label={`Edit user ${u.username}`}
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(u.username)}
+                                  disabled={u.username === user.username}
+                                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                    u.username === user.username 
+                                      ? 'text-content-subtle cursor-not-allowed opacity-40' 
+                                      : 'text-content-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-hover'
+                                  }`}
+                                  title="Hapus user"
+                                  aria-label={`Hapus user ${u.username}`}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="5" className="text-center py-6 text-content-subtle text-xs">
+                              Tidak ada data user yang sesuai.
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="5" className="text-center py-6 text-content-subtle text-xs">
-                            Tidak ada data user yang sesuai.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-content flex items-center gap-2">
+                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
                         </h4>
-                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-subtle hover:text-content">
+                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={handleCreateUser} className="space-y-3.5 text-sm">
+                      <form onSubmit={handleCreateUser} className="space-y-3 text-xs sm:text-sm">
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">Username *</label>
                           <input 
@@ -647,13 +703,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <button
                             type="button"
                             onClick={() => setIsAddUserOpen(false)}
-                            className="px-4 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl"
+                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
                             Batal
                           </button>
                           <button
                             type="submit"
-                            className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md"
+                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
                           >
                             Buat Akun
                           </button>
@@ -665,18 +721,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
                       <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-content flex items-center gap-2">
+                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
                         </h4>
-                        <button onClick={() => setEditingUser(null)} className="text-content-subtle hover:text-content">
+                        <button onClick={() => setEditingUser(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={handleUpdateUser} className="space-y-3.5 text-sm">
+                      <form onSubmit={handleUpdateUser} className="space-y-3 text-xs sm:text-sm">
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">Nama Lengkap</label>
                           <input
@@ -729,13 +785,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <button
                             type="button"
                             onClick={() => setEditingUser(null)}
-                            className="px-4 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl"
+                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
                             Batal
                           </button>
                           <button
                             type="submit"
-                            className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md"
+                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
                           >
                             Simpan Perubahan
                           </button>
@@ -749,17 +805,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB: PERSONA ORGANISASI */}
             {activeTab === 'persona' && (
-              <div className="space-y-5 animate-fadeIn max-w-4xl">
+              <div className="space-y-4 sm:space-y-5 animate-fadeIn max-w-4xl">
                 <div>
-                  <h3 className="text-lg font-bold text-content flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-indigo-500" /> Persona Organisasi
+                  <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
+                    <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Persona Organisasi
                   </h3>
                   <p className="text-xs text-content-muted mt-1">
                     Aturan dasar yang berlaku untuk jawaban AI ke <strong>seluruh pengguna</strong>.
                   </p>
                 </div>
 
-                <div className="bg-surface-sunken border border-line rounded-2xl p-4 text-xs text-content-secondary leading-relaxed">
+                <div className="bg-surface-sunken border border-line rounded-xl sm:rounded-2xl p-3.5 sm:p-4 text-xs text-content-secondary leading-relaxed">
                   <p className="font-semibold text-content mb-1.5">Cara persona diterapkan</p>
                   <p>
                     Persona organisasi menjadi <strong>lapisan dasar</strong>. Di atasnya, persona pribadi
@@ -778,10 +834,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </label>
                   <textarea
                     id="global-persona"
-                    rows="10"
+                    rows="8"
                     value={globalPersona}
                     onChange={(e) => setGlobalPersona(e.target.value)}
-                    className="w-full px-3.5 py-3 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed"
+                    className="w-full px-3 sm:px-3.5 py-2.5 sm:py-3 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed text-content"
                     placeholder={'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
                   />
                   <p className="text-[11px] text-content-subtle mt-1.5">
@@ -793,7 +849,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <button
                     onClick={handleSaveGlobalPersona}
                     disabled={personaSaving}
-                    className="px-5 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60"
+                    className="w-full sm:w-auto px-5 py-2.5 sm:py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
                   >
                     {personaSaving ? 'Menyimpan…' : 'Simpan Persona Organisasi'}
                   </button>
@@ -803,11 +859,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB 3: MCP CONFIGURATION & AI MODEL */}
             {activeTab === 'mcp' && (
-              <div className="space-y-5 animate-fadeIn">
-                <div className="flex items-center justify-between">
+              <div className="space-y-4 sm:space-y-5 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
-                      <Server className="w-5 h-5 text-indigo-500" /> Konfigurasi AI Model & Server MCP
+                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
+                      <Server className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Konfigurasi AI Model &amp; Server MCP
                     </h3>
                     <p className="text-xs text-content-muted">
                       Edit Model AI utama, Model AI fallback/gratis, API Key OpenRouter, dan konfigurasi MCP di database.
@@ -816,7 +872,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <button
                     onClick={handleSaveMcpConfig}
                     disabled={mcpSaving}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
                     {mcpSaving ? 'Menyimpan...' : 'Simpan Konfigurasi'}
@@ -824,9 +880,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* AI Providers Setting Cards (2 Options) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                   {/* Card 1: 9Router (Local Gateway) */}
-                  <div className={`p-4 rounded-2xl border transition-all ${
+                  <div className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all ${
                     nineRouterEnabled 
                       ? 'border-indigo-300 dark:border-indigo-700/80 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-sm' 
                       : 'border-line bg-surface opacity-75'
@@ -904,7 +960,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   {/* Card 2: OpenRouter (Cloud Gateway) */}
-                  <div className={`p-4 rounded-2xl border transition-all ${
+                  <div className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all ${
                     openrouterEnabled 
                       ? 'border-emerald-300 dark:border-emerald-700/80 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm' 
                       : 'border-line bg-surface opacity-75'
@@ -982,37 +1038,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {/* MCP SAP Config JSON */}
-                  <div className="p-4 rounded-2xl border border-line bg-surface">
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
                     <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
                       <Database className="w-4 h-4 text-amber-500" /> MCP SAP Config (JSON)
                     </label>
                     <textarea 
-                      rows="6"
+                      rows="5"
                       value={mcpSapConfig}
                       onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8001/sse"}'
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">
+                    <p className="text-[11px] text-content-subtle mt-1">
                       Format konfigurasi SSE atau stdio untuk koneksi ke SAP MCP Server.
                     </p>
                   </div>
 
                   {/* MCP RAG Config JSON */}
-                  <div className="p-4 rounded-2xl border border-line bg-surface">
+                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
                     <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
                       <Database className="w-4 h-4 text-emerald-500" /> MCP RAG Config (JSON)
                     </label>
                     <textarea 
-                      rows="6"
+                      rows="5"
                       value={mcpRagConfig}
                       onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8002/sse"}'
                     />
-                    <p className="text-[11px] text-slate-400 mt-1">
+                    <p className="text-[11px] text-content-subtle mt-1">
                       Format konfigurasi SSE atau stdio untuk koneksi ke RAG Knowledge Base.
                     </p>
                   </div>
@@ -1022,32 +1078,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
             {activeTab === 'audit' && (
-              <div className="h-full flex flex-col space-y-4 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="h-full flex flex-col space-y-3 sm:space-y-4 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
                   <div>
-                    <h3 className="text-lg font-bold text-content flex items-center gap-2">
-                      <History className="w-5 h-5 text-indigo-500" /> Audit Log Percakapan
+                    <h3 className="text-base sm:text-lg font-bold text-content flex items-center gap-2 font-display">
+                      <History className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-500" /> Audit Log Percakapan
                     </h3>
                     <p className="text-xs text-content-muted">
                       Pantau percakapan dari seluruh user untuk keperluan audit dan troubleshooting.
                     </p>
                   </div>
 
-                  <div className="relative">
+                  <div className="relative w-full sm:w-auto">
                     <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                     <input 
                       type="text"
                       placeholder="Cari user / judul chat..."
                       value={auditSearch}
                       onChange={(e) => setAuditSearch(e.target.value)}
-                      className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
+                      className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0">
-                  {/* Sessions List */}
-                  <div className="border border-line rounded-2xl overflow-y-auto max-h-[55vh] divide-y divide-line bg-surface">
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 min-h-0">
+                  {/* Sessions List: Hidden on mobile when a session is selected */}
+                  <div className={`${
+                    selectedAuditSession ? 'hidden md:block' : 'block'
+                  } border border-line rounded-xl sm:rounded-2xl overflow-y-auto max-h-[60vh] md:max-h-[65vh] divide-y divide-line bg-surface`}>
                     {filteredAuditSessions.length > 0 ? (
                       filteredAuditSessions.map((s) => (
                         <button
@@ -1056,15 +1114,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             setSelectedAuditSession(s);
                             fetchAuditMessages(s.session_id);
                           }}
-                          className={`w-full text-left p-3 transition-colors ${
+                          className={`w-full text-left p-3 sm:p-3.5 transition-colors cursor-pointer ${
                             selectedAuditSession?.session_id === s.session_id
                               ? 'bg-indigo-50 dark:bg-indigo-950/50 border-l-4 border-indigo-600'
-                              : 'hover:bg-surface-hover '
+                              : 'hover:bg-surface-hover'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs text-content truncate">{s.username}</span>
-                            <span className="text-[10px] text-slate-400">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
+                            <span className="text-[10px] text-content-muted">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
                           </div>
                           <p className="text-xs text-content-muted truncate mt-1">{s.title}</p>
                           <div className="flex items-center gap-2 mt-2">
@@ -1075,46 +1133,68 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </button>
                       ))
                     ) : (
-                      <p className="text-center text-xs text-slate-400 py-8">Belum ada riwayat sesi ditemukan.</p>
+                      <p className="text-center text-xs text-content-muted py-8">Belum ada riwayat sesi ditemukan.</p>
                     )}
                   </div>
 
-                  {/* Messages Viewer */}
-                  <div className="md:col-span-2 border border-line rounded-2xl p-4 overflow-y-auto max-h-[55vh] bg-surface-raised flex flex-col">
+                  {/* Messages Viewer: Visible on mobile when a session is selected */}
+                  <div className={`${
+                    !selectedAuditSession ? 'hidden md:flex' : 'flex'
+                  } md:col-span-2 border border-line rounded-xl sm:rounded-2xl p-3.5 sm:p-4 overflow-y-auto max-h-[60vh] md:max-h-[65vh] bg-surface-raised flex-col`}>
                     {selectedAuditSession ? (
-                      <div className="space-y-4">
+                      <div className="space-y-3 sm:space-y-4">
+                        {/* Mobile Back Button */}
+                        <button 
+                          onClick={() => setSelectedAuditSession(null)}
+                          className="md:hidden flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 py-1 cursor-pointer"
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" /> Kembali ke daftar sesi
+                        </button>
+
                         <div className="pb-3 border-b border-line flex items-center justify-between">
-                          <div>
-                            <h4 className="font-bold text-sm text-content">{selectedAuditSession.title}</h4>
-                            <p className="text-xs text-slate-500">User: <span className="font-semibold text-indigo-600">{selectedAuditSession.username}</span> • ID: {selectedAuditSession.session_id}</p>
+                          <div className="min-w-0">
+                            <h4 className="font-bold text-xs sm:text-sm text-content truncate">{selectedAuditSession.title}</h4>
+                            <p className="text-[11px] sm:text-xs text-content-muted truncate">User: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selectedAuditSession.username}</span> • ID: {selectedAuditSession.session_id}</p>
                           </div>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2.5 sm:space-y-3">
                           {auditMessages.length > 0 ? (
                             auditMessages.map((m, i) => (
                               <div 
                                 key={i} 
-                                className={`p-3 rounded-xl text-xs ${
+                                className={`p-3 rounded-xl text-xs leading-relaxed ${
                                   m.role === 'user' 
                                     ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-indigo-950 dark:text-indigo-200' 
                                     : 'bg-surface-sunken border border-line text-content'
                                 }`}
                               >
                                 <div className="flex items-center justify-between mb-1 font-semibold">
-                                  <span>{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
-                                  <span className="text-[10px] text-slate-400">{m.created_at ? m.created_at.slice(11, 16) : ''}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span>{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
+                                    {m.role !== 'user' && (m.feedback === 'like' || m.feedback === 'up') && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                                        <ThumbsUp className="w-2.5 h-2.5" /> Membantu
+                                      </span>
+                                    )}
+                                    {m.role !== 'user' && (m.feedback === 'dislike' || m.feedback === 'down') && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                        <ThumbsDown className="w-2.5 h-2.5" /> Kurang Sesuai
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-content-subtle">{m.created_at ? m.created_at.slice(11, 16) : ''}</span>
                                 </div>
-                                <div className="whitespace-pre-wrap font-sans">{m.content}</div>
+                                <div className="whitespace-pre-wrap font-sans select-text">{m.content}</div>
                               </div>
                             ))
                           ) : (
-                            <p className="text-center text-xs text-slate-400 py-6">Memuat pesan...</p>
+                            <p className="text-center text-xs text-content-muted py-6">Memuat pesan...</p>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs py-16">
+                      <div className="h-full flex flex-col items-center justify-center text-content-muted text-xs py-16">
                         <MessageSquare className="w-8 h-8 mb-2 opacity-30" />
                         Pilih salah satu sesi di sebelah kiri untuk melihat pesan percakapan.
                       </div>
