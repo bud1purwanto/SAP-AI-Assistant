@@ -232,11 +232,13 @@ const ChatLayout = () => {
       const formatted = !data || data.length === 0
         ? []
         : data.map((m) => ({
+            id: m.id,
             role: m.role === 'user' ? 'user' : 'assistant',
             content: m.content,
             sources: parseJsonList(m.sources),
             artifacts: parseJsonList(m.artifacts),
             attachments: parseJsonList(m.attachments),
+            feedback: m.feedback || null,
             created_at: m.created_at,
           }));
 
