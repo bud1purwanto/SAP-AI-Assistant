@@ -98,8 +98,23 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   }
 
   if (!res.ok) {
-    const detail = (data && data.detail) || (typeof data === 'string' ? data : '') ||
-      `Permintaan gagal (HTTP ${res.status}).`;
+    let detail = (data && data.detail) || (typeof data === 'string' ? data : '');
+    // Jika respons berupa dokumen HTML dari reverse proxy (mis. 502 Bad Gateway Nginx),
+    // ubah menjadi pesan teks bersih yang mudah dipahami pengguna.
+    if (typeof detail === 'string' && (detail.trim().startsWith('<') || res.status >= 500)) {
+      if (res.status === 502) {
+        detail = 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
+      } else if (res.status === 503) {
+        detail = 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
+      } else if (res.status === 504) {
+        detail = 'Koneksi ke server backend timeout (504 Gateway Timeout).';
+      } else if (detail.trim().startsWith('<')) {
+        detail = `Terjadi kesalahan pada server (HTTP ${res.status}).`;
+      }
+    }
+    if (!detail) {
+      detail = `Permintaan gagal (HTTP ${res.status}).`;
+    }
     throw new ApiError(detail, res.status);
   }
 
@@ -248,10 +263,26 @@ export async function chatWithProgress(payload, { onProgress, signal } = {}) {
   }
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
-    let detail = `Permintaan gagal (HTTP ${res.status}).`;
+    let detail = '';
     try {
-      detail = JSON.parse(text).detail || detail;
-    } catch { /* respons bukan JSON */ }
+      detail = JSON.parse(text).detail || '';
+    } catch {
+      detail = text;
+    }
+    if (typeof detail === 'string' && (detail.trim().startsWith('<') || res.status >= 500)) {
+      if (res.status === 502) {
+        detail = 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
+      } else if (res.status === 503) {
+        detail = 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
+      } else if (res.status === 504) {
+        detail = 'Koneksi ke server backend timeout (504 Gateway Timeout).';
+      } else if (detail.trim().startsWith('<')) {
+        detail = `Terjadi kesalahan pada server (HTTP ${res.status}).`;
+      }
+    }
+    if (!detail) {
+      detail = `Permintaan gagal (HTTP ${res.status}).`;
+    }
     throw new ApiError(detail, res.status);
   }
 
