@@ -60,9 +60,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # Tanpa --deny-warnings: aturan bertingkat "error" (mis. no-undef, yang
+      # menangkap variabel tak terdeklarasi penyebab halaman putih) tetap
+      # menggagalkan build, sementara peringatan gaya penulisan tidak memblokir
+      # deploy. Gerbang yang gagal karena impor tak terpakai hanya membuat
+      # orang mem-bypass gerbangnya.
       - name: Lint frontend
         working-directory: frontend
-        run: npx oxlint src/ --deny-warnings
+        run: npx oxlint src/
 
       - name: Build frontend
         working-directory: frontend

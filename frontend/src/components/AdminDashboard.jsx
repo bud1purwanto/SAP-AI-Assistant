@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, Code, Database, Edit3, FileText, History, Key, Mail, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, History, Key, Mail, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
