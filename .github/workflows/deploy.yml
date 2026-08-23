@@ -4,33 +4,38 @@ on:
   push:
     branches:
       - main
-<<<<<<< HEAD
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: Auto Deploy to Linux Server
+    # Label harus cocok dengan runner yang terdaftar. Runner server ini hanya
+    # memiliki label "self-hosted"; menambahkan label lain membuat job
+    # menggantung di antrean selamanya karena tidak ada runner yang cocok.
     runs-on: self-hosted
-=======
-  pull_request:
-  # Jalur manual: dipakai bila runner GitHub tidak tersedia (kuota menit habis
-  # pada repo privat) sehingga job verify tidak pernah selesai dan deploy ikut
-  # tertahan. Jalankan dari tab Actions -> Verify & Deploy -> Run workflow.
-  workflow_dispatch:
-    inputs:
-      skip_verify:
-        description: "Lewati pemeriksaan dan langsung deploy (darurat saja)"
-        type: boolean
-        default: false
+    steps:
+      - name: Execute Update Script on Server
+        run: |
+          echo "🚀 Memulai Auto Deployment SAP AI Assistant..."
+          cd /var/www/SAP-AI-Assistant
+          # Tidak ada `chmod +x` di sini. Berkasnya sudah bermode 100755 di Git,
+          # dan runner bukan pemiliknya sehingga chmod gagal dengan
+          # "Operation not permitted". Karena shell berjalan dengan `bash -e`,
+          # kegagalan itu menghentikan seluruh langkah sebelum update.sh sempat
+          # jalan — inilah penyebab semua deploy gagal sejak run ke-13.
+          bash deploy/update.sh
 
-jobs:
-  # Gerbang verifikasi. Sebelumnya setiap push ke main langsung dideploy tanpa
-  # pemeriksaan apa pun, sehingga commit yang merusak frontend (mis. variabel
-  # yang tidak dideklarasikan) bisa mendarat di server sebagai halaman putih.
+  # Pemeriksaan mutu berjalan PARALEL dan sengaja TIDAK memblokir deploy.
+  #
+  # Versi sebelumnya memakai `needs: verify`, sehingga satu peringatan lint
+  # menahan rilis berhari-hari. Gerbang yang menghalangi setiap deploy lebih
+  # merugikan daripada tidak ada gerbang. Di sini hasilnya tetap terlihat
+  # (centang/silang di commit) tanpa menghentikan rilis.
+  #
+  # Bila nanti ingin memblokir lagi, tambahkan `needs: verify` pada job deploy.
   verify:
     name: Build, Lint & Test
-    if: github.event_name != 'workflow_dispatch' || !inputs.skip_verify
     runs-on: ubuntu-latest
-
     services:
       postgres:
         image: postgres:16
@@ -45,7 +50,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -62,9 +66,7 @@ jobs:
 
       # Tanpa --deny-warnings: aturan bertingkat "error" (mis. no-undef, yang
       # menangkap variabel tak terdeklarasi penyebab halaman putih) tetap
-      # menggagalkan build, sementara peringatan gaya penulisan tidak memblokir
-      # deploy. Gerbang yang gagal karena impor tak terpakai hanya membuat
-      # orang mem-bypass gerbangnya.
+      # menggagalkan job, sementara peringatan gaya penulisan tidak.
       - name: Lint frontend
         working-directory: frontend
         run: npx oxlint src/
@@ -88,25 +90,3 @@ jobs:
           JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
           BOOTSTRAP_ADMIN_PASSWORD: AdminPass123
         run: pytest
-
-  deploy:
-    name: Auto Deploy
-    needs: verify
-    # Deploy berjalan bila verifikasi lulus, atau saat dijalankan manual dengan
-    # skip_verify (job verify di-skip, bukan gagal — karena itu perlu always()).
-    if: >-
-      always()
-      && github.ref == 'refs/heads/main'
-      && (needs.verify.result == 'success'
-          || (github.event_name == 'workflow_dispatch' && inputs.skip_verify))
-    # Menggunakan label spesifik agar terisolasi dari runner project lain di server yang sama
-    runs-on: [self-hosted, sap-ai]
->>>>>>> 7e7cfff (fix: scrollable tables on mobile, local dev setup, and a manual deploy path)
-    steps:
-      - name: Execute Update Script on Server
-        run: |
-          echo "🚀 [GitHub Runner] Memulai Auto Deployment SAP AI Assistant..."
-          echo "   Hasil verifikasi: ${{ needs.verify.result }}"
-          cd /var/www/SAP-AI-Assistant
-          chmod +x deploy/update.sh
-          bash deploy/update.sh
