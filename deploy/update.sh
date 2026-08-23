@@ -7,8 +7,25 @@
 set -e
 
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
-echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 cd "${PROJECT_DIR}"
+
+# Pemeriksaan awal: runner harus bisa menulis ke .git, jika tidak `git fetch`
+# gagal dengan "insufficient permission for adding an object to repository
+# database" di tengah proses. Lebih baik berhenti di sini dengan pesan yang
+# menyebutkan perbaikannya.
+if [ ! -w "${PROJECT_DIR}/.git/objects" ]; then
+    echo "❌ Tidak dapat menulis ke ${PROJECT_DIR}/.git/objects"
+    echo ""
+    echo "   Direktori repositori dimiliki user lain, sehingga proses deploy"
+    echo "   (berjalan sebagai '$(id -un)') tidak dapat memperbarui kode."
+    echo ""
+    echo "   Perbaiki di server dengan menyerahkan kepemilikan ke user runner:"
+    echo "     sudo chown -R $(id -un):$(id -gn) ${PROJECT_DIR}"
+    echo ""
+    exit 1
+fi
+
+echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 git stash --include-untracked 2>/dev/null || true
 git fetch origin main

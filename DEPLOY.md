@@ -97,17 +97,40 @@ Setiap push ke `main` menjalankan dua job berurutan:
 1. **verify** — build frontend, `oxlint`, dan `pytest` (di runner GitHub).
 2. **deploy** — `deploy/update.sh` di self-hosted runner, **hanya bila verify lulus**.
 
+### Izin direktori di server (penyebab tersering)
+
+Proses deploy berjalan sebagai user runner GitHub, bukan `root`. Bila direktori
+proyek dimiliki user lain, `git fetch` gagal dengan
+`insufficient permission for adding an object to repository database`.
+
+Perbaiki sekali di server:
+
+```bash
+# cari user yang menjalankan runner
+ps -o user= -p "$(pgrep -f Runner.Listener | head -1)"
+
+# serahkan kepemilikan proyek ke user tersebut
+sudo chown -R <user-runner>:<user-runner> /var/www/SAP-AI-Assistant
+
+# runner juga perlu me-restart service tanpa password
+echo "<user-runner> ALL=(ALL) NOPASSWD: /bin/systemctl restart sap-ai-backend" \
+  | sudo tee /etc/sudoers.d/sap-ai-deploy
+```
+
 **Bila deploy tidak berjalan otomatis**, periksa tab **Actions** di GitHub:
 
 | Yang terlihat | Artinya | Tindakan |
 | :--- | :--- | :--- |
-| `verify` merah | Ada test/lint yang gagal | Perbaiki dulu — inilah gunanya gerbang ini |
-| `verify` tidak pernah mulai | Kuota menit runner GitHub habis (repo privat) | Pakai Run workflow manual (lihat bawah) |
-| `deploy` menggantung "Queued" | Self-hosted runner mati | Nyalakan runner di server |
-| `deploy` di-skip | `verify` tidak sukses | Lihat baris pertama |
+| `insufficient permission ... .git/objects` | Kepemilikan direktori salah | Jalankan `chown` di atas |
+| `chmod: Operation not permitted` | Workflow memakai `chmod` yang tidak perlu | Sudah dihapus; pastikan workflow terbaru |
+| `deploy` menggantung "Queued" | Runner mati, atau label `runs-on` tidak cocok dengan label runner | Nyalakan runner; cocokkan label |
+| Run gagal 0 detik, nama run = path berkas | YAML workflow tidak valid | Perbaiki sintaks `deploy.yml` |
+| `verify` merah | Test/lint gagal | Deploy tetap jalan; perbaiki kodenya |
 
-Untuk deploy darurat tanpa menunggu verifikasi:
-**Actions → Verify & Deploy → Run workflow →** centang *Lewati pemeriksaan*.
+Job `verify` berjalan paralel dan **tidak** memblokir deploy. Untuk menjadikannya
+gerbang wajib, tambahkan `needs: verify` pada job `deploy`.
+
+Deploy manual: **Actions → Deploy SAP AI Assistant → Run workflow**.
 
 ---
 
