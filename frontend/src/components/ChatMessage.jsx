@@ -95,17 +95,17 @@ const AttachmentChip = ({ item }) => {
       <img
         src={previewUrl}
         alt={item.filename}
-        className="max-h-40 max-w-[12rem] rounded-2xl border border-line object-cover"
+        className="max-h-40 w-auto max-w-full sm:max-w-[12rem] rounded-2xl border border-line object-cover"
       />
     );
   }
 
   return (
-    <span className="flex items-center gap-2 px-3 py-2.5 bg-surface-raised border border-line rounded-2xl text-xs">
+    <span className="flex min-w-0 max-w-full items-center gap-2 px-3 py-2.5 bg-surface-raised border border-line rounded-2xl text-xs">
       {item.kind === 'image'
         ? <ImageIcon className="w-3.5 h-3.5 text-content-muted" aria-hidden="true" />
         : <FileText className="w-3.5 h-3.5 text-content-muted" aria-hidden="true" />}
-      <span className="max-w-[12rem] truncate text-content font-medium">{item.filename}</span>
+      <span className="min-w-0 flex-1 truncate text-content font-medium">{item.filename}</span>
     </span>
   );
 };
@@ -325,7 +325,7 @@ const ChatMessage = ({ message }) => {
 
           {/* Lampiran yang disertakan pengguna */}
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex flex-wrap items-start gap-2 justify-end mb-2 max-w-full">
+            <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2 justify-end mb-2">
               {message.attachments.map((item) => (
                 <AttachmentChip key={item.upload_id} item={item} />
               ))}
@@ -482,19 +482,19 @@ const ChatMessage = ({ message }) => {
 
         {/* Berkas hasil (Excel/CSV) yang dibuat asisten */}
         {message.artifacts && message.artifacts.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex min-w-0 max-w-full flex-wrap gap-2">
             {message.artifacts.map((file) => (
               <button
                 key={file.artifact_id}
                 onClick={() => downloadArtifact(file)}
-                className="flex items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group"
+                className="flex w-full min-w-0 max-w-full sm:w-auto sm:max-w-sm items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group"
               >
                 <span className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg shrink-0">
                   {ARTIFACT_ICON[file.type] || <FileText className="w-4 h-4" aria-hidden="true" />}
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-bold text-content truncate max-w-[16rem]">{file.filename}</span>
-                  <span className="block text-[11px] text-content-muted">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-bold text-content truncate">{file.filename}</span>
+                  <span className="block truncate text-[11px] text-content-muted">
                     {ARTIFACT_LABEL[file.type] || file.type.toUpperCase()} • {formatSize(file.size)} • klik untuk unduh
                   </span>
                 </span>

@@ -227,7 +227,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           </div>
         </div>
 
-        <div className="px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
+        <div className="composer-hint px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
           <span>
             Enter untuk mengirim • Shift + Enter baris baru • seret berkas ke sini atau tempel gambar
           </span>
@@ -235,7 +235,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
       </form>
 
       {/* AI Disclaimer Footer */}
-      <p className="text-center text-[9px] sm:text-[10px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
+      <p className="composer-disclaimer text-center text-[9px] sm:text-[10px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
         SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
       </p>
     </div>

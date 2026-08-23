@@ -27,6 +27,20 @@
           if (isStandalone) {
             root.classList.add('is-pwa-standalone');
           }
+          // Tinggi viewport nyata. Di PWA standalone iOS, 100dvh bisa menyisakan
+          // celah kosong di bawah karena area home-indicator ikut terhitung;
+          // visualViewport memberi angka yang benar-benar terlihat.
+          var setAppHeight = function () {
+            var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+            root.style.setProperty('--app-height', h + 'px');
+          };
+          setAppHeight();
+          window.addEventListener('resize', setAppHeight);
+          window.addEventListener('orientationchange', setAppHeight);
+          if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', setAppHeight);
+          }
+
           var t = localStorage.getItem('sap_assistant_theme');
           if (t !== 'light' && t !== 'dark') t = 'system';
           if (t === 'system') {

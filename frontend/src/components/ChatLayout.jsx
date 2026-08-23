@@ -11,6 +11,7 @@ import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
+import { useCompactLandscape } from '../hooks/useViewport';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
@@ -130,6 +131,9 @@ const ChatLayout = () => {
   });
 
   const { theme, cycleTheme } = useTheme();
+  // Ponsel dalam posisi landscape: lebarnya lolos breakpoint `md`, tetapi
+  // tingginya tidak cukup untuk sidebar permanen — kembalikan ke mode drawer.
+  const compactLandscape = useCompactLandscape();
 
   const messagesEndRef = useRef(null);
 
@@ -593,12 +597,12 @@ const ChatLayout = () => {
   const ThemeIcon = THEME_ICON[theme];
 
   return (
-    <div className="fixed inset-0 h-full h-[100dvh] w-full flex bg-surface text-content overflow-hidden font-sans overscroll-none">
+    <div className="app-shell fixed inset-0 h-full w-full flex bg-surface text-content overflow-hidden font-sans overscroll-none">
 
       {/* Latar gelap untuk drawer sidebar di layar sempit */}
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          className={`fixed inset-0 bg-black/50 z-30 ${compactLandscape ? '' : 'md:hidden'}`}
           onClick={() => setIsSidebarOpen(false)}
           aria-hidden="true"
         />
@@ -606,9 +610,12 @@ const ChatLayout = () => {
 
       {/* ================= SIDEBAR ================= */}
       <aside
-        className={`fixed md:static inset-y-0 left-0 w-72 max-w-[85vw] bg-surface-raised/95 backdrop-blur-xl border-r border-line
-          flex flex-col z-40 shrink-0 transition-transform duration-200 pt-safe
-          ${isSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}`}
+        className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-surface-raised/95 backdrop-blur-xl border-r border-line
+          flex flex-col z-40 shrink-0 transition-transform duration-200 pt-safe overflow-y-auto
+          ${compactLandscape ? '' : 'md:static'}
+          ${isSidebarOpen
+            ? 'translate-x-0 shadow-2xl'
+            : `-translate-x-full ${compactLandscape ? '' : 'md:translate-x-0'}`}`}
         aria-label="Navigasi percakapan"
       >
         <div className="p-3.5 sm:p-4 border-b border-line flex items-center justify-between">
@@ -828,12 +835,12 @@ const ChatLayout = () => {
       {/* ================= AREA CHAT UTAMA ================= */}
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
-        <header className="pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0 max-w-full">
-          <div className="h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full overflow-hidden">
+        <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0 max-w-full">
+          <div className="app-header-row h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full overflow-hidden">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="md:hidden p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0"
+                className={`${compactLandscape ? '' : 'md:hidden'} p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0`}
                 aria-label="Buka menu percakapan"
               >
                 <Menu className="w-4 h-4" aria-hidden="true" />
@@ -949,7 +956,7 @@ const ChatLayout = () => {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+        <div className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
           <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
             {currentMessages.map((msg, index) => (
               <ChatMessage key={index} message={msg} />
