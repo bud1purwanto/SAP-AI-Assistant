@@ -44,6 +44,24 @@ export function clearSession() {
   }
 }
 
+/**
+ * Pesan untuk kegagalan di tingkat jaringan.
+ *
+ * "Periksa koneksi jaringan Anda" menyesatkan: penyebab tersering justru
+ * backend yang tidak berjalan, sementara jaringan penggunanya baik-baik saja.
+ */
+function connectionErrorMessage() {
+  let offline = false;
+  try {
+    offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  } catch { /* navigator tidak tersedia */ }
+
+  // Dinilai saat error terjadi, bukan saat modul dimuat: status koneksi berubah.
+  return offline
+    ? 'Perangkat Anda sedang offline. Periksa koneksi internet.'
+    : 'Server tidak merespons. Pastikan layanan backend berjalan, lalu coba lagi.';
+}
+
 export class ApiError extends Error {
   constructor(message, status) {
     super(message);
@@ -76,7 +94,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     });
   } catch (err) {
     if (err.name === 'AbortError') throw err;
-    throw new ApiError('Tidak dapat terhubung ke server. Periksa koneksi jaringan Anda.', 0);
+    throw new ApiError(connectionErrorMessage(), 0);
   }
 
   if (res.status === 401) {
@@ -209,7 +227,7 @@ export async function uploadAttachment(file, sessionId) {
       body: form,
     });
   } catch {
-    throw new ApiError('Tidak dapat terhubung ke server saat mengunggah berkas.', 0);
+    throw new ApiError(`${connectionErrorMessage()} (gagal saat mengunggah berkas)`, 0);
   }
 
   if (res.status === 401) {
@@ -258,7 +276,7 @@ export async function chatWithProgress(payload, { onProgress, signal } = {}) {
     });
   } catch (err) {
     if (err.name === 'AbortError') throw err;
-    throw new ApiError('Tidak dapat terhubung ke server. Periksa koneksi jaringan Anda.', 0);
+    throw new ApiError(connectionErrorMessage(), 0);
   }
 
   if (res.status === 401) {

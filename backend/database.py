@@ -56,9 +56,14 @@ def get_engine():
             pass
     except Exception as e:
         logger.error(f"Koneksi PostgreSQL gagal: {e}")
+        # Pesan ini sering menjadi satu-satunya petunjuk saat pengembang baru
+        # menjalankan proyek, jadi sebutkan langkah perbaikannya secara konkret.
+        target = db_url.split("@")[-1] if "@" in db_url else db_url
         raise RuntimeError(
-            "Tidak dapat terhubung ke PostgreSQL. Periksa DATABASE_URL dan pastikan "
-            "server database berjalan."
+            f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
+            "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
+            "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
+            "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
         ) from e
 
     _engine = engine

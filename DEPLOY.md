@@ -65,6 +65,52 @@ Buka browser dan akses alamat IP server Anda:
 
 ---
 
+## 🧪 Menjalankan di Komputer Lokal
+
+Aplikasi memerlukan PostgreSQL — dukungan SQLite sudah dihapus, sehingga backend
+**menolak start** bila database tidak terjangkau (ini disengaja: lebih baik gagal
+jelas daripada diam-diam melayani database kosong).
+
+```bash
+docker compose up -d                      # PostgreSQL untuk pengembangan
+cp backend/.env.example backend/.env      # isi seperlunya
+cd backend && pip install -r requirements.txt && uvicorn main:app --reload
+cd frontend && npm install && npm run dev
+```
+
+Bila tampilan "tidak nyambung" (jawaban kosong, riwayat kosong, header
+"Menghubungkan…"), jalankan pemeriksaan cepat:
+
+```bash
+bash scripts/diagnose.sh
+```
+
+Skrip itu memeriksa `.env`, koneksi database, apakah backend merespons, dan
+alamat API yang dipakai frontend.
+
+---
+
+## 🤖 Deployment Otomatis (GitHub Actions)
+
+Setiap push ke `main` menjalankan dua job berurutan:
+
+1. **verify** — build frontend, `oxlint`, dan `pytest` (di runner GitHub).
+2. **deploy** — `deploy/update.sh` di self-hosted runner, **hanya bila verify lulus**.
+
+**Bila deploy tidak berjalan otomatis**, periksa tab **Actions** di GitHub:
+
+| Yang terlihat | Artinya | Tindakan |
+| :--- | :--- | :--- |
+| `verify` merah | Ada test/lint yang gagal | Perbaiki dulu — inilah gunanya gerbang ini |
+| `verify` tidak pernah mulai | Kuota menit runner GitHub habis (repo privat) | Pakai Run workflow manual (lihat bawah) |
+| `deploy` menggantung "Queued" | Self-hosted runner mati | Nyalakan runner di server |
+| `deploy` di-skip | `verify` tidak sukses | Lihat baris pertama |
+
+Untuk deploy darurat tanpa menunggu verifikasi:
+**Actions → Verify & Deploy → Run workflow →** centang *Lewati pemeriksaan*.
+
+---
+
 ## 🛠️ Perintah Manajemen Server yang Sering Digunakan
 
 | Kebutuhan | Perintah di Terminal Server |

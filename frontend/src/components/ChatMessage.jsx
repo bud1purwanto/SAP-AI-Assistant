@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
@@ -219,6 +219,46 @@ const CodeBlock = ({ codeString, ...props }) => {
   );
 };
 
+/**
+ * Pembungkus tabel yang bisa digeser.
+ *
+ * Petunjuk "geser" hanya ditampilkan bila tabelnya memang lebih lebar dari
+ * layar — kalau tidak, petunjuk itu justru mengganggu.
+ */
+const ScrollableTable = ({ children }) => {
+  const scrollRef = useRef(null);
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+
+    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
+    check();
+
+    // Lebar berubah saat layar diputar atau sidebar dibuka.
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="my-3">
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto overscroll-x-contain rounded-xl border border-line shadow-sm"
+      >
+        <table className="w-max min-w-full divide-y divide-line text-xs">{children}</table>
+      </div>
+      {overflows && (
+        <p className="mt-1.5 px-2 text-[11px] text-content-subtle">
+          Geser tabel ke samping untuk melihat kolom lainnya
+        </p>
+      )}
+    </div>
+  );
+};
+
 const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
@@ -344,7 +384,7 @@ const ChatMessage = ({ message }) => {
                   if (inline || isShort) {
                     return (
                       <code 
-                        className="inline-flex items-center font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60 font-semibold shadow-2xs select-all break-all max-w-full whitespace-normal" 
+                        className="inline-flex items-center whitespace-nowrap font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-accent-soft text-accent-soft-fg border border-accent/25 font-semibold select-all" 
                         {...props}
                       >
                         {codeString}
@@ -357,14 +397,24 @@ const ChatMessage = ({ message }) => {
                 h1: ({ children }) => <h1 className="text-base sm:text-lg font-bold text-content mt-4 mb-2 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
                 h2: ({ children }) => <h2 className="text-sm sm:text-base font-bold text-content mt-3 mb-1.5 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
                 h3: ({ children }) => <h3 className="text-xs sm:text-sm font-bold text-content mt-2.5 mb-1 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
-                table: ({ children }) => (
-                  <div className="overflow-x-auto max-w-full my-3 rounded-xl border border-line shadow-sm no-scrollbar">
-                    <table className="min-w-full divide-y divide-line text-xs">{children}</table>
-                  </div>
+                // Tabel lebar harus MELUBER lalu digeser, bukan dipaksa menyusut.
+                // `min-w-full` saja membuat kolom mengecil sampai teksnya pecah
+                // satu huruf per baris di layar ponsel; `w-max` memberi tabel
+                // lebar alaminya sehingga scroll horizontal yang bekerja.
+                table: ({ children }) => <ScrollableTable>{children}</ScrollableTable>,
+                // Header tidak boleh pernah terpotong: itu kunci membaca kolomnya.
+                th: ({ children }) => (
+                  <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content whitespace-nowrap">
+                    {children}
+                  </th>
                 ),
-                th: ({ children }) => <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content">{children}</th>,
+                // Sel diberi lebar minimum agar tidak menyempit menjadi satu
+                // huruf, dan lebar maksimum agar kalimat panjang tetap membungkus
+                // secara wajar alih-alih membuat tabel sangat lebar.
                 td: ({ children }) => (
-                  <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums">{children}</td>
+                  <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums align-top min-w-[5rem] max-w-[16rem]">
+                    {children}
+                  </td>
                 ),
               }}
             >

@@ -27,10 +27,28 @@ ADMIN_USER = "TRSTDEV"
 ADMIN_PASSWORD = "AdminPass123"
 
 
+# Pengujian menjalankan DROP SCHEMA. Nama-nama ini menandakan database
+# produksi, dan menolaknya lebih murah daripada memulihkan data yang hilang.
+FORBIDDEN_DB_HINTS = ("prod", "production", "live")
+
+
+def _guard_test_database(url: str):
+    target = url.rsplit("@", 1)[-1].lower()
+    for hint in FORBIDDEN_DB_HINTS:
+        if hint in target:
+            raise RuntimeError(
+                f"TEST_DATABASE_URL menunjuk ke '{target}', yang tampak seperti database "
+                "produksi. Pengujian menghapus schema ai_assistant — arahkan ke database "
+                "khusus pengujian."
+            )
+
+
 def _reset_schema():
     from sqlalchemy import text
 
     import database
+
+    _guard_test_database(TEST_DB_URL)
 
     engine = database.get_engine()
     with engine.connect() as conn:
