@@ -336,6 +336,14 @@ code, pre, .font-mono {
   }
 }
 
+/* Tombol hapus bawaan WebKit pada input[type=search] tampil berdampingan
+   dengan tombol hapus milik aplikasi — dua tanda silang bersebelahan. */
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 /* ==========================================================================
    PWA & STANDALONE APP DISPLAY TWEAKS (iOS Safari & Android PWA)
    ========================================================================== */

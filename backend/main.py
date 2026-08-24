@@ -47,7 +47,9 @@ from database import (
     purge_expired_uploads,
     register_login_failure,
     rename_chat_session,
+    search_chat_history,
     session_belongs_to,
+    truncate_chat_messages_from,
     update_message_feedback,
     update_system_config,
     update_user_by_admin,
@@ -389,6 +391,31 @@ async def delete_session_endpoint(session_id: str, user: dict = Depends(get_curr
     return {"status": "success"}
 
 
+@app.get("/api/sessions/search")
+async def search_sessions_endpoint(
+    q: str = "",
+    user: dict = Depends(get_current_user),
+):
+    """Cari kata kunci pada judul percakapan dan isi pesan milik user sendiri."""
+    return search_chat_history(user["username"], q)
+
+
+@app.delete("/api/messages/{message_id}")
+async def truncate_from_message_endpoint(
+    message_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Hapus sebuah pesan beserta semua pesan sesudahnya.
+
+    Dipakai sebelum "buat ulang jawaban" dan "edit pertanyaan", agar riwayat
+    yang dikirim ulang ke model tidak memuat versi lama dari titik itu.
+    """
+    session_id = truncate_chat_messages_from(message_id, user["username"])
+    if not session_id:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan.")
+    return {"session_id": session_id}
+
+
 @app.get("/api/sessions/{session_id}/messages")
 async def get_session_messages_endpoint(
     session_id: str,
@@ -629,9 +656,19 @@ async def chat_stream_endpoint(
     async def on_progress(**event):
         await queue.put({"type": "progress", **event})
 
+    async def on_token(text: str = "", reset: bool = False):
+        # `reset` dipakai ketika teks yang sudah mengalir ternyata bukan jawaban
+        # akhir (mis. model justru memanggil tool), sehingga klien menghapusnya.
+        if reset:
+            await queue.put({"type": "token_reset"})
+        elif text:
+            await queue.put({"type": "token", "text": text})
+
     async def run():
         try:
-            response = await _run_chat(request, chat_req, user, on_progress=on_progress)
+            response = await _run_chat(
+                request, chat_req, user, on_progress=on_progress, on_token=on_token
+            )
             await queue.put({"type": "result", "data": response.model_dump()})
         except HTTPException as e:
             await queue.put({"type": "error", "status": e.status_code, "detail": e.detail})
@@ -667,7 +704,13 @@ async def chat_stream_endpoint(
     )
 
 
-async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_progress=None) -> ChatResponse:
+async def _run_chat(
+    request: Request,
+    chat_req: ChatRequest,
+    user: dict,
+    on_progress=None,
+    on_token=None,
+) -> ChatResponse:
     """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
     is_guest = user.get("is_guest", True)
 
@@ -686,6 +729,7 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
             )
         user_role, user_persona = "guest", ""
         active_session_id = None
+        user_message_id = None
     else:
         profile = get_user_by_username(user["username"])
         if not profile:
@@ -693,6 +737,7 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
         user_role = profile["role"]
         user_persona = profile["assistant_persona"]
 
+        user_message_id = None
         active_session_id = chat_req.session_id
         # Sesi yang dikirim klien harus benar-benar milik user tersebut.
         if active_session_id and not session_belongs_to(active_session_id, profile["username"]):
@@ -723,7 +768,7 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
                     }
                     for item in load_uploads(ids, profile["username"])
                 ])
-            add_chat_message(
+            user_message_id = add_chat_message(
                 active_session_id, "user", chat_req.message, attachments=attachments_str
             )
 
@@ -755,7 +800,12 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
         )
 
     response = await process_chat(
-        chat_req, user_role, user_persona, username=user["username"], on_progress=on_progress
+        chat_req,
+        user_role,
+        user_persona,
+        username=user["username"],
+        on_progress=on_progress,
+        on_token=on_token,
     )
 
     if not is_guest and active_session_id:
@@ -767,6 +817,7 @@ async def _run_chat(request: Request, chat_req: ChatRequest, user: dict, on_prog
         response.message_id = msg_id
 
     response.session_id = active_session_id
+    response.user_message_id = user_message_id
     return response
 
 

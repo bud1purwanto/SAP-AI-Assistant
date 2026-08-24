@@ -162,6 +162,46 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_sessions_username
                 ON ai_assistant.chat_sessions (LOWER(username), updated_at DESC);
             """))
+
+            # Waktu percakapan disimpan sebagai TIMESTAMP polos pada versi awal.
+            # Tanpa zona waktu, browser membacanya sebagai waktu lokal: sesi yang
+            # dibuat pagi hari WIB (masih tanggal sebelumnya di UTC) muncul di
+            # kelompok "Kemarin" padahal baru saja dipakai. TIMESTAMPTZ membuat
+            # nilainya membawa offset sehingga pengelompokan mengikuti waktu
+            # pengguna. Nilai lama ditafsirkan memakai zona waktu server yang
+            # dahulu menulisnya — itulah arti sebenarnya dari angka tersebut.
+            #
+            # Konversi HANYA dijalankan bila kolomnya masih bertipe polos.
+            # Menjalankannya ulang pada kolom yang sudah TIMESTAMPTZ akan
+            # menggeser seluruh nilai sebesar offset zona waktu setiap kali
+            # aplikasi dinyalakan, jadi tipenya diperiksa lebih dulu.
+            for _table, _column in (
+                ("chat_sessions", "created_at"),
+                ("chat_sessions", "updated_at"),
+                ("chat_messages", "created_at"),
+            ):
+                _needs_tz = conn.execute(text("""
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'ai_assistant'
+                      AND table_name = :t
+                      AND column_name = :c
+                      AND data_type = 'timestamp without time zone'
+                """), {"t": _table, "c": _column}).fetchone()
+                if not _needs_tz:
+                    continue
+                logger.info(
+                    f"Mengubah ai_assistant.{_table}.{_column} menjadi TIMESTAMPTZ."
+                )
+                conn.execute(text(f"""
+                    ALTER TABLE ai_assistant.{_table}
+                    ALTER COLUMN {_column} TYPE TIMESTAMPTZ
+                    USING {_column} AT TIME ZONE current_setting('TimeZone')
+                """))
+                conn.execute(text(f"""
+                    ALTER TABLE ai_assistant.{_table}
+                    ALTER COLUMN {_column} SET DEFAULT CURRENT_TIMESTAMP
+                """))
             # 5b. Kuota harian pengunjung tamu, ditegakkan di sisi server.
             # localStorage di browser dapat dihapus kapan saja sehingga tidak
             # bisa dijadikan dasar pembatasan.
@@ -875,6 +915,108 @@ def update_message_feedback(message_id: int, feedback: Optional[str], username: 
     except Exception as e:
         logger.error(f"Error update_message_feedback: {e}")
         return False
+
+def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]:
+    """Hapus satu pesan beserta seluruh pesan sesudahnya dalam sesi yang sama.
+
+    Dipakai oleh "buat ulang jawaban" dan "edit pertanyaan": keduanya menulis
+    ulang percakapan mulai dari titik tersebut, sehingga sisa lama harus hilang
+    agar riwayat yang dikirim ke model tidak memuat dua versi jawaban.
+
+    Mengembalikan session_id bila ada yang dihapus, None bila pesan tidak
+    ditemukan atau bukan milik user tersebut.
+    """
+    if not message_id or not username:
+        return None
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT m.session_id
+                FROM ai_assistant.chat_messages m
+                JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                WHERE m.id = :mid AND LOWER(s.username) = LOWER(:u)
+            """), {"mid": message_id, "u": username.strip()}).fetchone()
+            if not row:
+                return None
+            session_id = row.session_id
+            conn.execute(text("""
+                DELETE FROM ai_assistant.chat_messages
+                WHERE session_id = :sid AND id >= :mid
+            """), {"sid": session_id, "mid": message_id})
+            conn.commit()
+            return session_id
+    except Exception as e:
+        logger.error(f"Error truncate_chat_messages_from: {e}")
+        return None
+
+
+def search_chat_history(username: str, query: str, limit: int = 30):
+    """Cari kata kunci pada judul sesi dan isi pesan milik user.
+
+    Hasil dikelompokkan per sesi dan diurutkan dari percakapan terbaru, dengan
+    satu cuplikan pesan yang cocok agar pengguna tahu mengapa sesi itu muncul.
+    """
+    term = (query or "").strip()
+    if not username or len(term) < 2:
+        return []
+    pattern = f"%{term}%"
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT s.session_id,
+                       s.title,
+                       s.updated_at,
+                       (
+                           SELECT m.content
+                           FROM ai_assistant.chat_messages m
+                           WHERE m.session_id = s.session_id
+                             AND m.content ILIKE :q
+                           ORDER BY m.id DESC
+                           LIMIT 1
+                       ) AS snippet,
+                       (
+                           SELECT COUNT(*)
+                           FROM ai_assistant.chat_messages m
+                           WHERE m.session_id = s.session_id
+                             AND m.content ILIKE :q
+                       ) AS hits
+                FROM ai_assistant.chat_sessions s
+                WHERE LOWER(s.username) = LOWER(:u)
+                  AND (
+                      s.title ILIKE :q
+                      OR EXISTS (
+                          SELECT 1 FROM ai_assistant.chat_messages m
+                          WHERE m.session_id = s.session_id AND m.content ILIKE :q
+                      )
+                  )
+                ORDER BY s.updated_at DESC
+                LIMIT :lim
+            """), {"u": username.strip(), "q": pattern, "lim": limit}).fetchall()
+
+            results = []
+            for r in rows:
+                snippet = (r.snippet or "").strip()
+                if snippet:
+                    # Potong di sekitar kata yang cocok supaya cuplikannya relevan.
+                    idx = snippet.lower().find(term.lower())
+                    start = max(0, idx - 40) if idx > -1 else 0
+                    snippet = ("…" if start > 0 else "") + snippet[start:start + 160]
+                    if len(r.snippet or "") > start + 160:
+                        snippet += "…"
+                results.append({
+                    "session_id": r.session_id,
+                    "title": r.title,
+                    "updated_at": _iso(r.updated_at),
+                    "snippet": snippet,
+                    "hits": int(r.hits or 0),
+                })
+            return results
+    except Exception as e:
+        logger.error(f"Error search_chat_history: {e}")
+        return []
+
 
 def session_belongs_to(session_id: str, username: str) -> bool:
     """Cek apakah sesi percakapan dimiliki user tersebut."""

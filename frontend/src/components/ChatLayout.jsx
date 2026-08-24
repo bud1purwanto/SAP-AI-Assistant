@@ -80,6 +80,16 @@ const groupSessionsByDate = (sessionsList) => {
   ].filter((g) => g.items.length > 0);
 };
 
+/**
+ * Selama jawaban mengalir, blok ```sap-artifact masih berupa spesifikasi mentah
+ * yang baru diubah menjadi berkas di akhir. Menampilkannya hanya membingungkan,
+ * jadi bagian itu dipotong sampai jawabannya selesai.
+ */
+const hidePendingArtifact = (text) => {
+  const marker = text.indexOf('```sap-artifact');
+  return marker === -1 ? text : text.slice(0, marker).trimEnd();
+};
+
 const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
 const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
@@ -96,6 +106,11 @@ const ChatLayout = () => {
   // Status loading, progress, error, dan controller per session
   const [sessionLoadingMap, setSessionLoadingMap] = useState({});
   const [sessionProgressMap, setSessionProgressMap] = useState({});
+  // Teks jawaban yang sedang mengalir, per sesi.
+  const [sessionStreamMap, setSessionStreamMap] = useState({});
+  const [sessionQuery, setSessionQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [sessionErrorMap, setSessionErrorMap] = useState({});
   const abortControllersRef = useRef({});
 
@@ -136,16 +151,25 @@ const ChatLayout = () => {
   const compactLandscape = useCompactLandscape();
 
   const messagesEndRef = useRef(null);
+  const scrollContainerRef = useRef(null);
 
   // Key aktif untuk session yang sedang dibuka
   const activeSessionKey = currentSessionId || DRAFT_SESSION_KEY;
   const currentMessages = messagesMap[activeSessionKey] || [];
   const isCurrentLoading = Boolean(sessionLoadingMap[activeSessionKey]);
+  const currentStream = sessionStreamMap[activeSessionKey] || '';
   const currentProgress = sessionProgressMap[activeSessionKey] || null;
   const currentSessionError = sessionErrorMap[activeSessionKey] || null;
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
+  }, []);
+
+  /** Pengguna dianggap "mengikuti" jawaban bila posisinya dekat dasar. */
+  const isNearBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
   // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
@@ -213,6 +237,36 @@ const ChatLayout = () => {
     scrollToBottom(true);
   }, [currentMessages, isCurrentLoading, scrollToBottom]);
 
+  // Jawaban yang mengalir menggeser layar hanya bila pengguna memang sedang
+  // mengikuti di dasar — kalau ia menggulir ke atas untuk membaca ulang,
+  // jangan ditarik kembali. Tanpa animasi agar tidak tersendat per token.
+  useEffect(() => {
+    if (currentStream && isNearBottom()) scrollToBottom(false);
+  }, [currentStream, isNearBottom, scrollToBottom]);
+
+  // Pencarian riwayat. Ditunda sesaat supaya tidak memanggil server pada
+  // setiap ketukan tombol, dan hasil yang basi diabaikan bila kata kuncinya
+  // sudah berubah sebelum jawabannya tiba.
+  useEffect(() => {
+    const term = sessionQuery.trim();
+    if (isGuest || term.length < 2) {
+      setSearchResults(null);
+      setIsSearching(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      api.searchSessions(term)
+        .then((data) => { if (!cancelled) setSearchResults(data || []); })
+        .catch(() => { if (!cancelled) setSearchResults([]); })
+        .finally(() => { if (!cancelled) setIsSearching(false); });
+    }, 250);
+
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [sessionQuery, isGuest]);
+
   /** Kolom sources/artifacts disimpan sebagai JSON string di database. */
   const parseJsonList = (raw) => {
     if (!raw) return [];
@@ -260,7 +314,7 @@ const ChatLayout = () => {
     }
   }, [user, sessionLoadingMap]);
 
-  const fetchSessions = useCallback(async (keepCurrentId = false) => {
+  const fetchSessions = useCallback(async (keepCurrentId = false, silent = false) => {
     if (isGuest) {
       setSessions([]);
       setIsSessionsLoading(false);
@@ -269,7 +323,9 @@ const ChatLayout = () => {
       return;
     }
 
-    setIsSessionsLoading(true);
+    // Penyegaran latar setelah mengirim pesan tidak boleh memunculkan skeleton;
+    // daftarnya sudah benar di layar, hanya judul otomatisnya yang menyusul.
+    if (!silent) setIsSessionsLoading(true);
     try {
       const data = await api.listSessions();
       setSessions(data || []);
@@ -294,7 +350,7 @@ const ChatLayout = () => {
         setError({ message: err.message, retry: () => fetchSessions(keepCurrentId) });
       }
     } finally {
-      setIsSessionsLoading(false);
+      if (!silent) setIsSessionsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGuest, currentSessionId]);
@@ -462,11 +518,17 @@ const ChatLayout = () => {
     setSessionProgressMap((prev) => ({ ...prev, [targetSessionKey]: null }));
   };
 
-  const handleSendMessage = async (text, attachments = []) => {
+  /**
+   * `baseMessages` memaksa titik awal percakapan, dipakai oleh "buat ulang" dan
+   * "edit pertanyaan". Tanpa itu fungsi ini membaca `messagesMap` dari closure
+   * render saat ini — yang masih memuat pesan yang baru saja dipotong, sehingga
+   * jawaban lama muncul kembali alih-alih tergantikan.
+   */
+  const handleSendMessage = async (text, attachments = [], baseMessages = null) => {
     const targetSessionId = currentSessionId;
     const targetKey = targetSessionId || DRAFT_SESSION_KEY;
 
-    const prevMessages = messagesMap[targetKey] || [];
+    const prevMessages = baseMessages ?? (messagesMap[targetKey] || []);
     const outgoing = [...prevMessages, {
       role: 'user',
       content: text,
@@ -484,6 +546,7 @@ const ChatLayout = () => {
       [targetKey]: { stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 },
     }));
     setSessionErrorMap((prev) => ({ ...prev, [targetKey]: null }));
+    setSessionStreamMap((prev) => ({ ...prev, [targetKey]: '' }));
 
     const controller = new AbortController();
     abortControllersRef.current[targetKey] = controller;
@@ -506,6 +569,13 @@ const ChatLayout = () => {
           onProgress: (event) => {
             setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
           },
+          onToken: (chunk) => {
+            setSessionStreamMap((prev) => ({
+              ...prev,
+              // `null` berarti server membatalkan teks yang sudah mengalir.
+              [targetKey]: chunk === null ? '' : (prev[targetKey] || '') + chunk,
+            }));
+          },
         },
       );
 
@@ -521,9 +591,38 @@ const ChatLayout = () => {
 
       const finalSessionId = data.session_id || targetSessionId;
 
+      // Sesi yang baru saja dipakai harus pindah ke urutan teratas — termasuk
+      // percakapan lama yang dilanjutkan hari ini. Diperbarui langsung di sini
+      // supaya tidak perlu menunggu daftar sesi dimuat ulang dari server.
+      if (finalSessionId) {
+        const now = new Date().toISOString();
+        setSessions((prev) =>
+          prev
+            .map((sess) =>
+              (sess.session_id || sess.id) === finalSessionId
+                ? { ...sess, updated_at: now }
+                : sess,
+            )
+            .sort((a, b) =>
+              new Date(b.updated_at || b.created_at || 0) -
+              new Date(a.updated_at || a.created_at || 0),
+            ),
+        );
+      }
+
       setMessagesMap((prev) => {
-        const existingOutgoing = prev[targetKey] || outgoing;
-        const updated = [...existingOutgoing, assistantMsg];
+        // `outgoing` adalah kebenaran untuk pengiriman ini; isi map hanya dipakai
+        // bila ada pesan lain yang menyusul selama permintaan berjalan.
+        const cached = prev[targetKey] || [];
+        const existingOutgoing = cached.length > outgoing.length ? cached : outgoing;
+        // Sematkan id pesan pengguna dari server agar tombol "edit pertanyaan"
+        // tahu dari mana riwayat harus dipotong.
+        const withIds = existingOutgoing.map((m, i) =>
+          i === existingOutgoing.length - 1 && m.role === 'user' && data.user_message_id
+            ? { ...m, id: data.user_message_id }
+            : m,
+        );
+        const updated = [...withIds, assistantMsg];
         if (finalSessionId && finalSessionId !== targetKey) {
           const nextMap = { ...prev, [finalSessionId]: updated };
           if (targetKey === DRAFT_SESSION_KEY) {
@@ -537,7 +636,7 @@ const ChatLayout = () => {
       if (data.session_id && !targetSessionId) {
         setCurrentSessionId(data.session_id);
       }
-      if (!isGuest) fetchSessions(true);
+      if (!isGuest) fetchSessions(true, true);
     } catch (err) {
       if (err.name === 'AbortError') {
         setMessagesMap((prev) => ({
@@ -556,13 +655,79 @@ const ChatLayout = () => {
       setMessagesMap((prev) => ({ ...prev, [targetKey]: outgoing }));
       setSessionErrorMap((prev) => ({
         ...prev,
-        [targetKey]: { message: err.message, retry: () => { setMessagesMap((p) => ({ ...p, [targetKey]: prevMessages })); handleSendMessage(text); } },
+        [targetKey]: { message: err.message, retry: () => { setMessagesMap((p) => ({ ...p, [targetKey]: prevMessages })); handleSendMessage(text, attachments, prevMessages); } },
       }));
     } finally {
       delete abortControllersRef.current[targetKey];
       setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: false }));
       setSessionProgressMap((prev) => ({ ...prev, [targetKey]: null }));
+      setSessionStreamMap((prev) => ({ ...prev, [targetKey]: '' }));
     }
+  };
+
+  /**
+   * Buat ulang jawaban terakhir.
+   *
+   * Jawaban lama dihapus di server lebih dulu; bila tidak, riwayat yang dikirim
+   * ke model akan memuat dua versi jawaban untuk satu pertanyaan yang sama.
+   */
+  const handleRegenerate = async () => {
+    const messages = messagesMap[activeSessionKey] || [];
+    const lastAssistantIndex = messages.map((m) => m.role).lastIndexOf('assistant');
+    if (lastAssistantIndex < 1) return;
+
+    const lastUser = messages[lastAssistantIndex - 1];
+    if (!lastUser || lastUser.role !== 'user') return;
+
+    // Dipotong mulai dari PERTANYAANNYA, bukan dari jawabannya: pertanyaan itu
+    // dikirim ulang di bawah dan akan tersimpan lagi, sehingga bila yang lama
+    // dibiarkan, satu pertanyaan tercatat dua kali di riwayat.
+    const cutFrom = lastUser.id || messages[lastAssistantIndex].id;
+    if (cutFrom && !isGuest) {
+      try {
+        await api.truncateFromMessage(cutFrom);
+      } catch (err) {
+        setSessionErrorMap((prev) => ({
+          ...prev,
+          [activeSessionKey]: { message: `Gagal menyiapkan pembuatan ulang: ${err.message}` },
+        }));
+        return;
+      }
+    }
+
+    // Pertanyaannya sendiri tetap tersimpan; yang dikirim ulang hanya jawabannya.
+    const base = messages.slice(0, lastAssistantIndex - 1);
+    setMessagesMap((prev) => ({ ...prev, [activeSessionKey]: base }));
+    await handleSendMessage(lastUser.content, lastUser.attachments || [], base);
+  };
+
+  /**
+   * Ubah sebuah pertanyaan lalu kirim ulang. Seluruh percakapan sesudah titik
+   * itu ikut dibuang karena sudah tidak lagi menjawab pertanyaan yang sama.
+   */
+  const handleEditMessage = async (message, newText) => {
+    const cleaned = (newText || '').trim();
+    if (!cleaned || cleaned === message.content) return;
+
+    const messages = messagesMap[activeSessionKey] || [];
+    const index = messages.indexOf(message);
+    if (index < 0) return;
+
+    if (message.id && !isGuest) {
+      try {
+        await api.truncateFromMessage(message.id);
+      } catch (err) {
+        setSessionErrorMap((prev) => ({
+          ...prev,
+          [activeSessionKey]: { message: `Gagal menyimpan perubahan: ${err.message}` },
+        }));
+        return;
+      }
+    }
+
+    const base = messages.slice(0, index);
+    setMessagesMap((prev) => ({ ...prev, [activeSessionKey]: base }));
+    await handleSendMessage(cleaned, message.attachments || [], base);
   };
 
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
@@ -656,10 +821,71 @@ const ChatLayout = () => {
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
             <span>Chat Baru</span>
           </button>
+
+          {!isGuest && (
+            <div className="relative mt-2">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-content-subtle"
+                aria-hidden="true"
+              />
+              <input
+                type="search"
+                value={sessionQuery}
+                onChange={(e) => setSessionQuery(e.target.value)}
+                placeholder="Cari percakapan…"
+                aria-label="Cari percakapan"
+                className="w-full rounded-xl border border-line bg-surface-sunken py-2 pr-8 text-xs text-content placeholder:text-content-subtle outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+                style={{ paddingLeft: '2.125rem' }}
+              />
+              {sessionQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSessionQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content"
+                  aria-label="Hapus kata kunci pencarian"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 space-y-3 py-2 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }} aria-label="Riwayat percakapan">
-          {isSessionsLoading ? (
+          {searchResults !== null ? (
+            <div className="space-y-1">
+              <h2 className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                {isSearching
+                  ? 'Mencari…'
+                  : `${searchResults.length} hasil untuk "${sessionQuery.trim()}"`}
+              </h2>
+              {!isSearching && searchResults.length === 0 && (
+                <p className="py-6 text-center text-xs text-content-subtle">
+                  Tidak ada percakapan yang cocok
+                </p>
+              )}
+              {searchResults.map((hit) => (
+                <button
+                  key={hit.session_id}
+                  onClick={() => {
+                    setSessionQuery('');
+                    loadSession(hit.session_id);
+                    setIsSidebarOpen(false);
+                  }}
+                  className="w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover"
+                >
+                  <span className="block truncate text-xs font-semibold text-content">
+                    {hit.title || 'Percakapan SAP'}
+                  </span>
+                  {hit.snippet && (
+                    <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-content-muted">
+                      {hit.snippet}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ) : isSessionsLoading ? (
             <div className="space-y-2 p-2" aria-busy="true" aria-label="Memuat riwayat">
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse" />
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse w-4/5" />
@@ -956,13 +1182,41 @@ const ChatLayout = () => {
           </div>
         )}
 
-        <div className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+        <div ref={scrollContainerRef} className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
           <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
             {currentMessages.map((msg, index) => (
-              <ChatMessage key={index} message={msg} />
+              <ChatMessage
+                key={index}
+                message={msg}
+                // Hanya pertukaran terakhir yang boleh diubah: memotong riwayat
+                // di tengah akan membuang jawaban-jawaban sesudahnya.
+                onRegenerate={
+                  !isCurrentLoading &&
+                  msg.role === 'assistant' &&
+                  index === currentMessages.length - 1
+                    ? handleRegenerate
+                    : undefined
+                }
+                onEdit={
+                  !isCurrentLoading &&
+                  msg.role === 'user' &&
+                  index >= currentMessages.length - 2
+                    ? (text) => handleEditMessage(msg, text)
+                    : undefined
+                }
+              />
             ))}
 
-            {isCurrentLoading && (
+            {/* Jawaban yang sedang ditulis: tampilkan tekstualnya begitu ada,
+                indikator tahapan hanya selama belum ada teks sama sekali. */}
+            {isCurrentLoading && currentStream.trim() && (
+              <ChatMessage
+                message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
+                isStreaming
+              />
+            )}
+
+            {isCurrentLoading && !currentStream.trim() && (
               <ThinkingIndicator progress={currentProgress} onStop={() => stopGeneration(activeSessionKey)} />
             )}
 

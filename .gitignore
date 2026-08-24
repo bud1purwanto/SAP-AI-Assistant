@@ -15,3 +15,7 @@ dist/
 
 # Local SQLite development databases
 *.db
+
+# Lingkungan virtual Python lokal
+.venv/
+venv/

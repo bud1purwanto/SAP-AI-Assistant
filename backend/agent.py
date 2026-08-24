@@ -120,7 +120,7 @@ async def _noop_progress(**kwargs):
 
 
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
-                       username: str = "Guest", on_progress=None) -> ChatResponse:
+                       username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
     # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
     # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
     progress = on_progress or _noop_progress
@@ -131,6 +131,54 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             await progress(stage=stage, label=label, step=step, max_steps=MAX_ITERATIONS)
         except Exception as e:  # progres tidak boleh menjatuhkan percakapan
             logger.warning(f"Gagal mengirim progres: {e}")
+
+    # --- STREAMING TEKS JAWABAN ---
+    #
+    # Model dipanggil dengan .astream() bila pemanggil menyediakan `on_token`,
+    # sehingga jawaban muncul sambil ditulis alih-alih menunggu selesai.
+    #
+    # Satu putaran agen belum tentu menghasilkan jawaban akhir: model bisa
+    # memanggil tool, membocorkan penalaran, atau balasannya kosong. Bila itu
+    # terjadi, teks yang terlanjur mengalir dibatalkan lewat `reset_stream()`
+    # agar antarmuka tidak menampilkan jawaban yang kemudian dibuang.
+    streaming = on_token is not None
+
+    async def emit_token(text: str):
+        try:
+            await on_token(text=text)
+        except Exception as e:
+            logger.warning(f"Gagal mengirim token: {e}")
+
+    async def reset_stream():
+        if streaming:
+            try:
+                await on_token(reset=True)
+            except Exception as e:
+                logger.warning(f"Gagal mereset aliran token: {e}")
+
+    async def call_model(model, msgs):
+        """Panggil model; alirkan teksnya bila streaming diaktifkan.
+
+        Menggabungkan chunk memakai operator `+` milik AIMessageChunk sehingga
+        tool_calls tetap tersusun utuh seperti hasil ainvoke().
+        """
+        if not streaming:
+            return await model.ainvoke(msgs)
+        merged = None
+        try:
+            async for chunk in model.astream(msgs):
+                merged = chunk if merged is None else merged + chunk
+                piece = _extract_text(chunk.content)
+                if piece:
+                    await emit_token(piece)
+        except Exception:
+            # Sebagian teks mungkin sudah terkirim sebelum gagal.
+            await reset_stream()
+            raise
+        if merged is None:
+            # Provider menutup aliran tanpa mengirim apa pun.
+            return await model.ainvoke(msgs)
+        return merged
 
     await report("connecting", "Menyiapkan permintaan…")
 
@@ -524,7 +572,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         active_fallback = llm_fallback_auto
         
         try:
-            response = await active_primary.ainvoke(messages)
+            response = await call_model(active_primary, messages)
         except Exception as primary_err:
             vision_retry_ok = False
             # Model yang tidak mendukung gambar menolak seluruh permintaan.
@@ -536,7 +584,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 messages = _strip_images(messages)
                 attachment_images = []
                 try:
-                    response = await active_primary.ainvoke(messages)
+                    response = await call_model(active_primary, messages)
                 except Exception as retry_err:
                     primary_err = retry_err
                 else:
@@ -546,12 +594,12 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             if not vision_retry_ok:
                 logger.warning(f"Model utama ({primary_model_name}) gagal: {primary_err}. Menjajal model fallback ({fallback_model_name})...")
                 try:
-                    response = await active_fallback.ainvoke(messages)
+                    response = await call_model(active_fallback, messages)
                 except Exception as fallback_err:
                     logger.warning(f"Model fallback dengan tool binding gagal: {fallback_err}. Menjajal fallback plain prompt tanpa tools...")
                     try:
                         # Retry terakhir dengan model fallback tanpa tool binding (mengatasi model gratis yg tdk support function calling)
-                        response = await llm_fallback.ainvoke(messages)
+                        response = await call_model(llm_fallback, messages)
                     except Exception as e:
                         err = str(e)
                         logger.error(f"LLM primary and fallback invoke error: {err}")
@@ -595,6 +643,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
+                    # Yang mengalir tadi adalah panggilan tool berbentuk teks,
+                    # bukan jawaban untuk pengguna.
+                    await reset_stream()
                     await report("tool", _describe_tool(server_name, actual_tool_name, t_args), iteration)
                     tool_result = await mcp_manager.call_tool(
                         server_name, actual_tool_name, t_args, sap_target=sap_target
@@ -628,6 +679,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 for marker in ("thinking process", "identify available tools", "we need to answer")
             ):
                 logger.info("Model membocorkan proses berpikir alih-alih menjawab. Meminta jawaban akhir...")
+                await reset_stream()
                 messages.append(HumanMessage(
                     content=(
                         "SISTEM: Jangan tampilkan analisis internal berbahasa Inggris. Tuliskan jawaban "
@@ -641,6 +693,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             if reply_text.strip():
                 break
             if iteration < max_iterations:
+                await reset_stream()
                 messages.append(HumanMessage(
                     content="Tolong tuliskan jawaban akhir dalam teks biasa (bahasa Indonesia) berdasarkan informasi yang sudah tersedia di atas."
                 ))
@@ -648,6 +701,10 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             reply_text = "Maaf, saya belum bisa merumuskan jawaban. Silakan ulangi atau perjelas pertanyaan Anda."
             break
             
+        # Model kadang menuliskan sedikit teks sebelum memanggil tool; teks itu
+        # bukan jawaban akhir sehingga tidak boleh tertinggal di layar.
+        await reset_stream()
+
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
             tool_args = tool_call["args"]
@@ -692,13 +749,14 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 messages.append(ToolMessage(content=f"System Error: {str(e)}", tool_call_id=tool_id))
     else:
         try:
+            await reset_stream()
             summary_messages = messages + [
                 HumanMessage(content="Berdasarkan seluruh hasil panggilan tool di atas, rangkum dan berikan jawaban akhir yang jelas dan lengkap dalam bahasa Indonesia diawali header box server.")
             ]
             try:
-                final_res = await llm_primary.ainvoke(summary_messages)
+                final_res = await call_model(llm_primary, summary_messages)
             except Exception:
-                final_res = await llm_fallback.ainvoke(summary_messages)
+                final_res = await call_model(llm_fallback, summary_messages)
             reply_text = _extract_text(final_res.content)
             if not reply_text.strip():
                 reply_text = "Maaf, data dari tool sudah terkumpul tetapi rangkuman jawaban tidak dapat diproses."

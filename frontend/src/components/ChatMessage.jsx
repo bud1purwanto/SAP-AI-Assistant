@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Sparkles, Terminal, ThumbsDown, ThumbsUp, User } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 
 const ARTIFACT_ICON = {
@@ -259,12 +259,28 @@ const ScrollableTable = ({ children }) => {
   );
 };
 
-const ChatMessage = ({ message }) => {
+const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
   const [openDetail, setOpenDetail] = useState(null);
   const [feedback, setFeedback] = useState(message.feedback || null);
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const editRef = useRef(null);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    const el = editRef.current;
+    if (!el) return;
+    el.focus();
+    // Kursor diletakkan di akhir teks, bukan menyeleksi semuanya: pengguna
+    // umumnya ingin menyunting, bukan mengetik ulang dari nol.
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [isEditing]);
 
   useEffect(() => {
     if (message.feedback !== undefined) {
@@ -279,6 +295,27 @@ const ChatMessage = ({ message }) => {
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const startEditing = () => {
+    setDraft(message.content);
+    setIsEditing(true);
+  };
+
+  const submitEdit = async () => {
+    const cleaned = draft.trim();
+    setIsEditing(false);
+    if (!cleaned || cleaned === message.content) return;
+    await onEdit(cleaned);
+  };
+
+  const handleRegenerateClick = async () => {
+    setIsRegenerating(true);
+    try {
+      await onRegenerate();
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -319,6 +356,18 @@ const ChatMessage = ({ message }) => {
                 </>
               )}
             </button>
+            {onEdit && !isEditing && (
+              <button
+                type="button"
+                onClick={startEditing}
+                className="flex items-center gap-1 py-0.5 px-1.5 rounded-md text-content-subtle hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-all cursor-pointer"
+                title="Ubah pertanyaan ini"
+                aria-label="Ubah pertanyaan ini"
+              >
+                <Pencil className="w-3 h-3" aria-hidden="true" />
+                <span className="text-[10px] font-medium">Edit</span>
+              </button>
+            )}
             <span className="font-semibold text-content-secondary">Anda</span>
             {timeLabel && <span>{timeLabel}</span>}
           </div>
@@ -333,9 +382,55 @@ const ChatMessage = ({ message }) => {
           )}
 
           {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
+          {isEditing ? (
+            <div className="w-full min-w-0 rounded-3xl rounded-tr-sm border border-accent bg-surface-raised p-2.5 shadow-sm">
+              <textarea
+                ref={editRef}
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${e.target.scrollHeight}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submitEdit();
+                  } else if (e.key === 'Escape') {
+                    setIsEditing(false);
+                  }
+                }}
+                rows={1}
+                aria-label="Ubah pertanyaan"
+                className="max-h-60 w-full resize-none bg-transparent px-2 py-1 text-sm text-content outline-none"
+              />
+              <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={submitEdit}
+                  disabled={!draft.trim() || draft.trim() === message.content}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-xs transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Kirim ulang
+                </button>
+              </div>
+              <p className="px-2 pt-1 text-[10px] text-content-subtle">
+                Jawaban setelah pertanyaan ini akan digantikan.
+              </p>
+            </div>
+          ) : (
           <div className="relative group/userbubble px-4 sm:px-5 py-3 sm:py-3.5 rounded-3xl rounded-tr-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-gradient-to-tr from-indigo-600 via-blue-600 to-indigo-500 text-white shadow-md shadow-indigo-500/15 border border-indigo-400/20 selection:bg-white/20 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
             <p className="whitespace-pre-wrap font-normal select-text break-words [overflow-wrap:anywhere] max-w-full">{message.content}</p>
           </div>
+          )}
         </div>
 
         {/* User Avatar Circle */}
@@ -422,7 +517,15 @@ const ChatMessage = ({ message }) => {
             </ReactMarkdown>
           </div>
           
-          {/* Action Footer Bar */}
+          {isStreaming && (
+            <span
+              className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-accent"
+              aria-hidden="true"
+            />
+          )}
+
+          {/* Action Footer Bar — belum relevan selagi jawaban masih ditulis. */}
+          {!isStreaming && (
           <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
             {message.sources && message.sources.length > 0 ? (
               <button 
@@ -441,6 +544,18 @@ const ChatMessage = ({ message }) => {
             )}
             
             <div className="flex items-center gap-1 bg-surface-sunken p-0.5 rounded-xl border border-line">
+              {onRegenerate && (
+                <button
+                  type="button"
+                  onClick={handleRegenerateClick}
+                  disabled={isRegenerating}
+                  className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Buat ulang jawaban"
+                  aria-label="Buat ulang jawaban"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                </button>
+              )}
               <button 
                 type="button"
                 onClick={handleCopy}
@@ -478,6 +593,7 @@ const ChatMessage = ({ message }) => {
               </button>
             </div>
           </div>
+          )}
         </div>
 
         {/* Berkas hasil (Excel/CSV) yang dibuat asisten */}

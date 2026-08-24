@@ -154,6 +154,12 @@ export const api = {
   listSessions: () => apiFetch('/api/sessions'),
   createSession: (title) => apiFetch('/api/sessions', { method: 'POST', body: { title } }),
   renameSession: (id, title) => apiFetch(`/api/sessions/${id}`, { method: 'PATCH', body: { title } }),
+
+  searchSessions: (q) => apiFetch(`/api/sessions/search?q=${encodeURIComponent(q)}`),
+
+  /** Hapus sebuah pesan beserta semua pesan sesudahnya dalam sesi yang sama. */
+  truncateFromMessage: (messageId) =>
+    apiFetch(`/api/messages/${messageId}`, { method: 'DELETE' }),
   deleteSession: (id) => apiFetch(`/api/sessions/${id}`, { method: 'DELETE' }),
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 
@@ -259,9 +265,12 @@ export async function fetchAttachmentBlob(uploadId) {
  * EventSource tidak dipakai karena tidak dapat mengirim POST maupun header
  * Authorization; aliran SSE dibaca langsung dari body respons fetch.
  *
- * `onProgress` dipanggil untuk setiap tahap. Mengembalikan hasil akhir chat.
+ * `onProgress` dipanggil untuk setiap tahap.
+ * `onToken` dipanggil saat jawaban mengalir: `onToken(teks)` menambahkan teks,
+ * `onToken(null)` membatalkan teks yang sudah mengalir (server memutuskan
+ * potongan itu bukan jawaban akhir). Mengembalikan hasil akhir chat.
  */
-export async function chatWithProgress(payload, { onProgress, signal } = {}) {
+export async function chatWithProgress(payload, { onProgress, onToken, signal } = {}) {
   const token = getToken();
   let res;
   try {
@@ -337,6 +346,8 @@ export async function chatWithProgress(payload, { onProgress, signal } = {}) {
       }
 
       if (event.type === 'progress') onProgress?.(event);
+      else if (event.type === 'token') onToken?.(event.text);
+      else if (event.type === 'token_reset') onToken?.(null);
       else if (event.type === 'result') result = event.data;
       else if (event.type === 'error') failure = new ApiError(event.detail, event.status || 500);
     }

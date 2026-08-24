@@ -88,7 +88,7 @@ def test_client_supplied_history_is_ignored_for_logged_in_users(client, make_use
 
     dilihat = {}
 
-    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None):
+    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None, on_token=None):
         dilihat["history"] = list(chat_req.history)
         return ChatResponse(reply="ok", sources=[], artifacts=[])
 
@@ -119,7 +119,7 @@ def test_history_sent_to_model_stays_within_budget(client, make_user, db, monkey
 
     dilihat = {}
 
-    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None):
+    async def tangkap(chat_req, role, persona, username="Guest", on_progress=None, on_token=None):
         from conversation import trim_history
 
         dipangkas, _ = trim_history(

@@ -40,4 +40,8 @@ class ChatResponse(BaseModel):
     sources: List[SourceReference] = Field(default_factory=list, description="Daftar referensi sumber data yang digunakan")
     session_id: Optional[str] = Field(default=None, description="ID Sesi percakapan yang aktif")
     message_id: Optional[int] = Field(default=None, description="ID pesan di database")
+    user_message_id: Optional[int] = Field(
+        default=None,
+        description="ID pesan pengguna yang memicu jawaban ini; dipakai fitur edit pertanyaan",
+    )
     artifacts: List[GeneratedArtifact] = Field(default_factory=list, description="Berkas yang dihasilkan asisten")

@@ -16,7 +16,7 @@ def slow_agent(monkeypatch):
     """Agen tiruan yang melaporkan beberapa tahap sebelum selesai."""
     import main
 
-    async def fake_process(chat_req, role, persona, username="Guest", on_progress=None):
+    async def fake_process(chat_req, role, persona, username="Guest", on_progress=None, on_token=None):
         for stage, label, step in [
             ("connecting", "Menyiapkan permintaan…", 0),
             ("thinking", "Menganalisis pertanyaan…", 1),
@@ -61,7 +61,7 @@ def test_stream_reports_errors_as_events(client, make_user, monkeypatch):
     """Kegagalan harus sampai ke klien, bukan memutus koneksi begitu saja."""
     import main
 
-    async def failing(chat_req, role, persona, username="Guest", on_progress=None):
+    async def failing(chat_req, role, persona, username="Guest", on_progress=None, on_token=None):
         raise RuntimeError("model tidak tersedia")
 
     monkeypatch.setattr(main, "process_chat", failing)
