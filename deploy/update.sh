@@ -9,26 +9,37 @@ set -e
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "${PROJECT_DIR}"
 
-# Pemeriksaan awal: runner harus bisa menulis ke .git, jika tidak `git fetch`
-# gagal dengan "insufficient permission for adding an object to repository
-# database" di tengah proses. Lebih baik berhenti di sini dengan pesan yang
-# menyebutkan perbaikannya.
-if [ ! -w "${PROJECT_DIR}/.git/objects" ]; then
-    echo "❌ Tidak dapat menulis ke ${PROJECT_DIR}/.git/objects"
-    echo ""
-    echo "   Direktori repositori dimiliki user lain, sehingga proses deploy"
-    echo "   (berjalan sebagai '$(id -un)') tidak dapat memperbarui kode."
-    echo ""
-    echo "   Perbaiki di server dengan menyerahkan kepemilikan ke user runner:"
-    echo "     sudo chown -R $(id -un):$(id -gn) ${PROJECT_DIR}"
-    echo ""
-    exit 1
-fi
+# Catatan tentang izin repositori.
+#
+# Versi sebelumnya memeriksa `[ -w .git/objects ]` lebih dulu. Pemeriksaan itu
+# LOLOS pada run 43 tetapi git tetap gagal: git menulis ke sub-direktori
+# .git/objects/xx dan .git/objects/pack, yang izinnya bisa berbeda dari induknya.
+# Menebak dari bit izin ternyata tidak dapat diandalkan, jadi sekarang kegagalan
+# git yang sesungguhnya yang dibaca lalu diterjemahkan menjadi petunjuk konkret.
 
 echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
 git stash --include-untracked 2>/dev/null || true
-git fetch origin main
+
+_fetch_log="$(mktemp)"
+if ! git fetch origin main 2>"${_fetch_log}"; then
+    cat "${_fetch_log}"
+    if grep -q "insufficient permission\|Permission denied\|failed to write object" "${_fetch_log}"; then
+        echo ""
+        echo "❌ Deploy tidak dapat menulis ke repositori di ${PROJECT_DIR}"
+        echo ""
+        echo "   Direktori ini dimiliki user lain, sedangkan deploy berjalan"
+        echo "   sebagai '$(id -un)'."
+        echo ""
+        echo "   Jalankan di server, sekali saja:"
+        echo "     sudo chown -R $(id -un):$(id -gn) ${PROJECT_DIR}"
+        echo ""
+    fi
+    rm -f "${_fetch_log}"
+    exit 1
+fi
+rm -f "${_fetch_log}"
+
 git reset --hard origin/main
 
 echo "🐍 [2/4] Memeriksa & mengupdate dependensi backend..."
