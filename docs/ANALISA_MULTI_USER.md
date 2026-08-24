@@ -335,3 +335,76 @@ Istilah arsitektur (MCP, RAG, ECC, SID, "Agent v1.0") dikeluarkan dari permukaan
 ### Masih terbuka
 
 TLS di depan Nginx, rotasi kredensial yang pernah ter-commit, token yang masih disimpan di `localStorage` (sebaiknya menyusul bersama TLS), dan fitur produk pada bagian C.
+
+---
+
+## Lampiran D — Pengujian dan migrasi skema
+
+### Lapisan pengujian
+
+| Lapisan | Perintah | Yang diperiksa |
+|---|---|---|
+| Backend | `pytest` | Auth, isolasi antar-user, riwayat, artefak, unggahan, SSE, migrasi |
+| Lint & build frontend | `npx oxlint src/` lalu `npm run build` | Variabel tak terdeklarasi, kompilasi |
+| End-to-end | `npm run test:e2e` (di `frontend/`) | Alur pengguna di browser sungguhan |
+
+### Mengapa lapisan end-to-end ada
+
+Dua bug pada fitur *edit pertanyaan* dan *buat ulang jawaban* lolos dari seluruh
+tes backend dan dari pembacaan kode:
+
+1. Edit tidak menghapus pertukaran lama — `handleSendMessage` membaca state React
+   dari closure render sebelumnya, yang masih memuat pesan yang baru dipotong.
+2. Buat ulang menyimpan pertanyaan dua kali di database — riwayat dipotong mulai
+   dari jawabannya, padahal pertanyaannya dikirim ulang dan tersimpan lagi.
+
+Keduanya hanya muncul ketika aplikasi benar-benar dijalankan. Tes backend tidak
+dapat melihatnya karena keduanya lahir dari perilaku antarmuka, bukan dari API.
+
+### Menjalankan tes end-to-end secara lokal
+
+```bash
+docker compose up -d                       # PostgreSQL
+createdb sapai_e2e                         # sekali saja
+cd frontend && npx playwright install chromium
+npm run test:e2e
+```
+
+Skrip `scripts/e2e.sh` menyalakan backend dengan **agen tiruan**
+(`tests/e2e/stub_backend.py`) — hanya `process_chat` yang diganti, selebihnya
+kode produksi. Memanggil model sungguhan akan membuat tes lambat, berbiaya, dan
+hasilnya berubah-ubah.
+
+`E2E_DATABASE_URL` ditolak bila mengandung kata `prod`, `production`, atau
+`live`, karena tesnya menulis dan menghapus data.
+
+### Migrasi skema
+
+Perubahan skema yang **mengubah data** ditulis di `backend/migrations.py`, bukan
+sebagai DDL idempoten di dalam `init_db()`. Pembeda keduanya sederhana:
+
+- `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT
+  EXISTS` — aman dijalankan berulang, boleh tetap di `init_db()`.
+- Apa pun yang mengubah isi kolom — **wajib** lewat ledger migrasi.
+
+Contoh nyata: konversi `TIMESTAMP` → `TIMESTAMPTZ`. Dijalankan dua kali, ia
+menggeser seluruh nilai waktu sebesar offset zona waktu — setiap restart.
+
+Menambah migrasi baru:
+
+```python
+def _m0004_nama_singkat(conn):
+    """Satu kalimat: apa yang diubah dan mengapa."""
+    conn.execute(text("..."))
+
+MIGRATIONS = [
+    ...,
+    ("0004_nama_singkat", _m0004_nama_singkat),
+]
+```
+
+Satu peringatan untuk migrasi yang **dipindahkan** dari `init_db()`: server yang
+sudah berjalan mungkin telah menjalankannya lewat kode versi lama, sementara
+catatannya belum ada. Ledger yang kosong tidak boleh diartikan sebagai "belum
+pernah dijalankan" — migrasi seperti itu harus memeriksa keadaan database
+sendiri sebelum bertindak (lihat `_m0001_waktu_percakapan_pakai_zona_waktu`).

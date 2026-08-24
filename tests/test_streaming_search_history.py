@@ -207,3 +207,46 @@ def test_migrasi_zona_waktu_tidak_menggeser_nilai_saat_diulang(client, make_user
 
     sesudah = client.get("/api/sessions", headers=auth).json()[0]["updated_at"]
     assert sesudah == sebelum
+
+
+# --------------------------------------------------------------------------
+# Penilaian jawaban (layar admin)
+# --------------------------------------------------------------------------
+
+def test_admin_melihat_jawaban_yang_dinilai_beserta_pertanyaannya(
+    client, admin_auth, make_user, simple_agent
+):
+    auth = make_user("penilai1")
+    hasil = _kirim(client, auth, "kenapa stok tidak cocok")
+    client.post(f"/api/messages/{hasil['message_id']}/feedback",
+                json={"feedback": "dislike"}, headers=auth)
+
+    data = client.get("/api/admin/feedback", params={"kind": "dislike"}, headers=admin_auth)
+    assert data.status_code == 200
+    body = data.json()
+    assert body["total"] >= 1
+
+    item = next(i for i in body["items"] if i["message_id"] == hasil["message_id"])
+    # Angka kepuasan saja tidak cukup: admin perlu tahu jawaban apa atas pertanyaan apa.
+    assert item["question"] == "kenapa stok tidak cocok"
+    assert item["answer"] == hasil["reply"]
+    assert item["username"].lower() == "penilai1"
+
+
+def test_daftar_penilaian_hanya_untuk_admin(client, make_user):
+    auth = make_user("penilai2")
+    assert client.get("/api/admin/feedback", headers=auth).status_code == 403
+    assert client.get("/api/admin/feedback").status_code == 401
+
+
+def test_penilaian_like_dan_dislike_terpisah(client, admin_auth, make_user, simple_agent):
+    auth = make_user("penilai3")
+    suka = _kirim(client, auth, "pertanyaan yang dijawab baik")
+    client.post(f"/api/messages/{suka['message_id']}/feedback",
+                json={"feedback": "like"}, headers=auth)
+
+    likes = client.get("/api/admin/feedback", params={"kind": "like"}, headers=admin_auth).json()
+    dislikes = client.get("/api/admin/feedback", params={"kind": "dislike"}, headers=admin_auth).json()
+
+    assert suka["message_id"] in [i["message_id"] for i in likes["items"]]
+    assert suka["message_id"] not in [i["message_id"] for i in dislikes["items"]]

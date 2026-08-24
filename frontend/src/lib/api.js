@@ -175,6 +175,8 @@ export const api = {
     }),
 
   adminStats: () => apiFetch('/api/admin/stats'),
+  adminFeedback: (kind = 'dislike', limit = 50) =>
+    apiFetch(`/api/admin/feedback?kind=${kind}&limit=${limit}`),
   adminUsers: () => apiFetch('/api/admin/users'),
   adminCreateUser: (payload) => apiFetch('/api/admin/users', { method: 'POST', body: payload }),
   adminUpdateUser: (username, payload) =>

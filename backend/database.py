@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, text
 
 from auth import hash_password, is_bcrypt_hash, verify_password
 from config import settings
+from migrations import run_migrations
 
 logger = logging.getLogger(__name__)
 
@@ -163,45 +164,6 @@ def init_db():
                 ON ai_assistant.chat_sessions (LOWER(username), updated_at DESC);
             """))
 
-            # Waktu percakapan disimpan sebagai TIMESTAMP polos pada versi awal.
-            # Tanpa zona waktu, browser membacanya sebagai waktu lokal: sesi yang
-            # dibuat pagi hari WIB (masih tanggal sebelumnya di UTC) muncul di
-            # kelompok "Kemarin" padahal baru saja dipakai. TIMESTAMPTZ membuat
-            # nilainya membawa offset sehingga pengelompokan mengikuti waktu
-            # pengguna. Nilai lama ditafsirkan memakai zona waktu server yang
-            # dahulu menulisnya — itulah arti sebenarnya dari angka tersebut.
-            #
-            # Konversi HANYA dijalankan bila kolomnya masih bertipe polos.
-            # Menjalankannya ulang pada kolom yang sudah TIMESTAMPTZ akan
-            # menggeser seluruh nilai sebesar offset zona waktu setiap kali
-            # aplikasi dinyalakan, jadi tipenya diperiksa lebih dulu.
-            for _table, _column in (
-                ("chat_sessions", "created_at"),
-                ("chat_sessions", "updated_at"),
-                ("chat_messages", "created_at"),
-            ):
-                _needs_tz = conn.execute(text("""
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_schema = 'ai_assistant'
-                      AND table_name = :t
-                      AND column_name = :c
-                      AND data_type = 'timestamp without time zone'
-                """), {"t": _table, "c": _column}).fetchone()
-                if not _needs_tz:
-                    continue
-                logger.info(
-                    f"Mengubah ai_assistant.{_table}.{_column} menjadi TIMESTAMPTZ."
-                )
-                conn.execute(text(f"""
-                    ALTER TABLE ai_assistant.{_table}
-                    ALTER COLUMN {_column} TYPE TIMESTAMPTZ
-                    USING {_column} AT TIME ZONE current_setting('TimeZone')
-                """))
-                conn.execute(text(f"""
-                    ALTER TABLE ai_assistant.{_table}
-                    ALTER COLUMN {_column} SET DEFAULT CURRENT_TIMESTAMP
-                """))
             # 5b. Kuota harian pengunjung tamu, ditegakkan di sisi server.
             # localStorage di browser dapat dihapus kapan saja sehingga tidak
             # bisa dijadikan dasar pembatasan.
@@ -398,6 +360,10 @@ def init_db():
                     "pp_content": DEFAULT_SKILL_PP
                 })
                 logger.info("Default skills (SAP ABAP, SAP PP) berhasil di-seed.")
+
+            # Perubahan skema yang mengubah data dijalankan lewat ledger migrasi,
+            # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
+            run_migrations(conn)
 
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
@@ -1016,6 +982,71 @@ def search_chat_history(username: str, query: str, limit: int = 30):
     except Exception as e:
         logger.error(f"Error search_chat_history: {e}")
         return []
+
+
+def get_feedback_messages(kind: str = "dislike", limit: int = 50, offset: int = 0):
+    """Daftar jawaban yang dinilai pengguna, beserta pertanyaan pemicunya.
+
+    Dashboard sebelumnya hanya menampilkan JUMLAH like/dislike. Angka itu tidak
+    bisa ditindaklanjuti: untuk memperbaiki persona atau skill, admin perlu tahu
+    jawaban mana yang dinilai kurang sesuai dan atas pertanyaan apa. Pertanyaan
+    pemicu diambil sebagai pesan user terakhir sebelum jawaban tersebut.
+    """
+    if kind not in ("dislike", "like"):
+        kind = "dislike"
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT m.id,
+                       m.content,
+                       m.feedback,
+                       m.created_at,
+                       s.session_id,
+                       s.title,
+                       s.username,
+                       (
+                           SELECT q.content
+                           FROM ai_assistant.chat_messages q
+                           WHERE q.session_id = m.session_id
+                             AND q.id < m.id
+                             AND q.role = 'user'
+                           ORDER BY q.id DESC
+                           LIMIT 1
+                       ) AS question
+                FROM ai_assistant.chat_messages m
+                JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                WHERE m.feedback = :fb
+                ORDER BY m.id DESC
+                LIMIT :lim OFFSET :off
+            """), {"fb": kind, "lim": limit, "off": offset}).fetchall()
+
+            total = conn.execute(
+                text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = :fb"),
+                {"fb": kind},
+            ).scalar() or 0
+
+            return {
+                "total": int(total),
+                "items": [
+                    {
+                        "message_id": r.id,
+                        "answer": r.content,
+                        "question": r.question,
+                        "feedback": r.feedback,
+                        "created_at": _iso(r.created_at),
+                        "session_id": r.session_id,
+                        "session_title": r.title,
+                        "username": r.username,
+                    }
+                    for r in rows
+                ],
+            }
+    except Exception as e:
+        logger.error(f"Error get_feedback_messages: {e}")
+        return {"total": 0, "items": []}
 
 
 def session_belongs_to(session_id: str, username: str) -> bool:

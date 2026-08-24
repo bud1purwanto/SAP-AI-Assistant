@@ -37,6 +37,7 @@ from database import (
     get_chat_messages,
     get_backend_info,
     get_chat_sessions,
+    get_feedback_messages,
     get_system_config,
     get_user_by_username,
     init_db,
@@ -447,6 +448,21 @@ async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
     stats = get_admin_system_stats()
     stats["mcp_status"] = await mcp_manager.check_servers_status()
     return stats
+
+
+@app.get("/api/admin/feedback")
+async def get_admin_feedback_endpoint(
+    kind: str = "dislike",
+    limit: int = 50,
+    offset: int = 0,
+    admin: dict = Depends(require_superadmin),
+):
+    """Jawaban yang dinilai pengguna, beserta pertanyaan yang memicunya.
+
+    Angka kepuasan pada /api/admin/stats tidak dapat ditindaklanjuti tanpa daftar
+    ini: perbaikan persona dan skill berangkat dari isi jawaban yang di-👎.
+    """
+    return get_feedback_messages(kind=kind, limit=limit, offset=offset)
 
 
 @app.get("/api/admin/users")

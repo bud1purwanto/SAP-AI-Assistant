@@ -12,6 +12,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   // Stats State
   const [stats, setStats] = useState(null);
 
+  // Feedback State — daftar jawaban yang dinilai pengguna
+  const [feedbackKind, setFeedbackKind] = useState('dislike');
+  const [feedbackData, setFeedbackData] = useState(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+
   // Users State
   const [usersList, setUsersList] = useState([]);
   const [userSearch, setUserSearch] = useState('');
@@ -56,6 +61,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       setStats(await api.adminStats());
     } catch (err) {
       console.error("Gagal load stats:", err);
+    }
+  };
+
+  const fetchFeedback = async (kind) => {
+    setFeedbackLoading(true);
+    try {
+      setFeedbackData(await api.adminFeedback(kind));
+    } catch (err) {
+      console.error("Gagal load feedback:", err);
+      setFeedbackData({ total: 0, items: [] });
+    } finally {
+      setFeedbackLoading(false);
     }
   };
 
@@ -124,6 +141,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchAuditSessions();
     }
   }, [isOpen, user]);
+
+  // Daftar feedback bisa panjang, jadi baru diambil ketika tabnya dibuka.
+  useEffect(() => {
+    if (isOpen && user?.role === 'superadmin' && activeTab === 'feedback') {
+      fetchFeedback(feedbackKind);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user, activeTab, feedbackKind]);
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
@@ -416,6 +441,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           >
             <Server className="w-4 h-4 shrink-0" />
             <span>MCP &amp; AI Provider</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('feedback'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'feedback'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <ThumbsDown className="w-4 h-4 shrink-0" />
+            <span>Penilaian Jawaban</span>
           </button>
 
           <button
@@ -1510,6 +1547,119 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             )}
 
             {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
+            {/* TAB: PENILAIAN JAWABAN — jawaban mana yang dinilai pengguna.
+                Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
+            {activeTab === 'feedback' && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-content">Penilaian Jawaban</h3>
+                    <p className="mt-0.5 text-xs text-content-muted">
+                      Jawaban yang dinilai pengguna beserta pertanyaan pemicunya — bahan untuk
+                      memperbaiki persona global dan skill.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-xl border border-line bg-surface-sunken p-0.5">
+                      {[
+                        { key: 'dislike', label: 'Kurang sesuai', icon: ThumbsDown },
+                        { key: 'like', label: 'Membantu', icon: ThumbsUp },
+                      ].map((opt) => {
+                        const Icon = opt.icon;
+                        return (
+                          <button
+                            key={opt.key}
+                            onClick={() => setFeedbackKind(opt.key)}
+                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                              feedbackKind === opt.key
+                                ? 'bg-surface-raised text-content shadow-xs'
+                                : 'text-content-muted hover:text-content'
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => fetchFeedback(feedbackKind)}
+                      className="rounded-xl border border-line p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+                      title="Muat ulang"
+                      aria-label="Muat ulang daftar penilaian"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${feedbackLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {feedbackLoading && !feedbackData ? (
+                  <div className="space-y-3" aria-busy="true">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className="h-28 animate-pulse rounded-2xl bg-surface-sunken" />
+                    ))}
+                  </div>
+                ) : !feedbackData || feedbackData.items.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-line py-14 text-center">
+                    <MessageSquare className="mx-auto mb-2 h-7 w-7 text-content-subtle" />
+                    <p className="text-sm font-semibold text-content">Belum ada penilaian</p>
+                    <p className="mt-1 text-xs text-content-muted">
+                      {feedbackKind === 'dislike'
+                        ? 'Belum ada jawaban yang ditandai kurang sesuai.'
+                        : 'Belum ada jawaban yang ditandai membantu.'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-content-muted">
+                      Menampilkan {feedbackData.items.length} dari {feedbackData.total} penilaian.
+                    </p>
+
+                    <div className="space-y-3">
+                      {feedbackData.items.map((item) => (
+                        <div
+                          key={item.message_id}
+                          className="rounded-2xl border border-line bg-surface p-4 transition-colors hover:border-indigo-400/50"
+                        >
+                          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-content-muted">
+                            <span className="flex items-center gap-1.5 font-semibold text-content-secondary">
+                              <UserCheck className="h-3.5 w-3.5" />
+                              {item.username}
+                            </span>
+                            <span className="truncate max-w-[16rem]">{item.session_title}</span>
+                            {item.created_at && (
+                              <span>{new Date(item.created_at).toLocaleString('id-ID')}</span>
+                            )}
+                          </div>
+
+                          {item.question && (
+                            <div className="mb-2.5 rounded-xl bg-surface-sunken px-3 py-2">
+                              <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                                Pertanyaan
+                              </p>
+                              <p className="whitespace-pre-wrap text-xs text-content-secondary">
+                                {item.question}
+                              </p>
+                            </div>
+                          )}
+
+                          <div>
+                            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                              Jawaban asisten
+                            </p>
+                            <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-content">
+                              {item.answer}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {activeTab === 'audit' && (
               <div className="h-full flex flex-col space-y-4 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line shrink-0">

@@ -69,7 +69,7 @@ jobs:
       # menggagalkan job, sementara peringatan gaya penulisan tidak.
       - name: Lint frontend
         working-directory: frontend
-        run: npx oxlint src/
+        run: npx oxlint src/ e2e/
 
       - name: Build frontend
         working-directory: frontend
@@ -90,3 +90,30 @@ jobs:
           JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
           BOOTSTRAP_ADMIN_PASSWORD: AdminPass123
         run: pytest
+
+      # Tes end-to-end menjalankan aplikasi sungguhan (backend + frontend hasil
+      # build) di dalam browser. Dua bug pada fitur edit/buat-ulang pernah lolos
+      # dari seluruh tes backend dan hanya terlihat di lapisan ini.
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Create E2E database
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE sapai_e2e'
+
+      - name: Run end-to-end tests
+        env:
+          E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sapai_e2e
+          JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
+          E2E_ADMIN_PASSWORD: AdminPass123
+        run: bash scripts/e2e.sh
+
+      - name: Upload E2E report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
