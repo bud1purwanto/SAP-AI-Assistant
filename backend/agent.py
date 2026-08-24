@@ -11,6 +11,13 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Penanda yang membuat teks perlu dibersihkan sebelum ditampilkan. Selama
+# tidak ada satu pun di dalamnya, potongan aliran dapat diteruskan apa adanya.
+_PERLU_BERSIH = re.compile(r'<think|```|thinking process|let me think', re.IGNORECASE)
+_THINK_OPEN = re.compile(r'<think(?:ing)?>', re.IGNORECASE)
+_THINK_CLOSE = re.compile(r'</think(?:ing)?>', re.IGNORECASE)
+
+
 def _clean_thinking_process(text: str) -> str:
     """Buang jejak penalaran internal model tanpa merusak isi jawaban.
 
@@ -41,6 +48,28 @@ def _clean_thinking_process(text: str) -> str:
     text = re.sub(r'```(?:abap|query|json)?\s*(?:sap__|rag__)\w+\s*\(.*?```', '', text, flags=re.DOTALL | re.IGNORECASE)
 
     return text.strip()
+
+
+def _chunk_text(content) -> str:
+    """Teks mentah dari satu potongan aliran, tanpa pembersihan apa pun.
+
+    `_extract_text` tidak boleh dipakai per potongan: ia diakhiri `.strip()`,
+    sehingga spasi di tepi setiap potongan hilang dan kata-kata menyatu —
+    "Stok material SRRPAI" menjadi "StokmaterialSRRPAI". Regex pembersihnya juga
+    mengasumsikan teks utuh, sehingga penanda yang terbelah antar potongan tidak
+    dikenali. Pembersihan dilakukan sekali di akhir atas teks yang sudah lengkap.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for p in content:
+            if isinstance(p, str):
+                parts.append(p)
+            elif isinstance(p, dict):
+                parts.append(p.get("text") or p.get("content") or "")
+        return "".join(parts)
+    return str(content or "")
 
 
 def _extract_text(content) -> str:
@@ -161,16 +190,53 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
         Menggabungkan chunk memakai operator `+` milik AIMessageChunk sehingga
         tool_calls tetap tersusun utuh seperti hasil ainvoke().
+
+        Teks dikirim apa adanya. Potongan tidak boleh dibersihkan satu per satu
+        (lihat `_chunk_text`); yang tampil di layar diganti oleh jawaban final
+        yang sudah dibersihkan begitu permintaan selesai. Satu-satunya yang
+        ditahan di sini adalah isi blok penalaran <think>, karena membiarkannya
+        muncul lalu menghilang justru membingungkan.
         """
         if not streaming:
             return await model.ainvoke(msgs)
+
         merged = None
+        terkumpul = ""
+        terkirim = ""
         try:
             async for chunk in model.astream(msgs):
                 merged = chunk if merged is None else merged + chunk
-                piece = _extract_text(chunk.content)
-                if piece:
-                    await emit_token(piece)
+                potongan = _chunk_text(chunk.content)
+                if not potongan:
+                    continue
+                terkumpul += potongan
+
+                # Jalur cepat: selama tidak ada penanda yang perlu dibersihkan,
+                # potongan diteruskan apa adanya. Tanpa ini setiap potongan akan
+                # memicu regex atas seluruh teks — biaya kuadratik pada jawaban
+                # panjang.
+                if not _PERLU_BERSIH.search(terkumpul):
+                    terkirim += potongan
+                    await emit_token(potongan)
+                    continue
+
+                # Tahan selama blok penalaran belum ditutup.
+                if _THINK_OPEN.search(terkumpul) and not _THINK_CLOSE.search(terkumpul):
+                    continue
+
+                tampil = _clean_thinking_process(terkumpul)
+                if tampil == terkirim:
+                    continue
+                if tampil.startswith(terkirim):
+                    await emit_token(tampil[len(terkirim):])
+                else:
+                    # Pembersihan membuang bagian yang sudah tampil di layar
+                    # (mis. blok penalaran baru saja ditutup): mulai dari awal
+                    # daripada meninggalkan teks yang keliru.
+                    await reset_stream()
+                    if tampil:
+                        await emit_token(tampil)
+                terkirim = tampil
         except Exception:
             # Sebagian teks mungkin sudah terkirim sebelum gagal.
             await reset_stream()
