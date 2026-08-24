@@ -331,9 +331,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen h-screen overflow-hidden text-content animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
+      style={{ height: 'var(--app-height, 100dvh)' }}
+    >
       {/* Header Modal */}
-      <div className="flex items-center justify-between px-5 sm:px-8 py-3.5 border-b border-line bg-surface shrink-0">
+      {/* Di PWA standalone, `inset-0` mencakup area status bar sehingga judul dan
+          tombol tutup tertimpa jam serta ikon baterai — tombolnya menjadi tidak
+          dapat ditekan. Padding atas mengikuti safe-area perangkat. */}
+      <div
+        className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line bg-surface shrink-0"
+        style={{ paddingTop: 'max(0.875rem, var(--sat))' }}
+      >
         <div className="flex items-center gap-3 min-w-0 pr-4">
           <div className="p-2 rounded-xl bg-indigo-600/15 text-indigo-500 border border-indigo-500/25 flex items-center justify-center shrink-0 shadow-sm">
             <ShieldCheck className="w-5 h-5" />
@@ -350,7 +359,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         
         <button 
           onClick={onClose}
-          className="p-1.5 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
+          className="-mr-1 p-3 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
           aria-label="Tutup Dashboard"
         >
           <X className="w-5 h-5" />
@@ -788,8 +797,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
@@ -881,8 +890,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
@@ -1133,8 +1142,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: TAMBAH SKILL */}
                 {isAddSkillOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah Skill Baru
@@ -1223,8 +1232,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT SKILL */}
                 {editingSkill && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[90vh] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Skill '{editingSkill.name}'
