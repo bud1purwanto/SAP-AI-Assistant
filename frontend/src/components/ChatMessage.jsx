@@ -3,6 +3,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
+import MermaidDiagram from './MermaidDiagram';
+import UsagePill from './UsagePill';
 
 const ARTIFACT_ICON = {
   xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
@@ -476,6 +478,12 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
                   const isMultiLine = codeString.includes('\n');
                   const isShort = !isMultiLine && codeString.length <= 60;
 
+                  // Blok ```mermaid digambar sebagai bagan, bukan ditampilkan
+                  // sebagai kode. Penanda bahasanya ada di className.
+                  if (!inline && /language-mermaid/.test(_className || '')) {
+                    return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
+                  }
+
                   if (inline || isShort) {
                     return (
                       <code 
@@ -601,6 +609,9 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
           </div>
           )}
         </div>
+
+        {/* Biaya dan kecepatan permintaan ini — hanya untuk jawaban yang sudah selesai. */}
+        {!isStreaming && <UsagePill usage={message.usage} />}
 
         {/* Berkas hasil (Excel/CSV) yang dibuat asisten */}
         {message.artifacts && message.artifacts.length > 0 && (

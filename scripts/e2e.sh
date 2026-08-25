@@ -31,10 +31,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Kuota tamu dinaikkan khusus untuk pengujian. Dengan nilai bawaan, tes yang
+# berjalan sebagai tamu akan kehabisan kuota di tengah rangkaian: pesannya
+# ditolak 429 dan gejalanya menyerupai fitur yang rusak, padahal bukan.
 echo "▶ Menjalankan backend (agen tiruan) di :${BACKEND_PORT}…"
 DATABASE_URL="$E2E_DATABASE_URL" \
 JWT_SECRET="${JWT_SECRET:-e2e-secret-e2e-secret-e2e-secret-123}" \
 BOOTSTRAP_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-AdminPass123}" \
+GUEST_DAILY_LIMIT="${E2E_GUEST_LIMIT:-500}" \
     "$PYTHON" -m uvicorn tests.e2e.stub_backend:app \
     --host 127.0.0.1 --port "$BACKEND_PORT" --log-level warning &
 pids+=($!)

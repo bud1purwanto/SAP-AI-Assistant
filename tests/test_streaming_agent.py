@@ -123,3 +123,68 @@ def test_tanpa_on_token_tetap_memakai_ainvoke(monkeypatch):
     assert model.ainvoke_dipanggil == 1
     assert model.astream_dipanggil == 0
     assert hasil.reply == "Jawaban tanpa streaming."
+
+
+# --------------------------------------------------------------------------
+# Statistik pemakaian (token, waktu, panggilan tool)
+# --------------------------------------------------------------------------
+
+class FakeModelDenganUsage(FakeStreamingModel):
+    """Model yang melaporkan pemakaian token seperti provider sungguhan."""
+
+    def __init__(self, potongan, usage):
+        super().__init__(potongan)
+        self.usage = usage
+
+    def _pesan(self, teks, terakhir):
+        chunk = AIMessageChunk(content=teks, tool_calls=[])
+        if terakhir:
+            chunk.usage_metadata = self.usage
+        return chunk
+
+    async def astream(self, msgs):
+        self.astream_dipanggil += 1
+        for i, teks in enumerate(self.potongan):
+            yield self._pesan(teks, i == len(self.potongan) - 1)
+
+    async def ainvoke(self, msgs):
+        self.ainvoke_dipanggil += 1
+        return self._pesan("".join(self.potongan), True)
+
+
+def test_pemakaian_token_dilaporkan_apa_adanya_dari_provider(monkeypatch):
+    usage = {
+        "input_tokens": 16000,
+        "output_tokens": 250,
+        "total_tokens": 16250,
+        "input_token_details": {"cache_read": 12000},
+    }
+    model = FakeModelDenganUsage(["Stok ", "250 PC."], usage)
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage is not None
+    assert hasil.usage.prompt_tokens == 16000
+    assert hasil.usage.completion_tokens == 250
+    assert hasil.usage.total_tokens == 16250
+    assert hasil.usage.cached_tokens == 12000
+    assert hasil.usage.model == "model-uji"
+
+
+def test_waktu_proses_selalu_terisi(monkeypatch):
+    """Waktu diukur sendiri oleh server, jadi tersedia walau provider diam."""
+    model = FakeStreamingModel(["Jawaban singkat."])
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.latency_ms is not None
+    assert hasil.usage.latency_ms >= 0
+
+
+def test_token_dibiarkan_kosong_bila_provider_tidak_melaporkan(monkeypatch):
+    """Perkiraan lokal akan meleset karena tokenizer tiap model berbeda;
+    angka yang salah lebih menyesatkan daripada tidak ada angka."""
+    model = FakeStreamingModel(["Jawaban tanpa metadata."])
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.prompt_tokens is None
+    assert hasil.usage.total_tokens is None
+    assert hasil.usage.cached_tokens is None

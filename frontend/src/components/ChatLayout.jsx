@@ -586,6 +586,7 @@ const ChatLayout = () => {
         sources: data.sources || [],
         artifacts: data.artifacts || [],
         feedback: null,
+        usage: data.usage || null,
         created_at: new Date().toISOString(),
       };
 

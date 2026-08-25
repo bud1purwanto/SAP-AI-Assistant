@@ -1,12 +1,13 @@
 import json
 import logging
+import time
 import re
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import trim_history
-from models import ChatRequest, ChatResponse, SourceReference
+from models import ChatRequest, ChatResponse, SourceReference, UsageStats
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,25 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     # agar antarmuka tidak menampilkan jawaban yang kemudian dibuang.
     streaming = on_token is not None
 
+    # --- PEMAKAIAN TOKEN ---
+    #
+    # Angka diambil dari yang dilaporkan provider (usage_metadata milik
+    # LangChain), bukan dihitung sendiri. Perkiraan lokal akan meleset karena
+    # tokenizer tiap model berbeda, dan angka yang salah lebih buruk daripada
+    # tidak ada angka — jadi bila provider diam, nilainya dibiarkan kosong.
+    mulai_ns = time.perf_counter_ns()
+    pemakaian = {"prompt": 0, "completion": 0, "cached": 0, "ada": False, "tool_calls": 0}
+
+    def catat_pemakaian(pesan):
+        data = getattr(pesan, "usage_metadata", None) or {}
+        if not data:
+            return
+        pemakaian["ada"] = True
+        pemakaian["prompt"] += int(data.get("input_tokens") or 0)
+        pemakaian["completion"] += int(data.get("output_tokens") or 0)
+        rincian = data.get("input_token_details") or {}
+        pemakaian["cached"] += int(rincian.get("cache_read") or 0)
+
     async def emit_token(text: str):
         try:
             await on_token(text=text)
@@ -198,7 +218,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         muncul lalu menghilang justru membingungkan.
         """
         if not streaming:
-            return await model.ainvoke(msgs)
+            hasil = await model.ainvoke(msgs)
+            catat_pemakaian(hasil)
+            return hasil
 
         merged = None
         terkumpul = ""
@@ -243,7 +265,10 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             raise
         if merged is None:
             # Provider menutup aliran tanpa mengirim apa pun.
-            return await model.ainvoke(msgs)
+            hasil = await model.ainvoke(msgs)
+            catat_pemakaian(hasil)
+            return hasil
+        catat_pemakaian(merged)
         return merged
 
     await report("connecting", "Menyiapkan permintaan…")
@@ -484,6 +509,15 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"4. Tulis nama tabel/field/tcode secara inline (contoh: `VBAP` & `VBAK`, `MARA` & `MARC`), "
         f"bukan sebagai blok kode terpisah per baris.\n"
         f"5. Gunakan blok kode hanya untuk kode program utuh yang memang perlu disalin.\n"
+        f"5b. Untuk ALUR PROSES, urutan langkah, atau hubungan antar dokumen "
+        f"(mis. Procure-to-Pay, alur rilis Production Order, siklus dokumen SD), "
+        f"gambarkan sebagai diagram Mermaid dalam blok ```mermaid — antarmuka "
+        f"menggambarnya menjadi bagan otomatis. Pakai `flowchart TD` untuk alur "
+        f"proses dan `sequenceDiagram` untuk pertukaran antar sistem. "
+        f"Tulis label di dalam tanda kutip ganda (contoh: `A[\"Buat PR\"]`) agar "
+        f"tanda baca tidak merusak diagram, dan batasi sekitar 12 simpul agar "
+        f"tetap terbaca di layar ponsel. Sertakan penjelasan singkat berupa teks "
+        f"di samping diagram — jangan hanya diagram saja.\n"
         f"6. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
         f"7. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
         f"'We performed a RAG search...', atau 'Doc 1 snippet:'.\n\n"
@@ -770,6 +804,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         # Model kadang menuliskan sedikit teks sebelum memanggil tool; teks itu
         # bukan jawaban akhir sehingga tidak boleh tertinggal di layar.
         await reset_stream()
+        pemakaian["tool_calls"] += len(response.tool_calls)
 
         for tool_call in response.tool_calls:
             tool_name = tool_call["name"]
@@ -836,4 +871,16 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     reply_text, artifacts = extract_and_build(reply_text, owner=username)
     await report("done", "Selesai", max_iterations)
 
-    return ChatResponse(reply=reply_text, sources=sources, artifacts=artifacts)
+    statistik = UsageStats(
+        prompt_tokens=pemakaian["prompt"] if pemakaian["ada"] else None,
+        completion_tokens=pemakaian["completion"] if pemakaian["ada"] else None,
+        total_tokens=(pemakaian["prompt"] + pemakaian["completion"]) if pemakaian["ada"] else None,
+        cached_tokens=pemakaian["cached"] if pemakaian["ada"] else None,
+        latency_ms=int((time.perf_counter_ns() - mulai_ns) / 1_000_000),
+        model=primary_model_name,
+        tool_calls=pemakaian["tool_calls"],
+    )
+
+    return ChatResponse(
+        reply=reply_text, sources=sources, artifacts=artifacts, usage=statistik
+    )

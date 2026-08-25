@@ -34,6 +34,25 @@ class GeneratedArtifact(BaseModel):
     size: int = Field(default=0, description="Ukuran berkas dalam byte")
 
 
+class UsageStats(BaseModel):
+    """Pemakaian token dan waktu untuk satu permintaan.
+
+    Ditampilkan apa adanya kepada pengguna. Angka token datang dari provider —
+    bila provider tidak melaporkannya, nilainya None dan antarmuka menyembunyikan
+    bagian itu alih-alih menampilkan tebakan.
+    """
+    prompt_tokens: Optional[int] = Field(default=None, description="Token masukan")
+    completion_tokens: Optional[int] = Field(default=None, description="Token keluaran")
+    total_tokens: Optional[int] = Field(default=None, description="Total token")
+    cached_tokens: Optional[int] = Field(
+        default=None,
+        description="Bagian token masukan yang dilayani dari cache provider",
+    )
+    latency_ms: Optional[int] = Field(default=None, description="Waktu proses di server, milidetik")
+    model: Optional[str] = Field(default=None, description="Model yang menjawab")
+    tool_calls: int = Field(default=0, description="Jumlah pemanggilan tool SAP/RAG")
+
+
 class ChatResponse(BaseModel):
     """Model untuk response dari AI."""
     reply: str = Field(..., description="Jawaban dari asisten AI")
@@ -45,3 +64,7 @@ class ChatResponse(BaseModel):
         description="ID pesan pengguna yang memicu jawaban ini; dipakai fitur edit pertanyaan",
     )
     artifacts: List[GeneratedArtifact] = Field(default_factory=list, description="Berkas yang dihasilkan asisten")
+    usage: Optional["UsageStats"] = Field(
+        default=None,
+        description="Pemakaian token dan waktu proses untuk permintaan ini",
+    )

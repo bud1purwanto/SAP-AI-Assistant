@@ -18,10 +18,35 @@ import main  # noqa: E402
 from models import ChatResponse  # noqa: E402
 
 
+# Jawaban berdiagram dipakai tes render Mermaid. Isinya sengaja mengandung
+# teks biasa juga: diagram tidak boleh menggantikan penjelasan.
+JAWABAN_DIAGRAM = """Berikut alur Procure-to-Pay pada modul MM.
+
+```mermaid
+flowchart TD
+    A["Purchase Requisition"] --> B["Purchase Order"]
+    B --> C["Goods Receipt"]
+    C --> D["Invoice Verification"]
+```
+
+Dokumennya saling terkait lewat tabel EKKO dan EKPO.
+"""
+
+
 async def fake_process(chat_req, role, persona, username="Guest",
                        on_progress=None, on_token=None):
     if on_progress:
         await on_progress(stage="thinking", label="Menganalisis pertanyaan…", step=1, max_steps=6)
+
+    if "diagram" in (chat_req.message or "").lower():
+        if on_token:
+            for potongan in JAWABAN_DIAGRAM.split(" "):
+                await on_token(text=potongan + " ")
+                # Model sungguhan menulis jawaban berdiagram dalam hitungan
+                # detik. Jeda yang terlalu singkat membuat fase "sedang ditulis"
+                # lewat begitu cepat sehingga tidak dapat diamati.
+                await asyncio.sleep(0.05)
+        return ChatResponse(reply=JAWABAN_DIAGRAM, sources=[], artifacts=[])
 
     kalimat = (
         f"Jawaban untuk {chat_req.message}. "
