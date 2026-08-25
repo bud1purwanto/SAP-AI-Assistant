@@ -574,6 +574,7 @@ def get_system_config():
     # Persona global: berlaku untuk semua user sebagai dasar, di atasnya
     # persona masing-masing user diterapkan sebagai penyesuaian.
     global_persona = settings.assistant_persona or ""
+    token_limit_enabled = bool(settings.token_limit_enabled)
 
     try:
         engine = get_engine()
@@ -586,6 +587,8 @@ def get_system_config():
                     rag_cfg = r.value
                 elif r.key == 'mcp_email_config_json' and r.value is not None:
                     email_cfg = r.value
+                elif r.key == 'token_limit_enabled' and r.value is not None:
+                    token_limit_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -618,7 +621,8 @@ def get_system_config():
         "openrouter_model": model_primary,
         "openrouter_fallback_model": model_fallback,
         "openrouter_api_key": api_key,
-        "global_assistant_persona": global_persona
+        "global_assistant_persona": global_persona,
+        "token_limit_enabled": token_limit_enabled,
     }
 
 def update_system_config(
@@ -633,12 +637,20 @@ def update_system_config(
     openrouter_model: str = None,
     openrouter_fallback_model: str = None,
     openrouter_api_key: str = None,
-    global_assistant_persona: str = None
+    global_assistant_persona: str = None,
+    token_limit_enabled: bool = None,
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, dan persona global di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            if token_limit_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('token_limit_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if token_limit_enabled else "false"})
+
             if mcp_sap_json is not None:
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value) 
@@ -1047,6 +1059,231 @@ def get_feedback_messages(kind: str = "dislike", limit: int = 50, offset: int = 
     except Exception as e:
         logger.error(f"Error get_feedback_messages: {e}")
         return {"total": 0, "items": []}
+
+
+# ==========================================================================
+# KUOTA TOKEN
+#
+# Pemakaian dicatat SETELAH model menjawab, karena jumlah token baru diketahui
+# dari respons. Konsekuensinya satu permintaan dapat melewati batas sedikit:
+# yang diperiksa di awal adalah pemakaian yang SUDAH tercatat. Memotong di
+# tengah jawaban akan membuang pekerjaan yang biayanya sudah terlanjur keluar,
+# jadi batas ditegakkan pada permintaan BERIKUTNYA.
+# ==========================================================================
+
+def tanggal_kuota(zona: str = None) -> str:
+    """Tanggal berjalan menurut zona waktu kuota (bawaan Asia/Jakarta).
+
+    Reset harian mengikuti tengah malam waktu setempat, bukan UTC — kalau
+    memakai UTC, kuota tim di Indonesia akan reset pukul 07.00 pagi.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        tz = ZoneInfo(zona or settings.quota_timezone)
+    except Exception:
+        tz = ZoneInfo("Asia/Jakarta")
+    return datetime.now(tz).strftime("%Y-%m-%d")
+
+
+def get_role_limits() -> dict:
+    """Batas harian & per menit untuk tiap peran. 0 berarti tanpa batas."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT role, daily_token_limit, per_minute_limit
+                FROM ai_assistant.role_limits ORDER BY role
+            """)).fetchall()
+            return {
+                r.role: {
+                    "daily_token_limit": int(r.daily_token_limit or 0),
+                    "per_minute_limit": int(r.per_minute_limit or 0),
+                }
+                for r in rows
+            }
+    except Exception as e:
+        logger.error(f"Error get_role_limits: {e}")
+        return {}
+
+
+def set_role_limit(role: str, daily_token_limit: int, per_minute_limit: int) -> bool:
+    """Ubah batas satu peran. Nilai negatif ditolak; 0 berarti tanpa batas."""
+    if not role:
+        return False
+    harian = max(0, int(daily_token_limit or 0))
+    per_menit = max(0, int(per_minute_limit or 0))
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+                VALUES (:r, :h, :m)
+                ON CONFLICT (role) DO UPDATE
+                SET daily_token_limit = :h, per_minute_limit = :m,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"r": role.strip().lower(), "h": harian, "m": per_menit})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error set_role_limit: {e}")
+        return False
+
+
+def get_token_usage(username: str, tanggal: str = None) -> dict:
+    """Pemakaian token seorang pengguna pada satu hari."""
+    tanggal = tanggal or tanggal_kuota()
+    kosong = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+              "requests": 0, "estimated": False, "usage_date": tanggal}
+    if not username:
+        return kosong
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            r = conn.execute(text("""
+                SELECT prompt_tokens, completion_tokens, total_tokens, requests, estimated
+                FROM ai_assistant.token_usage
+                WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
+            """), {"u": username.strip(), "d": tanggal}).fetchone()
+            if not r:
+                return kosong
+            return {
+                "prompt_tokens": int(r.prompt_tokens or 0),
+                "completion_tokens": int(r.completion_tokens or 0),
+                "total_tokens": int(r.total_tokens or 0),
+                "requests": int(r.requests or 0),
+                "estimated": bool(r.estimated),
+                "usage_date": tanggal,
+            }
+    except Exception as e:
+        logger.error(f"Error get_token_usage: {e}")
+        return kosong
+
+
+def record_token_usage(username: str, prompt_tokens: int, completion_tokens: int,
+                       estimated: bool = False, tanggal: str = None) -> None:
+    """Tambahkan pemakaian satu permintaan ke catatan harian."""
+    if not username:
+        return
+    tanggal = tanggal or tanggal_kuota()
+    p = max(0, int(prompt_tokens or 0))
+    c = max(0, int(completion_tokens or 0))
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.token_usage
+                    (username, usage_date, prompt_tokens, completion_tokens,
+                     total_tokens, requests, estimated)
+                VALUES (:u, :d, :p, :c, :t, 1, :e)
+                ON CONFLICT (username, usage_date) DO UPDATE SET
+                    prompt_tokens     = ai_assistant.token_usage.prompt_tokens + :p,
+                    completion_tokens = ai_assistant.token_usage.completion_tokens + :c,
+                    total_tokens      = ai_assistant.token_usage.total_tokens + :t,
+                    requests          = ai_assistant.token_usage.requests + 1,
+                    -- Sekali ada sumbangan perkiraan, angka hariannya bukan
+                    -- lagi hasil ukur murni.
+                    estimated         = ai_assistant.token_usage.estimated OR :e,
+                    updated_at        = CURRENT_TIMESTAMP
+            """), {"u": username.strip(), "d": tanggal, "p": p, "c": c, "t": p + c,
+                   "e": bool(estimated)})
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error record_token_usage: {e}")
+
+
+def catat_permintaan(username: str) -> None:
+    """Catat satu permintaan untuk perhitungan batas per menit."""
+    if not username:
+        return
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(
+                text("INSERT INTO ai_assistant.request_log (username) VALUES (:u)"),
+                {"u": username.strip()},
+            )
+            # Jejak lama tidak berguna untuk jendela satu menit dan hanya
+            # menggemukkan tabel.
+            conn.execute(text("""
+                DELETE FROM ai_assistant.request_log
+                WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+            """))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error catat_permintaan: {e}")
+
+
+def hitung_permintaan_semenit(username: str) -> int:
+    """Jumlah permintaan pengguna dalam 60 detik terakhir."""
+    if not username:
+        return 0
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            return int(conn.execute(text("""
+                SELECT COUNT(*) FROM ai_assistant.request_log
+                WHERE LOWER(username) = LOWER(:u)
+                  AND created_at >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
+            """), {"u": username.strip()}).scalar() or 0)
+    except Exception as e:
+        logger.error(f"Error hitung_permintaan_semenit: {e}")
+        return 0
+
+
+def reset_token_usage(username: str = None, tanggal: str = None) -> int:
+    """Nolkan pemakaian. Tanpa username berarti seluruh pengguna pada hari itu."""
+    tanggal = tanggal or tanggal_kuota()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if username:
+                res = conn.execute(text("""
+                    DELETE FROM ai_assistant.token_usage
+                    WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
+                """), {"u": username.strip(), "d": tanggal})
+            else:
+                res = conn.execute(
+                    text("DELETE FROM ai_assistant.token_usage WHERE usage_date = :d"),
+                    {"d": tanggal},
+                )
+            conn.commit()
+            return res.rowcount or 0
+    except Exception as e:
+        logger.error(f"Error reset_token_usage: {e}")
+        return 0
+
+
+def ringkasan_pemakaian_harian(tanggal: str = None, limit: int = 100) -> list:
+    """Pemakaian seluruh pengguna pada satu hari, untuk dashboard admin."""
+    tanggal = tanggal or tanggal_kuota()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT t.username, t.total_tokens, t.prompt_tokens, t.completion_tokens,
+                       t.requests, t.estimated, u.role
+                FROM ai_assistant.token_usage t
+                LEFT JOIN ai_assistant.users u ON LOWER(u.username) = LOWER(t.username)
+                WHERE t.usage_date = :d
+                ORDER BY t.total_tokens DESC
+                LIMIT :lim
+            """), {"d": tanggal, "lim": max(1, min(int(limit or 100), 500))}).fetchall()
+            return [
+                {
+                    "username": r.username,
+                    "role": r.role or "-",
+                    "total_tokens": int(r.total_tokens or 0),
+                    "prompt_tokens": int(r.prompt_tokens or 0),
+                    "completion_tokens": int(r.completion_tokens or 0),
+                    "requests": int(r.requests or 0),
+                    "estimated": bool(r.estimated),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error ringkasan_pemakaian_harian: {e}")
+        return []
 
 
 def session_belongs_to(session_id: str, username: str) -> bool:

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, History, Key, Mail, MessageSquare, Plus, RefreshCw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
@@ -22,7 +22,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', assistant_persona: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'abaper', assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '', full_name: '' });
 
   // Skills State
@@ -55,6 +55,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [selectedAuditSession, setSelectedAuditSession] = useState(null);
   const [auditMessages, setAuditMessages] = useState([]);
   const [auditSearch, setAuditSearch] = useState('');
+
+  // Kuota Token State
+  const [kuota, setKuota] = useState(null);
+  const [kuotaLoading, setKuotaLoading] = useState(false);
+  const [batasDraft, setBatasDraft] = useState({});
 
   const fetchStats = async () => {
     try {
@@ -150,6 +155,92 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, user, activeTab, feedbackKind]);
 
+  const fetchKuota = async () => {
+    setKuotaLoading(true);
+    try {
+      const data = await api.adminQuota();
+      setKuota(data);
+      // Draft dipisah dari data server supaya angka yang sedang diketik admin
+      // tidak tertimpa hasil muat ulang di tengah pengetikan.
+      setBatasDraft(
+        Object.fromEntries(
+          Object.entries(data.role_limits || {}).map(([peran, b]) => [
+            peran,
+            {
+              daily_token_limit: String(b.daily_token_limit ?? 0),
+              per_minute_limit: String(b.per_minute_limit ?? 0),
+            },
+          ]),
+        ),
+      );
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setKuotaLoading(false);
+    }
+  };
+
+  // Sama seperti feedback: hanya diambil saat tabnya dibuka.
+  useEffect(() => {
+    if (isOpen && user?.role === 'superadmin' && activeTab === 'kuota') {
+      fetchKuota();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user, activeTab]);
+
+  const gantiSaklar = async (aktif) => {
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await api.adminQuotaSaklar(aktif);
+      setKuota((k) => (k ? { ...k, enforced: aktif } : k));
+      setActionSuccess(
+        aktif
+          ? 'Pembatasan token dinyalakan — permintaan ditolak setelah kuota habis.'
+          : 'Pembatasan token dimatikan — pemakaian tetap dicatat, prompt bebas.',
+      );
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const simpanBatas = async (peran) => {
+    setActionError('');
+    setActionSuccess('');
+    const draft = batasDraft[peran] || {};
+    const harian = Number.parseInt(draft.daily_token_limit, 10);
+    const permenit = Number.parseInt(draft.per_minute_limit, 10);
+    if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
+      setActionError('Batas harus berupa angka bulat 0 atau lebih.');
+      return;
+    }
+    try {
+      const hasil = await api.adminQuotaBatas({
+        role: peran,
+        daily_token_limit: harian,
+        per_minute_limit: permenit,
+      });
+      setKuota((k) => (k ? { ...k, role_limits: hasil.role_limits } : k));
+      setActionSuccess(`Batas peran '${peran}' tersimpan.`);
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const resetKuota = async (username) => {
+    setActionError('');
+    setActionSuccess('');
+    const sasaran = username || 'SEMUA pengguna';
+    if (!window.confirm(`Nolkan pemakaian token hari ini untuk ${sasaran}?`)) return;
+    try {
+      const hasil = await api.adminQuotaReset(username);
+      setActionSuccess(`Pemakaian ${hasil.direset} sudah dinolkan.`);
+      fetchKuota();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setActionError('');
@@ -158,7 +249,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       await api.adminCreateUser(newUserForm);
       
       setActionSuccess(`User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', assistant_persona: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'abaper', assistant_persona: '' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -450,6 +541,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           >
             <Server className="w-4 h-4 shrink-0" />
             <span>MCP &amp; AI Provider</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('kuota'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'kuota'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <Gauge className="w-4 h-4 shrink-0" />
+            <span>Kuota Token</span>
           </button>
 
           <button
@@ -852,6 +955,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
+                            <option value="abaper">ABAPer (boleh ubah program)</option>
+                            <option value="functional">Functional (baca saja)</option>
                             <option value="user">User Biasa</option>
                             <option value="superadmin">Super Admin</option>
                           </select>
@@ -920,6 +1025,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
+                            <option value="abaper">ABAPer (boleh ubah program)</option>
+                            <option value="functional">Functional (baca saja)</option>
                             <option value="user">User Biasa</option>
                             <option value="superadmin">Super Admin</option>
                           </select>
@@ -1558,6 +1665,191 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
             {/* TAB: PENILAIAN JAWABAN — jawaban mana yang dinilai pengguna.
                 Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
+            {activeTab === 'kuota' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                  <div>
+                    <h3 className="text-lg font-bold text-content">Kuota Token</h3>
+                    <p className="text-sm text-content-muted">
+                      Pemakaian dihitung untuk tanggal {kuota?.usage_date || '—'} (reset tengah malam WIB).
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchKuota}
+                    disabled={kuotaLoading}
+                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${kuotaLoading ? 'animate-spin' : ''}`} />
+                    Muat ulang
+                  </button>
+                </div>
+
+                {/* Saklar penegakan */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-line bg-surface">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-content">Penegakan batas</p>
+                    <p className="text-sm text-content-muted">
+                      {kuota?.enforced
+                        ? 'Aktif — permintaan ditolak begitu kuota harian habis.'
+                        : 'Nonaktif — pemakaian tetap dicatat, tetapi tidak ada yang diblokir.'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => gantiSaklar(!kuota?.enforced)}
+                    disabled={!kuota}
+                    aria-label="Penegakan batas token"
+                    aria-pressed={!!kuota?.enforced}
+                    className={`relative h-7 w-14 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
+                      kuota?.enforced ? 'bg-indigo-600' : 'bg-line'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        kuota?.enforced ? 'left-8' : 'left-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Batas per peran */}
+                <div className="rounded-2xl border border-line bg-surface p-4">
+                  <p className="font-semibold text-content mb-1">Batas per peran</p>
+                  <p className="text-sm text-content-muted mb-4">
+                    Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.
+                  </p>
+                  <div className="space-y-3">
+                    {Object.keys(kuota?.role_limits || {}).map((peran) => (
+                      <div
+                        key={peran}
+                        className="flex flex-col sm:flex-row sm:items-end gap-3 p-3 rounded-xl bg-surface-raised border border-line"
+                      >
+                        <div className="sm:w-32 shrink-0">
+                          <p className="text-xs font-bold uppercase tracking-wider text-content-subtle">Peran</p>
+                          <p className="font-mono text-sm text-content">{peran}</p>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`harian-${peran}`}>
+                            Token per hari
+                          </label>
+                          <input
+                            id={`harian-${peran}`}
+                            type="number"
+                            min="0"
+                            value={batasDraft[peran]?.daily_token_limit ?? ''}
+                            onChange={(e) =>
+                              setBatasDraft((d) => ({
+                                ...d,
+                                [peran]: { ...d[peran], daily_token_limit: e.target.value },
+                              }))
+                            }
+                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`menit-${peran}`}>
+                            Permintaan per menit
+                          </label>
+                          <input
+                            id={`menit-${peran}`}
+                            type="number"
+                            min="0"
+                            value={batasDraft[peran]?.per_minute_limit ?? ''}
+                            onChange={(e) =>
+                              setBatasDraft((d) => ({
+                                ...d,
+                                [peran]: { ...d[peran], per_minute_limit: e.target.value },
+                              }))
+                            }
+                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                        <button
+                          onClick={() => simpanBatas(peran)}
+                          aria-label={`Simpan batas ${peran}`}
+                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors cursor-pointer shrink-0"
+                        >
+                          <Save className="w-4 h-4" />
+                          Simpan
+                        </button>
+                      </div>
+                    ))}
+                    {!kuotaLoading && !Object.keys(kuota?.role_limits || {}).length && (
+                      <p className="text-sm text-content-muted">Batas peran belum tersedia.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pemakaian per pengguna */}
+                <div className="rounded-2xl border border-line bg-surface p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                      <p className="font-semibold text-content">Pemakaian hari ini</p>
+                      <p className="text-sm text-content-muted">
+                        Tanda ~ berarti angka ditaksir karena penyedia model tidak melaporkan jumlah token.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => resetKuota(null)}
+                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer shrink-0"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Reset semua
+                    </button>
+                  </div>
+
+                  {kuotaLoading ? (
+                    <p className="text-sm text-content-muted">Memuat pemakaian…</p>
+                  ) : !kuota?.usage?.length ? (
+                    <p className="text-sm text-content-muted">Belum ada pemakaian tercatat hari ini.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[640px] text-sm">
+                        <thead>
+                          <tr className="text-left text-xs font-bold uppercase tracking-wider text-content-subtle border-b border-line">
+                            <th className="py-2 pr-3">Pengguna</th>
+                            <th className="py-2 pr-3">Peran</th>
+                            <th className="py-2 pr-3 text-right">Token</th>
+                            <th className="py-2 pr-3 text-right">Batas</th>
+                            <th className="py-2 pr-3 text-right">Permintaan</th>
+                            <th className="py-2 text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kuota.usage.map((baris) => {
+                            const batas = kuota.role_limits?.[baris.role]?.daily_token_limit || 0;
+                            const persen = batas ? Math.min(100, Math.round((baris.total_tokens / batas) * 100)) : 0;
+                            return (
+                              <tr key={baris.username} className="border-b border-line/60 last:border-0">
+                                <td className="py-2.5 pr-3 font-medium text-content break-all">{baris.username}</td>
+                                <td className="py-2.5 pr-3 font-mono text-xs text-content-muted">{baris.role}</td>
+                                <td className="py-2.5 pr-3 text-right tabular-nums text-content">
+                                  {baris.estimated ? '~' : ''}
+                                  {baris.total_tokens.toLocaleString('id-ID')}
+                                </td>
+                                <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">
+                                  {batas ? `${batas.toLocaleString('id-ID')} (${persen}%)` : '∞'}
+                                </td>
+                                <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">{baris.requests}</td>
+                                <td className="py-2.5 text-right">
+                                  <button
+                                    onClick={() => resetKuota(baris.username)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                    Reset
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'feedback' && (
               <div className="space-y-5 animate-fadeIn">
                 <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">

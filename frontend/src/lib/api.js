@@ -175,6 +175,17 @@ export const api = {
     }),
 
   adminStats: () => apiFetch('/api/admin/stats'),
+  quotaSaya: () => apiFetch('/api/quota'),
+
+  adminQuota: () => apiFetch('/api/admin/quota'),
+  adminQuotaSaklar: (enabled) =>
+    apiFetch('/api/admin/quota/enabled', { method: 'POST', body: { enabled } }),
+  adminQuotaBatas: (payload) =>
+    apiFetch('/api/admin/quota/limits', { method: 'PUT', body: payload }),
+  adminQuotaReset: (username) =>
+    apiFetch(`/api/admin/quota/reset${username ? `?username=${encodeURIComponent(username)}` : ''}`,
+      { method: 'POST' }),
+
   adminFeedback: (kind = 'dislike', limit = 50) =>
     apiFetch(`/api/admin/feedback?kind=${kind}&limit=${limit}`),
   adminUsers: () => apiFetch('/api/admin/users'),

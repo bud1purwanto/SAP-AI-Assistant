@@ -11,7 +11,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 E2E_DATABASE_URL="${E2E_DATABASE_URL:-postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sapai_e2e}"
+# Dependensi backend dipasang di virtualenv repo. Memakai `python3` sistem
+# membuat skrip gagal dengan "No module named uvicorn" pada mesin yang bersih.
+if [[ -z "${PYTHON:-}" && -x "$ROOT/.venv/bin/python" ]]; then
+    PYTHON="$ROOT/.venv/bin/python"
+fi
 PYTHON="${PYTHON:-python3}"
+# Sebagian lingkungan menyediakan Chromium sendiri di luar cache Playwright.
+# Tanpa penunjuk ini Playwright mencari versi persis yang dipinnya dan gagal
+# dengan "Executable doesn't exist", padahal peramban yang layak sudah ada.
+if [[ -z "${PLAYWRIGHT_CHROMIUM_PATH:-}" && -x "/opt/pw-browsers/chromium" ]]; then
+    export PLAYWRIGHT_CHROMIUM_PATH="/opt/pw-browsers/chromium"
+fi
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 FRONTEND_PORT="${FRONTEND_PORT:-4173}"
 

@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"
     guest_daily_limit: int = 1
+
+    # --- KUOTA TOKEN ---
+    # Reset harian mengikuti tengah malam waktu setempat. Dengan UTC, kuota tim
+    # di Indonesia akan reset pukul 07.00 pagi — di tengah jam kerja.
+    quota_timezone: str = "Asia/Jakarta"
+    # Penegakan batas dapat dimatikan admin; pencatatan pemakaian tetap jalan.
+    token_limit_enabled: bool = False
     login_max_failures: int = 8
     login_lock_seconds: int = 900  # 15 menit
     artifact_max_per_user: int = 20

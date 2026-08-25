@@ -51,6 +51,10 @@ class UsageStats(BaseModel):
     latency_ms: Optional[int] = Field(default=None, description="Waktu proses di server, milidetik")
     model: Optional[str] = Field(default=None, description="Model yang menjawab")
     tool_calls: int = Field(default=0, description="Jumlah pemanggilan tool SAP/RAG")
+    estimated: bool = Field(
+        default=False,
+        description="True bila jumlah token diperkirakan sendiri karena provider tidak melaporkannya",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -67,4 +71,8 @@ class ChatResponse(BaseModel):
     usage: Optional["UsageStats"] = Field(
         default=None,
         description="Pemakaian token dan waktu proses untuk permintaan ini",
+    )
+    quota: Optional[dict] = Field(
+        default=None,
+        description="Sisa kuota token harian pengguna setelah permintaan ini",
     )

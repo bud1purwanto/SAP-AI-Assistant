@@ -117,10 +117,90 @@ def _m0003_indeks_feedback(conn):
     """))
 
 
+def _m0004_peran_abaper_dan_functional(conn):
+    """Perluas daftar peran: abaper, functional, dan user biasa.
+
+    Sebelumnya hanya ada 'superadmin', 'user', dan 'guest'. Peran 'user' lama
+    dipakai oleh para pengembang ABAP, jadi seluruhnya dipindahkan ke 'abaper'
+    agar hak ubah programnya tetap sesuai. Peran 'functional' dan 'user' yang
+    baru dimulai tanpa hak tersebut.
+
+    Migrasi ini hanya boleh berjalan sekali: menjalankannya lagi setelah admin
+    sengaja menurunkan seseorang menjadi 'user' akan menaikkannya kembali
+    menjadi 'abaper' tanpa diminta.
+    """
+    jumlah = conn.execute(text("""
+        UPDATE ai_assistant.users SET role = 'abaper' WHERE role = 'user'
+    """)).rowcount
+    logger.info(f"{jumlah} pengguna dipindahkan dari peran 'user' ke 'abaper'.")
+
+
+def _m0005_kuota_token(conn):
+    """Pencatatan pemakaian token per pengguna per hari, dan batas per peran."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.token_usage (
+            username        VARCHAR(80)  NOT NULL,
+            usage_date      VARCHAR(10)  NOT NULL,
+            prompt_tokens   BIGINT       NOT NULL DEFAULT 0,
+            completion_tokens BIGINT     NOT NULL DEFAULT 0,
+            total_tokens    BIGINT       NOT NULL DEFAULT 0,
+            requests        INTEGER      NOT NULL DEFAULT 0,
+            -- Sebagian provider tidak melaporkan pemakaian token. Nilai untuk
+            -- permintaan seperti itu diperkirakan sendiri, dan penandanya
+            -- disimpan supaya angkanya tidak disajikan seolah-olah terukur.
+            estimated       BOOLEAN      NOT NULL DEFAULT FALSE,
+            updated_at      TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, usage_date)
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_token_usage_tanggal
+        ON ai_assistant.token_usage (usage_date DESC, total_tokens DESC)
+    """))
+
+    # Jejak per permintaan untuk pembatasan per menit.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.request_log (
+            id          BIGSERIAL PRIMARY KEY,
+            username    VARCHAR(80) NOT NULL,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_request_log_user_waktu
+        ON ai_assistant.request_log (LOWER(username), created_at DESC)
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.role_limits (
+            role                VARCHAR(30) PRIMARY KEY,
+            daily_token_limit   BIGINT      NOT NULL DEFAULT 0,
+            per_minute_limit    INTEGER     NOT NULL DEFAULT 0,
+            updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    # Nilai awal. 0 berarti TANPA BATAS — dipakai untuk superadmin.
+    for peran, harian, per_menit in (
+        ("superadmin", 0, 0),
+        ("abaper", 1_000_000, 10),
+        ("functional", 500_000, 10),
+        ("user", 300_000, 8),
+        ("guest", 50_000, 5),
+    ):
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            VALUES (:r, :h, :m)
+            ON CONFLICT (role) DO NOTHING
+        """), {"r": peran, "h": harian, "m": per_menit})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
     ("0003_indeks_feedback", _m0003_indeks_feedback),
+    ("0004_peran_abaper_dan_functional", _m0004_peran_abaper_dan_functional),
+    ("0005_kuota_token", _m0005_kuota_token),
 ]
 
 

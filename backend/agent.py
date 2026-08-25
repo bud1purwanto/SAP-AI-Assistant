@@ -91,6 +91,27 @@ def _extract_text(content) -> str:
         
     return _clean_thinking_process(raw_text)
 
+# Peran yang berhak menjalankan tool pengubah program.
+PERAN_BOLEH_UBAH_PROGRAM = ("superadmin", "abaper")
+
+# Kata kerja yang menandakan sebuah tool MENGUBAH sesuatu di SAP, bukan sekadar
+# membaca. Daftar tool MCP dapat berubah tanpa sepengetahuan aplikasi, jadi
+# yang dipakai adalah pola nama — dan bila ragu, tool DITOLAK untuk peran yang
+# tidak berhak. Salah menolak hanya merepotkan; salah mengizinkan dapat
+# mengubah program di sistem SAP.
+_POLA_UBAH = (
+    "write", "create", "update", "modify", "change", "delete", "remove",
+    "insert", "activate", "deactivate", "transport", "commit", "execute_abap",
+    "run_abap", "set_", "upload", "deploy", "rename",
+)
+
+
+def tool_mengubah_program(tool_name: str) -> bool:
+    """Tebak apakah sebuah tool mengubah objek di SAP."""
+    nama = (tool_name or "").lower()
+    return any(pola in nama for pola in _POLA_UBAH)
+
+
 def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
     """Terjemahkan pemanggilan tool menjadi keterangan yang dipahami pengguna."""
     name = (tool_name or "").lower()
@@ -304,10 +325,20 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     openai_tools = []
     tool_map = {} # map dari openai_tool_name ke (server_name, mcp_tool_name)
     
+    boleh_ubah = (user_role or "").lower() in PERAN_BOLEH_UBAH_PROGRAM
+    tool_ditolak = []
+
     for item in all_mcp_tools:
         server = item["server"]
         t = item["tool"]
         tool_name = f"{server}__{t.name}".replace("-", "_")
+
+        # Tool pengubah program tidak sekadar disembunyikan dari prompt: ia
+        # tidak dibuatkan definisinya sama sekali, sehingga model tidak punya
+        # cara memanggilnya walau diminta pengguna.
+        if server == "sap" and not boleh_ubah and tool_mengubah_program(t.name):
+            tool_ditolak.append(t.name)
+            continue
         
         # Pangkas deskripsi tool agar efisien dalam limit input token model gratis
         desc = (t.description or f"Tool {t.name} dari {server}")
@@ -470,6 +501,12 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     #
     # Susunan sekarang: identitas -> aturan -> format -> artefak -> skill ->
     # persona organisasi, baru kemudian KONTEKS PERMINTAAN INI.
+    if tool_ditolak:
+        logger.info(
+            f"Peran '{user_role}' tidak berhak mengubah program; "
+            f"{len(tool_ditolak)} tool disembunyikan: {', '.join(tool_ditolak[:6])}"
+        )
+
     system_prompt = (
         f"Anda adalah SAP AI Assistant: asisten kerja serbaguna dengan keahlian utama SAP.\n\n"
 
@@ -591,6 +628,15 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     konteks = [
         "\n\n## KONTEKS PERMINTAAN INI\n",
         f"- Role pengguna: {user_role}\n",
+        (
+            "- Hak ubah program: DIIZINKAN. Anda boleh membantu membuat dan mengubah "
+            "objek/program di SAP bila diminta.\n"
+            if boleh_ubah else
+            "- Hak ubah program: TIDAK DIIZINKAN untuk peran ini. Anda hanya boleh MEMBACA "
+            "data dan program. Bila pengguna meminta perubahan objek SAP, jelaskan dengan "
+            "sopan bahwa perannya tidak memiliki hak tersebut dan sarankan menghubungi tim "
+            "ABAP — jangan mencoba menjalankan perubahan apa pun.\n"
+        ),
         f"- Sumber data yang tersedia: {inventory_line}\n",
     ]
     if has_sap:

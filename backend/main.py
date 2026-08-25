@@ -38,6 +38,15 @@ from database import (
     get_backend_info,
     get_chat_sessions,
     get_feedback_messages,
+    get_role_limits,
+    get_token_usage,
+    hitung_permintaan_semenit,
+    catat_permintaan,
+    record_token_usage,
+    reset_token_usage,
+    ringkasan_pemakaian_harian,
+    set_role_limit,
+    tanggal_kuota,
     get_system_config,
     get_user_by_username,
     init_db,
@@ -63,7 +72,7 @@ from database import (
     delete_skill,
 )
 from mcp_manager import mcp_manager
-from models import ChatRequest, ChatResponse
+from models import ChatRequest, ChatResponse, UsageStats
 
 logger = logging.getLogger(__name__)
 
@@ -450,6 +459,93 @@ async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
     return stats
 
 
+# --- PERAN ---
+#
+# 'user' lama berisi para pengembang ABAP, jadi seluruhnya dipindahkan ke
+# 'abaper' oleh migrasi 0004. 'functional' dan 'user' adalah peran baru yang
+# TIDAK berhak mengubah program.
+ROLE_TERSEDIA = ("superadmin", "abaper", "functional", "user")
+
+
+# --- KUOTA TOKEN ---
+
+class BatasPeranRequest(BaseModel):
+    role: str
+    daily_token_limit: int = 0     # 0 = tanpa batas
+    per_minute_limit: int = 0      # 0 = tanpa batas
+
+
+class SaklarLimitRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/quota")
+async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
+    """Sisa kuota pengguna yang sedang login."""
+    profil = get_user_by_username(user["username"])
+    if not profil:
+        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
+    return status_kuota(profil["username"], profil["role"])
+
+
+@app.get("/api/admin/quota")
+async def quota_admin_endpoint(
+    tanggal: str = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Pengaturan batas, status saklar, dan pemakaian seluruh pengguna hari ini."""
+    cfg = get_system_config()
+    return {
+        "enforced": bool(cfg.get("token_limit_enabled")),
+        "usage_date": tanggal or tanggal_kuota(),
+        "role_limits": get_role_limits(),
+        "usage": ringkasan_pemakaian_harian(tanggal),
+    }
+
+
+@app.post("/api/admin/quota/enabled")
+async def saklar_limit_endpoint(
+    req: SaklarLimitRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Nyalakan atau matikan penegakan batas.
+
+    Dimatikan bukan berarti berhenti mencatat: pemakaian tetap dihitung supaya
+    admin punya angka sebelum memutuskan batas yang wajar.
+    """
+    update_system_config(token_limit_enabled=req.enabled)
+    return {"enforced": req.enabled}
+
+
+@app.put("/api/admin/quota/limits")
+async def atur_batas_peran_endpoint(
+    req: BatasPeranRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Ubah batas harian dan batas per menit untuk satu peran."""
+    if req.role.strip().lower() not in ROLE_TERSEDIA:
+        raise HTTPException(status_code=400, detail=f"Peran '{req.role}' tidak dikenal.")
+    if req.daily_token_limit < 0 or req.per_minute_limit < 0:
+        raise HTTPException(status_code=400, detail="Batas tidak boleh negatif.")
+    if not set_role_limit(req.role, req.daily_token_limit, req.per_minute_limit):
+        raise HTTPException(status_code=500, detail="Batas gagal disimpan.")
+    return {"status": "success", "role_limits": get_role_limits()}
+
+
+@app.post("/api/admin/quota/reset")
+async def reset_kuota_endpoint(
+    username: str = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Nolkan pemakaian hari ini — satu pengguna, atau semuanya bila tanpa username."""
+    jumlah = reset_token_usage(username)
+    return {
+        "status": "success",
+        "direset": username or "semua pengguna",
+        "baris_terhapus": jumlah,
+    }
+
+
 @app.get("/api/admin/feedback")
 async def get_admin_feedback_endpoint(
     kind: str = "dislike",
@@ -489,7 +585,7 @@ async def create_user_endpoint(
         raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
-    if req.role not in ("user", "superadmin"):
+    if req.role not in ROLE_TERSEDIA:
         raise HTTPException(status_code=400, detail="Role tidak dikenal.")
 
     res = create_new_user(
@@ -523,7 +619,7 @@ async def update_user_endpoint(
             status_code=400,
             detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
         )
-    if req.role and req.role not in ("user", "superadmin"):
+    if req.role and req.role not in ROLE_TERSEDIA:
         raise HTTPException(status_code=400, detail="Role tidak dikenal.")
     if req.password and len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
@@ -649,6 +745,76 @@ async def delete_skill_endpoint(skill_id: int, admin: dict = Depends(require_sup
 
 # --- CHAT ---
 
+def _batas_peran(role: str) -> dict:
+    """Batas yang berlaku untuk sebuah peran. 0 = tanpa batas."""
+    batas = get_role_limits().get((role or "").lower())
+    return batas or {"daily_token_limit": 0, "per_minute_limit": 0}
+
+
+def status_kuota(username: str, role: str) -> dict:
+    """Ringkasan kuota seorang pengguna untuk ditampilkan maupun ditegakkan."""
+    cfg = get_system_config()
+    aktif = bool(cfg.get("token_limit_enabled"))
+    batas = _batas_peran(role)
+    pakai = get_token_usage(username)
+
+    harian = batas["daily_token_limit"]
+    terpakai = pakai["total_tokens"]
+    sisa = None if harian <= 0 else max(0, harian - terpakai)
+    persen = None if harian <= 0 else min(100, round(terpakai * 100 / harian))
+
+    return {
+        "enforced": aktif,
+        "unlimited": harian <= 0,
+        "daily_token_limit": harian,
+        "per_minute_limit": batas["per_minute_limit"],
+        "used_tokens": terpakai,
+        "remaining_tokens": sisa,
+        "used_percent": persen,
+        "requests_today": pakai["requests"],
+        "estimated": pakai["estimated"],
+        "usage_date": pakai["usage_date"],
+        "role": role,
+    }
+
+
+def _tegakkan_kuota(username: str, role: str) -> None:
+    """Tolak permintaan bila kuota habis atau terlalu cepat beruntun.
+
+    Pemeriksaan memakai pemakaian yang SUDAH tercatat: jumlah token permintaan
+    ini sendiri baru diketahui setelah model menjawab. Satu permintaan karena
+    itu dapat melewati batas sedikit, dan yang berikutnya akan ditolak.
+    """
+    cfg = get_system_config()
+    if not cfg.get("token_limit_enabled"):
+        return
+
+    batas = _batas_peran(role)
+
+    per_menit = batas["per_minute_limit"]
+    if per_menit > 0 and hitung_permintaan_semenit(username) >= per_menit:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Terlalu banyak permintaan beruntun (batas {per_menit} per menit). "
+                "Tunggu sebentar lalu coba lagi."
+            ),
+        )
+
+    harian = batas["daily_token_limit"]
+    if harian > 0:
+        terpakai = get_token_usage(username)["total_tokens"]
+        if terpakai >= harian:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Kuota token harian Anda sudah habis ({terpakai:,} dari {harian:,} token). "
+                    "Kuota dihitung ulang setiap tengah malam. Hubungi administrator bila "
+                    "Anda membutuhkan tambahan."
+                ).replace(",", "."),
+            )
+
+
 def _guest_client_key(request: Request) -> str:
     """Kunci kuota tamu berbasis alamat IP klien."""
     return _client_ip(request)
@@ -753,6 +919,11 @@ async def _run_chat(
         user_role = profile["role"]
         user_persona = profile["assistant_persona"]
 
+        # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
+        # menjawab berarti biayanya sudah terlanjur keluar.
+        _tegakkan_kuota(profile["username"], user_role)
+        catat_permintaan(profile["username"])
+
         user_message_id = None
         active_session_id = chat_req.session_id
         # Sesi yang dikirim klien harus benar-benar milik user tersebut.
@@ -831,6 +1002,35 @@ async def _run_chat(
         artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
         msg_id = add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
         response.message_id = msg_id
+
+    # Pencatatan pemakaian.
+    #
+    # Bila provider melaporkan jumlah token, angka itu yang dipakai. Bila tidak,
+    # jumlahnya diperkirakan dari panjang teks agar kuota tetap dapat ditegakkan
+    # — tanpa itu, batas apa pun tidak akan pernah tercapai pada provider yang
+    # diam. Perkiraan ditandai supaya tidak disajikan seolah-olah hasil ukur.
+    if not is_guest:
+        pakai = response.usage
+        if pakai and pakai.total_tokens:
+            record_token_usage(
+                user["username"], pakai.prompt_tokens or 0, pakai.completion_tokens or 0,
+                estimated=False,
+            )
+        else:
+            from conversation import estimate_tokens
+            masuk = estimate_tokens(chat_req.message or "")
+            for m in (chat_req.history or []):
+                masuk += estimate_tokens(m.get("content") if isinstance(m, dict) else "")
+            keluar = estimate_tokens(response.reply or "")
+            record_token_usage(user["username"], masuk, keluar, estimated=True)
+            if response.usage is None:
+                response.usage = UsageStats()
+            response.usage.prompt_tokens = masuk
+            response.usage.completion_tokens = keluar
+            response.usage.total_tokens = masuk + keluar
+            response.usage.estimated = True
+
+        response.quota = status_kuota(user["username"], user_role)
 
     response.session_id = active_session_id
     response.user_message_id = user_message_id

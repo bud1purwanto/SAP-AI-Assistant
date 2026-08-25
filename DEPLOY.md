@@ -38,6 +38,27 @@ Skrip ini akan otomatis melakukan:
 | `JWT_SECRET` | Kunci penandatangan token login JWT (**Wajib** di produksi). Buat dengan `openssl rand -base64 48`. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Password akun superadmin awal `TRSTDEV` saat tabel users pertama kali diinisialisasi. |
 | `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (gunakan `*` atau domain/IP Anda). |
+| `QUOTA_TIMEZONE` | Zona waktu penentu pergantian hari kuota token (bawaan `Asia/Jakarta`). Dengan UTC, kuota tim Indonesia akan reset pukul 07.00 — di tengah jam kerja. |
+
+#### Peran Pengguna
+
+| Peran | Hak |
+| :--- | :--- |
+| `superadmin` | Seluruh akses, termasuk Dashboard Admin dan pengaturan kuota. Tanpa batas token. |
+| `abaper` | Boleh membaca **dan mengubah** objek/program di SAP. |
+| `functional` | Hanya membaca data dan program; permintaan perubahan ditolak. |
+| `user` | Pengguna umum dengan kuota paling kecil. |
+
+Tool MCP yang mengubah objek SAP tidak sekadar disembunyikan dari peran yang tidak
+berhak — definisinya tidak dikirim ke model sama sekali, sehingga tidak ada cara
+memanggilnya lewat prompt.
+
+#### Kuota Token
+
+Penegakan batas dinyalakan/dimatikan admin lewat **Dashboard Admin → Kuota Token**.
+Saat dimatikan, pemakaian tetap dicatat sehingga admin punya angka nyata sebelum
+menetapkan batas. Batas harian dan batas permintaan per menit diatur per peran, dan
+pemakaian harian dapat dinolkan per pengguna atau sekaligus.
 
 > **Catatan Keamanan & Kemudahan:**
 > Konfigurasi **AI Provider (9Router, OpenRouter API Keys)**, **Server MCP (SAP, RAG, Email)**, **Persona Organisasi**, dan **Katalog Skill** disimpan di Database PostgreSQL dan dapat diatur langsung secara visual lewat menu **Dashboard Admin (UI)** di browser. Anda **tidak perlu mengedit `.env` atau merestart service** untuk mengganti model AI atau server MCP!

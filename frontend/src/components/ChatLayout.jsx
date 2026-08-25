@@ -9,6 +9,7 @@ import ChatMessage from './ChatMessage';
 import ConfirmModal from './ConfirmModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
+import QuotaBanner, { QuotaChip } from './QuotaBanner';
 import SidePanel from './SidePanel';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
@@ -138,6 +139,7 @@ const ChatLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Isi panel samping (kode/dokumen panjang), null bila panel tertutup.
   const [isiPanel, setIsiPanel] = useState(null);
+  const [kuota, setKuota] = useState(null);
 
   // State untuk konfirmasi popup logout & hapus percakapan
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
@@ -239,6 +241,7 @@ const ChatLayout = () => {
   // diubah atau dihapus admin sejak login terakhir.
   useEffect(() => {
     if (isGuest) return;
+    api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     api.me()
       .then((profile) => setUser(profile))
       .catch(() => { /* 401 sudah ditangani handler di atas */ });
@@ -684,6 +687,7 @@ const ChatLayout = () => {
       if (data.session_id && !targetSessionId) {
         setCurrentSessionId(data.session_id);
       }
+      if (data.quota) setKuota(data.quota);
       if (!isGuest) fetchSessions(true, true);
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -694,10 +698,17 @@ const ChatLayout = () => {
         return;
       }
       // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
+      // Pengguna yang sudah masuk tidak dibantu modal login — kuotanya yang
+      // habis, bukan sesinya. Angka pada banner disegarkan supaya cocok.
       if (err instanceof ApiError && err.status === 429) {
         setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
-        setCustomLoginMsg(err.message);
-        setIsLoginModalOpen(true);
+        if (isGuest) {
+          setCustomLoginMsg(err.message);
+          setIsLoginModalOpen(true);
+        } else {
+          api.quotaSaya().then(setKuota).catch(() => {});
+          setSessionErrorMap((prev) => ({ ...prev, [targetKey]: { message: err.message } }));
+        }
         return;
       }
       setMessagesMap((prev) => ({ ...prev, [targetKey]: outgoing }));
@@ -787,6 +798,7 @@ const ChatLayout = () => {
     setSessionProgressMap({});
     setSessionErrorMap({});
     setUser(userData);
+    api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     setIsLoginModalOpen(false);
     setCustomLoginMsg('');
     setError(null);
@@ -1148,6 +1160,7 @@ const ChatLayout = () => {
             </div>
 
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+              {!isGuest && <QuotaChip quota={kuota} />}
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
@@ -1229,6 +1242,8 @@ const ChatLayout = () => {
             </span>
           </div>
         )}
+
+        {!isGuest && <QuotaBanner quota={kuota} />}
 
         <div ref={scrollContainerRef} className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
           <div ref={messagesContentRef} className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
