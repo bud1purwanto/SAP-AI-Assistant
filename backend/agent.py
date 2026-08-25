@@ -459,10 +459,19 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         tool_inventory.append("layanan MCP Email")
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
 
+    # SUSUNAN PROMPT DAN CACHING
+    #
+    # Bagian yang IDENTIK untuk semua pengguna ditulis lebih dulu, dan yang
+    # berubah per permintaan ditulis paling belakang. Cache prompt milik
+    # provider bekerja atas AWALAN yang sama persis: bila nama server SAP atau
+    # role pengguna berada di baris pertama, setiap kombinasi user/server
+    # menjadi prompt yang berbeda sejak karakter pertama dan tidak ada satu pun
+    # yang dapat dipakai ulang — padahal bagian stabilnya belasan ribu token.
+    #
+    # Susunan sekarang: identitas -> aturan -> format -> artefak -> skill ->
+    # persona organisasi, baru kemudian KONTEKS PERMINTAAN INI.
     system_prompt = (
-        f"Anda adalah SAP AI Assistant: asisten kerja serbaguna dengan keahlian utama SAP.\n"
-        f"Role pengguna saat ini: {user_role}.\n"
-        f"Sumber data yang tersedia untuk Anda: {inventory_line}.\n\n"
+        f"Anda adalah SAP AI Assistant: asisten kerja serbaguna dengan keahlian utama SAP.\n\n"
 
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
@@ -500,8 +509,10 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
         f"## FORMAT JAWABAN\n"
         f"1. Gunakan Bahasa Indonesia yang jelas dan profesional, kecuali pengguna meminta bahasa lain.\n"
-        f"2. Bila jawaban memuat data live dari SAP, awali dengan baris status berikut persis:\n"
-        f"   📦 **Data langsung dari sistem {sap_server_name}**\n"
+        f"2. Bila jawaban memuat data live dari SAP, awali dengan baris status "
+        f"berformat: 📦 **Data langsung dari sistem NAMA_SERVER** — ganti NAMA_SERVER "
+        f"dengan nama sistem SAP aktif yang disebutkan pada bagian KONTEKS PERMINTAAN INI "
+        f"di bagian bawah prompt ini.\n"
         f"   Tulis dalam bahasa kerja sehari-hari; hindari istilah internal seperti SID, MCP, RAG, "
         f"atau nama tool kepada pengguna. Untuk jawaban yang TIDAK mengambil data SAP, JANGAN "
         f"tampilkan baris tersebut.\n"
@@ -525,14 +536,6 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"{ARTIFACT_PROMPT}\n"
     )
 
-    if not has_sap:
-        system_prompt += (
-            "\nCATATAN: Koneksi ke server MCP SAP sedang TERPUTUS. Beritahu pengguna bila mereka "
-            "meminta data live SAP, namun tetap layani permintaan lain yang tidak membutuhkan SAP.\n"
-        )
-    if not has_rag:
-        system_prompt += "\nCATATAN: Koneksi ke server RAG sedang TERPUTUS.\n"
-
     # --- PERSONA BERLAPIS ---
     # Persona global (diatur admin) berlaku sebagai dasar untuk semua user;
     # persona milik user diterapkan di atasnya sebagai penyesuaian pribadi.
@@ -546,21 +549,8 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             f"{global_persona}\n"
             f"----------------------------------------------------------------\n"
         )
-    if personal_persona:
-        system_prompt += (
-            f"\n--- PREFERENSI PRIBADI PENGGUNA INI (penyesuaian di atas persona organisasi) ---\n"
-            f"{personal_persona}\n"
-            f"------------------------------------------------------------------------------\n"
-        )
-    if global_persona and personal_persona:
-        system_prompt += (
-            "CARA MENGGABUNGKAN: patuhi persona organisasi sebagai dasar, lalu terapkan preferensi "
-            "pribadi pengguna di atasnya. Bila keduanya bertentangan pada hal yang sama (misal gaya "
-            "bahasa atau panjang jawaban), preferensi pribadi yang menang — KECUALI menyangkut aturan "
-            "keakuratan data, keamanan, atau kepatuhan, yang selalu mengikuti persona organisasi.\n"
-        )
-    elif global_persona or personal_persona:
-        system_prompt += "Patuhi persona di atas secara konsisten pada setiap balasan.\n"
+    if global_persona:
+        system_prompt += "Patuhi persona organisasi di atas secara konsisten pada setiap balasan.\n"
 
     # --- KATALOG SKILL & SPESIALISASI ---
     try:
@@ -589,6 +579,57 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 f"{sk['content']}\n"
             )
         system_prompt += "\n----------------------------------------------------------------\n"
+
+    # ------------------------------------------------------------------
+    # BATAS AKHIR BAGIAN STABIL
+    #
+    # Semua di bawah ini berbeda antar pengguna atau antar permintaan, jadi
+    # ditulis paling akhir agar tidak merusak awalan yang dapat di-cache.
+    # ------------------------------------------------------------------
+    panjang_stabil = len(system_prompt)
+
+    konteks = [
+        "\n\n## KONTEKS PERMINTAAN INI\n",
+        f"- Role pengguna: {user_role}\n",
+        f"- Sumber data yang tersedia: {inventory_line}\n",
+    ]
+    if has_sap:
+        konteks.append(
+            f"- Sistem SAP aktif: **{sap_server_name}** (SID: {sap_sid}). "
+            f"Inilah NAMA_SERVER yang dipakai pada baris status di aturan FORMAT JAWABAN.\n"
+        )
+    else:
+        konteks.append(
+            "- CATATAN: Koneksi ke server MCP SAP sedang TERPUTUS. Beritahu pengguna bila "
+            "mereka meminta data live SAP, namun tetap layani permintaan lain yang tidak "
+            "membutuhkan SAP.\n"
+        )
+    if not has_rag:
+        konteks.append("- CATATAN: Koneksi ke server RAG sedang TERPUTUS.\n")
+
+    if personal_persona:
+        konteks.append(
+            f"\n--- PREFERENSI PRIBADI PENGGUNA INI (penyesuaian di atas persona organisasi) ---\n"
+            f"{personal_persona}\n"
+            f"------------------------------------------------------------------------------\n"
+        )
+        if global_persona:
+            konteks.append(
+                "CARA MENGGABUNGKAN: patuhi persona organisasi sebagai dasar, lalu terapkan "
+                "preferensi pribadi pengguna di atasnya. Bila keduanya bertentangan pada hal "
+                "yang sama (misal gaya bahasa atau panjang jawaban), preferensi pribadi yang "
+                "menang — KECUALI menyangkut aturan keakuratan data, keamanan, atau kepatuhan, "
+                "yang selalu mengikuti persona organisasi.\n"
+            )
+        else:
+            konteks.append("Patuhi preferensi di atas secara konsisten pada setiap balasan.\n")
+
+    system_prompt += "".join(konteks)
+
+    logger.info(
+        f"Prompt: {panjang_stabil} karakter bagian stabil (dapat di-cache) + "
+        f"{len(system_prompt) - panjang_stabil} karakter konteks per permintaan."
+    )
 
     messages = [SystemMessage(content=system_prompt)]
 
