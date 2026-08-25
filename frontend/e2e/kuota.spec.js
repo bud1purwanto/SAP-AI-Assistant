@@ -68,3 +68,42 @@ test('saklar pembatasan bertahan setelah halaman dimuat ulang', async ({ page })
   await saklar(page).click();
   await expect(saklar(page)).toHaveAttribute('aria-pressed', semula);
 });
+
+test('sisa kuota tampil sebagai bilah di bilah atas ketika pembatasan menyala', async ({ page }) => {
+  await masukSebagaiAdmin(page);
+  await bukaTabKuota(page);
+
+  const bilah = page.getByRole('progressbar', { name: 'Sisa kuota token hari ini' });
+
+  // Peran superadmin bawaannya tanpa batas (0), jadi tidak ada sisa untuk
+  // digambar. Batas sementara dipasang supaya bilahnya punya sesuatu untuk
+  // ditampilkan, lalu dikembalikan di akhir.
+  const saklarSemula = await saklar(page).getAttribute('aria-pressed');
+  await page.locator('#harian-superadmin').fill('100000');
+  await page.getByRole('button', { name: 'Simpan batas superadmin' }).click();
+  await expect(page.getByText(/Batas peran 'superadmin' tersimpan/)).toBeVisible();
+  if (saklarSemula !== 'true') await saklar(page).click();
+  await expect(saklar(page)).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+  await expect(bilah).toBeVisible({ timeout: 15_000 });
+
+  // Belum ada pemakaian pada peran ini, jadi sisanya penuh.
+  const persen = Number(await bilah.getAttribute('aria-valuenow'));
+  expect(persen).toBeGreaterThan(90);
+  expect(persen).toBeLessThanOrEqual(100);
+
+  // Pembatasan dimatikan: tidak ada sisa yang bisa habis, bilahnya ikut hilang.
+  await bukaTabKuota(page);
+  await saklar(page).click();
+  await expect(saklar(page)).toHaveAttribute('aria-pressed', 'false');
+  await page.reload();
+  await expect(bilah).toHaveCount(0);
+
+  // Kembalikan batas dan saklar ke keadaan semula.
+  await bukaTabKuota(page);
+  await page.locator('#harian-superadmin').fill('0');
+  await page.getByRole('button', { name: 'Simpan batas superadmin' }).click();
+  await expect(page.getByText(/Batas peran 'superadmin' tersimpan/)).toBeVisible();
+  if (saklarSemula === 'true') await saklar(page).click();
+});

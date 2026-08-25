@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Infinity as InfinityIcon, Zap } from 'lucide-react';
+import { AlertTriangle, Infinity as InfinityIcon } from 'lucide-react';
 
 /**
  * Peringatan sisa kuota token harian.
@@ -52,7 +52,29 @@ const QuotaBanner = ({ quota }) => {
   );
 };
 
-/** Ringkasan kuota di bilah atas — ringkas, tanpa memakan ruang. */
+/**
+ * Sisa kuota token di bilah atas.
+ *
+ * Yang ditampilkan adalah SISA, bukan yang sudah terpakai: pertanyaan yang
+ * dipunyai pengguna adalah "masih cukup untuk berapa lama lagi", dan angka
+ * terpakai memaksa mereka menghitung sendiri.
+ *
+ * Bilahnya hanya muncul ketika pembatasan sedang ditegakkan. Saat admin
+ * mematikan pembatasan, tidak ada yang bisa habis — memperlihatkan bilah yang
+ * menyusut di situ berarti memperingatkan sesuatu yang tidak akan terjadi.
+ */
+
+/** 1.240.000 → "1,2jt"; ruang di bilah atas terlalu sempit untuk angka penuh. */
+const ringkas = (n) => {
+  const v = Math.max(0, n ?? 0);
+  if (v >= 1_000_000) {
+    const jt = v / 1_000_000;
+    return `${jt.toFixed(jt < 10 ? 1 : 0).replace('.', ',')}jt`;
+  }
+  if (v >= 1_000) return `${Math.round(v / 1_000)}rb`;
+  return String(v);
+};
+
 export const QuotaChip = ({ quota }) => {
   if (!quota) return null;
 
@@ -68,19 +90,47 @@ export const QuotaChip = ({ quota }) => {
     );
   }
 
-  const persen = quota.used_percent ?? 0;
-  const warna = persen >= 95 ? 'text-danger' : persen >= 80 ? 'text-warning' : 'text-content-muted';
+  // Pembatasan mati: pemakaian tetap dicatat untuk admin, tetapi pengguna
+  // tidak punya sisa yang perlu dijaga.
+  if (!quota.enforced) return null;
+
+  const batas = quota.daily_token_limit ?? 0;
+  const sisa = Math.max(0, quota.remaining_tokens ?? 0);
+  const sisaPersen = batas > 0 ? Math.max(0, Math.min(100, Math.round((sisa / batas) * 100))) : 0;
+
+  const genting = sisaPersen <= 5;
+  const menipis = sisaPersen <= 20;
+  const warnaTeks = genting ? 'text-danger' : menipis ? 'text-warning' : 'text-content-muted';
+  const warnaBilah = genting ? 'bg-danger' : menipis ? 'bg-warning' : 'bg-accent';
 
   return (
-    <span
-      className={`hidden items-center gap-1 rounded-full border border-line bg-surface-sunken px-2 py-1 text-[10.5px] font-medium sm:inline-flex ${warna}`}
-      title={`${angka(quota.used_tokens)} dari ${angka(quota.daily_token_limit)} token terpakai hari ini${
-        quota.enforced ? '' : ' (pembatasan sedang dimatikan)'
-      }`}
+    <div
+      className="flex items-center gap-2 rounded-full border border-line bg-surface-sunken px-2 py-1 sm:px-2.5"
+      title={`Sisa ${angka(sisa)} dari ${angka(batas)} token hari ini${
+        quota.estimated ? ' (sebagian diperkirakan)' : ''
+      }. Kuota dihitung ulang setiap tengah malam.`}
     >
-      <Zap className="h-3 w-3" aria-hidden="true" />
-      {persen}%
-    </span>
+      <span className="hidden text-[10px] font-medium text-content-subtle sm:inline">Sisa</span>
+      <div
+        role="progressbar"
+        aria-label="Sisa kuota token hari ini"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={sisaPersen}
+        aria-valuetext={`${sisaPersen} persen, ${angka(sisa)} token`}
+        className="h-1.5 w-9 overflow-hidden rounded-full bg-line sm:w-20"
+      >
+        {/* Sisa 1% pada bilah selebar 36px hanya sepersekian piksel — tak
+            terlihat, sehingga "hampir habis" dan "sudah habis" tampak sama. */}
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ease-out ${warnaBilah}`}
+          style={{ width: `${sisa > 0 ? Math.max(sisaPersen, 6) : 0}%` }}
+        />
+      </div>
+      <span className={`text-[10.5px] font-semibold tabular-nums ${warnaTeks}`}>
+        {ringkas(sisa)}
+      </span>
+    </div>
   );
 };
 
