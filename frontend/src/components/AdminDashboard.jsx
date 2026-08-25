@@ -797,8 +797,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
@@ -890,8 +890,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
@@ -1142,8 +1142,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: TAMBAH SKILL */}
                 {isAddSkillOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Plus className="w-4 h-4 text-indigo-500" /> Tambah Skill Baru
@@ -1232,8 +1232,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT SKILL */}
                 {editingSkill && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe bg-slate-900/60 backdrop-blur-sm">
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn max-h-[calc(var(--app-height,100dvh)*0.9)] overflow-y-auto">
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
                           <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Skill '{editingSkill.name}'

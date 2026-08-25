@@ -336,6 +336,21 @@ code, pre, .font-mono {
   }
 }
 
+/* Tinggi maksimum panel modal yang dipusatkan di layar.
+ *
+ * `max-h-[92vh]` tidak dapat dipakai: di PWA iOS satuan `vh` menghitung seluruh
+ * layar termasuk area status bar dan home indicator, sedangkan wadah modalnya
+ * sudah menyisihkan area itu lewat padding safe-area. Panel menjadi lebih
+ * tinggi daripada ruang yang tersedia, dan karena dipusatkan dengan
+ * `items-center`, kelebihannya meluber ke ATAS dan ke bawah sekaligus —
+ * judul dan tombol tutup terdorong ke balik status bar sehingga tidak dapat
+ * ditekan. Perhitungan di bawah memakai tinggi viewport yang benar-benar
+ * terlihat, dikurangi kedua safe-area dan padding wadahnya.
+ */
+.modal-panel {
+  max-height: calc(var(--app-height, 100dvh) - var(--sat) - var(--sab) - 1.5rem);
+}
+
 /* Tombol hapus bawaan WebKit pada input[type=search] tampil berdampingan
    dengan tombol hapus milik aplikasi — dua tanda silang bersebelahan. */
 input[type="search"]::-webkit-search-cancel-button,

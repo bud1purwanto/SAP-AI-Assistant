@@ -60,7 +60,7 @@ const ConfirmModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={() => {
         if (!isLoading) onClose();
       }}
@@ -69,7 +69,7 @@ const ConfirmModal = ({
       aria-labelledby="confirm-modal-title"
     >
       <div
-        className="relative w-full max-w-sm overflow-hidden rounded-2xl bg-surface-raised border border-line shadow-2xl transition-all animate-in zoom-in-95 duration-200"
+        className="modal-panel relative my-auto w-full max-w-sm overflow-y-auto rounded-2xl bg-surface-raised border border-line shadow-2xl transition-all animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Ambient Top Glow */}

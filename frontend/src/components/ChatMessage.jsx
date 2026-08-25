@@ -489,9 +489,15 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
 
                   return <CodeBlock codeString={codeString} {...props} />;
                 },
-                h1: ({ children }) => <h1 className="text-base sm:text-lg font-bold text-content mt-4 mb-2 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-sm sm:text-base font-bold text-content mt-3 mb-1.5 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-xs sm:text-sm font-bold text-content mt-2.5 mb-1 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
+                /* Ukuran heading dulu lebih KECIL daripada teks isinya: isi
+                   gelembung 14px, sedangkan h3 hanya 12px dan h2 pas 14px.
+                   Akibatnya judul bagian justru terbaca lebih lemah daripada
+                   paragraf di bawahnya. Setiap tingkat kini lebih besar dari
+                   teks isi dan berbeda jelas satu sama lain. */
+                h1: ({ children }) => <h1 className="text-lg sm:text-xl font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-[17px] sm:text-lg font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-[15.5px] sm:text-base font-bold text-content mt-4 mb-1.5 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
+                h4: ({ children }) => <h4 className="text-[14.5px] sm:text-[15px] font-bold text-content-secondary mt-3.5 mb-1 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h4>,
                 // Tabel lebar harus MELUBER lalu digeser, bukan dipaksa menyusut.
                 // `min-w-full` saja membuat kolom mengecil sampai teksnya pecah
                 // satu huruf per baris di layar ponsel; `w-max` memberi tabel
