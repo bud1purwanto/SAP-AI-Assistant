@@ -152,6 +152,9 @@ const ChatLayout = () => {
 
   const messagesEndRef = useRef(null);
   const scrollContainerRef = useRef(null);
+  const messagesContentRef = useRef(null);
+  // Apakah pengguna sedang mengikuti di dasar percakapan.
+  const mengikutiDasarRef = useRef(true);
 
   // Key aktif untuk session yang sedang dibuka
   const activeSessionKey = currentSessionId || DRAFT_SESSION_KEY;
@@ -243,6 +246,41 @@ const ChatLayout = () => {
   useEffect(() => {
     if (currentStream && isNearBottom()) scrollToBottom(false);
   }, [currentStream, isNearBottom, scrollToBottom]);
+
+  /**
+   * Pertahankan posisi di dasar ketika tinggi isi bertambah SETELAH digulir.
+   *
+   * Sebagian isi baru selesai digambar beberapa saat setelah pesan tampil —
+   * diagram Mermaid yang paling terasa, karena menambah ratusan piksel. Saat
+   * membuka percakapan lama, layar sudah terlanjur digulir ke dasar yang lama,
+   * lalu diagramnya muncul dan mendorong pesan terakhir ke bawah layar.
+   *
+   * Penarikan hanya dilakukan bila pengguna memang sedang berada di dasar;
+   * bila ia menggulir ke atas untuk membaca ulang, posisinya dibiarkan.
+   */
+  useEffect(() => {
+    const wadah = scrollContainerRef.current;
+    const isi = messagesContentRef.current;
+    if (!wadah || !isi || typeof ResizeObserver === 'undefined') return undefined;
+
+    const catatPosisi = () => { mengikutiDasarRef.current = isNearBottom(); };
+    wadah.addEventListener('scroll', catatPosisi, { passive: true });
+
+    const pengamat = new ResizeObserver(() => {
+      if (mengikutiDasarRef.current) scrollToBottom(false);
+    });
+    pengamat.observe(isi);
+
+    return () => {
+      wadah.removeEventListener('scroll', catatPosisi);
+      pengamat.disconnect();
+    };
+  }, [isNearBottom, scrollToBottom]);
+
+  // Membuka percakapan lain berarti mulai membaca dari dasarnya lagi.
+  useEffect(() => {
+    mengikutiDasarRef.current = true;
+  }, [activeSessionKey]);
 
   // Pencarian riwayat. Ditunda sesaat supaya tidak memanggil server pada
   // setiap ketukan tombol, dan hasil yang basi diabaikan bila kata kuncinya
@@ -1184,7 +1222,7 @@ const ChatLayout = () => {
         )}
 
         <div ref={scrollContainerRef} className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
-          <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
+          <div ref={messagesContentRef} className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
             {currentMessages.map((msg, index) => (
               <ChatMessage
                 key={index}

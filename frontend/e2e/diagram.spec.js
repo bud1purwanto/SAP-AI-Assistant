@@ -122,3 +122,33 @@ test('diagram tidak digambar ulang saat panel sumber data dibuka', async ({ page
   // Id yang berubah menandakan komponennya benar-benar dibuat ulang.
   expect(await page.locator('svg[id^="mermaid-"]').getAttribute('id')).toBe(idAwal);
 });
+
+test('membuka percakapan berdiagram tetap mendarat di pesan terakhir', async ({ page }) => {
+  const kotak = page.getByPlaceholder('Tanyakan sesuatu tentang SAP…');
+
+  // Percakapan harus lebih tinggi daripada layar, dan diakhiri diagram —
+  // diagram digambar beberapa saat setelah pesan tampil, menambah ratusan
+  // piksel sesudah layar terlanjur digulir ke dasar yang lama.
+  for (const t of ['pertanyaan pertama', 'pertanyaan kedua', 'tampilkan diagram alur procure to pay']) {
+    await kotak.fill(t);
+    await kotak.press('Enter');
+    await page.waitForTimeout(2500);
+  }
+  await expect(page.locator('svg[id^="mermaid-"]')).toBeVisible({ timeout: 30_000 });
+
+  // Muat ulang agar simpanan diagram di memori terhapus: inilah kondisi
+  // pengguna yang baru membuka aplikasi lalu memilih percakapan lama.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1500);
+  await page.getByRole('button', { name: 'Buka menu percakapan' }).click();
+  await page.locator('nav button', { hasText: 'pertanyaan pertama' }).first().click();
+  await expect(page.locator('svg[id^="mermaid-"]')).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(2000);
+
+  const sisa = await page.evaluate(() => {
+    const el = document.querySelector('.app-chat-scroll');
+    return Math.round(el.scrollHeight - el.scrollTop - el.clientHeight);
+  });
+  expect(sisa, 'pesan terakhir berada di bawah layar setelah diagram digambar')
+    .toBeLessThan(80);
+});
