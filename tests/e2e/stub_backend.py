@@ -33,10 +33,30 @@ Dokumennya saling terkait lewat tabel EKKO dan EKPO.
 """
 
 
+# Kode panjang untuk menguji panel samping.
+_BARIS = "\n".join(
+    f"  WRITE: / 'Baris nomor {i} dari program ABAP contoh'." for i in range(1, 41)
+)
+JAWABAN_KODE = f"""Berikut program ABAP-nya.
+
+```abap
+REPORT z_contoh_panjang.
+{_BARIS}
+```
+
+Program di atas hanya contoh.
+"""
+
+
 async def fake_process(chat_req, role, persona, username="Guest",
                        on_progress=None, on_token=None):
     if on_progress:
         await on_progress(stage="thinking", label="Menganalisis pertanyaan…", step=1, max_steps=6)
+
+    if "abap" in (chat_req.message or "").lower():
+        if on_token:
+            await on_token(text=JAWABAN_KODE)
+        return ChatResponse(reply=JAWABAN_KODE, sources=[], artifacts=[])
 
     if "diagram" in (chat_req.message or "").lower():
         if on_token:

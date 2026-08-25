@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
+import { copyToClipboard } from '../lib/clipboard';
 import MermaidDiagram from './MermaidDiagram';
 import UsagePill from './UsagePill';
 
@@ -112,66 +113,13 @@ const AttachmentChip = ({ item }) => {
   );
 };
 
-/**
- * Salin teks ke clipboard secara universal (mendukung HTTPS, HTTP, iOS Safari, dan PWA).
- */
-const copyToClipboard = async (text) => {
-  if (!text) return false;
-
-  // 1. Coba Modern Clipboard API jika tersedia & konteks aman
-  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (err) {
-      console.warn('Modern navigator.clipboard gagal, beralih ke fallback execCommand:', err);
-    }
-  }
-
-  // 2. Fallback untuk non-HTTPS / Safari iOS / PWA / browser lama
-  try {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.top = '0';
-    textArea.style.left = '-9999px';
-    textArea.style.width = '2em';
-    textArea.style.height = '2em';
-    textArea.style.padding = '0';
-    textArea.style.border = 'none';
-    textArea.style.outline = 'none';
-    textArea.style.boxShadow = 'none';
-    textArea.style.background = 'transparent';
-    textArea.setAttribute('readonly', '');
-
-    document.body.appendChild(textArea);
-
-    // Khusus iOS Safari
-    if (navigator.userAgent.match(/ipad|iphone/i)) {
-      const range = document.createRange();
-      range.selectNodeContents(textArea);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      textArea.setSelectionRange(0, 999999);
-    } else {
-      textArea.focus();
-      textArea.select();
-    }
-
-    const successful = document.execCommand('copy');
-    document.body.removeChild(textArea);
-    return successful;
-  } catch (err) {
-    console.error('Fallback execCommand copy gagal:', err);
-    return false;
-  }
-};
 
 /**
  * Komponen blok kode dengan tombol salin mandiri.
  */
-const CodeBlock = ({ codeString, ...props }) => {
+const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
+  // Kode pendek cukup dibaca di tempat; panel baru berguna untuk yang panjang.
+  const layakDipanel = onBukaPanel && codeString.split('\n').length > 12;
   const [codeCopied, setCodeCopied] = useState(false);
 
   const handleCopyCode = async () => {
@@ -194,6 +142,24 @@ const CodeBlock = ({ codeString, ...props }) => {
             <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Source Code
           </span>
         </div>
+        <div className="flex items-center gap-1">
+        {layakDipanel && (
+          <button
+            type="button"
+            onClick={() => onBukaPanel({
+              judul: 'Kode program',
+              keterangan: `${codeString.split('\n').length} baris`,
+              teks: codeString,
+              namaBerkas: 'kode.abap',
+            })}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
+            title="Buka di panel samping"
+            aria-label="Buka kode di panel samping"
+          >
+            <Columns2 className="w-3 h-3" aria-hidden="true" />
+            <span className="hidden sm:inline">Panel</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={handleCopyCode}
@@ -213,6 +179,7 @@ const CodeBlock = ({ codeString, ...props }) => {
             </>
           )}
         </button>
+        </div>
       </div>
       <pre className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed">
         <code {...props}>{codeString}</code>
@@ -271,7 +238,7 @@ const ScrollableTable = ({ children }) => {
  * Akibatnya diagram Mermaid hilang lalu digambar ulang: tinggi isi menciut
  * lalu memuai, dan layar meloncat (terukur 976px) sekaligus terasa tersendat.
  */
-const buatKomponenMarkdown = (isStreaming) => ({
+const buatKomponenMarkdown = (isStreaming, onBukaPanel) => ({
               p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary break-words [overflow-wrap:anywhere]">{children}</p>,
               ul: ({ children }) => <ul className="list-disc pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>,
               ol: ({ children }) => <ol className="list-decimal pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>,
@@ -299,7 +266,7 @@ const buatKomponenMarkdown = (isStreaming) => ({
                   );
                 }
 
-                return <CodeBlock codeString={codeString} {...props} />;
+                return <CodeBlock codeString={codeString} onBukaPanel={onBukaPanel} {...props} />;
               },
               /* Ukuran heading dulu lebih KECIL daripada teks isinya: isi
                  gelembung 14px, sedangkan h3 hanya 12px dan h2 pas 14px.
@@ -331,7 +298,7 @@ const buatKomponenMarkdown = (isStreaming) => ({
               ),
 });
 
-const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => {
+const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBukaPanel }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
   const [openDetail, setOpenDetail] = useState(null);
@@ -344,8 +311,8 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
 
   // Hanya dibuat ulang saat status mengalir berubah — bukan pada tiap render.
   const markdownComponents = useMemo(
-    () => buatKomponenMarkdown(isStreaming),
-    [isStreaming],
+    () => buatKomponenMarkdown(isStreaming, onBukaPanel),
+    [isStreaming, onBukaPanel],
   );
 
   useEffect(() => {

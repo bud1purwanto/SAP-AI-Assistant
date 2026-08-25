@@ -9,6 +9,7 @@ import ChatMessage from './ChatMessage';
 import ConfirmModal from './ConfirmModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
+import SidePanel from './SidePanel';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
@@ -135,6 +136,8 @@ const ChatLayout = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Isi panel samping (kode/dokumen panjang), null bila panel tertutup.
+  const [isiPanel, setIsiPanel] = useState(null);
 
   // State untuk konfirmasi popup logout & hapus percakapan
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
@@ -163,6 +166,12 @@ const ChatLayout = () => {
   const currentStream = sessionStreamMap[activeSessionKey] || '';
   const currentProgress = sessionProgressMap[activeSessionKey] || null;
   const currentSessionError = sessionErrorMap[activeSessionKey] || null;
+
+  // Identitas fungsi ini dijaga tetap sama: ia mengalir sampai ke peta
+  // komponen markdown, dan perubahan identitasnya akan memicu render ulang
+  // seluruh isi pesan pada tiap render.
+  const bukaPanel = useCallback((isi) => setIsiPanel(isi), []);
+  const tutupPanel = useCallback(() => setIsiPanel(null), []);
 
   const scrollToBottom = useCallback((smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'end' });
@@ -1227,6 +1236,7 @@ const ChatLayout = () => {
               <ChatMessage
                 key={index}
                 message={msg}
+                onBukaPanel={bukaPanel}
                 // Hanya pertukaran terakhir yang boleh diubah: memotong riwayat
                 // di tengah akan membuang jawaban-jawaban sesudahnya.
                 onRegenerate={
@@ -1304,6 +1314,8 @@ const ChatLayout = () => {
 
         <ChatInput onSendMessage={handleSendMessage} isLoading={isCurrentLoading} />
       </main>
+
+      <SidePanel isi={isiPanel} onTutup={tutupPanel} />
 
       {/* Modals */}
       <LoginModal

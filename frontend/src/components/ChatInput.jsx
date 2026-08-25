@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FileSpreadsheet, FileText, FileType, Image, Loader2, Paperclip, Send, X } from 'lucide-react';
+import { FileSpreadsheet, FileText, FileType, Image, Loader2, Mic, MicOff, Paperclip, Send, Square, X } from 'lucide-react';
 
 import { uploadAttachment } from '../lib/api';
+import { ALASAN, useVoiceInput } from '../hooks/useVoiceInput';
 
 const MAX_ATTACHMENTS = 5;
 
@@ -27,6 +28,37 @@ const formatSize = (bytes) => (bytes < 1024 * 1024
 
 const ChatInput = ({ onSendMessage, isLoading }) => {
   const [input, setInput] = useState('');
+  // Teks yang sudah ada sebelum mikrofon dinyalakan; hasil bicara ditambahkan
+  // di belakangnya, bukan menimpanya.
+  const teksSebelumBicaraRef = useRef('');
+  const [pesanSuara, setPesanSuara] = useState('');
+
+  const suara = useVoiceInput({
+    onTeks: (teks) => {
+      const dasar = teksSebelumBicaraRef.current;
+      setInput(dasar ? `${dasar.trimEnd()} ${teks}` : teks);
+    },
+  });
+
+  const tekanMikrofon = () => {
+    if (suara.dukungan === ALASAN.TIDAK_DIDUKUNG) {
+      setPesanSuara('Peramban ini tidak menyediakan pengenalan suara. Coba Safari atau Chrome.');
+      return;
+    }
+    if (suara.dukungan === ALASAN.BUTUH_HTTPS) {
+      // Ini bukan kekurangan aplikasi: peramban menolak mikrofon pada halaman
+      // yang tidak memakai HTTPS, dan itu tidak dapat diakali dari sisi kode.
+      setPesanSuara('Mikrofon hanya dapat dipakai lewat HTTPS. Alamat ini masih memakai http:// biasa.');
+      return;
+    }
+    setPesanSuara('');
+    if (suara.mendengar) {
+      suara.berhenti();
+    } else {
+      teksSebelumBicaraRef.current = input;
+      suara.mulai();
+    }
+  };
   const [attachments, setAttachments] = useState([]);
   const [uploading, setUploading] = useState(0);
   const [uploadError, setUploadError] = useState('');
@@ -178,6 +210,19 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <p role="alert" className="px-2.5 pb-1 text-[11px] sm:text-xs text-danger">{uploadError}</p>
         )}
 
+        {suara.mendengar && (
+          <p className="flex items-center gap-1.5 px-2.5 pb-1 text-[11px] sm:text-xs text-danger">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger" />
+            Mendengarkan… bicara sekarang, ketuk tombol berhenti bila selesai.
+          </p>
+        )}
+
+        {(pesanSuara || suara.galat) && !suara.mendengar && (
+          <p role="alert" className="px-2.5 pb-1 text-[11px] sm:text-xs text-warning">
+            {pesanSuara || suara.galat}
+          </p>
+        )}
+
         <div className="flex items-end gap-1">
           <input
             ref={fileInputRef}
@@ -195,6 +240,24 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             title="Lampirkan gambar atau dokumen"
           >
             <Paperclip className="w-4 h-4" aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            onClick={tekanMikrofon}
+            className={`p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl transition-colors shrink-0 ${
+              suara.mendengar
+                ? 'bg-danger/15 text-danger'
+                : 'text-content-muted hover:text-accent hover:bg-surface-hover'
+            }`}
+            aria-label={suara.mendengar ? 'Hentikan input suara' : 'Bicara untuk menulis pertanyaan'}
+            title={suara.mendengar ? 'Hentikan input suara' : 'Bicara untuk menulis pertanyaan'}
+          >
+            {suara.mendengar
+              ? <Square className="w-4 h-4 fill-current" aria-hidden="true" />
+              : suara.dukungan === ALASAN.SIAP
+                ? <Mic className="w-4 h-4" aria-hidden="true" />
+                : <MicOff className="w-4 h-4" aria-hidden="true" />}
           </button>
 
           <textarea
