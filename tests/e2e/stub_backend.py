@@ -15,7 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 
 import main  # noqa: E402
-from models import ChatResponse  # noqa: E402
+from models import ChatResponse, SourceReference  # noqa: E402
 
 
 # Jawaban berdiagram dipakai tes render Mermaid. Isinya sengaja mengandung
@@ -46,7 +46,15 @@ async def fake_process(chat_req, role, persona, username="Guest",
                 # detik. Jeda yang terlalu singkat membuat fase "sedang ditulis"
                 # lewat begitu cepat sehingga tidak dapat diamati.
                 await asyncio.sleep(0.05)
-        return ChatResponse(reply=JAWABAN_DIAGRAM, sources=[], artifacts=[])
+        # Sumber data disertakan agar panel "Lihat sumber data" ada: membuka
+        # panel itu memicu render ulang pesan, dan di situlah diagram pernah
+        # ter-mount ulang sehingga layar meloncat.
+        return ChatResponse(
+            reply=JAWABAN_DIAGRAM,
+            sources=[SourceReference(type="MCP", name="Tool: read_table",
+                                     content="MARC: 250 baris data " * 10)],
+            artifacts=[],
+        )
 
     kalimat = (
         f"Jawaban untuk {chat_req.message}. "

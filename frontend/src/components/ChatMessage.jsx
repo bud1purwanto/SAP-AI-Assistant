@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronUp, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
@@ -261,6 +261,76 @@ const ScrollableTable = ({ children }) => {
   );
 };
 
+/**
+ * Peta komponen untuk ReactMarkdown.
+ *
+ * WAJIB dibuat di luar render dan di-memo. Objek `components` yang dibuat
+ * ulang setiap render membuat react-markdown memperlakukan komponennya
+ * sebagai tipe baru, sehingga seluruh isi pesan DI-MOUNT ULANG pada setiap
+ * perubahan state sekecil apa pun — termasuk saat membuka panel sumber data.
+ * Akibatnya diagram Mermaid hilang lalu digambar ulang: tinggi isi menciut
+ * lalu memuai, dan layar meloncat (terukur 976px) sekaligus terasa tersendat.
+ */
+const buatKomponenMarkdown = (isStreaming) => ({
+              p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary break-words [overflow-wrap:anywhere]">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>,
+              li: ({ children }) => <li className="leading-relaxed break-words [overflow-wrap:anywhere]">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
+              code: ({ inline, className: _className, children, ...props }) => {
+                const codeString = String(children || '').replace(/\n$/, '');
+                const isMultiLine = codeString.includes('\n');
+                const isShort = !isMultiLine && codeString.length <= 60;
+
+                // Blok ```mermaid digambar sebagai bagan, bukan ditampilkan
+                // sebagai kode. Penanda bahasanya ada di className.
+                if (!inline && /language-mermaid/.test(_className || '')) {
+                  return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
+                }
+
+                if (inline || isShort) {
+                  return (
+                    <code 
+                      className="inline-flex items-center whitespace-nowrap font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-accent-soft text-accent-soft-fg border border-accent/25 font-semibold select-all" 
+                      {...props}
+                    >
+                      {codeString}
+                    </code>
+                  );
+                }
+
+                return <CodeBlock codeString={codeString} {...props} />;
+              },
+              /* Ukuran heading dulu lebih KECIL daripada teks isinya: isi
+                 gelembung 14px, sedangkan h3 hanya 12px dan h2 pas 14px.
+                 Akibatnya judul bagian justru terbaca lebih lemah daripada
+                 paragraf di bawahnya. Setiap tingkat kini lebih besar dari
+                 teks isi dan berbeda jelas satu sama lain. */
+              h1: ({ children }) => <h1 className="text-lg sm:text-xl font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
+              h2: ({ children }) => <h2 className="text-[17px] sm:text-lg font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
+              h3: ({ children }) => <h3 className="text-[15.5px] sm:text-base font-bold text-content mt-4 mb-1.5 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
+              h4: ({ children }) => <h4 className="text-[14.5px] sm:text-[15px] font-bold text-content-secondary mt-3.5 mb-1 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h4>,
+              // Tabel lebar harus MELUBER lalu digeser, bukan dipaksa menyusut.
+              // `min-w-full` saja membuat kolom mengecil sampai teksnya pecah
+              // satu huruf per baris di layar ponsel; `w-max` memberi tabel
+              // lebar alaminya sehingga scroll horizontal yang bekerja.
+              table: ({ children }) => <ScrollableTable>{children}</ScrollableTable>,
+              // Header tidak boleh pernah terpotong: itu kunci membaca kolomnya.
+              th: ({ children }) => (
+                <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content whitespace-nowrap">
+                  {children}
+                </th>
+              ),
+              // Sel diberi lebar minimum agar tidak menyempit menjadi satu
+              // huruf, dan lebar maksimum agar kalimat panjang tetap membungkus
+              // secara wajar alih-alih membuat tabel sangat lebar.
+              td: ({ children }) => (
+                <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums align-top min-w-[5rem] max-w-[16rem]">
+                  {children}
+                </td>
+              ),
+});
+
 const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => {
   const isUser = message.role === 'user' || message.sender === 'user';
   const [showSources, setShowSources] = useState(false);
@@ -271,6 +341,12 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
   const [draft, setDraft] = useState(message.content);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const editRef = useRef(null);
+
+  // Hanya dibuat ulang saat status mengalir berubah — bukan pada tiap render.
+  const markdownComponents = useMemo(
+    () => buatKomponenMarkdown(isStreaming),
+    [isStreaming],
+  );
 
   useEffect(() => {
     if (!isEditing) return;
@@ -467,65 +543,7 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit }) => 
           <div className="prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
-              components={{
-                p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary break-words [overflow-wrap:anywhere]">{children}</p>,
-                ul: ({ children }) => <ul className="list-disc pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>,
-                ol: ({ children }) => <ol className="list-decimal pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>,
-                li: ({ children }) => <li className="leading-relaxed break-words [overflow-wrap:anywhere]">{children}</li>,
-                strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
-                code: ({ inline, className: _className, children, ...props }) => {
-                  const codeString = String(children || '').replace(/\n$/, '');
-                  const isMultiLine = codeString.includes('\n');
-                  const isShort = !isMultiLine && codeString.length <= 60;
-
-                  // Blok ```mermaid digambar sebagai bagan, bukan ditampilkan
-                  // sebagai kode. Penanda bahasanya ada di className.
-                  if (!inline && /language-mermaid/.test(_className || '')) {
-                    return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
-                  }
-
-                  if (inline || isShort) {
-                    return (
-                      <code 
-                        className="inline-flex items-center whitespace-nowrap font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-accent-soft text-accent-soft-fg border border-accent/25 font-semibold select-all" 
-                        {...props}
-                      >
-                        {codeString}
-                      </code>
-                    );
-                  }
-
-                  return <CodeBlock codeString={codeString} {...props} />;
-                },
-                /* Ukuran heading dulu lebih KECIL daripada teks isinya: isi
-                   gelembung 14px, sedangkan h3 hanya 12px dan h2 pas 14px.
-                   Akibatnya judul bagian justru terbaca lebih lemah daripada
-                   paragraf di bawahnya. Setiap tingkat kini lebih besar dari
-                   teks isi dan berbeda jelas satu sama lain. */
-                h1: ({ children }) => <h1 className="text-lg sm:text-xl font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
-                h2: ({ children }) => <h2 className="text-[17px] sm:text-lg font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
-                h3: ({ children }) => <h3 className="text-[15.5px] sm:text-base font-bold text-content mt-4 mb-1.5 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
-                h4: ({ children }) => <h4 className="text-[14.5px] sm:text-[15px] font-bold text-content-secondary mt-3.5 mb-1 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h4>,
-                // Tabel lebar harus MELUBER lalu digeser, bukan dipaksa menyusut.
-                // `min-w-full` saja membuat kolom mengecil sampai teksnya pecah
-                // satu huruf per baris di layar ponsel; `w-max` memberi tabel
-                // lebar alaminya sehingga scroll horizontal yang bekerja.
-                table: ({ children }) => <ScrollableTable>{children}</ScrollableTable>,
-                // Header tidak boleh pernah terpotong: itu kunci membaca kolomnya.
-                th: ({ children }) => (
-                  <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content whitespace-nowrap">
-                    {children}
-                  </th>
-                ),
-                // Sel diberi lebar minimum agar tidak menyempit menjadi satu
-                // huruf, dan lebar maksimum agar kalimat panjang tetap membungkus
-                // secara wajar alih-alih membuat tabel sangat lebar.
-                td: ({ children }) => (
-                  <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums align-top min-w-[5rem] max-w-[16rem]">
-                    {children}
-                  </td>
-                ),
-              }}
+              components={markdownComponents}
             >
               {message.content}
             </ReactMarkdown>

@@ -39,8 +39,18 @@ const temaMermaid = () =>
 
 let nomorUrut = 0;
 
+/**
+ * Hasil gambar disimpan per (tema + teks diagram).
+ *
+ * Menggambar ulang diagram yang sama memakan waktu dan — yang lebih terasa —
+ * membuat tinggi isi menciut lalu memuai, sehingga posisi baca pengguna
+ * meloncat. Dengan simpanan ini, diagram yang sudah pernah digambar langsung
+ * tampil pada render berikutnya tanpa jeda.
+ */
+const simpanan = new Map();
+
 const MermaidDiagram = ({ chart, isStreaming = false }) => {
-  const [svg, setSvg] = useState('');
+  const [svg, setSvg] = useState(() => simpanan.get(`${temaMermaid()}::${chart}`) || '');
   const [galat, setGalat] = useState('');
   const [lihatSumber, setLihatSumber] = useState(false);
   const [diperbesar, setDiperbesar] = useState(false);
@@ -50,6 +60,14 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
     // Selama jawaban masih ditulis, teks diagram belum tentu utuh.
     if (isStreaming) return undefined;
 
+    const kunci = `${temaMermaid()}::${chart}`;
+    const tersimpan = simpanan.get(kunci);
+    if (tersimpan) {
+      setSvg(tersimpan);
+      setGalat('');
+      return undefined;
+    }
+
     let dibatalkan = false;
 
     (async () => {
@@ -58,13 +76,15 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
         if (dibatalkan) return;
         mermaid.initialize({ startOnLoad: false, theme: temaMermaid() });
         const { svg: hasil } = await mermaid.render(idRef.current, chart);
+        simpanan.set(kunci, hasil);
         if (!dibatalkan) {
           setSvg(hasil);
           setGalat('');
         }
       } catch (e) {
         if (!dibatalkan) {
-          setSvg('');
+          // Gambar sebelumnya dipertahankan bila ada; layar tidak perlu
+          // berkedip hanya karena satu percobaan gagal.
           setGalat(e?.message || 'Diagram tidak dapat digambar.');
         }
       }
@@ -84,7 +104,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
 
   // Diagram yang tidak dapat digambar tetap harus berguna: tampilkan sumbernya
   // agar isinya tidak hilang begitu saja.
-  if (galat) {
+  if (galat && !svg) {
     return (
       <div className="my-3 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/40">
         <div className="flex items-center gap-2 px-4 py-2 text-[11px] font-semibold text-warning">

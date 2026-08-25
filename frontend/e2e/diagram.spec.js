@@ -26,6 +26,10 @@ test.beforeEach(async ({ page }) => {
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByRole('button', { name: /masuk aplikasi/i }).click();
   await expect(page.locator('aside')).toContainText(ADMIN, { timeout: 15_000 });
+  // Tutup drawer: selama masih terbuka ia menutupi kotak pesan, sehingga
+  // pengiriman tertunda dan pengukuran waktu menjadi tidak sahih.
+  await page.getByRole('button', { name: 'Tutup menu' }).click();
+  await expect(page.getByPlaceholder('Tanyakan sesuatu tentang SAP…')).toBeVisible();
 });
 
 test('blok mermaid digambar sebagai bagan, bukan kode', async ({ page }) => {
@@ -48,12 +52,73 @@ test('blok mermaid digambar sebagai bagan, bukan kode', async ({ page }) => {
 });
 
 test('diagram tidak digambar selagi jawaban masih ditulis', async ({ page }) => {
+  // Fase "sedang ditulis" hanya berlangsung sekitar satu setengah detik.
+  // Menunggunya dengan toBeVisible berarti berlomba dengan waktu: bila
+  // pengiriman tertunda sedikit saja, pemeriksaan baru mulai setelah jawaban
+  // selesai dan tes gagal tanpa ada yang rusak. Karena itu kemunculannya
+  // DIREKAM lebih dulu, lalu diperiksa setelahnya.
+  await page.evaluate(() => {
+    window.__penandaMuncul = false;
+    window.__galatDiagram = false;
+    const periksa = () => {
+      const teks = document.body.innerText || '';
+      if (teks.includes('Menyiapkan diagram')) window.__penandaMuncul = true;
+      if (teks.includes('Diagram tidak dapat ditampilkan')) window.__galatDiagram = true;
+    };
+    new MutationObserver(periksa).observe(document.body, {
+      childList: true, subtree: true, characterData: true,
+    });
+  });
+
   const kotak = page.getByPlaceholder('Tanyakan sesuatu tentang SAP…');
   await kotak.fill('tampilkan diagram alur procure to pay');
   await kotak.press('Enter');
 
-  // Teks diagram tiba sepotong-sepotong; menggambar potongan yang belum utuh
-  // menghasilkan pesan galat berkedip.
-  await expect(page.getByText('Menyiapkan diagram…')).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('.app-chat-scroll svg[id^="mermaid-"]')).toBeVisible({ timeout: 30_000 });
+
+  const jejak = await page.evaluate(() => ({
+    penanda: window.__penandaMuncul,
+    galat: window.__galatDiagram,
+  }));
+  expect(jejak.penanda, 'penanda "menyiapkan diagram" tidak pernah muncul').toBe(true);
+  expect(jejak.galat, 'diagram sempat menampilkan galat dari potongan yang belum utuh').toBe(false);
+});
+
+test('diagram tidak digambar ulang saat panel sumber data dibuka', async ({ page }) => {
+  const kotak = page.getByPlaceholder('Tanyakan sesuatu tentang SAP…');
+  await kotak.fill('tampilkan diagram alur procure to pay');
+  await kotak.press('Enter');
+  await expect(page.locator('svg[id^="mermaid-"]')).toBeVisible({ timeout: 30_000 });
+  await page.waitForTimeout(800);
+
+  const idAwal = await page.locator('svg[id^="mermaid-"]').getAttribute('id');
+
+  // Tinggi wadah diagram direkam tiap frame selama panel dibuka. Bila
+  // komponennya ter-mount ulang, tingginya menciut ke nol lalu tumbuh lagi —
+  // isi di bawahnya ikut bergerak dan posisi baca pengguna meloncat.
+  const hasil = await page.evaluate(async () => {
+    const ukur = () => {
+      const el = document.querySelector('svg[id^="mermaid-"]')?.closest('div[class*="rounded-2xl"]');
+      return Math.round(el ? el.getBoundingClientRect().height : 0);
+    };
+    const sebelum = ukur();
+    const tinggi = [];
+    let jalan = true;
+    const rekam = () => { tinggi.push(ukur()); if (jalan) requestAnimationFrame(rekam); };
+    requestAnimationFrame(rekam);
+
+    [...document.querySelectorAll('button')]
+      .find((b) => /lihat sumber data/i.test(b.textContent || ''))
+      .click();
+
+    await new Promise((r) => setTimeout(r, 800));
+    jalan = false;
+    return { sebelum, minimum: Math.min(...tinggi) };
+  });
+
+  expect(hasil.sebelum).toBeGreaterThan(100);
+  expect(hasil.minimum, 'diagram menciut lalu digambar ulang').toBe(hasil.sebelum);
+
+  // Id yang berubah menandakan komponennya benar-benar dibuat ulang.
+  expect(await page.locator('svg[id^="mermaid-"]').getAttribute('id')).toBe(idAwal);
 });
