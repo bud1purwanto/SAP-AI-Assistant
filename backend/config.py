@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     assistant_persona: str = ""
     mcp_sap_config_json: str = ""
     mcp_rag_config_json: str = ""
+    mcp_sql_config_json: str = ""
     mcp_email_config_json: str = ""
 
     model_config = SettingsConfigDict(

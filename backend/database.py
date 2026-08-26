@@ -281,13 +281,19 @@ def init_db():
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON})
 
-            res_email = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_email_config_json'")).fetchone()
+            res_email = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key IN ('mcp_sql_config_json', 'mcp_email_config_json')")).fetchone()
             if not res_email or not res_email.value:
+                val = settings.mcp_sql_config_json or settings.mcp_email_config_json or DEFAULT_MCP_SQL_JSON
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('mcp_sql_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": val})
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value)
                     VALUES ('mcp_email_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """), {"val": settings.mcp_email_config_json or DEFAULT_MCP_EMAIL_JSON})
+                """), {"val": val})
 
             # 9Router Config Defaults
             res_9r_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_enabled'")).fetchone()
@@ -544,11 +550,11 @@ DEFAULT_MCP_RAG_JSON = '''{
   }
 }'''
 
-DEFAULT_MCP_EMAIL_JSON = '''{
+DEFAULT_MCP_SQL_JSON = '''{
   "mcpServers": {
-    "email-mcp": {
+    "sql-mcp": {
       "type": "http",
-      "url": "http://192.168.1.162:8092/mcp",
+      "url": "http://192.168.1.162:8093/mcp",
       "headers": {
         "Authorization": "Bearer Trias123"
       }
@@ -556,11 +562,13 @@ DEFAULT_MCP_EMAIL_JSON = '''{
   }
 }'''
 
+DEFAULT_MCP_EMAIL_JSON = DEFAULT_MCP_SQL_JSON
+
 def get_system_config():
-    """Ambil konfigurasi MCP SAP, MCP RAG, MCP Email, 9Router, dan OpenRouter dari database."""
+    """Ambil konfigurasi MCP SAP, MCP RAG, MCP SQL, 9Router, dan OpenRouter dari database."""
     sap_cfg = settings.mcp_sap_config_json or DEFAULT_MCP_SAP_JSON
     rag_cfg = settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON
-    email_cfg = settings.mcp_email_config_json or DEFAULT_MCP_EMAIL_JSON
+    sql_cfg = getattr(settings, "mcp_sql_config_json", None) or getattr(settings, "mcp_email_config_json", None) or DEFAULT_MCP_SQL_JSON
     
     nine_router_enabled = settings.nine_router_enabled
     nine_router_base_url = settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
@@ -585,8 +593,8 @@ def get_system_config():
                     sap_cfg = r.value
                 elif r.key == 'mcp_rag_config_json' and r.value is not None:
                     rag_cfg = r.value
-                elif r.key == 'mcp_email_config_json' and r.value is not None:
-                    email_cfg = r.value
+                elif r.key in ('mcp_sql_config_json', 'mcp_email_config_json') and r.value is not None:
+                    sql_cfg = r.value
                 elif r.key == 'token_limit_enabled' and r.value is not None:
                     token_limit_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
@@ -605,14 +613,15 @@ def get_system_config():
                     model_fallback = r.value
                 elif r.key == 'openrouter_api_key' and r.value is not None:
                     api_key = r.value
-                elif r.key == 'global_assistant_persona' and r.value is not None:
+                elif r.key == 'assistant_persona' and r.value is not None:
                     global_persona = r.value
     except Exception as e:
-        logger.error(f"Error get_system_config: {e}")
+        logger.error(f"Gagal membaca konfigurasi sistem dari database: {e}")
     return {
         "mcp_sap_config_json": sap_cfg,
         "mcp_rag_config_json": rag_cfg,
-        "mcp_email_config_json": email_cfg,
+        "mcp_sql_config_json": sql_cfg,
+        "mcp_email_config_json": sql_cfg,
         "nine_router_enabled": nine_router_enabled,
         "nine_router_base_url": nine_router_base_url,
         "nine_router_model": nine_router_model,
@@ -628,6 +637,7 @@ def get_system_config():
 def update_system_config(
     mcp_sap_json: str = None, 
     mcp_rag_json: str = None,
+    mcp_sql_json: str = None,
     mcp_email_json: str = None,
     nine_router_enabled: bool = None,
     nine_router_base_url: str = None,
@@ -665,12 +675,18 @@ def update_system_config(
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": mcp_rag_json})
 
-            if mcp_email_json is not None:
+            target_sql = mcp_sql_json if mcp_sql_json is not None else mcp_email_json
+            if target_sql is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value) 
+                    VALUES ('mcp_sql_config_json', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": target_sql})
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value) 
                     VALUES ('mcp_email_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """), {"val": mcp_email_json})
+                """), {"val": target_sql})
 
             if nine_router_enabled is not None:
                 conn.execute(text("""

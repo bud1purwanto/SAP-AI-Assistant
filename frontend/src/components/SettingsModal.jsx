@@ -9,6 +9,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const [config, setConfig] = useState({
     mcp_sap_config_json: '',
     mcp_rag_config_json: '',
+    mcp_sql_config_json: '',
     mcp_email_config_json: '',
     assistant_persona: '',
     full_name: '',
@@ -45,7 +46,8 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             setConfig({
               mcp_sap_config_json: data.mcp_sap_config_json || '',
               mcp_rag_config_json: data.mcp_rag_config_json || '',
-              mcp_email_config_json: data.mcp_email_config_json || '',
+              mcp_sql_config_json: data.mcp_sql_config_json || data.mcp_email_config_json || '',
+              mcp_email_config_json: data.mcp_sql_config_json || data.mcp_email_config_json || '',
               assistant_persona: data.assistant_persona || '',
               full_name: data.full_name || '',
               global_assistant_persona: data.global_assistant_persona || '',
@@ -522,15 +524,15 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
                 <div>
                   <label className="flex items-center gap-2 text-xs font-bold text-content-secondary mb-1.5">
-                    <Mail className="w-3.5 h-3.5 text-blue-500" />
-                    MCP Email Remote Endpoint (SSE / JSON-RPC)
+                    <Database className="w-3.5 h-3.5 text-emerald-500" />
+                    MCP SQL Remote Endpoint (SSE / JSON-RPC)
                   </label>
                   <textarea 
                     disabled={!isSuperadmin}
-                    value={config.mcp_email_config_json}
-                    onChange={e => setConfig({...config, mcp_email_config_json: e.target.value})}
+                    value={config.mcp_sql_config_json || config.mcp_email_config_json}
+                    onChange={e => setConfig({...config, mcp_sql_config_json: e.target.value, mcp_email_config_json: e.target.value})}
                     className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono resize-y min-h-[90px] disabled:opacity-60 disabled:cursor-not-allowed"
-                    placeholder='{\n  "mcpServers": {\n    "email-mcp": {\n      "type": "http",\n      "url": "..."\n    }\n  }\n}'
+                    placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8093/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
                   />
                 </div>
               </div>

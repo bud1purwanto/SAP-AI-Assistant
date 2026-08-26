@@ -181,17 +181,22 @@ class MCPManager:
             except Exception:
                 return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
 
-        elif name == "email":
-            config_json_str = db_cfg.get("mcp_email_config_json") or getattr(settings, "mcp_email_config_json", "")
+        elif name in ("sql", "email"):
+            config_json_str = (
+                db_cfg.get("mcp_sql_config_json")
+                or db_cfg.get("mcp_email_config_json")
+                or getattr(settings, "mcp_sql_config_json", "")
+                or getattr(settings, "mcp_email_config_json", "")
+            )
             if not config_json_str:
-                return "http://192.168.1.162:8092/mcp", {"Authorization": "Bearer Trias123"}
+                return "http://192.168.1.162:8093/mcp", {"Authorization": "Bearer Trias123"}
             try:
                 config = json.loads(config_json_str)
                 mcp_servers = config.get("mcpServers", {})
-                email_config = mcp_servers.get("email-mcp", list(mcp_servers.values())[0] if mcp_servers else {})
-                return email_config.get("url", "http://192.168.1.162:8092/mcp"), email_config.get("headers", {"Authorization": "Bearer Trias123"})
+                sql_config = mcp_servers.get("sql-mcp", mcp_servers.get("email-mcp", list(mcp_servers.values())[0] if mcp_servers else {}))
+                return sql_config.get("url", "http://192.168.1.162:8093/mcp"), sql_config.get("headers", {"Authorization": "Bearer Trias123"})
             except Exception:
-                return "http://192.168.1.162:8092/mcp", {"Authorization": "Bearer Trias123"}
+                return "http://192.168.1.162:8093/mcp", {"Authorization": "Bearer Trias123"}
         else:
             raise ValueError(f"Unknown MCP server name: {name}")
 
@@ -275,31 +280,35 @@ class MCPManager:
                     "error": str(e)
                 }
 
-            # Email Server status
+            # SQL Server status
             try:
-                email_client = self.get_client("email")
-                email_tools = await email_client.list_tools(http_client)
-                status["email"] = {
-                    "id": "email",
-                    "name": "Email MCP Gateway",
-                    "description": "Email Notification & Mail Dispatcher",
+                sql_client = self.get_client("sql")
+                sql_tools = await sql_client.list_tools(http_client)
+                sql_info = {
+                    "id": "sql",
+                    "name": "MCP SQL Server",
+                    "description": "Direct SQL Query & Database Gateway",
                     "online": True,
                     "status": "online",
-                    "tool_count": len(email_tools),
-                    "tools_count": len(email_tools)
+                    "tool_count": len(sql_tools),
+                    "tools_count": len(sql_tools)
                 }
+                status["sql"] = sql_info
+                status["email"] = {**sql_info, "id": "email"}
             except Exception as e:
-                logger.error(f"Error checking Email MCP server: {e}")
-                status["email"] = {
-                    "id": "email",
-                    "name": "Email MCP Gateway",
-                    "description": "Email Notification & Mail Dispatcher",
+                logger.error(f"Error checking SQL MCP server: {e}")
+                sql_err = {
+                    "id": "sql",
+                    "name": "MCP SQL Server",
+                    "description": "Direct SQL Query & Database Gateway",
                     "online": False,
                     "status": "offline",
                     "tool_count": 0,
                     "tools_count": 0,
                     "error": str(e)
                 }
+                status["sql"] = sql_err
+                status["email"] = {**sql_err, "id": "email"}
 
         return status
 
@@ -351,14 +360,14 @@ class MCPManager:
                 except Exception as e:
                     logger.error(f"Error fetching RAG tools: {e}")
 
-            # Email Tools
+            # SQL Tools
             try:
-                email_client = self.get_client("email")
-                email_tools = await email_client.list_tools(http_client)
-                for t in email_tools:
-                    tools.append({"server": "email", "tool": t})
+                sql_client = self.get_client("sql")
+                sql_tools = await sql_client.list_tools(http_client)
+                for t in sql_tools:
+                    tools.append({"server": "sql", "tool": t})
             except Exception as e:
-                logger.warning(f"Error fetching Email tools (MCP email offline or unavailable): {e}")
+                logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
 
         return tools
 

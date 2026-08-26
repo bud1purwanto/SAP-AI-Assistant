@@ -257,6 +257,7 @@ async def change_password_endpoint(
 class ConfigUpdate(BaseModel):
     mcp_sap_config_json: str = None
     mcp_rag_config_json: str = None
+    mcp_sql_config_json: str = None
     mcp_email_config_json: str = None
     nine_router_enabled: bool = None
     nine_router_base_url: str = None
@@ -291,10 +292,12 @@ async def get_config(user: dict = Depends(get_current_user)):
 
     # Konfigurasi sistem (termasuk endpoint internal) hanya untuk superadmin.
     if is_admin:
+        sql_json = sys_cfg.get("mcp_sql_config_json", sys_cfg.get("mcp_email_config_json", ""))
         payload.update({
             "mcp_sap_config_json": sys_cfg.get("mcp_sap_config_json", ""),
             "mcp_rag_config_json": sys_cfg.get("mcp_rag_config_json", ""),
-            "mcp_email_config_json": sys_cfg.get("mcp_email_config_json", ""),
+            "mcp_sql_config_json": sql_json,
+            "mcp_email_config_json": sql_json,
             "nine_router_enabled": sys_cfg.get("nine_router_enabled", True),
             "nine_router_base_url": sys_cfg.get("nine_router_base_url", ""),
             "nine_router_model": sys_cfg.get("nine_router_model", ""),
@@ -336,7 +339,8 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
         update_system_config(
             mcp_sap_json=config.mcp_sap_config_json,
             mcp_rag_json=config.mcp_rag_config_json,
-            mcp_email_json=config.mcp_email_config_json,
+            mcp_sql_json=config.mcp_sql_config_json or config.mcp_email_config_json,
+            mcp_email_json=config.mcp_sql_config_json or config.mcp_email_config_json,
             nine_router_enabled=config.nine_router_enabled,
             nine_router_base_url=config.nine_router_base_url,
             nine_router_model=config.nine_router_model,

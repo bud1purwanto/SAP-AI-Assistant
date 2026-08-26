@@ -49,7 +49,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const [mcpSapConfig, setMcpSapConfig] = useState('');
   const [mcpRagConfig, setMcpRagConfig] = useState('');
-  const [mcpEmailConfig, setMcpEmailConfig] = useState('');
+  const [mcpSqlConfig, setMcpSqlConfig] = useState('');
   const [mcpSaving, setMcpSaving] = useState(false);
 
   // Audit Logs State
@@ -98,7 +98,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         setGlobalPersona(data.global_assistant_persona || '');
         setMcpSapConfig(data.mcp_sap_config_json || '');
         setMcpRagConfig(data.mcp_rag_config_json || '');
-        setMcpEmailConfig(data.mcp_email_config_json || '');
+        setMcpSqlConfig(data.mcp_sql_config_json || data.mcp_email_config_json || '');
         setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
         setNineRouterBaseUrl(data.nine_router_base_url || 'http://192.168.88.83:20128/v1');
         setNineRouterModel(data.nine_router_model || 'ag/gemini-3.7-flash-medium');
@@ -367,7 +367,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       await api.saveConfig({
         mcp_sap_config_json: mcpSapConfig,
         mcp_rag_config_json: mcpRagConfig,
-        mcp_email_config_json: mcpEmailConfig,
+        mcp_sql_config_json: mcpSqlConfig,
+        mcp_email_config_json: mcpSqlConfig,
         nine_router_enabled: nineRouterEnabled,
         nine_router_base_url: nineRouterBaseUrl,
         nine_router_model: nineRouterModel,
@@ -717,22 +718,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </p>
                     </div>
 
-                    {/* MCP Email Card */}
+                    {/* MCP SQL Card */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs sm:text-sm text-content">MCP Email Gateway</span>
-                        {(stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
+                        <span className="font-bold text-xs sm:text-sm text-content">MCP SQL Server</span>
+                        {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true || stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.email?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] sm:text-xs text-content-muted mt-2">
-                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} {language === 'en' ? 'Email & Dispatcher Tools' : 'Email & Dispatcher Tools'}
+                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} {language === 'en' ? 'SQL & Database Tools' : 'Alat SQL & Database'}
                       </p>
                     </div>
                   </div>
@@ -1631,20 +1632,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  {/* MCP Email Config JSON */}
+                  {/* MCP SQL Config JSON */}
                   <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
                     <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-blue-500" /> MCP EMAIL CONFIG (JSON)
+                      <Database className="w-4 h-4 text-emerald-500" /> MCP SQL CONFIG (JSON)
                     </label>
                     <textarea 
                       rows="5"
-                      value={mcpEmailConfig}
-                      onChange={(e) => setMcpEmailConfig(e.target.value)}
+                      value={mcpSqlConfig}
+                      onChange={(e) => setMcpSqlConfig(e.target.value)}
                       className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
-                      placeholder='{\n  "mcpServers": {\n    "email-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8092/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
+                      placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8093/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
                     />
                     <p className="text-[11px] text-content-subtle mt-1">
-                      {language === 'en' ? 'SSE or HTTP/JSON-RPC config format for connecting to MCP Email Server.' : 'Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP Email Server.'}
+                      {language === 'en' ? 'SSE or HTTP/JSON-RPC config format for connecting to MCP SQL Server.' : 'Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP SQL Server.'}
                     </p>
                   </div>
                 </div>

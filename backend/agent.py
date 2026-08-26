@@ -117,6 +117,10 @@ def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
     name = (tool_name or "").lower()
     if server == "rag":
         return "Mencari di dokumen internal…"
+    if server in ("sql", "database"):
+        if "query" in name or "read" in name:
+            return "Menjalankan query SQL database…"
+        return "Memproses layanan MCP SQL…"
     if server == "email":
         if "send" in name:
             return "Mengirim email via MCP Email…"
@@ -319,6 +323,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         
     has_sap = any(item["server"] == "sap" for item in all_mcp_tools)
     has_rag = any(item["server"] == "rag" for item in all_mcp_tools)
+    has_sql = any(item["server"] in ("sql", "database") for item in all_mcp_tools)
     has_email = any(item["server"] == "email" for item in all_mcp_tools)
     
     # 2. Konversi tools MCP ke format OpenAI tools
@@ -486,6 +491,8 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         tool_inventory.append(f"data live SAP pada server **{sap_server_name} (SID: {sap_sid})**")
     if has_rag:
         tool_inventory.append("basis pengetahuan dokumen (RAG)")
+    if has_sql:
+        tool_inventory.append("layanan MCP SQL Database")
     if has_email:
         tool_inventory.append("layanan MCP Email")
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
