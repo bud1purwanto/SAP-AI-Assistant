@@ -31,18 +31,36 @@ const UsagePill = ({ usage }) => {
       ? Math.round((usage.cached_tokens / usage.prompt_tokens) * 100)
       : null;
 
+  const totalTokens = usage.total_tokens ?? 0;
+  const isHighToken = totalTokens >= 30000;
+  const isMediumToken = totalTokens >= 15000;
+
+  const zapColor = isHighToken
+    ? 'text-rose-500 animate-pulse'
+    : isMediumToken
+    ? 'text-amber-500'
+    : 'text-accent';
+
+  const tokenTextColor = isHighToken
+    ? 'text-rose-600 dark:text-rose-400 font-semibold'
+    : 'text-content-muted';
+
   return (
     <div className="mt-2">
       <button
         type="button"
         onClick={() => setTerbuka((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-full border border-line bg-surface-sunken px-2.5 py-1 text-[10.5px] font-medium text-content-muted transition-colors hover:border-accent/40 hover:text-content"
+        className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10.5px] font-medium transition-colors ${
+          isHighToken
+            ? 'border-rose-500/40 bg-rose-500/5 text-rose-500 hover:border-rose-500/60'
+            : 'border-line bg-surface-sunken text-content-muted hover:border-accent/40 hover:text-content'
+        }`}
         title="Rincian pemakaian permintaan ini"
         aria-expanded={terbuka}
       >
         {adaToken && (
-          <span className="flex items-center gap-1">
-            <Zap className="h-3 w-3 text-accent" aria-hidden="true" />
+          <span className={`flex items-center gap-1 ${tokenTextColor}`}>
+            <Zap className={`h-3 w-3 ${zapColor}`} aria-hidden="true" />
             {ringkasAngka(usage.total_tokens)} token
           </span>
         )}
