@@ -145,7 +145,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </div>
           </div>
 
-          <button onClick={onClose} className="p-1.5 sm:p-2 text-content-muted hover:text-content rounded-full hover:bg-surface-hover transition-colors shrink-0 cursor-pointer" aria-label="Tutup Pengaturan">
+          <button onClick={onClose} className="p-1.5 sm:p-2 text-content-muted hover:text-content rounded-full hover:bg-surface-hover transition-colors shrink-0 cursor-pointer" aria-label={t('common.close')}>
             <X className="w-5 h-5" />
           </button>
         </div>

@@ -17,6 +17,8 @@ export const LANGUAGE_STORAGE_KEY = 'sap_assistant_lang';
 export const TRANSLATIONS = {
   en: {
     // Navigation & Header
+    'nav.sapSystem': 'SAP System',
+    'nav.openSidebarMenu': 'Open conversation menu',
     'nav.connecting': 'Connecting…',
     'nav.unlimited': 'Unlimited',
     'nav.quotaRemaining': 'Left',
@@ -242,7 +244,15 @@ export const TRANSLATIONS = {
     'admin.roleAbaper': 'ABAP Developer',
     'admin.roleGuest': 'Guest',
 
+    // Confirm Dialogs
+    'confirm.defaultTitle': 'Confirmation',
+    'confirm.defaultMessage': 'Are you sure you want to proceed with this action?',
+    'confirm.yes': 'Confirm',
+    'confirm.cancel': 'Cancel',
+
     // Common
+    'common.cancel': 'Cancel',
+    'common.save': 'Save',
     'common.close': 'Close',
     'common.confirm': 'Confirm',
     'common.delete': 'Delete',
@@ -255,6 +265,8 @@ export const TRANSLATIONS = {
 
   id: {
     // Navigasi & Header
+    'nav.sapSystem': 'Sistem SAP',
+    'nav.openSidebarMenu': 'Buka menu percakapan',
     'nav.connecting': 'Menghubungkan…',
     'nav.unlimited': 'Tanpa batas',
     'nav.quotaRemaining': 'Sisa',
@@ -480,7 +492,15 @@ export const TRANSLATIONS = {
     'admin.roleAbaper': 'Developer ABAP',
     'admin.roleGuest': 'Tamu (Guest)',
 
+    // Confirm Dialogs
+    'confirm.defaultTitle': 'Konfirmasi',
+    'confirm.defaultMessage': 'Apakah Anda yakin ingin melanjutkan tindakan ini?',
+    'confirm.yes': 'Ya, Lanjutkan',
+    'confirm.cancel': 'Batal',
+
     // Common
+    'common.cancel': 'Batal',
+    'common.save': 'Simpan',
     'common.close': 'Tutup',
     'common.confirm': 'Konfirmasi',
     'common.delete': 'Hapus',

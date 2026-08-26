@@ -844,8 +844,8 @@ const ChatLayout = () => {
           </div>
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover"
-            aria-label="Tutup menu"
+            className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover cursor-pointer"
+            aria-label={t('common.close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -1104,14 +1104,14 @@ const ChatLayout = () => {
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className={`${compactLandscape ? '' : 'md:hidden'} p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0`}
-                aria-label="Buka menu percakapan"
+                className={`${compactLandscape ? '' : 'md:hidden'} p-2 rounded-xl text-content-muted hover:bg-surface-hover shrink-0 cursor-pointer`}
+                aria-label={t('nav.openSidebarMenu')}
               >
                 <Menu className="w-4 h-4" aria-hidden="true" />
               </button>
 
               <label htmlFor="sap-target" className="hidden sm:block text-sm text-content-muted shrink-0">
-                Sistem SAP
+                {t('nav.sapSystem')}
               </label>
               {sapSubServers.length > 0 ? (
                 <select
