@@ -1,5 +1,6 @@
 import React from 'react';
 import { Database, FileSearch, Loader2, Sparkles, Square } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 /**
  * Indikator progres jawaban AI.
@@ -20,15 +21,6 @@ const STAGE_ICON = {
   done: Sparkles,
 };
 
-const STAGE_HINT = {
-  connecting: 'Menghubungi asisten',
-  reading: 'Membaca lampiran Anda',
-  thinking: 'Menyusun jawaban',
-  tool: 'Mengambil data',
-  building: 'Menyiapkan berkas',
-  done: 'Selesai',
-};
-
 /** Bobot per tahap agar bar bergerak wajar, dibatasi 92% sampai benar-benar selesai. */
 const computePercent = (progress) => {
   if (!progress) return 6;
@@ -43,10 +35,13 @@ const computePercent = (progress) => {
 };
 
 const ThinkingIndicator = ({ progress, onStop }) => {
+  const { t } = useLanguage();
   const percent = computePercent(progress);
   const Icon = STAGE_ICON[progress?.stage] || Sparkles;
-  const label = progress?.label || 'Sedang memproses…';
-  const hint = STAGE_HINT[progress?.stage] || '';
+
+  const stageKey = progress?.stage ? `thinking.${progress.stage}` : 'thinking.processing';
+  const hint = t(stageKey);
+  const label = progress?.label || t('thinking.processing');
 
   return (
     <div className="flex items-start gap-3.5 my-4" role="status" aria-live="polite">
@@ -68,7 +63,7 @@ const ThinkingIndicator = ({ progress, onStop }) => {
           aria-valuenow={percent}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`Kemajuan: ${label}`}
+          aria-label={`Progress: ${label}`}
         >
           <div
             className="h-full bg-accent rounded-full transition-all duration-500 ease-out"
@@ -79,14 +74,14 @@ const ThinkingIndicator = ({ progress, onStop }) => {
         <div className="flex items-center justify-between gap-3 mt-2.5">
           <span className="text-xs text-content-subtle truncate">
             {hint}
-            {progress?.step ? ` • langkah ${progress.step}` : ''}
+            {progress?.step ? ` • ${t('thinking.step', { step: progress.step })}` : ''}
           </span>
           <button
             onClick={onStop}
-            className="flex items-center gap-1.5 text-xs font-semibold text-content-muted hover:text-danger border border-line rounded-lg px-2 py-1 transition-colors shrink-0"
+            className="flex items-center gap-1.5 text-xs font-semibold text-content-muted hover:text-danger border border-line rounded-lg px-2 py-1 transition-colors shrink-0 cursor-pointer"
           >
             <Square className="w-3 h-3" aria-hidden="true" />
-            Hentikan
+            {t('thinking.stop')}
           </button>
         </div>
       </div>

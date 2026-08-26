@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { AlertTriangle, LogOut, Trash2, X } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 const ICONS = {
   danger: Trash2,
@@ -11,13 +12,20 @@ const ConfirmModal = ({
   isOpen,
   onClose,
   onConfirm,
-  title = 'Konfirmasi',
-  message = 'Apakah Anda yakin ingin melanjutkan tindakan ini?',
-  confirmText = 'Ya, Lanjutkan',
-  cancelText = 'Batal',
+  title,
+  message,
+  confirmText,
+  cancelText,
   variant = 'danger', // 'danger' | 'warning' | 'logout'
   isLoading = false,
 }) => {
+  const { t } = useLanguage();
+
+  const displayTitle = title || t('confirm.defaultTitle');
+  const displayMessage = message || t('confirm.defaultMessage');
+  const displayConfirmText = confirmText || t('confirm.yes');
+  const displayCancelText = cancelText || t('confirm.cancel');
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape' && isOpen && !isLoading) {
@@ -79,8 +87,8 @@ const ConfirmModal = ({
         <button
           onClick={onClose}
           disabled={isLoading}
-          className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-content-subtle hover:text-content hover:bg-surface-sunken transition-colors disabled:opacity-50"
-          aria-label="Tutup"
+          className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-content-subtle hover:text-content hover:bg-surface-sunken transition-colors disabled:opacity-50 cursor-pointer"
+          aria-label={t('common.close')}
         >
           <X className="w-4 h-4" />
         </button>
@@ -94,11 +102,11 @@ const ConfirmModal = ({
           </div>
 
           <h3 id="confirm-modal-title" className="text-base font-bold text-content font-display tracking-tight">
-            {title}
+            {displayTitle}
           </h3>
 
           <p className="mt-2 text-xs sm:text-sm text-content-muted leading-relaxed">
-            {message}
+            {displayMessage}
           </p>
 
           <div className="mt-6 flex items-center gap-2.5">
@@ -108,7 +116,7 @@ const ConfirmModal = ({
               disabled={isLoading}
               className="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content border border-line transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             >
-              {cancelText}
+              {displayCancelText}
             </button>
             <button
               type="button"
@@ -119,10 +127,10 @@ const ConfirmModal = ({
               {isLoading ? (
                 <div className="flex items-center justify-center gap-1.5">
                   <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Memproses…</span>
+                  <span>{t('confirm.processing')}</span>
                 </div>
               ) : (
-                confirmText
+                displayConfirmText
               )}
             </button>
           </div>

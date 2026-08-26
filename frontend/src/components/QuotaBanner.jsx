@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Infinity as InfinityIcon } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 /**
  * Peringatan sisa kuota token harian.
@@ -14,9 +15,10 @@ import { AlertTriangle, Infinity as InfinityIcon } from 'lucide-react';
 
 const AMBANG_PERINGATAN = 70;   // persen terpakai (muncul saat sisa <= 30%)
 
-const angka = (n) => (n ?? 0).toLocaleString('id-ID');
+const angka = (n, lang = 'id') => (n ?? 0).toLocaleString(lang === 'en' ? 'en-US' : 'id-ID');
 
 const QuotaBanner = ({ quota }) => {
+  const { t, language } = useLanguage();
   if (!quota || !quota.enforced || quota.unlimited) return null;
 
   const persenTerpakai = quota.used_percent ?? 0;
@@ -41,13 +43,17 @@ const QuotaBanner = ({ quota }) => {
       <div className="min-w-0">
         <p className="font-semibold">
           {habis
-            ? 'Kuota token harian Anda sudah habis'
-            : `Sisa kuota token harian tinggal ${sisaPersen}% (${ringkas(sisa)} token)`}
+            ? t('quota.exhausted')
+            : t('quota.remainingNotice', { percent: sisaPersen, remaining: ringkas(sisa, language) })}
         </p>
         <p className="mt-0.5 opacity-90">
-          {angka(quota.used_tokens)} dari {angka(batas)} token terpakai ({persenTerpakai}%)
-          {quota.estimated && ' (sebagian diperkirakan)'}. Kuota dihitung ulang setiap tengah malam
-          {habis && '; hubungi administrator bila Anda membutuhkan tambahan'}.
+          {t('quota.usedDetail', {
+            used: angka(quota.used_tokens, language),
+            limit: angka(batas, language),
+            percent: persenTerpakai,
+          })}
+          {quota.estimated && ` (${language === 'en' ? 'partially estimated' : 'sebagian diperkirakan'})`}. {t('quota.resetNotice')}
+          {habis && `; ${t('quota.adminContact')}`}.
         </p>
       </div>
     </div>
@@ -61,28 +67,33 @@ const QuotaBanner = ({ quota }) => {
  * Berwarna MERAH jika kuota hampir habis (<= 15%), KUNING jika menipis (<= 30%).
  */
 
-/** 1.240.000 → "1,2jt"; ruang di bilah atas terlalu sempit untuk angka penuh. */
-const ringkas = (n) => {
+/** 1.240.000 → "1,2jt" (id) / "1.2m" (en); ruang di bilah atas terlalu sempit untuk angka penuh. */
+const ringkas = (n, lang = 'id') => {
   const v = Math.max(0, n ?? 0);
   if (v >= 1_000_000) {
     const jt = v / 1_000_000;
-    return `${jt.toFixed(jt < 10 ? 1 : 0).replace('.', ',')}jt`;
+    const formatted = jt.toFixed(jt < 10 ? 1 : 0);
+    return lang === 'en' ? `${formatted}m` : `${formatted.replace('.', ',')}jt`;
   }
-  if (v >= 1_000) return `${Math.round(v / 1_000)}rb`;
+  if (v >= 1_000) {
+    const rb = Math.round(v / 1_000);
+    return lang === 'en' ? `${rb}k` : `${rb}rb`;
+  }
   return String(v);
 };
 
 export const QuotaChip = ({ quota }) => {
+  const { t, language } = useLanguage();
   if (!quota) return null;
 
   if (quota.unlimited) {
     return (
       <span
         className="hidden items-center gap-1 rounded-full border border-line bg-surface-sunken px-2.5 py-1 text-[10.5px] font-medium text-content-muted sm:inline-flex"
-        title="Peran Anda tidak dibatasi kuota token harian (Unlimited)"
+        title={t('nav.quotaUnlimitedTooltip')}
       >
         <InfinityIcon className="h-3 w-3 text-accent" aria-hidden="true" />
-        Tanpa batas
+        {t('nav.unlimited')}
       </span>
     );
   }
@@ -123,12 +134,10 @@ export const QuotaChip = ({ quota }) => {
   return (
     <div
       className={`flex items-center gap-1.5 sm:gap-2 rounded-full border px-2 py-1 sm:px-2.5 transition-all ${styleContainer}`}
-      title={`Sisa ${angka(sisa)} dari ${angka(batas)} token (${sisaPersen}%) hari ini${
-        quota.estimated ? ' (sebagian diperkirakan)' : ''
-      }. Kuota dihitung ulang setiap tengah malam.`}
+      title={`${language === 'en' ? 'Remaining' : 'Sisa'} ${angka(sisa, language)} / ${angka(batas, language)} token (${sisaPersen}%) ${language === 'en' ? 'today' : 'hari ini'}. ${t('quota.resetNotice')}`}
     >
       <span className={`hidden text-[10px] font-medium sm:inline ${hampirHabis ? 'text-rose-500' : 'text-content-subtle'}`}>
-        Sisa
+        {t('nav.quotaRemaining')}
       </span>
       <div
         role="progressbar"
@@ -136,7 +145,7 @@ export const QuotaChip = ({ quota }) => {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={sisaPersen}
-        aria-valuetext={`${sisaPersen} persen (${angka(sisa)} token tersisa)`}
+        aria-valuetext={`${sisaPersen} percent (${angka(sisa, language)} tokens remaining)`}
         className="h-1.5 w-9 overflow-hidden rounded-full bg-line/80 sm:w-16"
       >
         <div
@@ -145,7 +154,7 @@ export const QuotaChip = ({ quota }) => {
         />
       </div>
       <span className={`text-[10.5px] tabular-nums ${warnaTeks}`}>
-        {ringkas(sisa)}
+        {ringkas(sisa, language)}
       </span>
     </div>
   );

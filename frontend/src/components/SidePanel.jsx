@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Check, Copy, Download, X } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 import { copyToClipboard } from '../lib/clipboard';
 
@@ -13,6 +14,7 @@ import { copyToClipboard } from '../lib/clipboard';
  * terlalu sempit untuk dibaca.
  */
 const SidePanel = ({ isi, onTutup }) => {
+  const { t } = useLanguage();
   const [tersalin, setTersalin] = React.useState(false);
 
   useEffect(() => {
@@ -65,9 +67,9 @@ const SidePanel = ({ isi, onTutup }) => {
           <button
             type="button"
             onClick={salin}
-            className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content"
-            title="Salin isi"
-            aria-label="Salin isi panel"
+            className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+            title={tersalin ? t('chat.copied') : t('sidepanel.copy')}
+            aria-label={t('sidepanel.copy')}
           >
             {tersalin
               ? <Check className="h-4 w-4 text-emerald-500" aria-hidden="true" />
@@ -76,18 +78,18 @@ const SidePanel = ({ isi, onTutup }) => {
           <button
             type="button"
             onClick={unduh}
-            className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content"
-            title="Unduh sebagai berkas teks"
-            aria-label="Unduh isi panel"
+            className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+            title={t('sidepanel.download')}
+            aria-label={t('sidepanel.download')}
           >
             <Download className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onTutup}
-            className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content"
-            title="Tutup panel"
-            aria-label="Tutup panel"
+            className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+            title={t('sidepanel.close')}
+            aria-label={t('sidepanel.close')}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>

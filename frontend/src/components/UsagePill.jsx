@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Clock, Database, Gauge, Wrench, Zap } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 /**
  * Ringkasan biaya dan kecepatan permintaan terakhir.
@@ -17,6 +18,7 @@ const ringkasAngka = (n) => {
 };
 
 const UsagePill = ({ usage }) => {
+  const { t, language } = useLanguage();
   const [terbuka, setTerbuka] = useState(false);
   if (!usage) return null;
 
@@ -45,6 +47,8 @@ const UsagePill = ({ usage }) => {
     ? 'text-rose-600 dark:text-rose-400 font-semibold'
     : 'text-content-muted';
 
+  const locale = language === 'en' ? 'en-US' : 'id-ID';
+
   return (
     <div className="mt-2">
       <button
@@ -55,7 +59,7 @@ const UsagePill = ({ usage }) => {
             ? 'border-rose-500/40 bg-rose-500/5 text-rose-500 hover:border-rose-500/60'
             : 'border-line bg-surface-sunken text-content-muted hover:border-accent/40 hover:text-content'
         }`}
-        title="Rincian pemakaian permintaan ini"
+        title={language === 'en' ? 'Request usage details' : 'Rincian pemakaian permintaan ini'}
         aria-expanded={terbuka}
       >
         {adaToken && (
@@ -82,47 +86,49 @@ const UsagePill = ({ usage }) => {
         <dl className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 rounded-xl border border-line bg-surface px-3 py-2 text-[11px] sm:max-w-sm">
           {usage.prompt_tokens !== null && usage.prompt_tokens !== undefined && (
             <>
-              <dt className="text-content-subtle">Token masukan</dt>
+              <dt className="text-content-subtle">{t('usage.inputTokens')}</dt>
               <dd className="text-right font-semibold text-content tabular-nums">
-                {usage.prompt_tokens.toLocaleString('id-ID')}
+                {usage.prompt_tokens.toLocaleString(locale)}
               </dd>
             </>
           )}
           {usage.completion_tokens !== null && usage.completion_tokens !== undefined && (
             <>
-              <dt className="text-content-subtle">Token jawaban</dt>
+              <dt className="text-content-subtle">{t('usage.outputTokens')}</dt>
               <dd className="text-right font-semibold text-content tabular-nums">
-                {usage.completion_tokens.toLocaleString('id-ID')}
+                {usage.completion_tokens.toLocaleString(locale)}
               </dd>
             </>
           )}
           {usage.cached_tokens ? (
             <>
-              <dt className="text-content-subtle">Dari cache</dt>
+              <dt className="text-content-subtle">{t('usage.fromCache')}</dt>
               <dd className="text-right font-semibold text-success tabular-nums">
-                {usage.cached_tokens.toLocaleString('id-ID')}
+                {usage.cached_tokens.toLocaleString(locale)}
               </dd>
             </>
           ) : null}
           {adaWaktu && (
             <>
               <dt className="flex items-center gap-1 text-content-subtle">
-                <Gauge className="h-3 w-3" aria-hidden="true" /> Waktu proses
+                <Gauge className="h-3 w-3" aria-hidden="true" /> {t('usage.processTime')}
               </dt>
-              <dd className="text-right font-semibold text-content tabular-nums">{detik} detik</dd>
+              <dd className="text-right font-semibold text-content tabular-nums">
+                {detik} {language === 'en' ? 'seconds' : 'detik'}
+              </dd>
             </>
           )}
           {usage.tool_calls > 0 && (
             <>
               <dt className="flex items-center gap-1 text-content-subtle">
-                <Wrench className="h-3 w-3" aria-hidden="true" /> Panggilan data
+                <Wrench className="h-3 w-3" aria-hidden="true" /> {t('usage.dataCalls')}
               </dt>
               <dd className="text-right font-semibold text-content tabular-nums">{usage.tool_calls}</dd>
             </>
           )}
           {usage.model && (
             <>
-              <dt className="text-content-subtle">Model</dt>
+              <dt className="text-content-subtle">{t('usage.model')}</dt>
               <dd className="truncate text-right font-semibold text-content" title={usage.model}>
                 {usage.model}
               </dd>

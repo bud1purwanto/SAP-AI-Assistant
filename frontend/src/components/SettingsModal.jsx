@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, Bot, CheckCircle2, Cpu, Database, Globe, KeyRound, Lock, Mail, Save, Server, Shield, ShieldCheck, Sliders, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { useLanguage } from '../hooks/useLanguage';
 
 const SettingsModal = ({ isOpen, onClose, user }) => {
+  const { language, setLanguage, t, languages } = useLanguage();
   const [activeTab, setActiveTab] = useState('persona');
   const [config, setConfig] = useState({
     mcp_sap_config_json: '',
@@ -127,7 +129,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             </div>
             <div className="min-w-0">
               <h2 className="text-sm sm:text-base font-bold text-content font-display truncate">
-                Pengaturan
+                {t('settings.title')}
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[11px] sm:text-xs text-content-muted truncate">User: <strong className="text-content-secondary">{user?.username || 'Guest'}</strong></span>
@@ -159,7 +161,19 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span>Persona &amp; Profil</span>
+            <span>{t('settings.tabPersona')}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('language')}
+            className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'language'
+                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                : 'border-transparent text-content-muted hover:text-content'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>{t('settings.tabLanguage')}</span>
           </button>
 
           {isSuperadmin && (
@@ -172,7 +186,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               }`}
             >
               <Cpu className="w-3.5 h-3.5" />
-              <span>AI Provider & Router</span>
+              <span>{t('settings.tabRouter')}</span>
             </button>
           )}
 
@@ -186,7 +200,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>Koneksi Data</span>
+            <span>{t('settings.tabMcp')}</span>
           </button>
           )}
 
@@ -200,7 +214,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               }`}
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Ubah Password</span>
+              <span>{t('settings.tabSecurity')}</span>
             </button>
           )}
         </div>
@@ -249,7 +263,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
               <div>
                 <label htmlFor="personal-persona" className="block text-sm font-bold text-content mb-1.5">
-                  🎭 Preferensi Pribadi Anda
+                  🎭 {t('settings.personalPersona')}
                 </label>
                 <p className="text-xs text-content-muted mb-2.5 leading-relaxed">
                   Sesuaikan gaya jawaban, format, bahasa, atau instruksi khusus untuk asisten AI Anda
@@ -263,9 +277,67 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                   onChange={e => setConfig({ ...config, assistant_persona: e.target.value })}
                   className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-3 text-sm text-content outline-none transition-all resize-y min-h-[140px] disabled:opacity-60"
                   placeholder={isLoggedIn
-                    ? 'Contoh: Ringkas dulu dalam tabel, lalu jelaskan alur prosesnya step-by-step. Sertakan nama tabel SAP sumbernya.'
+                    ? t('settings.personalPersonaPlaceholder')
                     : 'Login untuk mengkustomisasi persona asisten Anda.'}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Language / Bahasa */}
+          {activeTab === 'language' && (
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-content mb-1.5">
+                  🌐 {t('settings.languageSelect')}
+                </label>
+                <p className="text-xs text-content-muted mb-4 leading-relaxed">
+                  {t('settings.languageDesc')}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {languages.map((langItem) => {
+                    const isSelected = language === langItem.code;
+                    return (
+                      <button
+                        key={langItem.code}
+                        type="button"
+                        onClick={() => setLanguage(langItem.code)}
+                        className={`p-4 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                            : 'bg-surface-sunken border-line hover:border-indigo-300 dark:hover:border-indigo-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl" role="img" aria-label={langItem.name}>
+                            {langItem.flag}
+                          </span>
+                          <div>
+                            <span className="block text-sm font-bold text-content">
+                              {langItem.name}
+                            </span>
+                            <span className="block text-[11px] text-content-muted uppercase tracking-wider font-mono">
+                              {langItem.code}
+                            </span>
+                          </div>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="bg-surface-sunken border border-line rounded-2xl p-4 text-xs text-content-secondary leading-relaxed">
+                <p className="font-semibold text-content mb-1">
+                  💡 Standar Multibahasa (Multilanguage Standard):
+                </p>
+                <p className="text-content-muted">
+                  Aplikasi ini dirancang mendukung multibahasa penuh. Teks antarmuka, tombol, peringatan kuota, dan format diagram secara otomatis menyesuaikan dengan bahasa yang Anda pilih di atas.
+                </p>
               </div>
             </div>
           )}
@@ -535,15 +607,15 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
         {/* Footer Modal */}
         <div className="px-6 py-4 bg-surface border-t border-line flex items-center justify-between">
           <div className="text-xs font-medium">
-            {saveStatus === 'success' && <span className="text-emerald-600 dark:text-emerald-400 font-bold">Pengaturan berhasil disimpan!</span>}
-            {saveStatus === 'error' && <span className="text-rose-600 dark:text-rose-400 font-bold">Gagal menyimpan pengaturan.</span>}
+            {saveStatus === 'success' && <span className="text-emerald-600 dark:text-emerald-400 font-bold">{t('settings.saved')}</span>}
+            {saveStatus === 'error' && <span className="text-rose-600 dark:text-rose-400 font-bold">{t('settings.saveError')}</span>}
           </div>
           <div className="flex items-center gap-3">
             <button 
               onClick={onClose}
               className="px-4 py-2 text-xs font-bold text-content-muted hover:text-content transition-colors"
             >
-              Tutup
+              {t('common.close')}
             </button>
             {isLoggedIn && (
               <button 
@@ -552,7 +624,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                 className="flex items-center gap-2 bg-gradient-to-tr from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-5 py-2.5 rounded-2xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-70"
               >
                 <Save className="w-4 h-4" />
-                <span>{isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
+                <span>{isSaving ? t('settings.saving') : t('settings.save')}</span>
               </button>
             )}
           </div>

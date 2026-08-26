@@ -1,0 +1,512 @@
+/**
+ * Sistem Internasionalisasi (i18n) untuk SAP AI Assistant.
+ *
+ * Standar Proyek:
+ * Setiap fitur baru WAJIB mendaftarkan teks UI pada kamus bahasa ini (EN & ID)
+ * dan mengaksesnya menggunakan hook `useLanguage` / fungsi `t()`.
+ */
+
+export const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English', flag: '🇬🇧' },
+  { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩' },
+];
+
+export const DEFAULT_LANGUAGE = 'en';
+export const LANGUAGE_STORAGE_KEY = 'sap_assistant_lang';
+
+export const TRANSLATIONS = {
+  en: {
+    // Navigation & Header
+    'nav.connecting': 'Connecting…',
+    'nav.unlimited': 'Unlimited',
+    'nav.quotaRemaining': 'Left',
+    'nav.quotaUnlimitedTooltip': 'Your role has no daily token limit (Unlimited)',
+    'nav.settings': 'Open settings',
+    'nav.theme': 'Switch theme',
+    'nav.productionWarning': 'PRODUCTION',
+    'nav.appTitle': 'SAP AI Assistant',
+    'nav.serverSelectAria': 'Select active SAP server',
+
+    // Sidebar & Sessions
+    'sidebar.newChat': 'New Chat',
+    'sidebar.searchSessions': 'Search chats…',
+    'sidebar.noSessions': 'No chat sessions found',
+    'sidebar.history': 'Chat History',
+    'sidebar.today': 'Today',
+    'sidebar.yesterday': 'Yesterday',
+    'sidebar.previous7Days': 'Previous 7 Days',
+    'sidebar.older': 'Older',
+    'sidebar.deleteSession': 'Delete chat',
+    'sidebar.deleteConfirmTitle': 'Delete Chat Session',
+    'sidebar.deleteConfirmMsg': 'Are you sure you want to permanently delete "{title}"?',
+    'sidebar.rename': 'Rename',
+    'sidebar.saveTitle': 'Save title',
+    'sidebar.cancelRename': 'Cancel',
+    'sidebar.guestWarning': 'Guest Session',
+    'sidebar.guestDesc': 'Chat history is stored locally in this browser. Log in to sync across devices.',
+    'sidebar.loginPrompt': 'Sign In',
+    'sidebar.logout': 'Sign Out',
+    'sidebar.logoutConfirmTitle': 'Sign Out Confirmation',
+    'sidebar.logoutConfirmMsg': 'Are you sure you want to sign out from SAP AI Assistant?',
+    'sidebar.adminPanel': 'Admin Dashboard',
+
+    // Suggestions on Empty Screen
+    'suggestions.heroTitle': 'SAP AI Co-Pilot',
+    'suggestions.heroSubtitle': 'Ask about SAP ECC 6.0 & S/4HANA workflows, transactions, live tables, ABAP development, or internal SOPs.',
+    'suggestions.stockCheck.title': 'Check Stock Availability',
+    'suggestions.stockCheck.subtitle': 'View current stock levels in our plants',
+    'suggestions.stockCheck.query': 'What is the current stock availability in our plant?',
+    'suggestions.poStatus.title': 'Purchase Order Status',
+    'suggestions.poStatus.subtitle': 'Track open POs and pending delivery items',
+    'suggestions.poStatus.query': 'Show recent open Purchase Orders (PO) and their delivery status.',
+    'suggestions.prodOrder.title': 'Production Orders',
+    'suggestions.prodOrder.subtitle': 'Analyze order release and component reservations',
+    'suggestions.prodOrder.query': 'Explain the Production Order release flow and RESB component check.',
+    'suggestions.abapHelper.title': 'ABAP Code & BAPI',
+    'suggestions.abapHelper.subtitle': 'Best practices for function modules & tables',
+    'suggestions.abapHelper.query': 'Show me the recommended ABAP pattern for reading MARC/MARD using BAPI or clean SQL.',
+
+    // Chat Input & Composition
+    'input.placeholder': 'Type a message or ask about SAP MM, SD, PP, FICO, ABAP…',
+    'input.voiceNotSupported': 'Speech recognition is not supported in this browser. Try Safari or Chrome.',
+    'input.voiceHttpsRequired': 'Microphone is only available via HTTPS.',
+    'input.maxAttachments': 'Maximum {max} attachments per message.',
+    'input.onlyFirstAttached': 'Only the first {room} files were attached (maximum {max}).',
+    'input.send': 'Send message',
+    'input.stop': 'Stop response',
+    'input.voice': 'Voice dictation',
+    'input.listening': 'Listening… speak now',
+    'input.attach': 'Attach files or images',
+    'input.dragDrop': 'Drop files here to attach',
+    'input.shiftEnterHint': 'Press Enter to send, Shift+Enter for new line',
+
+    // Chat Message & Assistant Response
+    'chat.assistantName': 'SAP Assistant',
+    'chat.you': 'You',
+    'chat.copy': 'Copy',
+    'chat.copied': 'Copied',
+    'chat.copyCode': 'Copy code',
+    'chat.edit': 'Edit',
+    'chat.editQuestion': 'Edit this question',
+    'chat.editNote': 'Answers after this question will be replaced.',
+    'chat.cancel': 'Cancel',
+    'chat.resend': 'Resend',
+    'chat.regenerate': 'Regenerate response',
+    'chat.helpful': 'Helpful response',
+    'chat.notHelpful': 'Unhelpful response',
+    'chat.showSources': 'View data sources ({count})',
+    'chat.hideSources': 'Hide sources',
+    'chat.liveSapData': 'Live data from SAP system',
+    'chat.internalDoc': 'Internal knowledge document',
+    'chat.technicalDetails': 'Technical details',
+    'chat.closeDetails': 'Close details',
+    'chat.sourceLabel': 'Source:',
+    'chat.clickToDownload': 'click to download',
+    'chat.scrollTableHint': 'Scroll table horizontally to view more columns',
+    'chat.codeTerminal': 'ABAP / Source Code',
+    'chat.sourceReadTable': 'SAP Data Table Query',
+    'chat.sourceAbap': 'ABAP Program Reading',
+    'chat.sourceFunction': 'SAP Function Call',
+    'chat.sourceSearch': 'Internal Knowledge Search',
+    'chat.sourceDefaultMcp': 'Live SAP Data Reading',
+    'chat.sourceDefaultDoc': 'Knowledge Reference',
+
+    // Diagrams (Mermaid)
+    'diagram.title': 'Process flow diagram',
+    'diagram.preparing': 'Preparing diagram…',
+    'diagram.error': 'Diagram could not be rendered',
+    'diagram.viewSource': 'View diagram code',
+    'diagram.viewVisual': 'Show visual diagram',
+    'diagram.expand': 'Expand diagram',
+    'diagram.close': 'Close diagram',
+
+    // Thinking Indicator
+    'thinking.connecting': 'Connecting to assistant',
+    'thinking.reading': 'Reading your attachments',
+    'thinking.thinking': 'Reasoning & formulating response',
+    'thinking.tool': 'Querying SAP live data',
+    'thinking.building': 'Generating document file',
+    'thinking.done': 'Completed',
+    'thinking.processing': 'Processing…',
+    'thinking.step': 'step {step}',
+    'thinking.stop': 'Stop',
+
+    // Token & Quota
+    'quota.exhausted': 'Your daily token quota is exhausted',
+    'quota.remainingNotice': 'Daily token quota remaining: {percent}% ({remaining} tokens)',
+    'quota.usedDetail': '{used} of {limit} tokens used ({percent}%)',
+    'quota.resetNotice': 'Quota resets daily at midnight.',
+    'quota.adminContact': 'contact administrator if you need an increase',
+    'usage.inputTokens': 'Input tokens',
+    'usage.outputTokens': 'Output tokens',
+    'usage.fromCache': 'From cache',
+    'usage.processTime': 'Processing time',
+    'usage.dataCalls': 'Data calls',
+    'usage.model': 'Model',
+
+    // Settings Modal
+    'settings.title': 'Settings',
+    'settings.tabPersona': 'Persona & Preferences',
+    'settings.tabLanguage': 'Language / Bahasa',
+    'settings.tabSecurity': 'Security & Password',
+    'settings.tabRouter': 'AI Provider',
+    'settings.tabMcp': 'MCP Connections',
+    'settings.languageSelect': 'Interface Language',
+    'settings.languageDesc': 'Select the language used for the user interface, status notices, and default assistant responses.',
+    'settings.languageNoteTitle': 'Multilanguage Standard:',
+    'settings.languageNoteDesc': 'This application provides complete bilingual support. Interface texts, buttons, quota warnings, and diagram structures automatically adapt to your chosen language.',
+    'settings.fullName': 'Full Name',
+    'settings.fullNameDesc': 'Displayed on your profile and in the admin user list.',
+    'settings.fullNamePlaceholder': 'e.g. John Doe',
+    'settings.globalPersonaTitle': 'Organization Persona (Configured by Admin)',
+    'settings.globalPersonaDesc': 'These rules serve as the foundational standard for all users.',
+    'settings.personalPersona': 'Personal Preferences & Persona',
+    'settings.personalPersonaDesc': 'Customize the AI response style, format, language, or specific instructions for your personal workflow.',
+    'settings.personalPersonaPlaceholder': 'e.g. Explain concisely, highlight SAP transaction codes and table names.',
+    'settings.loginRequired': 'Log in to customize your profile and assistant persona.',
+    'settings.save': 'Save Changes',
+    'settings.saving': 'Saving…',
+    'settings.saved': 'Settings saved successfully!',
+    'settings.saveError': 'Failed to save settings.',
+
+    // Security Tab (Password Change)
+    'security.title': 'Change Account Password',
+    'security.oldPass': 'Current Password',
+    'security.oldPassPlaceholder': 'Enter current password',
+    'security.newPass': 'New Password',
+    'security.newPassPlaceholder': 'Minimum 8 characters',
+    'security.confirmPass': 'Confirm New Password',
+    'security.confirmPassPlaceholder': 'Re-enter new password',
+    'security.submit': 'Update Password',
+    'security.processing': 'Updating…',
+    'security.success': 'Password updated successfully!',
+    'security.mismatch': 'Password confirmation does not match.',
+    'security.tooShort': 'New password must be at least 8 characters.',
+
+    // Login Modal
+    'login.title': 'SAP AI Co-Pilot Login',
+    'login.subtitle': 'Sign in to access Enterprise SAP services & knowledge base without prompt limits.',
+    'login.usernameLabel': 'SAP Username',
+    'login.usernamePlaceholder': 'Enter SAP username',
+    'login.passwordLabel': 'Password',
+    'login.passwordPlaceholder': '••••••••',
+    'login.submit': 'Sign In',
+    'login.verifying': 'Verifying credentials…',
+    'login.guestContinue': 'Continue as Guest',
+    'login.failed': 'Login failed. Please check your username and password.',
+    'login.closeAria': 'Close login dialog',
+
+    // Confirmation Modal
+    'confirm.defaultTitle': 'Confirmation',
+    'confirm.defaultMessage': 'Are you sure you want to proceed with this action?',
+    'confirm.yes': 'Yes, Proceed',
+    'confirm.cancel': 'Cancel',
+    'confirm.processing': 'Processing…',
+
+    // PWA Prompt
+    'pwa.title': 'Install SAP AI Assistant',
+    'pwa.subtitle': 'Instant native-like access on Mobile & Desktop',
+    'pwa.iosHint': 'Tap the Share icon then select "Add to Home Screen".',
+    'pwa.installNow': 'Install Now',
+    'pwa.later': 'Maybe Later',
+    'pwa.closeAria': 'Dismiss install prompt',
+
+    // Side Panel
+    'sidepanel.copy': 'Copy content',
+    'sidepanel.download': 'Download as text file',
+    'sidepanel.close': 'Close panel',
+
+    // Admin Dashboard
+    'admin.title': 'Admin Control Panel',
+    'admin.tabOverview': 'Overview & Stats',
+    'admin.tabUsers': 'User Management',
+    'admin.tabSkills': 'Skills & SOPs',
+    'admin.tabPersona': 'Global Persona',
+    'admin.tabRouter': 'AI Provider',
+    'admin.tabMcp': 'MCP Connections',
+    'admin.tabAudit': 'Chat Audits',
+    'admin.tabTokenQuota': 'Token Quotas',
+    'admin.tabFeedback': 'User Feedback',
+    'admin.refresh': 'Refresh Data',
+    'admin.save': 'Save Configuration',
+    'admin.saving': 'Saving…',
+    'admin.saved': 'Configuration updated successfully.',
+    'admin.error': 'Failed to save configuration.',
+    'admin.addUser': 'Add User',
+    'admin.addSkill': 'Add Skill',
+    'admin.search': 'Search…',
+    'admin.statusActive': 'Active',
+    'admin.statusInactive': 'Inactive',
+    'admin.roleAdmin': 'Admin',
+    'admin.roleUser': 'User',
+    'admin.roleAbaper': 'ABAP Developer',
+    'admin.roleGuest': 'Guest',
+
+    // Common
+    'common.close': 'Close',
+    'common.confirm': 'Confirm',
+    'common.delete': 'Delete',
+    'common.back': 'Back',
+    'common.error': 'An error occurred',
+    'common.success': 'Success',
+    'common.processing': 'Processing…',
+    'common.loading': 'Loading…',
+  },
+
+  id: {
+    // Navigasi & Header
+    'nav.connecting': 'Menghubungkan…',
+    'nav.unlimited': 'Tanpa batas',
+    'nav.quotaRemaining': 'Sisa',
+    'nav.quotaUnlimitedTooltip': 'Peran Anda tidak dibatasi kuota token harian (Unlimited)',
+    'nav.settings': 'Buka pengaturan',
+    'nav.theme': 'Ganti tema',
+    'nav.productionWarning': 'PRODUKSI',
+    'nav.appTitle': 'Asisten SAP AI',
+    'nav.serverSelectAria': 'Pilih server SAP aktif',
+
+    // Sidebar & Sessions
+    'sidebar.newChat': 'Percakapan Baru',
+    'sidebar.searchSessions': 'Cari percakapan…',
+    'sidebar.noSessions': 'Tidak ada sesi percakapan',
+    'sidebar.history': 'Riwayat Percakapan',
+    'sidebar.today': 'Hari Ini',
+    'sidebar.yesterday': 'Kemarin',
+    'sidebar.previous7Days': '7 Hari Terakhir',
+    'sidebar.older': 'Lebih Lama',
+    'sidebar.deleteSession': 'Hapus percakapan',
+    'sidebar.deleteConfirmTitle': 'Hapus Sesi Percakapan',
+    'sidebar.deleteConfirmMsg': 'Apakah Anda yakin ingin menghapus permanen percakapan "{title}"?',
+    'sidebar.rename': 'Ubah nama',
+    'sidebar.saveTitle': 'Simpan judul',
+    'sidebar.cancelRename': 'Batal',
+    'sidebar.guestWarning': 'Sesi Tamu (Guest)',
+    'sidebar.guestDesc': 'Riwayat percakapan hanya tersimpan di peramban ini. Masuk untuk menyinkronkan antar perangkat.',
+    'sidebar.loginPrompt': 'Masuk Akun',
+    'sidebar.logout': 'Keluar Akun',
+    'sidebar.logoutConfirmTitle': 'Konfirmasi Keluar Akun',
+    'sidebar.logoutConfirmMsg': 'Apakah Anda yakin ingin keluar dari aplikasi Asisten SAP AI?',
+    'sidebar.adminPanel': 'Dashboard Admin',
+
+    // Suggestions on Empty Screen
+    'suggestions.heroTitle': 'Asisten SAP AI Co-Pilot',
+    'suggestions.heroSubtitle': 'Tanyakan seputar alur proses SAP ECC 6.0 & S/4HANA, transaksi, data tabel live, pengembangan ABAP, atau SOP internal.',
+    'suggestions.stockCheck.title': 'Cek Ketersediaan Stok',
+    'suggestions.stockCheck.subtitle': 'Lihat stok barang di plant saat ini',
+    'suggestions.stockCheck.query': 'Berapa ketersediaan stok material di plant kita saat ini?',
+    'suggestions.poStatus.title': 'Status Purchase Order',
+    'suggestions.poStatus.subtitle': 'Pantau PO terbuka dan jadwal pengiriman',
+    'suggestions.poStatus.query': 'Tampilkan Purchase Order (PO) terbuka terbaru dan status penerimaan barangnya.',
+    'suggestions.prodOrder.title': 'Production Order & PP',
+    'suggestions.prodOrder.subtitle': 'Analisis alur rilis order dan reservasi material',
+    'suggestions.prodOrder.query': 'Jelaskan alur rilis Production Order dan pengecekan reservasi komponen RESB.',
+    'suggestions.abapHelper.title': 'Kode ABAP & BAPI',
+    'suggestions.abapHelper.subtitle': 'Best practice pemanggilan function & tabel',
+    'suggestions.abapHelper.query': 'Tunjukkan pola kode ABAP yang direkomendasikan untuk membaca MARC/MARD menggunakan BAPI atau SQL efisien.',
+
+    // Chat Input & Composition
+    'input.placeholder': 'Ketik pesan atau tanyakan terkait SAP MM, SD, PP, FICO, ABAP…',
+    'input.voiceNotSupported': 'Peramban ini tidak menyediakan pengenalan suara. Coba Safari atau Chrome.',
+    'input.voiceHttpsRequired': 'Mikrofon hanya dapat dipakai lewat HTTPS.',
+    'input.maxAttachments': 'Maksimal {max} lampiran per pesan.',
+    'input.onlyFirstAttached': 'Hanya {room} berkas pertama yang dilampirkan (maksimal {max}).',
+    'input.send': 'Kirim pesan',
+    'input.stop': 'Hentikan respon',
+    'input.voice': 'Dikte suara',
+    'input.listening': 'Mendengarkan… silakan bicara',
+    'input.attach': 'Lampirkan berkas atau gambar',
+    'input.dragDrop': 'Lepaskan berkas di sini untuk melampirkan',
+    'input.shiftEnterHint': 'Tekan Enter untuk kirim, Shift+Enter untuk baris baru',
+
+    // Chat Message & Assistant Response
+    'chat.assistantName': 'Asisten SAP',
+    'chat.you': 'Anda',
+    'chat.copy': 'Salin',
+    'chat.copied': 'Tersalin',
+    'chat.copyCode': 'Salin kode',
+    'chat.edit': 'Edit',
+    'chat.editQuestion': 'Ubah pertanyaan ini',
+    'chat.editNote': 'Jawaban setelah pertanyaan ini akan digantikan.',
+    'chat.cancel': 'Batal',
+    'chat.resend': 'Kirim ulang',
+    'chat.regenerate': 'Buat ulang jawaban',
+    'chat.helpful': 'Jawaban membantu',
+    'chat.notHelpful': 'Jawaban kurang sesuai',
+    'chat.showSources': 'Lihat sumber data ({count})',
+    'chat.hideSources': 'Sembunyikan sumber',
+    'chat.liveSapData': 'Data langsung dari sistem SAP',
+    'chat.internalDoc': 'Dokumen panduan internal',
+    'chat.technicalDetails': 'Detail teknis',
+    'chat.closeDetails': 'Tutup detail',
+    'chat.sourceLabel': 'Sumber:',
+    'chat.clickToDownload': 'klik untuk unduh',
+    'chat.scrollTableHint': 'Geser tabel ke samping untuk melihat kolom lainnya',
+    'chat.codeTerminal': 'ABAP / Source Code',
+    'chat.sourceReadTable': 'Pembacaan tabel data SAP',
+    'chat.sourceAbap': 'Pembacaan program ABAP',
+    'chat.sourceFunction': 'Pemanggilan fungsi SAP',
+    'chat.sourceSearch': 'Pencarian pada dokumen internal',
+    'chat.sourceDefaultMcp': 'Pembacaan data SAP',
+    'chat.sourceDefaultDoc': 'Rujukan dokumen',
+
+    // Diagrams (Mermaid)
+    'diagram.title': 'Diagram alur',
+    'diagram.preparing': 'Menyiapkan diagram…',
+    'diagram.error': 'Diagram tidak dapat ditampilkan',
+    'diagram.viewSource': 'Lihat kode diagram',
+    'diagram.viewVisual': 'Tampilkan diagram',
+    'diagram.expand': 'Perbesar diagram',
+    'diagram.close': 'Tutup diagram',
+
+    // Thinking Indicator
+    'thinking.connecting': 'Menghubungi asisten',
+    'thinking.reading': 'Membaca lampiran Anda',
+    'thinking.thinking': 'Menyusun jawaban & penalaran',
+    'thinking.tool': 'Mengambil data live SAP',
+    'thinking.building': 'Menyiapkan berkas dokumen',
+    'thinking.done': 'Selesai',
+    'thinking.processing': 'Sedang memproses…',
+    'thinking.step': 'langkah {step}',
+    'thinking.stop': 'Hentikan',
+
+    // Token & Quota
+    'quota.exhausted': 'Kuota token harian Anda sudah habis',
+    'quota.remainingNotice': 'Sisa kuota token harian tinggal {percent}% ({remaining} token)',
+    'quota.usedDetail': '{used} dari {limit} token terpakai ({percent}%)',
+    'quota.resetNotice': 'Kuota dihitung ulang setiap tengah malam.',
+    'quota.adminContact': 'hubungi administrator bila Anda membutuhkan tambahan',
+    'usage.inputTokens': 'Token masukan',
+    'usage.outputTokens': 'Token jawaban',
+    'usage.fromCache': 'Dari cache',
+    'usage.processTime': 'Waktu proses',
+    'usage.dataCalls': 'Panggilan data',
+    'usage.model': 'Model',
+
+    // Settings Modal
+    'settings.title': 'Pengaturan',
+    'settings.tabPersona': 'Persona & Profil',
+    'settings.tabLanguage': 'Bahasa / Language',
+    'settings.tabSecurity': 'Keamanan & Sandi',
+    'settings.tabRouter': 'AI Provider',
+    'settings.tabMcp': 'Koneksi Data',
+    'settings.languageSelect': 'Bahasa Antarmuka (Interface Language)',
+    'settings.languageDesc': 'Pilih bahasa yang digunakan untuk antarmuka pengguna, notifikasi, dan respon default asisten.',
+    'settings.languageNoteTitle': 'Standar Multibahasa:',
+    'settings.languageNoteDesc': 'Aplikasi ini dirancang mendukung multibahasa penuh. Teks antarmuka, tombol, peringatan kuota, dan format diagram secara otomatis menyesuaikan dengan bahasa yang Anda pilih di atas.',
+    'settings.fullName': 'Nama Lengkap',
+    'settings.fullNameDesc': 'Ditampilkan pada profil Anda dan pada daftar pengguna di dashboard admin.',
+    'settings.fullNamePlaceholder': 'misal: Andi Wijaya',
+    'settings.globalPersonaTitle': 'Persona Organisasi (diatur admin)',
+    'settings.globalPersonaDesc': 'Aturan ini menjadi dasar untuk semua pengguna.',
+    'settings.personalPersona': 'Preferensi Pribadi Anda',
+    'settings.personalPersonaDesc': 'Sesuaikan gaya jawaban, format, bahasa, atau instruksi khusus untuk asisten AI Anda sendiri.',
+    'settings.personalPersonaPlaceholder': 'Misal: Ringkas dulu dalam tabel, lalu jelaskan alur prosesnya step-by-step.',
+    'settings.loginRequired': 'Login untuk mengkustomisasi persona asisten Anda.',
+    'settings.save': 'Simpan Perubahan',
+    'settings.saving': 'Menyimpan…',
+    'settings.saved': 'Pengaturan berhasil disimpan!',
+    'settings.saveError': 'Gagal menyimpan pengaturan.',
+
+    // Security Tab (Password Change)
+    'security.title': 'Ubah Password Akun',
+    'security.oldPass': 'Password Saat Ini',
+    'security.oldPassPlaceholder': 'Masukkan password lama',
+    'security.newPass': 'Password Baru',
+    'security.newPassPlaceholder': 'Minimal 8 karakter',
+    'security.confirmPass': 'Konfirmasi Password Baru',
+    'security.confirmPassPlaceholder': 'Ulangi password baru',
+    'security.submit': 'Perbarui Password',
+    'security.processing': 'Memproses…',
+    'security.success': 'Password berhasil diperbarui!',
+    'security.mismatch': 'Konfirmasi password tidak cocok.',
+    'security.tooShort': 'Password baru minimal 8 karakter.',
+
+    // Login Modal
+    'login.title': 'Masuk SAP AI Co-Pilot',
+    'login.subtitle': 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen tanpa batas prompt.',
+    'login.usernameLabel': 'Username SAP',
+    'login.usernamePlaceholder': 'Masukkan username SAP',
+    'login.passwordLabel': 'Password',
+    'login.passwordPlaceholder': '••••••••',
+    'login.submit': 'Masuk Aplikasi',
+    'login.verifying': 'Memverifikasi…',
+    'login.guestContinue': 'Lanjutkan sebagai Guest',
+    'login.failed': 'Login gagal. Periksa username dan password.',
+    'login.closeAria': 'Tutup dialog login',
+
+    // Confirmation Modal
+    'confirm.defaultTitle': 'Konfirmasi',
+    'confirm.defaultMessage': 'Apakah Anda yakin ingin melanjutkan tindakan ini?',
+    'confirm.yes': 'Ya, Lanjutkan',
+    'confirm.cancel': 'Batal',
+    'confirm.processing': 'Memproses…',
+
+    // PWA Prompt
+    'pwa.title': 'Pasang Aplikasi SAP AI',
+    'pwa.subtitle': 'Akses instan seperti aplikasi asli di HP & Desktop',
+    'pwa.iosHint': 'Ketuk ikon Bagikan (Share) lalu pilih "Tambah ke Layar Utama" (Add to Home Screen).',
+    'pwa.installNow': 'Pasang Sekarang',
+    'pwa.later': 'Nanti Saja',
+    'pwa.closeAria': 'Tutup saran instalasi',
+
+    // Side Panel
+    'sidepanel.copy': 'Salin isi',
+    'sidepanel.download': 'Unduh sebagai berkas teks',
+    'sidepanel.close': 'Tutup panel',
+
+    // Admin Dashboard
+    'admin.title': 'Panel Kontrol Admin',
+    'admin.tabOverview': 'Statistik & Ringkasan',
+    'admin.tabUsers': 'Manajemen Pengguna',
+    'admin.tabSkills': 'Katalog Skill & SOP',
+    'admin.tabPersona': 'Persona Organisasi',
+    'admin.tabRouter': 'AI Provider',
+    'admin.tabMcp': 'Koneksi Data MCP',
+    'admin.tabAudit': 'Audit Percakapan',
+    'admin.tabTokenQuota': 'Batas Kuota Token',
+    'admin.tabFeedback': 'Feedback Kepuasan',
+    'admin.refresh': 'Muat Ulang Data',
+    'admin.save': 'Simpan Konfigurasi',
+    'admin.saving': 'Menyimpan…',
+    'admin.saved': 'Konfigurasi berhasil disimpan.',
+    'admin.error': 'Gagal menyimpan konfigurasi.',
+    'admin.addUser': 'Tambah Pengguna',
+    'admin.addSkill': 'Tambah Skill',
+    'admin.search': 'Cari…',
+    'admin.statusActive': 'Aktif',
+    'admin.statusInactive': 'Nonaktif',
+    'admin.roleAdmin': 'Admin',
+    'admin.roleUser': 'User',
+    'admin.roleAbaper': 'Developer ABAP',
+    'admin.roleGuest': 'Tamu (Guest)',
+
+    // Common
+    'common.close': 'Tutup',
+    'common.confirm': 'Konfirmasi',
+    'common.delete': 'Hapus',
+    'common.back': 'Kembali',
+    'common.error': 'Terjadi kesalahan',
+    'common.success': 'Berhasil',
+    'common.processing': 'Memproses…',
+    'common.loading': 'Memuat…',
+  }
+};
+
+/**
+ * Menerjemahkan kunci dengan penggantian parameter opsional.
+ *
+ * Contoh:
+ * t('quota.remainingNotice', { percent: 15, remaining: '15k' })
+ */
+export function translate(lang, key, params = {}) {
+  const currentLang = TRANSLATIONS[lang] ? lang : DEFAULT_LANGUAGE;
+  let text = TRANSLATIONS[currentLang]?.[key] || TRANSLATIONS[DEFAULT_LANGUAGE]?.[key] || key;
+
+  if (params && typeof params === 'object') {
+    Object.entries(params).forEach(([k, v]) => {
+      text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? ''));
+    });
+  }
+
+  return text;
+}

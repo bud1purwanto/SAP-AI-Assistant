@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
+import { useLanguage } from '../hooks/useLanguage';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
+  const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'persona' | 'mcp' | 'audit'
   const [globalPersona, setGlobalPersona] = useState('');
   const [personaSaving, setPersonaSaving] = useState(false);
@@ -147,7 +149,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   }, [isOpen, user]);
 
-  // Daftar feedback bisa panjang, jadi baru diambil ketika tabnya dibuka.
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin' && activeTab === 'feedback') {
       fetchFeedback(feedbackKind);
@@ -158,29 +159,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const fetchKuota = async () => {
     setKuotaLoading(true);
     try {
-      const data = await api.adminQuota();
+      const data = await api.adminQuotaStats();
       setKuota(data);
-      // Draft dipisah dari data server supaya angka yang sedang diketik admin
-      // tidak tertimpa hasil muat ulang di tengah pengetikan.
-      setBatasDraft(
-        Object.fromEntries(
-          Object.entries(data.role_limits || {}).map(([peran, b]) => [
-            peran,
-            {
-              daily_token_limit: String(b.daily_token_limit ?? 0),
-              per_minute_limit: String(b.per_minute_limit ?? 0),
-            },
-          ]),
-        ),
-      );
+      // Inisialisasi draft batas peran sesuai data backend.
+      const draft = {};
+      Object.entries(data.role_limits || {}).forEach(([peran, cfg]) => {
+        draft[peran] = {
+          daily_token_limit: cfg.daily_token_limit ?? 0,
+          per_minute_limit: cfg.per_minute_limit ?? 0,
+        };
+      });
+      setBatasDraft(draft);
     } catch (err) {
-      setActionError(err.message);
+      console.error('Gagal load kuota token:', err);
     } finally {
       setKuotaLoading(false);
     }
   };
 
-  // Sama seperti feedback: hanya diambil saat tabnya dibuka.
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin' && activeTab === 'kuota') {
       fetchKuota();
@@ -196,8 +192,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       setKuota((k) => (k ? { ...k, enforced: aktif } : k));
       setActionSuccess(
         aktif
-          ? 'Pembatasan token dinyalakan — permintaan ditolak setelah kuota habis.'
-          : 'Pembatasan token dimatikan — pemakaian tetap dicatat, prompt bebas.',
+          ? (language === 'en' ? 'Token enforcement enabled — requests blocked after quota exhausted.' : 'Pembatasan token dinyalakan — permintaan ditolak setelah kuota habis.')
+          : (language === 'en' ? 'Token enforcement disabled — usage recorded, unlimited prompts.' : 'Pembatasan token dimatikan — pemakaian tetap dicatat, prompt bebas.')
       );
     } catch (err) {
       setActionError(err.message);
@@ -211,7 +207,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     const harian = Number.parseInt(draft.daily_token_limit, 10);
     const permenit = Number.parseInt(draft.per_minute_limit, 10);
     if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
-      setActionError('Batas harus berupa angka bulat 0 atau lebih.');
+      setActionError(language === 'en' ? 'Limits must be non-negative integers.' : 'Batas harus berupa angka bulat 0 atau lebih.');
       return;
     }
     try {
@@ -221,7 +217,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         per_minute_limit: permenit,
       });
       setKuota((k) => (k ? { ...k, role_limits: hasil.role_limits } : k));
-      setActionSuccess(`Batas peran '${peran}' tersimpan.`);
+      setActionSuccess(language === 'en' ? `Limits for role '${peran}' saved.` : `Batas peran '${peran}' tersimpan.`);
     } catch (err) {
       setActionError(err.message);
     }
@@ -230,11 +226,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const resetKuota = async (username) => {
     setActionError('');
     setActionSuccess('');
-    const sasaran = username || 'SEMUA pengguna';
-    if (!window.confirm(`Nolkan pemakaian token hari ini untuk ${sasaran}?`)) return;
+    const sasaran = username || (language === 'en' ? 'ALL users' : 'SEMUA pengguna');
+    if (!window.confirm(language === 'en' ? `Reset token usage to 0 for ${sasaran}?` : `Nolkan pemakaian token hari ini untuk ${sasaran}?`)) return;
     try {
       const hasil = await api.adminQuotaReset(username);
-      setActionSuccess(`Pemakaian ${hasil.direset} sudah dinolkan.`);
+      setActionSuccess(language === 'en' ? `Usage for ${hasil.direset} reset to 0.` : `Pemakaian ${hasil.direset} sudah dinolkan.`);
       fetchKuota();
     } catch (err) {
       setActionError(err.message);
@@ -248,7 +244,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     try {
       await api.adminCreateUser(newUserForm);
       
-      setActionSuccess(`User '${newUserForm.username}' berhasil dibuat!`);
+      setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
       setNewUserForm({ username: '', password: '', full_name: '', role: 'abaper', assistant_persona: '' });
       setIsAddUserOpen(false);
       fetchUsers();
@@ -258,23 +254,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleUpdateUser = async (e) => {
+  const handleUpdateUser = async (username, e) => {
     e.preventDefault();
-    if (!editingUser) return;
     setActionError('');
     setActionSuccess('');
     try {
-      const payload = {
-        role: editUserForm.role,
-        full_name: editUserForm.full_name,
-        assistant_persona: editUserForm.assistant_persona
-      };
-      if (editUserForm.password) {
-        payload.password = editUserForm.password;
-      }
-      await api.adminUpdateUser(editingUser.username, payload);
-      
-      setActionSuccess(`User '${editingUser.username}' berhasil diperbarui!`);
+      await api.adminUpdateUser(username, editUserForm);
+      setActionSuccess(language === 'en' ? `User '${username}' updated successfully!` : `User '${username}' berhasil diupdate!`);
       setEditingUser(null);
       fetchUsers();
     } catch (err) {
@@ -282,14 +268,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleDeleteUser = async (targetUsername) => {
-    if (!window.confirm(`Yakin ingin menghapus user '${targetUsername}'? Semua riwayat chat user ini akan dihapus.`)) return;
+  const handleDeleteUser = async (username) => {
+    if (!window.confirm(language === 'en' ? `Are you sure you want to delete user ${username}?` : `Apakah Anda yakin ingin menghapus user ${username}?`)) return;
     setActionError('');
     setActionSuccess('');
     try {
-      await api.adminDeleteUser(targetUsername);
-      
-      setActionSuccess(`User '${targetUsername}' berhasil dihapus.`);
+      await api.adminDeleteUser(username);
+      setActionSuccess(language === 'en' ? `User '${username}' deleted!` : `User '${username}' berhasil dihapus!`);
       fetchUsers();
       fetchStats();
     } catch (err) {
@@ -297,14 +282,32 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleCreateSkill = async (e) => {
+  const handleSaveGlobalPersona = async (e) => {
     e.preventDefault();
+    setPersonaSaving(true);
     setActionError('');
     setActionSuccess('');
-    setSkillSaving(true);
     try {
-      const created = await api.adminCreateSkill(newSkillForm);
-      setActionSuccess(`Skill '${created.name}' berhasil ditambahkan!`);
+      await api.saveConfig({
+        global_assistant_persona: globalPersona,
+        assistant_persona: user.assistant_persona || ""
+      });
+      setActionSuccess(language === 'en' ? 'Global Organization Persona saved!' : 'Persona Organisasi (Global) berhasil disimpan!');
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setPersonaSaving(false);
+    }
+  };
+
+  const handleCreateSkill = async (e) => {
+    e.preventDefault();
+    setSkillSaving(true);
+    setActionError('');
+    setActionSuccess('');
+    try {
+      await api.adminCreateSkill(newSkillForm);
+      setActionSuccess(language === 'en' ? `Skill '${newSkillForm.name}' added!` : `Skill '${newSkillForm.name}' berhasil ditambahkan!`);
       setNewSkillForm({ name: '', description: '', content: '', enabled: true });
       setIsAddSkillOpen(false);
       fetchSkills();
@@ -315,15 +318,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleUpdateSkill = async (e) => {
+  const handleUpdateSkill = async (id, e) => {
     e.preventDefault();
-    if (!editingSkill) return;
+    setSkillSaving(true);
     setActionError('');
     setActionSuccess('');
-    setSkillSaving(true);
     try {
-      await api.adminUpdateSkill(editingSkill.id, editSkillForm);
-      setActionSuccess(`Skill '${editSkillForm.name}' berhasil diperbarui!`);
+      await api.adminUpdateSkill(id, editSkillForm);
+      setActionSuccess(language === 'en' ? `Skill '${editSkillForm.name}' updated!` : `Skill '${editSkillForm.name}' berhasil diupdate!`);
       setEditingSkill(null);
       fetchSkills();
     } catch (err) {
@@ -333,49 +335,33 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleToggleSkill = async (skill) => {
+  const handleDeleteSkill = async (id, name) => {
+    if (!window.confirm(language === 'en' ? `Delete skill ${name}?` : `Hapus skill ${name}?`)) return;
     setActionError('');
     setActionSuccess('');
+    try {
+      await api.adminDeleteSkill(id);
+      setActionSuccess(language === 'en' ? `Skill '${name}' deleted!` : `Skill '${name}' berhasil dihapus!`);
+      fetchSkills();
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const handleToggleSkill = async (skill) => {
     try {
       await api.adminUpdateSkill(skill.id, { enabled: !skill.enabled });
-      setActionSuccess(`Status skill '${skill.name}' diubah menjadi ${!skill.enabled ? 'Aktif' : 'Nonaktif'}.`);
       fetchSkills();
     } catch (err) {
       setActionError(err.message);
     }
   };
 
-  const handleDeleteSkill = async (skillId, skillName) => {
-    if (!window.confirm(`Yakin ingin menghapus skill '${skillName}'?`)) return;
-    setActionError('');
-    setActionSuccess('');
-    try {
-      await api.adminDeleteSkill(skillId);
-      setActionSuccess(`Skill '${skillName}' berhasil dihapus.`);
-      fetchSkills();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  };
-
-  const handleSaveGlobalPersona = async () => {
-    setPersonaSaving(true);
-    setActionSuccess('');
-    setActionError('');
-    try {
-      await api.saveConfig({ global_assistant_persona: globalPersona });
-      setActionSuccess('Persona organisasi berhasil disimpan. Berlaku untuk seluruh pengguna.');
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setPersonaSaving(false);
-    }
-  };
-
-  const handleSaveMcpConfig = async () => {
+  const handleSaveMcpConfig = async (e) => {
+    e.preventDefault();
     setMcpSaving(true);
-    setActionSuccess('');
     setActionError('');
+    setActionSuccess('');
     try {
       await api.saveConfig({
         mcp_sap_config_json: mcpSapConfig,
@@ -384,8 +370,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         nine_router_enabled: nineRouterEnabled,
         nine_router_base_url: nineRouterBaseUrl,
         nine_router_model: nineRouterModel,
-        // Nilai bertanda mask berarti tidak diubah; backend akan mengabaikannya
-        // dan mempertahankan kunci yang tersimpan.
         nine_router_api_key: nineRouterApiKey,
         openrouter_enabled: openrouterEnabled,
         openrouter_model: openrouterModel,
@@ -393,7 +377,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         openrouter_api_key: openrouterApiKey,
         assistant_persona: user.assistant_persona || ""
       });
-      setActionSuccess("Konfigurasi AI Provider (9Router & OpenRouter) serta MCP berhasil disimpan!");
+      setActionSuccess(t('admin.saved'));
       if (onRefreshMcpServers) onRefreshMcpServers();
       fetchStats();
     } catch (err) {
@@ -427,9 +411,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       style={{ height: 'var(--app-height, 100dvh)' }}
     >
       {/* Header Modal */}
-      {/* Di PWA standalone, `inset-0` mencakup area status bar sehingga judul dan
-          tombol tutup tertimpa jam serta ikon baterai — tombolnya menjadi tidak
-          dapat ditekan. Padding atas mengikuti safe-area perangkat. */}
       <div
         className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line bg-surface shrink-0"
         style={{ paddingTop: 'max(0.875rem, var(--sat))' }}
@@ -440,10 +421,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           </div>
           <div className="min-w-0">
             <h2 className="text-sm sm:text-base font-bold tracking-tight text-content truncate font-display leading-tight">
-              Super Admin Control Center
+              {t('admin.title')}
             </h2>
             <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
-              Kelola User, Katalog Skill, Server MCP, Audit Riwayat Chat, dan Metrik Sistem
+              {language === 'en'
+                ? 'Manage Users, Skills Catalog, MCP Servers, Chat Audit Logs, and System Metrics'
+                : 'Kelola User, Katalog Skill, Server MCP, Audit Riwayat Chat, dan Metrik Sistem'}
             </p>
           </div>
         </div>
@@ -451,7 +434,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         <button 
           onClick={onClose}
           className="-mr-1 p-3 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
-          aria-label="Tutup Dashboard"
+          aria-label={t('common.close')}
         >
           <X className="w-5 h-5" />
         </button>
@@ -464,7 +447,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
             <span className="truncate">{actionSuccess}</span>
           </div>
-          <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline shrink-0">Tutup</button>
+          <button onClick={() => setActionSuccess('')} className="text-xs text-emerald-600 hover:underline shrink-0 cursor-pointer">{t('common.close')}</button>
         </div>
       )}
 
@@ -474,7 +457,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
             <span className="truncate">{actionError}</span>
           </div>
-          <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline shrink-0">Tutup</button>
+          <button onClick={() => setActionError('')} className="text-xs text-rose-600 hover:underline shrink-0 cursor-pointer">{t('common.close')}</button>
         </div>
       )}
 
@@ -492,7 +475,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <Activity className="w-4 h-4 shrink-0" />
-            <span>Overview &amp; Stats</span>
+            <span>{t('admin.tabOverview')}</span>
           </button>
 
           <button
@@ -504,7 +487,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <Users className="w-4 h-4 shrink-0" />
-            <span>User Management</span>
+            <span>{t('admin.tabUsers')}</span>
           </button>
 
           <button
@@ -516,7 +499,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <Sparkles className="w-4 h-4 shrink-0" />
-            <span>Persona Organisasi</span>
+            <span>{t('admin.tabPersona')}</span>
           </button>
 
           <button
@@ -528,7 +511,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <BookOpen className="w-4 h-4 shrink-0" />
-            <span>Katalog Skill</span>
+            <span>{t('admin.tabSkills')}</span>
           </button>
 
           <button
@@ -540,7 +523,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <Server className="w-4 h-4 shrink-0" />
-            <span>MCP &amp; AI Provider</span>
+            <span>{t('admin.tabMcp')}</span>
           </button>
 
           <button
@@ -552,7 +535,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <Gauge className="w-4 h-4 shrink-0" />
-            <span>Kuota Token</span>
+            <span>{t('admin.tabTokenQuota')}</span>
           </button>
 
           <button

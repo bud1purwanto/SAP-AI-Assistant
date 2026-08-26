@@ -72,3 +72,16 @@ Proyek ini menggunakan struktur monorepo:
 1. **Role-Based Access Control (RBAC):** Anda dapat mengganti role (Guest, IT Admin, Production Manager) di UI untuk menguji permission akses.
 2. **Agentic Traceability:** Setiap balasan AI yang menggunakan RAG atau data SAP MCP akan menampilkan tombol "View Source" untuk melihat data raw yang digunakan.
 3. **Dynamic Config:** Konfigurasi seperti OpenRouter API Key dan path ke MCP SAP lokal diatur sepenuhnya melalui environment variables tanpa hardcode.
+4. **🌈 Diagram & Flowchart Auto-Render (Mermaid.js):** Visualisasi otomatis alur proses bisnis SAP (Procure-to-Pay, Order-to-Cash, Production Order) langsung di bubble chat.
+5. **🌐 Multilanguage & i18n Ready:** Mendukung Bahasa Indonesia (`id`) dan English (`en`) secara dinamis di seluruh antarmuka dan respons asisten.
+
+---
+
+## 🌐 Standar Pengembangan Multibahasa (Multilanguage Requirement)
+
+> **ATURAN WAJIB PENGEMBANGAN:**
+> Setiap pembangunan fitur baru, komponen UI, notifikasi, dan artefak **WAJIB mendukung Multibahasa (i18n)** (minimal Bahasa Indonesia `id` dan English `en`).
+> 
+> Dilarang meng-*hardcode* teks antarmuka secara statis. Selalu gunakan hook `useLanguage()` dan daftarkan teks ke kamus terjemahan `frontend/src/lib/i18n.js`.
+>
+> 📖 Baca panduan lengkapnya di: **[docs/MULTILANGUAGE_GUIDELINES.md](docs/MULTILANGUAGE_GUIDELINES.md)**.

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, KeyRound, Lock, LogIn, User, UserCheck, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { useLanguage } from '../hooks/useLanguage';
 
 const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, onClose }) => {
+  const { t } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -37,7 +39,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         assistant_persona: data.assistant_persona,
       });
     } catch (err) {
-      setError(err.message || 'Login gagal. Periksa username dan password.');
+      setError(err.message || t('login.failed'));
     } finally {
       setIsLoading(false);
     }
@@ -55,8 +57,8 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition-all z-10"
-            aria-label="Tutup dialog login"
+            className="absolute top-3 right-3 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition-all z-10 cursor-pointer"
+            aria-label={t('login.closeAria')}
           >
             <X className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -66,9 +68,9 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
           <div className="w-10 h-10 sm:w-12 sm:h-12 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-2 border border-white/20">
             <Lock className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
           </div>
-          <h2 id="login-title" className="text-base sm:text-lg font-bold font-display leading-tight">SAP AI Co-Pilot Login</h2>
+          <h2 id="login-title" className="text-base sm:text-lg font-bold font-display leading-tight">{t('login.title')}</h2>
           <p className="text-[11px] sm:text-xs opacity-90 mt-1 max-w-xs mx-auto leading-normal">
-            Masuk untuk mengakses layanan Enterprise SAP & Knowledge Base tanpa batas prompt
+            {t('login.subtitle')}
           </p>
         </div>
 
@@ -89,7 +91,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
           <div>
             <label htmlFor="login-username" className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
-              Username SAP
+              {t('login.usernameLabel')}
             </label>
             <div className="relative">
               <User className="w-4 h-4 absolute left-3 top-3 text-content-subtle" aria-hidden="true" />
@@ -102,14 +104,14 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-surface-sunken border border-line rounded-xl pl-9 pr-3 py-2 text-sm text-content focus:border-accent transition-all font-mono"
-                placeholder="Masukkan username SAP"
+                placeholder={t('login.usernamePlaceholder')}
               />
             </div>
           </div>
 
           <div>
             <label htmlFor="login-password" className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
-              Password
+              {t('login.passwordLabel')}
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 absolute left-3 top-3 text-content-subtle" aria-hidden="true" />
@@ -121,7 +123,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-surface-sunken border border-line rounded-xl pl-9 pr-3 py-2 text-sm text-content focus:border-accent transition-all font-mono"
-                placeholder="••••••••"
+                placeholder={t('login.passwordPlaceholder')}
               />
             </div>
           </div>
@@ -129,10 +131,10 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-2 flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-accent-fg font-bold py-2.5 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-70 text-xs sm:text-sm"
+            className="w-full mt-2 flex items-center justify-center gap-2 bg-accent hover:bg-accent-hover text-accent-fg font-bold py-2.5 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-70 text-xs sm:text-sm cursor-pointer"
           >
             <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
-            <span>{isLoading ? 'Memverifikasi…' : 'Masuk Aplikasi'}</span>
+            <span>{isLoading ? t('login.verifying') : t('login.submit')}</span>
           </button>
 
           {onGuestContinue && (
@@ -140,10 +142,10 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
               <button
                 type="button"
                 onClick={onGuestContinue}
-                className="inline-flex items-center gap-1.5 text-xs text-content-muted hover:text-content font-medium py-1.5 px-3 rounded-xl hover:bg-surface-hover transition-all"
+                className="inline-flex items-center gap-1.5 text-xs text-content-muted hover:text-content font-medium py-1.5 px-3 rounded-xl hover:bg-surface-hover transition-all cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>Lanjutkan sebagai Guest</span>
+                <span>{t('login.guestContinue')}</span>
               </button>
             </div>
           )}

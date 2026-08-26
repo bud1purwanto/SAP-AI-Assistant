@@ -545,8 +545,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"temuan sebelumnya.\n\n"
 
         f"## FORMAT JAWABAN\n"
-        f"1. Gunakan Bahasa Indonesia yang jelas dan profesional, kecuali pengguna meminta bahasa lain.\n"
-        f"2. Bila jawaban memuat data live dari SAP, awali dengan baris status "
+        f"1. Responlah secara alami dalam bahasa yang digunakan oleh pengguna (English sebagai default utama, atau Bahasa Indonesia jika pengguna bertanya dalam Bahasa Indonesia). Pastikan struktur jawaban jelas, profesional, dan rapi.\n"
         f"berformat: 📦 **Data langsung dari sistem NAMA_SERVER** — ganti NAMA_SERVER "
         f"dengan nama sistem SAP aktif yang disebutkan pada bagian KONTEKS PERMINTAAN INI "
         f"di bagian bawah prompt ini.\n"

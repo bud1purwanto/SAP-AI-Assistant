@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Code2, Maximize2, X } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 /**
  * Diagram alur dari blok ```mermaid pada jawaban asisten.
@@ -50,6 +51,7 @@ let nomorUrut = 0;
 const simpanan = new Map();
 
 const MermaidDiagram = ({ chart, isStreaming = false }) => {
+  const { t } = useLanguage();
   const [svg, setSvg] = useState(() => simpanan.get(`${temaMermaid()}::${chart}`) || '');
   const [galat, setGalat] = useState('');
   const [lihatSumber, setLihatSumber] = useState(false);
@@ -85,7 +87,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
         if (!dibatalkan) {
           // Gambar sebelumnya dipertahankan bila ada; layar tidak perlu
           // berkedip hanya karena satu percobaan gagal.
-          setGalat(e?.message || 'Diagram tidak dapat digambar.');
+          setGalat(e?.message || 'Diagram could not be rendered.');
         }
       }
     })();
@@ -97,7 +99,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
     return (
       <div className="my-3 flex items-center gap-2 rounded-2xl border border-line bg-surface-sunken px-4 py-3 text-xs text-content-muted">
         <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-        Menyiapkan diagram…
+        {t('diagram.preparing')}
       </div>
     );
   }
@@ -109,7 +111,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
       <div className="my-3 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/40">
         <div className="flex items-center gap-2 px-4 py-2 text-[11px] font-semibold text-warning">
           <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-          Diagram tidak dapat ditampilkan
+          {t('diagram.error')}
         </div>
         <pre className="overflow-x-auto px-4 pb-3 text-[11px] leading-relaxed text-content-secondary">
           {chart}
@@ -122,23 +124,23 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
     <>
       <div className="group/diagram my-3 overflow-hidden rounded-2xl border border-line bg-surface">
         <div className="flex items-center justify-between border-b border-line bg-surface-sunken px-3.5 py-2">
-          <span className="text-[11px] font-semibold text-content-muted">Diagram alur</span>
+          <span className="text-[11px] font-semibold text-content-muted">{t('diagram.title')}</span>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => setLihatSumber((v) => !v)}
-              className="rounded-lg p-1.5 text-content-subtle transition-colors hover:bg-surface-hover hover:text-content"
-              title={lihatSumber ? 'Tampilkan diagram' : 'Lihat kode diagram'}
-              aria-label={lihatSumber ? 'Tampilkan diagram' : 'Lihat kode diagram'}
+              className="rounded-lg p-1.5 text-content-subtle transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+              title={lihatSumber ? t('diagram.viewVisual') : t('diagram.viewSource')}
+              aria-label={lihatSumber ? t('diagram.viewVisual') : t('diagram.viewSource')}
             >
               <Code2 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => setDiperbesar(true)}
-              className="rounded-lg p-1.5 text-content-subtle transition-colors hover:bg-surface-hover hover:text-content"
-              title="Perbesar diagram"
-              aria-label="Perbesar diagram"
+              className="rounded-lg p-1.5 text-content-subtle transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+              title={t('diagram.expand')}
+              aria-label={t('diagram.expand')}
             >
               <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -163,15 +165,15 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
         <div
           className="fixed inset-0 z-50 flex flex-col bg-surface/95 backdrop-blur-sm pt-safe pb-safe"
           role="dialog"
-          aria-label="Diagram diperbesar"
+          aria-label={t('diagram.title')}
         >
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <span className="text-sm font-semibold text-content">Diagram alur</span>
+            <span className="text-sm font-semibold text-content">{t('diagram.title')}</span>
             <button
               type="button"
               onClick={() => setDiperbesar(false)}
-              className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content"
-              aria-label="Tutup diagram"
+              className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+              aria-label={t('diagram.close')}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>

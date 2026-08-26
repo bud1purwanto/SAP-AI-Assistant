@@ -14,39 +14,16 @@ import SidePanel from './SidePanel';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
+import { useLanguage } from '../hooks/useLanguage';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
-// Contoh ditulis sebagai pertanyaan kerja sehari-hari, bukan potongan
-// nomor dokumen yang hanya bermakna bagi pengguna teknis.
-const SUGGESTIONS = [
-  {
-    title: 'Cek stok barang',
-    subtitle: 'Lihat ketersediaan stok di plant kita saat ini',
-    query: 'Berapa ketersediaan stok material di plant kita saat ini?',
-    icon: Layers,
-  },
-  {
-    title: 'Lacak pesanan pembelian',
-    subtitle: 'Periksa status PO yang sedang berjalan',
-    query: 'Bagaimana status purchase order nomor 4500000001?',
-    icon: Search,
-  },
-  {
-    title: 'Buat laporan Excel',
-    subtitle: 'Rangkum data menjadi berkas siap unduh',
-    query: 'Buatkan ringkasan stok material dalam bentuk file Excel.',
-    icon: FileSpreadsheet,
-  },
-];
-
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
-const THEME_LABEL = { light: 'Tema terang', dark: 'Tema gelap', system: 'Ikuti tema sistem' };
 
-const groupSessionsByDate = (sessionsList) => {
+const groupSessionsByDate = (sessionsList, t) => {
   const groups = {
     today: [],
     yesterday: [],
@@ -75,10 +52,10 @@ const groupSessionsByDate = (sessionsList) => {
   });
 
   return [
-    { label: 'Hari Ini', items: groups.today },
-    { label: 'Kemarin', items: groups.yesterday },
-    { label: '7 Hari Terakhir', items: groups.last7Days },
-    { label: 'Sebelumnya', items: groups.older },
+    { label: t('sidebar.today'), items: groups.today },
+    { label: t('sidebar.yesterday'), items: groups.yesterday },
+    { label: t('sidebar.previous7Days'), items: groups.last7Days },
+    { label: t('sidebar.older'), items: groups.older },
   ].filter((g) => g.items.length > 0);
 };
 
@@ -97,6 +74,7 @@ const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
+  const { t, language } = useLanguage();
   const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
   const isGuest = user.role === 'guest';
 
@@ -876,10 +854,10 @@ const ChatLayout = () => {
         <div className="p-2.5 sm:p-3">
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2 py-2 sm:py-2.5 px-3.5 bg-accent hover:bg-accent-hover text-accent-fg rounded-xl sm:rounded-2xl text-xs font-bold shadow-sm transition-colors active:scale-[0.98]"
+            className="w-full flex items-center justify-center gap-2 py-2 sm:py-2.5 px-3.5 bg-accent hover:bg-accent-hover text-accent-fg rounded-xl sm:rounded-2xl text-xs font-bold shadow-sm transition-colors active:scale-[0.98] cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
-            <span>Chat Baru</span>
+            <span>{t('sidebar.newChat')}</span>
           </button>
 
           {!isGuest && (
@@ -892,8 +870,8 @@ const ChatLayout = () => {
                 type="search"
                 value={sessionQuery}
                 onChange={(e) => setSessionQuery(e.target.value)}
-                placeholder="Cari percakapan…"
-                aria-label="Cari percakapan"
+                placeholder={t('sidebar.searchSessions')}
+                aria-label={t('sidebar.searchSessions')}
                 className="w-full rounded-xl border border-line bg-surface-sunken py-2 pr-8 text-xs text-content placeholder:text-content-subtle outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
                 style={{ paddingLeft: '2.125rem' }}
               />
@@ -901,8 +879,8 @@ const ChatLayout = () => {
                 <button
                   type="button"
                   onClick={() => setSessionQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content"
-                  aria-label="Hapus kata kunci pencarian"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content cursor-pointer"
+                  aria-label="Clear search"
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -911,17 +889,17 @@ const ChatLayout = () => {
           )}
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 space-y-3 py-2 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }} aria-label="Riwayat percakapan">
+        <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 space-y-3 py-2 overscroll-contain" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }} aria-label={t('sidebar.history')}>
           {searchResults !== null ? (
             <div className="space-y-1">
               <h2 className="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
                 {isSearching
-                  ? 'Mencari…'
-                  : `${searchResults.length} hasil untuk "${sessionQuery.trim()}"`}
+                  ? t('common.loading')
+                  : `${searchResults.length} results for "${sessionQuery.trim()}"`}
               </h2>
               {!isSearching && searchResults.length === 0 && (
                 <p className="py-6 text-center text-xs text-content-subtle">
-                  Tidak ada percakapan yang cocok
+                  {t('sidebar.noSessions')}
                 </p>
               )}
               {searchResults.map((hit) => (
@@ -932,10 +910,10 @@ const ChatLayout = () => {
                     loadSession(hit.session_id);
                     setIsSidebarOpen(false);
                   }}
-                  className="w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover"
+                  className="w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover cursor-pointer"
                 >
                   <span className="block truncate text-xs font-semibold text-content">
-                    {hit.title || 'Percakapan SAP'}
+                    {hit.title || 'SAP Chat'}
                   </span>
                   {hit.snippet && (
                     <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-content-muted">
@@ -946,17 +924,17 @@ const ChatLayout = () => {
               ))}
             </div>
           ) : isSessionsLoading ? (
-            <div className="space-y-2 p-2" aria-busy="true" aria-label="Memuat riwayat">
+            <div className="space-y-2 p-2" aria-busy="true" aria-label="Loading sessions">
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse" />
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse w-4/5" />
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse w-3/4" />
             </div>
           ) : sessions.length === 0 ? (
             <p className="text-center py-6 sm:py-8 text-xs text-content-subtle">
-              {isGuest ? 'Login untuk menyimpan riwayat percakapan' : 'Belum ada percakapan'}
+              {isGuest ? t('sidebar.guestDesc') : t('sidebar.noSessions')}
             </p>
           ) : (
-            groupSessionsByDate(sessions).map((group) => (
+            groupSessionsByDate(sessions, t).map((group) => (
               <div key={group.label} className="space-y-1">
                 <h2 className="px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-content-subtle uppercase">
                   {group.label}
@@ -988,17 +966,17 @@ const ChatLayout = () => {
                           />
                           <button
                             onClick={(e) => saveRenameSession(e, sid)}
-                            className="p-1 text-accent hover:bg-surface-hover rounded-md transition-colors"
-                            title="Simpan"
-                            aria-label="Simpan perubahan nama percakapan"
+                            className="p-1 text-accent hover:bg-surface-hover rounded-md transition-colors cursor-pointer"
+                            title={t('sidebar.saveTitle')}
+                            aria-label={t('sidebar.saveTitle')}
                           >
                             <Check className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                           <button
                             onClick={(e) => cancelRenameSession(e)}
-                            className="p-1 text-content-subtle hover:bg-surface-hover rounded-md transition-colors"
-                            title="Batal"
-                            aria-label="Batal ubah nama"
+                            className="p-1 text-content-subtle hover:bg-surface-hover rounded-md transition-colors cursor-pointer"
+                            title={t('sidebar.cancelRename')}
+                            aria-label={t('sidebar.cancelRename')}
                           >
                             <X className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
@@ -1019,30 +997,30 @@ const ChatLayout = () => {
                       >
                         <button
                           onClick={() => loadSession(sid)}
-                          className="flex items-center gap-2 truncate flex-1 text-left px-2.5 sm:px-3 py-2 sm:py-2.5"
+                          className="flex items-center gap-2 truncate flex-1 text-left px-2.5 sm:px-3 py-2 sm:py-2.5 cursor-pointer"
                           aria-current={isActive ? 'page' : undefined}
                         >
                           {isThisSessionProcessing ? (
-                            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label="Sedang memproses" />
+                            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label="Processing" />
                           ) : (
                             <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                           )}
-                          <span className="truncate">{session.title || 'Percakapan SAP'}</span>
+                          <span className="truncate">{session.title || 'SAP Chat'}</span>
                         </button>
                         <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => startRenameSession(e, session)}
-                            className="p-1 text-content-subtle hover:text-accent rounded-lg transition-colors"
-                            title="Ubah nama percakapan"
-                            aria-label={`Ubah nama percakapan ${session.title || ''}`}
+                            className="p-1 text-content-subtle hover:text-accent rounded-lg transition-colors cursor-pointer"
+                            title={t('sidebar.rename')}
+                            aria-label={`${t('sidebar.rename')} ${session.title || ''}`}
                           >
                             <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
                           </button>
                           <button
                             onClick={(e) => promptDeleteSession(e, session)}
-                            className="p-1 text-content-subtle hover:text-danger rounded-lg transition-colors"
-                            title="Hapus percakapan"
-                            aria-label={`Hapus percakapan ${session.title || ''}`}
+                            className="p-1 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
+                            title={t('sidebar.deleteSession')}
+                            aria-label={`${t('sidebar.deleteSession')} ${session.title || ''}`}
                           >
                             <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
                           </button>
@@ -1064,7 +1042,7 @@ const ChatLayout = () => {
             >
               <span className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4" aria-hidden="true" />
-                Admin Dashboard
+                {t('sidebar.adminPanel')}
               </span>
               <span className="text-[10px] bg-warning text-surface px-1.5 py-0.5 rounded font-bold">SUPER</span>
             </button>
@@ -1080,7 +1058,7 @@ const ChatLayout = () => {
                   {user.full_name || user.username}
                 </div>
                 <div className="text-[11px] text-content-muted mt-0.5 truncate capitalize">
-                  {user.role === 'superadmin' ? 'Administrator' : user.role === 'guest' ? 'Tamu' : (user.role || 'Pengguna')}
+                  {user.role === 'superadmin' ? t('admin.roleAdmin') : user.role === 'guest' ? t('admin.roleGuest') : (user.role || t('admin.roleUser'))}
                 </div>
               </div>
             </div>
@@ -1089,8 +1067,8 @@ const ChatLayout = () => {
               <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors md:hidden cursor-pointer"
-                aria-label="Buka pengaturan"
-                title="Pengaturan"
+                aria-label={t('nav.settings')}
+                title={t('nav.settings')}
               >
                 <Settings className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
@@ -1098,8 +1076,8 @@ const ChatLayout = () => {
                 <button
                   onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
                   className="p-1.5 bg-accent text-accent-fg rounded-lg hover:brightness-110 transition-all shadow-xs cursor-pointer"
-                  aria-label="Login ke akun SAP"
-                  title="Login"
+                  aria-label={t('sidebar.loginPrompt')}
+                  title={t('sidebar.loginPrompt')}
                 >
                   <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
@@ -1107,8 +1085,8 @@ const ChatLayout = () => {
                 <button
                   onClick={() => setConfirmLogoutOpen(true)}
                   className="p-1.5 text-content-subtle hover:text-danger rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
-                  aria-label="Keluar dari akun"
-                  title="Keluar"
+                  aria-label={t('sidebar.logout')}
+                  title={t('sidebar.logout')}
                 >
                   <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
@@ -1143,6 +1121,7 @@ const ChatLayout = () => {
                   className={`bg-surface-sunken text-xs sm:text-sm font-medium py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl border cursor-pointer max-w-[13rem] sm:max-w-[17rem] truncate transition-colors ${
                     isProductionTarget ? 'border-danger text-danger font-semibold' : 'border-line text-content'
                   }`}
+                  aria-label={t('nav.serverSelectAria')}
                 >
                   {sapSubServers.map((srv) => (
                     <option
@@ -1150,12 +1129,12 @@ const ChatLayout = () => {
                       value={`sap:${aliasOf(srv)}`}
                       className="bg-surface-raised text-content py-1"
                     >
-                      {srv.name}{srv.production_warning ? ' — PRODUKSI' : ''}
+                      {srv.name}{srv.production_warning ? ` — ${t('nav.productionWarning')}` : ''}
                     </option>
                   ))}
                 </select>
               ) : (
-                <span className="text-xs sm:text-sm text-content-subtle">Menghubungkan…</span>
+                <span className="text-xs sm:text-sm text-content-subtle">{t('nav.connecting')}</span>
               )}
             </div>
 
@@ -1163,16 +1142,17 @@ const ChatLayout = () => {
               {!isGuest && <QuotaChip quota={kuota} />}
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
-                aria-label="Buka pengaturan"
+                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+                aria-label={t('nav.settings')}
+                title={t('nav.settings')}
               >
                 <Settings className="w-4 h-4" aria-hidden="true" />
               </button>
               <button
                 onClick={cycleTheme}
-                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
-                aria-label={`${THEME_LABEL[theme]} — klik untuk mengganti tema`}
-                title={THEME_LABEL[theme]}
+                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+                aria-label={t('nav.theme')}
+                title={t('nav.theme')}
               >
                 <ThemeIcon className="w-4 h-4" aria-hidden="true" />
               </button>
@@ -1188,8 +1168,11 @@ const ChatLayout = () => {
           >
             <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span className="leading-snug">
-              Anda terhubung ke sistem <strong>PRODUKSI</strong> ({selectedServer?.name}). Setiap permintaan
-              dijalankan terhadap data perusahaan yang sesungguhnya.
+              {language === 'en' ? (
+                <>You are connected to the <strong>PRODUCTION</strong> system ({selectedServer?.name}). Queries will execute against real company data.</>
+              ) : (
+                <>Anda terhubung ke sistem <strong>PRODUKSI</strong> ({selectedServer?.name}). Setiap permintaan dijalankan terhadap data perusahaan yang sesungguhnya.</>
+              )}
             </span>
           </div>
         )}
@@ -1199,14 +1182,14 @@ const ChatLayout = () => {
             <div className="flex items-center gap-2 text-xs font-semibold text-warning min-w-0">
               <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span className="leading-tight">
-                Mode tamu dibatasi beberapa prompt per hari. Login untuk akses penuh dan riwayat tersimpan.
+                {t('sidebar.guestDesc')}
               </span>
             </div>
             <button
               onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-              className="text-xs font-bold bg-warning text-surface px-3 py-1.5 rounded-lg shrink-0 shadow-xs hover:brightness-110 active:scale-95 transition-all"
+              className="text-xs font-bold bg-warning text-surface px-3 py-1.5 rounded-lg shrink-0 shadow-xs hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
-              Login
+              {t('sidebar.loginPrompt')}
             </button>
           </div>
         )}
@@ -1229,14 +1212,14 @@ const ChatLayout = () => {
                   setSessionErrorMap((prev) => ({ ...prev, [activeSessionKey]: null }));
                   r();
                 }}
-                  className="text-xs font-bold bg-danger text-surface px-3 py-1 rounded-lg">
-                  Coba lagi
+                  className="text-xs font-bold bg-danger text-surface px-3 py-1 rounded-lg cursor-pointer">
+                  {language === 'en' ? 'Retry' : 'Coba lagi'}
                 </button>
               )}
               <button onClick={() => {
                 setError(null);
                 setSessionErrorMap((prev) => ({ ...prev, [activeSessionKey]: null }));
-              }} className="p-1 text-danger" aria-label="Tutup pesan kesalahan">
+              }} className="p-1 text-danger cursor-pointer" aria-label={t('common.close')}>
                 <X className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </span>
@@ -1252,8 +1235,6 @@ const ChatLayout = () => {
                 key={index}
                 message={msg}
                 onBukaPanel={bukaPanel}
-                // Hanya pertukaran terakhir yang boleh diubah: memotong riwayat
-                // di tengah akan membuang jawaban-jawaban sesudahnya.
                 onRegenerate={
                   !isCurrentLoading &&
                   msg.role === 'assistant' &&
@@ -1261,11 +1242,11 @@ const ChatLayout = () => {
                     ? handleRegenerate
                     : undefined
                 }
-                onEdit={
+                onEditMessage={
                   !isCurrentLoading &&
                   msg.role === 'user' &&
                   index >= currentMessages.length - 2
-                    ? (text) => handleEditMessage(msg, text)
+                    ? (msgId, text) => handleEditMessage(msg, text)
                     : undefined
                 }
               />
@@ -1290,14 +1271,33 @@ const ChatLayout = () => {
                   <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-3">
                     <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-content font-display">Mulai dari sini</h3>
-                  <p className="text-xs sm:text-sm text-content-muted mt-1 sm:mt-1.5">
-                    Pilih salah satu contoh, atau tulis pertanyaan Anda sendiri di bawah
+                  <h3 className="text-base sm:text-lg font-bold text-content font-display">{t('suggestions.heroTitle')}</h3>
+                  <p className="text-xs sm:text-sm text-content-muted mt-1 sm:mt-1.5 max-w-lg mx-auto">
+                    {t('suggestions.heroSubtitle')}
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                  {SUGGESTIONS.map((item) => {
+                  {[
+                    {
+                      title: t('suggestions.stockCheck.title'),
+                      subtitle: t('suggestions.stockCheck.subtitle'),
+                      query: t('suggestions.stockCheck.query'),
+                      icon: Layers,
+                    },
+                    {
+                      title: t('suggestions.poStatus.title'),
+                      subtitle: t('suggestions.poStatus.subtitle'),
+                      query: t('suggestions.poStatus.query'),
+                      icon: Search,
+                    },
+                    {
+                      title: t('suggestions.abapHelper.title'),
+                      subtitle: t('suggestions.abapHelper.subtitle'),
+                      query: t('suggestions.abapHelper.query'),
+                      icon: FileSpreadsheet,
+                    },
+                  ].map((item) => {
                     const IconComp = item.icon;
                     return (
                       <button
@@ -1362,10 +1362,10 @@ const ChatLayout = () => {
           handleLogout();
         }}
         variant="logout"
-        title="Keluar dari Akun?"
-        message="Anda akan keluar dari sesi SAP AI Co-Pilot saat ini. Anda dapat masuk kembali kapan saja dengan kredensial SAP Anda."
-        confirmText="Keluar"
-        cancelText="Tetap Masuk"
+        title={t('sidebar.logoutConfirmTitle')}
+        message={t('sidebar.logoutConfirmMsg')}
+        confirmText={t('sidebar.logout')}
+        cancelText={t('common.cancel')}
       />
 
       {/* Confirmation Modal - Hapus Percakapan */}
@@ -1379,10 +1379,10 @@ const ChatLayout = () => {
         onConfirm={handleConfirmDeleteSession}
         isLoading={deleteConfirmState.isLoading}
         variant="danger"
-        title="Hapus Percakapan?"
-        message={`Percakapan "${deleteConfirmState.title}" beserta seluruh riwayat respons SAP di dalamnya akan dihapus secara permanen.`}
-        confirmText="Hapus Percakapan"
-        cancelText="Batal"
+        title={t('sidebar.deleteConfirmTitle')}
+        message={t('sidebar.deleteConfirmMsg', { title: deleteConfirmState.title })}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
       />
     </div>
   );

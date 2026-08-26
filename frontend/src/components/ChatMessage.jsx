@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import { Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
+import { useLanguage } from '../hooks/useLanguage';
 import MermaidDiagram from './MermaidDiagram';
 import UsagePill from './UsagePill';
 
@@ -50,21 +51,22 @@ const downloadArtifact = async (file) => {
 };
 
 /** Terjemahkan nama tool internal menjadi keterangan yang dapat dipahami pengguna. */
-const describeSource = (src) => {
+const describeSource = (src, t) => {
   const name = (src.name || '').toLowerCase();
-  if (name.includes('read_table')) return 'Pembacaan tabel data SAP';
-  if (name.includes('program') || name.includes('abap')) return 'Pembacaan program ABAP';
-  if (name.includes('function')) return 'Pemanggilan fungsi SAP';
-  if (name.includes('search')) return 'Pencarian pada dokumen internal';
-  return src.type === 'MCP' ? 'Pembacaan data SAP' : 'Rujukan dokumen';
+  if (name.includes('read_table')) return t('chat.sourceReadTable');
+  if (name.includes('program') || name.includes('abap')) return t('chat.sourceAbap');
+  if (name.includes('function')) return t('chat.sourceFunction');
+  if (name.includes('search')) return t('chat.sourceSearch');
+  return src.type === 'MCP' ? t('chat.sourceDefaultMcp') : t('chat.sourceDefaultDoc');
 };
 
-const formatTime = (value) => {
+const formatTime = (value, language) => {
   if (!value) return '';
   const d = new Date(value);
+  const locale = language === 'en' ? 'en-US' : 'id-ID';
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    : d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
 };
 
 /**
@@ -118,6 +120,7 @@ const AttachmentChip = ({ item }) => {
  * Komponen blok kode dengan tombol salin mandiri.
  */
 const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
+  const { t } = useLanguage();
   // Kode pendek cukup dibaca di tempat; panel baru berguna untuk yang panjang.
   const layakDipanel = onBukaPanel && codeString.split('\n').length > 12;
   const [codeCopied, setCodeCopied] = useState(false);
@@ -139,7 +142,7 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
           <span className="ml-2 text-slate-400 font-medium flex items-center gap-1">
-            <Terminal className="w-3 h-3 text-slate-400" /> ABAP / Source Code
+            <Terminal className="w-3 h-3 text-slate-400" /> {t('chat.codeTerminal')}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -147,14 +150,14 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
           <button
             type="button"
             onClick={() => onBukaPanel({
-              judul: 'Kode program',
-              keterangan: `${codeString.split('\n').length} baris`,
+              judul: 'Source Code',
+              keterangan: `${codeString.split('\n').length} lines`,
               teks: codeString,
-              namaBerkas: 'kode.abap',
+              namaBerkas: 'code.abap',
             })}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
-            title="Buka di panel samping"
-            aria-label="Buka kode di panel samping"
+            title="Open in side panel"
+            aria-label="Open in side panel"
           >
             <Columns2 className="w-3 h-3" aria-hidden="true" />
             <span className="hidden sm:inline">Panel</span>
@@ -164,18 +167,18 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
           type="button"
           onClick={handleCopyCode}
           className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
-          title="Salin potongan kode"
-          aria-label="Salin potongan kode"
+          title={t('chat.copyCode')}
+          aria-label={t('chat.copyCode')}
         >
           {codeCopied ? (
             <>
               <Check className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-400 font-sans font-medium">Tersalin</span>
+              <span className="text-emerald-400 font-sans font-medium">{t('chat.copied')}</span>
             </>
           ) : (
             <>
               <Copy className="w-3 h-3" />
-              <span className="font-sans font-medium">Salin</span>
+              <span className="font-sans font-medium">{t('chat.copy')}</span>
             </>
           )}
         </button>
@@ -195,6 +198,7 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
  * layar — kalau tidak, petunjuk itu justru mengganggu.
  */
 const ScrollableTable = ({ children }) => {
+  const { t } = useLanguage();
   const scrollRef = useRef(null);
   const [overflows, setOverflows] = useState(false);
 
@@ -220,120 +224,35 @@ const ScrollableTable = ({ children }) => {
         <table className="w-max min-w-full divide-y divide-line text-xs">{children}</table>
       </div>
       {overflows && (
-        <p className="mt-1.5 px-2 text-[11px] text-content-subtle">
-          Geser tabel ke samping untuk melihat kolom lainnya
+        <p className="mt-1 text-[10px] text-content-subtle sm:hidden">
+          {t('chat.scrollTableHint')}
         </p>
       )}
     </div>
   );
 };
 
-/**
- * Peta komponen untuk ReactMarkdown.
- *
- * WAJIB dibuat di luar render dan di-memo. Objek `components` yang dibuat
- * ulang setiap render membuat react-markdown memperlakukan komponennya
- * sebagai tipe baru, sehingga seluruh isi pesan DI-MOUNT ULANG pada setiap
- * perubahan state sekecil apa pun — termasuk saat membuka panel sumber data.
- * Akibatnya diagram Mermaid hilang lalu digambar ulang: tinggi isi menciut
- * lalu memuai, dan layar meloncat (terukur 976px) sekaligus terasa tersendat.
- */
-const buatKomponenMarkdown = (isStreaming, onBukaPanel) => ({
-              p: ({ children }) => <p className="mb-2.5 last:mb-0 leading-relaxed text-content-secondary break-words [overflow-wrap:anywhere]">{children}</p>,
-              ul: ({ children }) => <ul className="list-disc pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal pl-4 sm:pl-5 my-2.5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>,
-              li: ({ children }) => <li className="leading-relaxed break-words [overflow-wrap:anywhere]">{children}</li>,
-              strong: ({ children }) => <strong className="font-semibold text-content">{children}</strong>,
-              code: ({ inline, className: _className, children, ...props }) => {
-                const codeString = String(children || '').replace(/\n$/, '');
-                const isMultiLine = codeString.includes('\n');
-                const isShort = !isMultiLine && codeString.length <= 60;
-
-                // Blok ```mermaid digambar sebagai bagan, bukan ditampilkan
-                // sebagai kode. Penanda bahasanya ada di className.
-                if (!inline && /language-mermaid/.test(_className || '')) {
-                  return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
-                }
-
-                if (inline || isShort) {
-                  return (
-                    <code 
-                      className="inline-flex items-center whitespace-nowrap font-mono text-[11.5px] sm:text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg bg-accent-soft text-accent-soft-fg border border-accent/25 font-semibold select-all" 
-                      {...props}
-                    >
-                      {codeString}
-                    </code>
-                  );
-                }
-
-                return <CodeBlock codeString={codeString} onBukaPanel={onBukaPanel} {...props} />;
-              },
-              /* Ukuran heading dulu lebih KECIL daripada teks isinya: isi
-                 gelembung 14px, sedangkan h3 hanya 12px dan h2 pas 14px.
-                 Akibatnya judul bagian justru terbaca lebih lemah daripada
-                 paragraf di bawahnya. Setiap tingkat kini lebih besar dari
-                 teks isi dan berbeda jelas satu sama lain. */
-              h1: ({ children }) => <h1 className="text-lg sm:text-xl font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-[17px] sm:text-lg font-bold text-content mt-5 mb-2 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-[15.5px] sm:text-base font-bold text-content mt-4 mb-1.5 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h3>,
-              h4: ({ children }) => <h4 className="text-[14.5px] sm:text-[15px] font-bold text-content-secondary mt-3.5 mb-1 first:mt-0 font-display break-words [overflow-wrap:anywhere]">{children}</h4>,
-              // Tabel lebar harus MELUBER lalu digeser, bukan dipaksa menyusut.
-              // `min-w-full` saja membuat kolom mengecil sampai teksnya pecah
-              // satu huruf per baris di layar ponsel; `w-max` memberi tabel
-              // lebar alaminya sehingga scroll horizontal yang bekerja.
-              table: ({ children }) => <ScrollableTable>{children}</ScrollableTable>,
-              // Header tidak boleh pernah terpotong: itu kunci membaca kolomnya.
-              th: ({ children }) => (
-                <th className="bg-surface-sunken px-3 py-2 text-left font-semibold text-content whitespace-nowrap">
-                  {children}
-                </th>
-              ),
-              // Sel diberi lebar minimum agar tidak menyempit menjadi satu
-              // huruf, dan lebar maksimum agar kalimat panjang tetap membungkus
-              // secara wajar alih-alih membuat tabel sangat lebar.
-              td: ({ children }) => (
-                <td className="px-3 py-2 border-t border-line text-content-secondary tabular-nums align-top min-w-[5rem] max-w-[16rem]">
-                  {children}
-                </td>
-              ),
-});
-
-const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBukaPanel }) => {
-  const isUser = message.role === 'user' || message.sender === 'user';
+const ChatMessage = ({
+  message,
+  onBukaPanel,
+  onEditMessage,
+  onRegenerate,
+  isStreaming = false,
+  isRegenerating = false,
+}) => {
+  const { t, language } = useLanguage();
+  const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [openDetail, setOpenDetail] = useState(null);
   const [feedback, setFeedback] = useState(message.feedback || null);
-  const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState(message.content);
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  const editRef = useRef(null);
-
-  // Hanya dibuat ulang saat status mengalir berubah — bukan pada tiap render.
-  const markdownComponents = useMemo(
-    () => buatKomponenMarkdown(isStreaming, onBukaPanel),
-    [isStreaming, onBukaPanel],
-  );
+  const [draft, setDraft] = useState('');
+  const isUser = message.role === 'user';
+  const timeLabel = formatTime(message.timestamp, language);
 
   useEffect(() => {
-    if (!isEditing) return;
-    const el = editRef.current;
-    if (!el) return;
-    el.focus();
-    // Kursor diletakkan di akhir teks, bukan menyeleksi semuanya: pengguna
-    // umumnya ingin menyunting, bukan mengetik ulang dari nol.
-    el.setSelectionRange(el.value.length, el.value.length);
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [isEditing]);
-
-  useEffect(() => {
-    if (message.feedback !== undefined) {
-      setFeedback(message.feedback);
-    }
+    setFeedback(message.feedback || null);
   }, [message.feedback]);
-
-  const timeLabel = formatTime(message.created_at);
 
   const handleCopy = async () => {
     const ok = await copyToClipboard(message.content);
@@ -343,132 +262,201 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
     }
   };
 
-  const startEditing = () => {
+  const startEdit = () => {
     setDraft(message.content);
     setIsEditing(true);
   };
 
-  const submitEdit = async () => {
-    const cleaned = draft.trim();
+  const submitEdit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === message.content) {
+      setIsEditing(false);
+      return;
+    }
     setIsEditing(false);
-    if (!cleaned || cleaned === message.content) return;
-    await onEdit(cleaned);
+    onEditMessage?.(message.id, trimmed);
   };
 
-  const handleRegenerateClick = async () => {
-    setIsRegenerating(true);
+  const handleToggleFeedback = async (kind) => {
+    if (!message.id) return;
+    const next = feedback === kind ? null : kind;
+    setFeedback(next);
     try {
-      await onRegenerate();
-    } finally {
-      setIsRegenerating(false);
+      if (next === 'like' || next === 'up') {
+        await api.likeMessage(message.id);
+      } else if (next === 'dislike' || next === 'down') {
+        await api.dislikeMessage(message.id);
+      } else {
+        await api.removeFeedback(message.id);
+      }
+    } catch (err) {
+      console.error('Gagal mengirim feedback:', err);
     }
   };
 
-  const handleToggleFeedback = async (val) => {
-    const nextFeedback = feedback === val ? null : val;
-    setFeedback(nextFeedback);
-    if (message.id) {
-      try {
-        await api.setMessageFeedback(message.id, nextFeedback);
-      } catch (err) {
-        console.error('Gagal menyimpan feedback rating:', err);
-      }
+  const handleRegenerateClick = () => {
+    if (onRegenerate && !isRegenerating) {
+      onRegenerate(message.id);
     }
   };
+
+  const markdownComponents = useMemo(() => ({
+    code({ _node, inline, className, children, ...props }) {
+      const match = /language-(\w+)/.exec(className || '');
+      const codeString = String(children).replace(/\n$/, '');
+
+      if (!inline && match && match[1] === 'mermaid') {
+        return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
+      }
+
+      if (!inline) {
+        return (
+          <CodeBlock
+            codeString={codeString}
+            onBukaPanel={onBukaPanel}
+            {...props}
+          />
+        );
+      }
+      return (
+        <code className="bg-surface-sunken border border-line text-accent font-mono text-[12px] px-1.5 py-0.5 rounded-md font-medium" {...props}>
+          {children}
+        </code>
+      );
+    },
+    table({ children }) {
+      return <ScrollableTable>{children}</ScrollableTable>;
+    },
+    th({ children }) {
+      return (
+        <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content border-b border-line">
+          {children}
+        </th>
+      );
+    },
+    td({ children }) {
+      return (
+        <td className="px-3.5 py-2 text-content-secondary border-b border-line">
+          {children}
+        </td>
+      );
+    },
+    a({ href, children }) {
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent underline underline-offset-2 hover:brightness-110 font-medium"
+        >
+          {children}
+        </a>
+      );
+    },
+    ul({ children }) {
+      return <ul className="my-2 list-disc pl-5 space-y-1 text-content-secondary">{children}</ul>;
+    },
+    ol({ children }) {
+      return <ol className="my-2 list-decimal pl-5 space-y-1 text-content-secondary">{children}</ol>;
+    },
+    li({ children }) {
+      return <li className="leading-relaxed">{children}</li>;
+    },
+    p({ children }) {
+      return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
+    },
+    h1({ children }) {
+      return <h1 className="text-lg font-bold text-content mt-4 mb-2 first:mt-0 font-display">{children}</h1>;
+    },
+    h2({ children }) {
+      return <h2 className="text-base font-bold text-content mt-3.5 mb-1.5 first:mt-0 font-display">{children}</h2>;
+    },
+    h3({ children }) {
+      return <h3 className="text-sm font-bold text-content mt-3 mb-1 first:mt-0 font-display">{children}</h3>;
+    },
+    blockquote({ children }) {
+      return (
+        <blockquote className="my-2.5 border-l-2 border-accent pl-3.5 italic text-content-muted bg-surface-sunken py-1 rounded-r-xl">
+          {children}
+        </blockquote>
+      );
+    },
+  }), [isStreaming, onBukaPanel]);
 
   if (isUser) {
     return (
-      <div className="flex justify-end items-start gap-2.5 sm:gap-3 my-4 group max-w-full overflow-hidden">
-        <div className="flex flex-col items-end max-w-[88%] sm:max-w-[75%] min-w-0">
+      <div className="flex items-start justify-end gap-2.5 sm:gap-3.5 my-4 sm:my-5 group max-w-full overflow-hidden">
+        <div className="flex flex-col items-end gap-1.5 max-w-[88%] sm:max-w-[80%] min-w-0">
           {/* Label Header */}
-          <div className="flex items-center gap-2 mb-1.5 mr-1 text-xs text-content-muted">
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="flex items-center gap-1 py-0.5 px-1.5 rounded-md text-content-subtle hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-all cursor-pointer"
-              title="Salin pesan"
-              aria-label="Salin pesan"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-500" />
-                  <span className="text-[10px] text-emerald-500 font-medium">Tersalin</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" />
-                  <span className="text-[10px] hidden group-hover:inline">Salin</span>
-                </>
-              )}
-            </button>
-            {onEdit && !isEditing && (
-              <button
-                type="button"
-                onClick={startEditing}
-                className="flex items-center gap-1 py-0.5 px-1.5 rounded-md text-content-subtle hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-all cursor-pointer"
-                title="Ubah pertanyaan ini"
-                aria-label="Ubah pertanyaan ini"
-              >
-                <Pencil className="w-3 h-3" aria-hidden="true" />
-                <span className="text-[10px] font-medium">Edit</span>
-              </button>
+          <div className="flex items-center gap-2 mb-1 mr-1">
+            {timeLabel && <span className="text-xs text-content-subtle">{timeLabel}</span>}
+            <span className="text-xs font-semibold text-content-secondary">{t('chat.you')}</span>
+
+            {/* Tombol aksi melayang untuk bubble pengguna */}
+            {!isEditing && (
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                {onEditMessage && (
+                  <button
+                    type="button"
+                    onClick={startEdit}
+                    className="p-1 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-colors cursor-pointer"
+                    title={t('chat.editQuestion')}
+                    aria-label={t('chat.editQuestion')}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="p-1 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-colors cursor-pointer"
+                  title={copied ? t('chat.copied') : t('chat.copy')}
+                  aria-label={t('chat.copy')}
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
             )}
-            <span className="font-semibold text-content-secondary">Anda</span>
-            {timeLabel && <span>{timeLabel}</span>}
           </div>
 
-          {/* Lampiran yang disertakan pengguna */}
+          {/* Lampiran berkas di atas bubble pesan */}
           {message.attachments && message.attachments.length > 0 && (
-            <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2 justify-end mb-2">
+            <div className="flex flex-wrap justify-end gap-2 mb-1 max-w-full">
               {message.attachments.map((item) => (
                 <AttachmentChip key={item.upload_id} item={item} />
               ))}
             </div>
           )}
 
-          {/* User Message Bubble with Indigo Gradient & Soft Shadow */}
+          {/* User Bubble Gradient */}
           {isEditing ? (
-            <div className="w-full min-w-0 rounded-3xl rounded-tr-sm border border-accent bg-surface-raised p-2.5 shadow-sm">
+            <div className="w-full min-w-[16rem] rounded-2xl border border-line bg-surface-raised p-3 shadow-md">
               <textarea
-                ref={editRef}
                 value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = `${e.target.scrollHeight}px`;
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submitEdit();
-                  } else if (e.key === 'Escape') {
-                    setIsEditing(false);
-                  }
-                }}
-                rows={1}
-                aria-label="Ubah pertanyaan"
+                onChange={(e) => setDraft(e.target.value)}
+                rows={Math.min(6, Math.max(2, draft.split('\n').length))}
                 className="max-h-60 w-full resize-none bg-transparent px-2 py-1 text-sm text-content outline-none"
               />
               <div className="mt-1.5 flex items-center justify-end gap-1.5">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-content-muted hover:bg-surface-hover cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" aria-hidden="true" />
-                  Batal
+                  {t('chat.cancel')}
                 </button>
                 <button
                   type="button"
                   onClick={submitEdit}
                   disabled={!draft.trim() || draft.trim() === message.content}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-xs transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-xs transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 >
-                  Kirim ulang
+                  {t('chat.resend')}
                 </button>
               </div>
               <p className="px-2 pt-1 text-[10px] text-content-subtle">
-                Jawaban setelah pertanyaan ini akan digantikan.
+                {t('chat.editNote')}
               </p>
             </div>
           ) : (
@@ -500,7 +488,7 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
       <div className="flex flex-col gap-1.5 max-w-[88%] sm:max-w-[85%] min-w-0 flex-1 overflow-hidden">
         {/* Label Header */}
         <div className="flex items-center gap-2 mb-1.5 ml-1">
-          <span className="text-xs font-semibold text-content-secondary">Asisten SAP</span>
+          <span className="text-xs font-semibold text-content-secondary">{t('chat.assistantName')}</span>
           {timeLabel && <span className="text-xs text-content-subtle">{timeLabel}</span>}
         </div>
 
@@ -534,7 +522,7 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
               >
                 <Database className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>
-                  {showSources ? 'Sembunyikan sumber' : `Lihat sumber data (${message.sources.length})`}
+                  {showSources ? t('chat.hideSources') : t('chat.showSources', { count: message.sources.length })}
                 </span>
                 {showSources ? <ChevronUp className="w-3 h-3 ml-0.5" /> : <ChevronDown className="w-3 h-3 ml-0.5" />}
               </button>
@@ -549,8 +537,8 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                   onClick={handleRegenerateClick}
                   disabled={isRegenerating}
                   className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Buat ulang jawaban"
-                  aria-label="Buat ulang jawaban"
+                  title={t('chat.regenerate')}
+                  aria-label={t('chat.regenerate')}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
                 </button>
@@ -559,8 +547,8 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                 type="button"
                 onClick={handleCopy}
                 className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-all cursor-pointer"
-                title={copied ? 'Tersalin!' : 'Salin jawaban'}
-                aria-label="Salin jawaban"
+                title={copied ? t('chat.copied') : t('chat.copy')}
+                aria-label={t('chat.copy')}
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
@@ -572,8 +560,8 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                     ? 'text-teal-600 dark:text-teal-400 bg-surface-raised shadow-xs'
                     : 'text-content-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-surface-raised'
                 }`}
-                title={feedback === 'like' || feedback === 'up' ? 'Batal beri nilai' : 'Jawaban membantu'}
-                aria-label="Beri nilai jawaban membantu"
+                title={t('chat.helpful')}
+                aria-label={t('chat.helpful')}
               >
                 <ThumbsUp className="w-3.5 h-3.5" />
               </button>
@@ -585,8 +573,8 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                     ? 'text-rose-600 dark:text-rose-400 bg-surface-raised shadow-xs'
                     : 'text-content-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-raised'
                 }`}
-                title={feedback === 'dislike' || feedback === 'down' ? 'Batal beri nilai' : 'Jawaban kurang sesuai'}
-                aria-label="Beri nilai jawaban kurang sesuai"
+                title={t('chat.notHelpful')}
+                aria-label={t('chat.notHelpful')}
               >
                 <ThumbsDown className="w-3.5 h-3.5" />
               </button>
@@ -605,7 +593,7 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
               <button
                 key={file.artifact_id}
                 onClick={() => downloadArtifact(file)}
-                className="flex w-full min-w-0 max-w-full sm:w-auto sm:max-w-sm items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group"
+                className="flex w-full min-w-0 max-w-full sm:w-auto sm:max-w-sm items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group cursor-pointer"
               >
                 <span className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg shrink-0">
                   {ARTIFACT_ICON[file.type] || <FileText className="w-4 h-4" aria-hidden="true" />}
@@ -613,7 +601,7 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-bold text-content truncate">{file.filename}</span>
                   <span className="block truncate text-[11px] text-content-muted">
-                    {ARTIFACT_LABEL[file.type] || file.type.toUpperCase()} • {formatSize(file.size)} • klik untuk unduh
+                    {ARTIFACT_LABEL[file.type] || file.type.toUpperCase()} • {formatSize(file.size)} • {t('chat.clickToDownload')}
                   </span>
                 </span>
                 <Download className="w-4 h-4 text-content-subtle group-hover:text-accent shrink-0" aria-hidden="true" />
@@ -639,25 +627,25 @@ const ChatMessage = ({ message, isStreaming = false, onRegenerate, onEdit, onBuk
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs font-semibold text-content">
-                        {isLive ? 'Data langsung dari sistem SAP' : 'Dokumen panduan internal'}
+                        {isLive ? t('chat.liveSapData') : t('chat.internalDoc')}
                       </span>
                       <span className="block text-xs text-content-muted truncate">
-                        {describeSource(src)}
+                        {describeSource(src, t)}
                       </span>
                     </span>
                     <button
                       onClick={() => setOpenDetail(openDetail === idx ? null : idx)}
-                      className="text-xs font-medium text-content-muted hover:text-content px-2 py-1 rounded-lg hover:bg-surface-hover transition-colors shrink-0"
+                      className="text-xs font-medium text-content-muted hover:text-content px-2 py-1 rounded-lg hover:bg-surface-hover transition-colors shrink-0 cursor-pointer"
                       aria-expanded={openDetail === idx}
                     >
-                      {openDetail === idx ? 'Tutup detail' : 'Detail teknis'}
+                      {openDetail === idx ? t('chat.closeDetails') : t('chat.technicalDetails')}
                     </button>
                   </div>
 
                   {openDetail === idx && (
                     <div className="border-t border-line bg-surface-sunken px-4 py-3">
                       <div className="text-xs text-content-muted mb-1.5">
-                        Sumber: <span className="font-mono">{src.name}</span>
+                        {t('chat.sourceLabel')} <span className="font-mono">{src.name}</span>
                       </div>
                       <pre className="text-xs font-mono text-content-secondary bg-surface-raised border border-line p-3 rounded-xl overflow-x-auto leading-relaxed max-h-64">
                         {src.content}

@@ -3,6 +3,7 @@ import { FileSpreadsheet, FileText, FileType, Image, Loader2, Mic, MicOff, Paper
 
 import { uploadAttachment } from '../lib/api';
 import { ALASAN, useVoiceInput } from '../hooks/useVoiceInput';
+import { useLanguage } from '../hooks/useLanguage';
 
 const MAX_ATTACHMENTS = 5;
 
@@ -27,9 +28,8 @@ const formatSize = (bytes) => (bytes < 1024 * 1024
   : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 const ChatInput = ({ onSendMessage, isLoading }) => {
+  const { t, language } = useLanguage();
   const [input, setInput] = useState('');
-  // Teks yang sudah ada sebelum mikrofon dinyalakan; hasil bicara ditambahkan
-  // di belakangnya, bukan menimpanya.
   const teksSebelumBicaraRef = useRef('');
   const [pesanSuara, setPesanSuara] = useState('');
 
@@ -42,13 +42,11 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
 
   const tekanMikrofon = () => {
     if (suara.dukungan === ALASAN.TIDAK_DIDUKUNG) {
-      setPesanSuara('Peramban ini tidak menyediakan pengenalan suara. Coba Safari atau Chrome.');
+      setPesanSuara(t('input.voiceNotSupported'));
       return;
     }
     if (suara.dukungan === ALASAN.BUTUH_HTTPS) {
-      // Ini bukan kekurangan aplikasi: peramban menolak mikrofon pada halaman
-      // yang tidak memakai HTTPS, dan itu tidak dapat diakali dari sisi kode.
-      setPesanSuara('Mikrofon hanya dapat dipakai lewat HTTPS. Alamat ini masih memakai http:// biasa.');
+      setPesanSuara(t('input.voiceHttpsRequired'));
       return;
     }
     setPesanSuara('');
@@ -82,11 +80,11 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
     setUploadError('');
     const room = MAX_ATTACHMENTS - attachments.length;
     if (room <= 0) {
-      setUploadError(`Maksimal ${MAX_ATTACHMENTS} lampiran per pesan.`);
+      setUploadError(t('input.maxAttachments', { max: MAX_ATTACHMENTS }));
       return;
     }
     if (incoming.length > room) {
-      setUploadError(`Hanya ${room} berkas pertama yang dilampirkan (maksimal ${MAX_ATTACHMENTS}).`);
+      setUploadError(t('input.onlyFirstAttached', { room, max: MAX_ATTACHMENTS }));
     }
 
     for (const file of incoming.slice(0, room)) {
@@ -110,10 +108,10 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isLoading || uploading > 0) return;
-    // Lampiran saja tanpa teks tetap sah — gambar sering sudah menjelaskan sendiri.
     if (!input.trim() && attachments.length === 0) return;
 
-    onSendMessage(input.trim() || 'Tolong periksa lampiran berikut.', attachments);
+    const defaultMsg = language === 'en' ? 'Please review the attached files.' : 'Tolong periksa lampiran berikut.';
+    onSendMessage(input.trim() || defaultMsg, attachments);
     setInput('');
     setAttachments([]);
     setUploadError('');
@@ -127,7 +125,6 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
     }
   };
 
-  // Tempel gambar langsung dari papan klip (mis. hasil screenshot).
   const handlePaste = (e) => {
     const files = Array.from(e.clipboardData?.files || []);
     if (files.length) {
@@ -136,62 +133,70 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
     }
   };
 
-  // dragenter/dragleave menyala berkali-kali saat kursor melewati anak elemen,
-  // sehingga kedalamannya dihitung agar sorotan tidak berkedip.
-  const onDragEnter = (e) => {
+  const handleDragEnter = (e) => {
     e.preventDefault();
     dragDepth.current += 1;
     if (e.dataTransfer?.types?.includes('Files')) setIsDragging(true);
   };
-  const onDragLeave = (e) => {
+
+  const handleDragLeave = (e) => {
     e.preventDefault();
-    dragDepth.current -= 1;
-    if (dragDepth.current <= 0) setIsDragging(false);
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDragging(false);
   };
-  const onDrop = (e) => {
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e) => {
     e.preventDefault();
     dragDepth.current = 0;
     setIsDragging(false);
-    addFiles(e.dataTransfer?.files);
+    if (e.dataTransfer?.files?.length) {
+      addFiles(e.dataTransfer.files);
+    }
   };
 
   const busy = isLoading || uploading > 0;
 
   return (
-    <div className="pwa-chat-input-bar px-3 sm:px-6 pt-1.5 sm:pt-2 pb-[max(0.35rem,calc(env(safe-area-inset-bottom,0px)*0.35+2px))] sm:pb-3.5 bg-surface/95 backdrop-blur-md border-t border-line shrink-0">
+    <div
+      className="composer-container max-w-4xl mx-auto w-full px-2 sm:px-4"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <form
         onSubmit={handleSubmit}
-        onDragOver={(e) => e.preventDefault()}
-        onDragEnter={onDragEnter}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`relative bg-surface-raised rounded-2xl sm:rounded-3xl border transition-all duration-200 p-1.5 sm:p-2 max-w-3xl mx-auto focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent shadow-xs hover:shadow-sm ${
-          isDragging ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/20' : 'border-line'
+        className={`composer-form relative rounded-2xl sm:rounded-3xl border bg-surface-raised/95 backdrop-blur-md p-1.5 sm:p-2 shadow-lg transition-all ${
+          isDragging
+            ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/30'
+            : 'border-line hover:border-slate-300 dark:hover:border-slate-700/80'
         }`}
       >
         {isDragging && (
-          <div className="absolute inset-0 rounded-2xl sm:rounded-3xl flex items-center justify-center bg-accent-soft/90 pointer-events-none z-10">
-            <span className="text-xs sm:text-sm font-semibold text-accent-soft-fg">Lepaskan berkas untuk melampirkan</span>
+          <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl sm:rounded-3xl bg-accent-soft/80 backdrop-blur-xs border-2 border-dashed border-accent text-accent font-semibold text-xs sm:text-sm">
+            {t('input.dragDrop')}
           </div>
         )}
 
-        {/* Lampiran terpilih */}
-        {(attachments.length > 0 || uploading > 0) && (
-          <div className="flex flex-wrap gap-1.5 sm:gap-2 px-1.5 sm:px-2 pt-1 pb-1.5 sm:pb-2">
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 sm:gap-2 px-2 pt-1 pb-2">
             {attachments.map((item) => (
               <span
                 key={item.upload_id}
-                className="flex items-center gap-1.5 sm:gap-2 pl-2 pr-1 sm:pl-2.5 sm:pr-1.5 py-1 sm:py-1.5 bg-surface-sunken border border-line rounded-lg sm:rounded-xl text-[11px] sm:text-xs"
+                className="group flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-2.5 pr-1 sm:pr-1.5 py-1 bg-surface-sunken border border-line rounded-lg sm:rounded-xl text-[11px] sm:text-xs text-content max-w-[200px] sm:max-w-xs"
               >
-                <span className="text-content-muted">{iconFor(item)}</span>
-                <span className="max-w-[8rem] sm:max-w-[12rem] truncate text-content font-medium">{item.filename}</span>
-                <span className="text-content-subtle text-[10px] sm:text-xs">{formatSize(item.size)}</span>
-                {item.note && <span className="text-warning" title={item.note}>!</span>}
+                <span className="text-content-muted shrink-0">{iconFor(item)}</span>
+                <span className="truncate font-medium">{item.filename}</span>
+                <span className="text-[10px] text-content-subtle shrink-0 font-mono">({formatSize(item.size_bytes)})</span>
                 <button
                   type="button"
                   onClick={() => removeAttachment(item.upload_id)}
-                  className="p-0.5 rounded-md sm:rounded-lg text-content-subtle hover:text-danger hover:bg-surface-hover"
-                  aria-label={`Hapus lampiran ${item.filename}`}
+                  className="p-0.5 rounded-md sm:rounded-lg text-content-subtle hover:text-danger hover:bg-surface-hover cursor-pointer"
+                  aria-label={`Remove attachment ${item.filename}`}
                 >
                   <X className="w-3 h-3 sm:w-3.5 sm:h-3.5" aria-hidden="true" />
                 </button>
@@ -200,7 +205,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             {uploading > 0 && (
               <span className="flex items-center gap-1.5 sm:gap-2 px-2 py-1 sm:px-2.5 sm:py-1.5 bg-surface-sunken border border-line rounded-lg sm:rounded-xl text-[11px] sm:text-xs text-content-muted">
                 <Loader2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 animate-spin" aria-hidden="true" />
-                Mengunggah {uploading} berkas…
+                Uploading {uploading} file(s)…
               </span>
             )}
           </div>
@@ -213,7 +218,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
         {suara.mendengar && (
           <p className="flex items-center gap-1.5 px-2.5 pb-1 text-[11px] sm:text-xs text-danger">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-danger" />
-            Mendengarkan… bicara sekarang, ketuk tombol berhenti bila selesai.
+            {t('input.listening')}
           </p>
         )}
 
@@ -235,9 +240,9 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0"
-            aria-label="Lampirkan gambar atau dokumen"
-            title="Lampirkan gambar atau dokumen"
+            className="p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0 cursor-pointer"
+            aria-label={t('input.attach')}
+            title={t('input.attach')}
           >
             <Paperclip className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -245,13 +250,13 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           <button
             type="button"
             onClick={tekanMikrofon}
-            className={`p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl transition-colors shrink-0 ${
+            className={`p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl transition-colors shrink-0 cursor-pointer ${
               suara.mendengar
                 ? 'bg-danger/15 text-danger'
                 : 'text-content-muted hover:text-accent hover:bg-surface-hover'
             }`}
-            aria-label={suara.mendengar ? 'Hentikan input suara' : 'Bicara untuk menulis pertanyaan'}
-            title={suara.mendengar ? 'Hentikan input suara' : 'Bicara untuk menulis pertanyaan'}
+            aria-label={suara.mendengar ? t('input.stop') : t('input.voice')}
+            title={suara.mendengar ? t('input.stop') : t('input.voice')}
           >
             {suara.mendengar
               ? <Square className="w-4 h-4 fill-current" aria-hidden="true" />
@@ -267,8 +272,8 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Tanyakan sesuatu tentang SAP…"
-            aria-label="Tulis pertanyaan Anda"
+            placeholder={t('input.placeholder')}
+            aria-label={t('input.placeholder')}
             className="no-focus-outline flex-1 max-h-[120px] sm:max-h-[180px] py-2 sm:py-2.5 px-1.5 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
@@ -277,13 +282,13 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
-              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all ${
+              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
                 !busy && (input.trim() || attachments.length > 0)
                   ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
               }`}
-              title="Kirim pesan (Enter)"
-              aria-label="Kirim pesan"
+              title={t('input.send')}
+              aria-label={t('input.send')}
             >
               <Send className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -292,14 +297,16 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
 
         <div className="composer-hint px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
           <span>
-            Enter untuk mengirim • Shift + Enter baris baru • seret berkas ke sini atau tempel gambar
+            {t('input.shiftEnterHint')}
           </span>
         </div>
       </form>
 
       {/* AI Disclaimer Footer */}
       <p className="composer-disclaimer text-center text-[9px] sm:text-[10px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
-        SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.
+        {language === 'en'
+          ? 'SAP AI Assistant may make mistakes. Please verify important data in SAP GUI.'
+          : 'SAP AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.'}
       </p>
     </div>
   );

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Download, Share, X, Sparkles } from 'lucide-react';
+import { useLanguage } from '../hooks/useLanguage';
 
 const PWAPrompt = () => {
+  const { t } = useLanguage();
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showPrompt, setShowPrompt] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
@@ -75,15 +77,15 @@ const PWAPrompt = () => {
               <Sparkles className="w-5 h-5 text-accent" />
             </div>
             <div>
-              <h4 className="text-sm font-semibold text-content">Pasang Aplikasi SAP AI</h4>
-              <p className="text-xs text-content-muted">Akses instan seperti aplikasi asli di HP/Desktop</p>
+              <h4 className="text-sm font-semibold text-content">{t('pwa.title')}</h4>
+              <p className="text-xs text-content-muted">{t('pwa.subtitle')}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={handleDismiss}
-            className="p-1 rounded-lg text-content-subtle hover:text-content hover:bg-surface-hover transition-colors"
-            aria-label="Tutup saran instalasi"
+            className="p-1 rounded-lg text-content-subtle hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+            aria-label={t('pwa.closeAria')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -92,26 +94,24 @@ const PWAPrompt = () => {
         {isIOS ? (
           <div className="text-xs text-content-muted bg-surface-sunken p-2.5 rounded-xl flex items-center gap-2 border border-line">
             <Share className="w-4 h-4 text-accent shrink-0" />
-            <span>
-              Ketuk ikon <span className="font-semibold text-content">Bagikan (Share)</span> lalu pilih <span className="font-semibold text-content">"Tambah ke Layar Utama" (Add to Home Screen)</span>.
-            </span>
+            <span>{t('pwa.iosHint')}</span>
           </div>
         ) : (
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
               onClick={handleInstallClick}
-              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-accent text-accent-fg rounded-xl text-xs font-semibold shadow-md hover:brightness-110 active:scale-95 transition-all"
+              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-accent text-accent-fg rounded-xl text-xs font-semibold shadow-md hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              Pasang Sekarang
+              {t('pwa.installNow')}
             </button>
             <button
               type="button"
               onClick={handleDismiss}
-              className="py-2 px-3 bg-surface-sunken hover:bg-surface-hover text-content-muted hover:text-content rounded-xl text-xs font-medium transition-colors"
+              className="py-2 px-3 bg-surface-sunken hover:bg-surface-hover text-content-muted hover:text-content rounded-xl text-xs font-medium transition-colors cursor-pointer"
             >
-              Nanti Saja
+              {t('pwa.later')}
             </button>
           </div>
         )}
