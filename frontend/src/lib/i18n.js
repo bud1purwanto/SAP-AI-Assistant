@@ -53,8 +53,8 @@ export const TRANSLATIONS = {
     'sidebar.adminPanel': 'Admin Dashboard',
 
     // Suggestions on Empty Screen
-    'suggestions.heroTitle': 'SAP AI Co-Pilot',
-    'suggestions.heroSubtitle': 'Ask about SAP ECC 6.0 workflows, transactions, live tables, ABAP development, or internal SOPs.',
+    'suggestions.heroTitle': 'Start from here',
+    'suggestions.heroSubtitle': 'Choose an example below, or write your own question',
     'suggestions.stockCheck.title': 'Check Stock Availability',
     'suggestions.stockCheck.subtitle': 'View current stock levels in our plants',
     'suggestions.stockCheck.query': 'What is the current stock availability in our plant?',
@@ -69,18 +69,18 @@ export const TRANSLATIONS = {
     'suggestions.abapHelper.query': 'Show me the recommended ABAP pattern for reading MARC/MARD using BAPI or clean SQL.',
 
     // Chat Input & Composition
-    'input.placeholder': 'Type a message or ask about SAP MM, SD, PP, FICO, ABAP…',
+    'input.placeholder': 'Ask something about SAP…',
     'input.voiceNotSupported': 'Speech recognition is not supported in this browser. Try Safari or Chrome.',
     'input.voiceHttpsRequired': 'Microphone is only available via HTTPS.',
-    'input.maxAttachments': 'Maximum {max} attachments per message.',
     'input.onlyFirstAttached': 'Only the first {room} files were attached (maximum {max}).',
+    'input.maxAttachments': 'Maximum {max} attachments per message.',
     'input.send': 'Send message',
     'input.stop': 'Stop response',
     'input.voice': 'Voice dictation',
     'input.listening': 'Listening… speak now',
     'input.attach': 'Attach files or images',
     'input.dragDrop': 'Drop files here to attach',
-    'input.shiftEnterHint': 'Press Enter to send, Shift+Enter for new line',
+    'input.shiftEnterHint': 'Press Enter to send • Shift+Enter for new line • drag & drop files or paste images',
 
     // Chat Message & Assistant Response
     'chat.assistantName': 'SAP Assistant',
@@ -299,8 +299,8 @@ export const TRANSLATIONS = {
     'sidebar.adminPanel': 'Dashboard Admin',
 
     // Suggestions on Empty Screen
-    'suggestions.heroTitle': 'Asisten SAP AI Co-Pilot',
-    'suggestions.heroSubtitle': 'Tanyakan seputar alur proses SAP ECC 6.0, transaksi, data tabel live, pengembangan ABAP, atau SOP internal.',
+    'suggestions.heroTitle': 'Mulai dari sini',
+    'suggestions.heroSubtitle': 'Pilih salah satu contoh, atau tulis pertanyaan Anda sendiri di bawah',
     'suggestions.stockCheck.title': 'Cek Ketersediaan Stok',
     'suggestions.stockCheck.subtitle': 'Lihat stok barang di plant saat ini',
     'suggestions.stockCheck.query': 'Berapa ketersediaan stok material di plant kita saat ini?',
@@ -315,18 +315,18 @@ export const TRANSLATIONS = {
     'suggestions.abapHelper.query': 'Tunjukkan pola kode ABAP yang direkomendasikan untuk membaca MARC/MARD menggunakan BAPI atau SQL efisien.',
 
     // Chat Input & Composition
-    'input.placeholder': 'Ketik pesan atau tanyakan terkait SAP MM, SD, PP, FICO, ABAP…',
+    'input.placeholder': 'Tanyakan sesuatu tentang SAP…',
     'input.voiceNotSupported': 'Peramban ini tidak menyediakan pengenalan suara. Coba Safari atau Chrome.',
     'input.voiceHttpsRequired': 'Mikrofon hanya dapat dipakai lewat HTTPS.',
     'input.maxAttachments': 'Maksimal {max} lampiran per pesan.',
     'input.onlyFirstAttached': 'Hanya {room} berkas pertama yang dilampirkan (maksimal {max}).',
     'input.send': 'Kirim pesan',
     'input.stop': 'Hentikan respon',
-    'input.voice': 'Dikte suara',
     'input.listening': 'Mendengarkan… silakan bicara',
+    'input.voice': 'Dikte suara',
     'input.attach': 'Lampirkan berkas atau gambar',
     'input.dragDrop': 'Lepaskan berkas di sini untuk melampirkan',
-    'input.shiftEnterHint': 'Tekan Enter untuk kirim, Shift+Enter untuk baris baru',
+    'input.shiftEnterHint': 'Enter untuk mengirim • Shift + Enter baris baru • seret berkas ke sini atau tempel gambar',
 
     // Chat Message & Assistant Response
     'chat.assistantName': 'Asisten SAP',

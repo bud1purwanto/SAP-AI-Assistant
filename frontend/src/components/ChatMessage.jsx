@@ -134,15 +134,15 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
   };
 
   return (
-    <div className="my-3 rounded-2xl overflow-hidden border border-slate-800 shadow-md">
+    <div className="my-3 rounded-2xl overflow-hidden border border-line shadow-md">
       {/* Code block terminal top bar */}
-      <div className="bg-slate-950 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] font-mono text-slate-400">
+      <div className="bg-surface-sunken px-4 py-2 flex items-center justify-between border-b border-line text-[11px] font-mono text-content-muted">
         <div className="flex items-center gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
-          <span className="ml-2 text-slate-400 font-medium flex items-center gap-1">
-            <Terminal className="w-3 h-3 text-slate-400" /> {t('chat.codeTerminal')}
+          <span className="ml-2 text-content-muted font-medium flex items-center gap-1">
+            <Terminal className="w-3 h-3 text-content-muted" /> {t('chat.codeTerminal')}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -155,7 +155,7 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
               teks: codeString,
               namaBerkas: 'code.abap',
             })}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-content-muted hover:text-content hover:bg-surface-hover transition-colors text-[11px] cursor-pointer"
             title="Open in side panel"
             aria-label="Open in side panel"
           >
@@ -166,14 +166,14 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
         <button
           type="button"
           onClick={handleCopyCode}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800 transition-colors text-[11px] cursor-pointer"
+          className="flex items-center gap-1 px-2 py-1 rounded-md text-content-muted hover:text-content hover:bg-surface-hover transition-colors text-[11px] cursor-pointer"
           title={t('chat.copyCode')}
           aria-label={t('chat.copyCode')}
         >
           {codeCopied ? (
             <>
-              <Check className="w-3 h-3 text-emerald-400" />
-              <span className="text-emerald-400 font-sans font-medium">{t('chat.copied')}</span>
+              <Check className="w-3 h-3 text-success" />
+              <span className="text-success font-sans font-medium">{t('chat.copied')}</span>
             </>
           ) : (
             <>
@@ -184,7 +184,7 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
         </button>
         </div>
       </div>
-      <pre className="block bg-slate-900 text-slate-100 font-mono text-xs p-4 overflow-x-auto leading-relaxed">
+      <pre className="block bg-surface-raised text-content font-mono text-xs p-4 overflow-x-auto leading-relaxed">
         <code {...props}>{codeString}</code>
       </pre>
     </div>
@@ -301,15 +301,20 @@ const ChatMessage = ({
   };
 
   const markdownComponents = useMemo(() => ({
-    code({ _node, inline, className, children, ...props }) {
+    code({ node, className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '');
       const codeString = String(children).replace(/\n$/, '');
+      // react-markdown v10 tidak lagi mengirim prop `inline`, jadi keputusan
+      // memakai aturan asli dari commit 3fb954d: potongan kode pendek satu baris
+      // tampil sebagai badge inline, sisanya baru jadi panel Source Code.
+      const isMultiLine = codeString.includes('\n');
+      const isBlock = isMultiLine || codeString.length > 60;
 
-      if (!inline && match && match[1] === 'mermaid') {
+      if (match && match[1] === 'mermaid') {
         return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
       }
 
-      if (!inline) {
+      if (isBlock) {
         return (
           <CodeBlock
             codeString={codeString}
@@ -319,8 +324,8 @@ const ChatMessage = ({
         );
       }
       return (
-        <code className="bg-surface-sunken border border-line text-accent font-mono text-[12px] px-1.5 py-0.5 rounded-md font-medium" {...props}>
-          {children}
+        <code className="inline-flex items-center whitespace-nowrap bg-accent-soft border border-accent/40 text-accent-soft-fg font-mono text-[12.5px] px-2 py-0.5 mx-0.5 rounded-lg font-semibold shadow-2xs select-all" {...props}>
+          {codeString}
         </code>
       );
     },
@@ -329,14 +334,14 @@ const ChatMessage = ({
     },
     th({ children }) {
       return (
-        <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content border-b border-line">
+        <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content border-b border-line whitespace-nowrap">
           {children}
         </th>
       );
     },
     td({ children }) {
       return (
-        <td className="px-3.5 py-2 text-content-secondary border-b border-line">
+        <td className="px-3.5 py-2 text-content-secondary border-b border-line align-top min-w-[5rem]">
           {children}
         </td>
       );

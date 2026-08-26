@@ -159,7 +159,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const fetchKuota = async () => {
     setKuotaLoading(true);
     try {
-      const data = await api.adminQuotaStats();
+      const data = await api.adminQuota();
       setKuota(data);
       // Inisialisasi draft batas peran sesuai data backend.
       const draft = {};
@@ -172,6 +172,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       setBatasDraft(draft);
     } catch (err) {
       console.error('Gagal load kuota token:', err);
+      setActionError(language === 'en' ? `Failed to load token quotas: ${err.message}` : `Gagal memuat kuota token: ${err.message}`);
     } finally {
       setKuotaLoading(false);
     }
