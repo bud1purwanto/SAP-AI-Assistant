@@ -613,7 +613,11 @@ def get_system_config():
                     model_fallback = r.value
                 elif r.key == 'openrouter_api_key' and r.value is not None:
                     api_key = r.value
-                elif r.key == 'assistant_persona' and r.value is not None:
+                # Kuncinya harus 'global_assistant_persona': itulah baris yang
+                # ditulis update_system_config(). Membacanya sebagai
+                # 'assistant_persona' membuat persona organisasi tidak pernah
+                # terbaca kembali dan selalu jatuh ke nilai default.
+                elif r.key == 'global_assistant_persona' and r.value is not None:
                     global_persona = r.value
     except Exception as e:
         logger.error(f"Gagal membaca konfigurasi sistem dari database: {e}")
