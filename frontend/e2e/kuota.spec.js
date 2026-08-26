@@ -15,7 +15,7 @@ const saklar = (page) => page.getByRole('button', { name: 'Penegakan batas token
 
 async function masukSebagaiAdmin(page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /login/i }).first().click();
+  await page.getByRole('button', { name: /masuk akun/i }).first().click();
   await page.getByPlaceholder('Masukkan username SAP').fill(ADMIN);
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByRole('button', { name: /masuk aplikasi/i }).click();
@@ -23,8 +23,8 @@ async function masukSebagaiAdmin(page) {
 }
 
 async function bukaTabKuota(page) {
-  await page.getByRole('button', { name: /admin dashboard/i }).first().click();
-  await page.getByRole('button', { name: 'Kuota Token' }).click();
+  await page.getByRole('button', { name: /dashboard admin/i }).first().click();
+  await page.getByRole('button', { name: /batas kuota token/i }).click();
   await expect(page.getByRole('heading', { name: 'Kuota Token' })).toBeVisible();
   // Batas peran baru terisi setelah /api/admin/quota menjawab.
   await expect(page.locator('#harian-abaper')).toBeVisible({ timeout: 15_000 });

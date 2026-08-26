@@ -51,14 +51,14 @@ test('tombol tutup dashboard admin tidak tertimpa status bar', async ({ page }) 
   await simulasikanPerangkatBernotch(page);
   await page.goto('/');
 
-  await klikYangTerlihat(page.getByRole('button', { name: /login/i }));
+  await klikYangTerlihat(page.getByRole('button', { name: /masuk akun/i }));
   await page.getByPlaceholder('Masukkan username SAP').fill(ADMIN);
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByRole('button', { name: /masuk aplikasi/i }).click();
   await expect(page.locator('aside')).toContainText(ADMIN, { timeout: 15_000 });
 
   await klikYangTerlihat(page.getByRole('button', { name: 'Buka menu percakapan' }));
-  await page.getByRole('button', { name: /admin dashboard/i }).first().click();
+  await page.getByRole('button', { name: /dashboard admin/i }).first().click();
 
   const tutup = page.getByRole('button', { name: 'Tutup Dashboard' });
   await expect(tutup).toBeVisible();

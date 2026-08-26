@@ -21,7 +21,7 @@ const PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'AdminPass123';
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Buka menu percakapan' }).click();
-  await page.getByRole('button', { name: 'Login ke akun SAP' }).click();
+  await page.getByRole('button', { name: /masuk akun/i }).click();
   await page.getByPlaceholder('Masukkan username SAP').fill(ADMIN);
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   await page.getByRole('button', { name: /masuk aplikasi/i }).click();

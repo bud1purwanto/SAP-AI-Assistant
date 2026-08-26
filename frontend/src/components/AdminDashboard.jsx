@@ -496,7 +496,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         <button 
           onClick={onClose}
           className="-mr-1 p-3 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
-          aria-label={t('common.close')}
+          aria-label={t('admin.closeAria')}
         >
           <X className="w-5 h-5" />
         </button>

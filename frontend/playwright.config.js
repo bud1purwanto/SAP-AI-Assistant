@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { STORAGE_STATE } from './e2e/global-setup.js';
+
 /**
  * Tes end-to-end berjalan terhadap aplikasi yang benar-benar dijalankan:
  * Vite preview di 4173 dan backend di 8000 (lihat scripts/e2e.sh).
@@ -9,6 +11,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  // Menyiapkan localStorage berisi pilihan bahasa sebelum tes pertama jalan.
+  globalSetup: './e2e/global-setup.js',
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
@@ -17,6 +21,9 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.E2E_BASE_URL || 'http://127.0.0.1:4173',
+    // Seluruh spec mencari teks berbahasa Indonesia, sedangkan bawaan aplikasi
+    // adalah Inggris. State ini menyetel bahasa sebelum halaman pertama dimuat.
+    storageState: STORAGE_STATE,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

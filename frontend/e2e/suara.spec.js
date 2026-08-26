@@ -13,7 +13,7 @@ import { test, expect } from '@playwright/test';
 
 test.use({ viewport: { width: 390, height: 844 } });
 
-const tombolMik = (page) => page.getByRole('button', { name: /bicara untuk menulis|hentikan input suara/i });
+const tombolMik = (page) => page.getByRole('button', { name: /dikte suara|hentikan respon/i });
 
 test('tombol suara tersedia bila peramban mendukung', async ({ page }) => {
   await page.goto('/');

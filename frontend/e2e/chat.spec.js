@@ -14,7 +14,7 @@ const PASSWORD = process.env.E2E_ADMIN_PASSWORD || 'AdminPass123';
 
 async function login(page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /login/i }).first().click();
+  await page.getByRole('button', { name: /masuk akun/i }).first().click();
   await page.getByPlaceholder('Masukkan username SAP').fill(ADMIN);
   await page.locator('input[type="password"]').first().fill(PASSWORD);
   // Tombol dipilih lewat namanya: form chat juga memiliki button[type=submit],
@@ -125,7 +125,7 @@ test('riwayat dapat dicari dan sesi yang dipakai lagi naik ke urutan teratas', a
   await cari.fill('');
 
   // Percakapan baru menggeser yang tadi ke bawah…
-  await page.getByRole('button', { name: /chat baru/i }).click();
+  await page.getByRole('button', { name: /percakapan baru/i }).click();
   await kirim(page, 'percakapan yang lebih baru');
   await tungguJawabanSelesai(page);
   await expect(page.locator('nav button').first()).toContainText('percakapan yang lebih baru');

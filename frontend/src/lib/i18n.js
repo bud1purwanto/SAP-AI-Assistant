@@ -252,6 +252,16 @@ export const TRANSLATIONS = {
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.close': 'Close',
+
+    // Nama khusus untuk tombol tutup. Beberapa penutup berbeda tampil
+    // bersamaan (menu, pengaturan, dashboard); memberi ketiganya nama
+    // "Close" yang sama membuat pembaca layar — dan tes — tidak dapat
+    // membedakannya.
+    'nav.closeSidebar': 'Close menu',
+    'settings.closeAria': 'Close Settings',
+    'admin.closeAria': 'Close Dashboard',
+    'chat.editDraft': 'Edit question',
+    'chat.openInPanel': 'Open code in side panel',
     'common.confirm': 'Confirm',
     'common.delete': 'Delete',
     'common.back': 'Back',
@@ -498,6 +508,12 @@ export const TRANSLATIONS = {
     'common.cancel': 'Batal',
     'common.save': 'Simpan',
     'common.close': 'Tutup',
+
+    'nav.closeSidebar': 'Tutup menu',
+    'settings.closeAria': 'Tutup Pengaturan',
+    'admin.closeAria': 'Tutup Dashboard',
+    'chat.editDraft': 'Ubah pertanyaan',
+    'chat.openInPanel': 'Buka kode di panel samping',
     'common.confirm': 'Konfirmasi',
     'common.delete': 'Hapus',
     'common.back': 'Kembali',

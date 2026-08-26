@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# State sementara yang dibuat globalSetup Playwright
+e2e/.auth/

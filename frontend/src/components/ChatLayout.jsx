@@ -850,7 +850,7 @@ const ChatLayout = () => {
           <button
             onClick={() => setIsSidebarOpen(false)}
             className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover cursor-pointer"
-            aria-label={t('common.close')}
+            aria-label={t('nav.closeSidebar')}
           >
             <X className="w-4 h-4" />
           </button>

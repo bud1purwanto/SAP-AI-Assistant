@@ -156,8 +156,8 @@ const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
               namaBerkas: 'code.abap',
             })}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-content-muted hover:text-content hover:bg-surface-hover transition-colors text-[11px] cursor-pointer"
-            title="Open in side panel"
-            aria-label="Open in side panel"
+            title={t('chat.openInPanel')}
+            aria-label={t('chat.openInPanel')}
           >
             <Columns2 className="w-3 h-3" aria-hidden="true" />
             <span className="hidden sm:inline">Panel</span>
@@ -448,6 +448,7 @@ const ChatMessage = ({
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                aria-label={t('chat.editDraft')}
                 rows={Math.min(6, Math.max(2, draft.split('\n').length))}
                 className="max-h-60 w-full resize-none bg-transparent px-2 py-1 text-sm text-content outline-none"
               />
