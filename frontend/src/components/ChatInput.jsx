@@ -34,6 +34,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
   const [pesanSuara, setPesanSuara] = useState('');
 
   const suara = useVoiceInput({
+    language,
     onTeks: (teks) => {
       const dasar = teksSebelumBicaraRef.current;
       setInput(dasar ? `${dasar.trimEnd()} ${teks}` : teks);

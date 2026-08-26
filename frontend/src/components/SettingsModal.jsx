@@ -101,12 +101,12 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
     setIsChangingPass(true);
     try {
       await api.changePassword(oldPassword, newPassword);
-      setPassMessage({ type: 'success', text: 'Password berhasil diperbarui!' });
+      setPassMessage({ type: 'success', text: t('security.success') });
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) {
-      setPassMessage({ type: 'error', text: err.message || 'Gagal mengubah password.' });
+      setPassMessage({ type: 'error', text: err.message || t('security.failed') });
     } finally {
       setIsChangingPass(false);
     }
@@ -227,10 +227,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             <div className="space-y-6">
               <div>
                 <label htmlFor="profile-fullname" className="block text-sm font-bold text-content mb-1.5">
-                  Nama Lengkap
+                  {t('settings.fullName')}
                 </label>
                 <p className="text-xs text-content-muted mb-2.5">
-                  Ditampilkan pada profil Anda dan pada daftar pengguna di dashboard admin.
+                  {t('settings.fullNameDesc')}
                 </p>
                 <input
                   id="profile-fullname"
@@ -239,7 +239,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                   value={config.full_name}
                   onChange={e => setConfig({ ...config, full_name: e.target.value })}
                   className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 text-sm text-content outline-none transition-all disabled:opacity-60"
-                  placeholder={isLoggedIn ? 'misal: Andi Wijaya' : 'Login untuk mengubah profil Anda.'}
+                  placeholder={isLoggedIn ? t('settings.fullNamePlaceholder') : t('settings.loginRequired')}
                 />
               </div>
 
@@ -249,14 +249,13 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                 <div className="bg-surface-sunken border border-line rounded-2xl p-4">
                   <div className="flex items-center gap-2 text-xs font-bold text-content mb-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" aria-hidden="true" />
-                    Persona Organisasi (diatur admin)
+                    {t('settings.globalPersonaTitle')}
                   </div>
                   <p className="text-xs text-content-muted whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto">
                     {config.global_assistant_persona}
                   </p>
                   <p className="text-[11px] text-content-subtle mt-2">
-                    Aturan ini menjadi dasar untuk semua pengguna. Preferensi Anda di bawah
-                    diterapkan di atasnya.
+                    {t('settings.globalPersonaDesc')}
                   </p>
                 </div>
               )}
@@ -266,9 +265,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                   🎭 {t('settings.personalPersona')}
                 </label>
                 <p className="text-xs text-content-muted mb-2.5 leading-relaxed">
-                  Sesuaikan gaya jawaban, format, bahasa, atau instruksi khusus untuk asisten AI Anda
-                  sendiri. Untuk gaya penulisan, preferensi ini menang atas persona organisasi;
-                  aturan keakuratan data dan keamanan tetap mengikuti organisasi.
+                  {t('settings.personalPersonaDesc')}
                 </p>
                 <textarea
                   id="personal-persona"
@@ -278,7 +275,7 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                   className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-3 text-sm text-content outline-none transition-all resize-y min-h-[140px] disabled:opacity-60"
                   placeholder={isLoggedIn
                     ? t('settings.personalPersonaPlaceholder')
-                    : 'Login untuk mengkustomisasi persona asisten Anda.'}
+                    : t('settings.loginRequired')}
                 />
               </div>
             </div>
@@ -333,10 +330,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
 
               <div className="bg-surface-sunken border border-line rounded-2xl p-4 text-xs text-content-secondary leading-relaxed">
                 <p className="font-semibold text-content mb-1">
-                  💡 Standar Multibahasa (Multilanguage Standard):
+                  💡 {t('settings.languageNoteTitle')}
                 </p>
                 <p className="text-content-muted">
-                  Aplikasi ini dirancang mendukung multibahasa penuh. Teks antarmuka, tombol, peringatan kuota, dan format diagram secara otomatis menyesuaikan dengan bahasa yang Anda pilih di atas.
+                  {t('settings.languageNoteDesc')}
                 </p>
               </div>
             </div>
@@ -555,38 +552,38 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Password Lama</label>
+                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">{t('security.oldPass')}</label>
                 <input 
                   type="password"
                   required
                   value={oldPassword}
                   onChange={e => setOldPassword(e.target.value)}
                   className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  placeholder="Masukkan password saat ini"
+                  placeholder={t('security.oldPassPlaceholder')}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Password Baru</label>
+                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">{t('security.newPass')}</label>
                   <input 
                     type="password"
                     required
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
                     className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    placeholder="Minimal 4 karakter"
+                    placeholder={t('security.newPassPlaceholder')}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">Konfirmasi Password</label>
+                  <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">{t('security.confirmPass')}</label>
                   <input 
                     type="password"
                     required
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}
                     className="w-full bg-surface-sunken border border-line rounded-2xl px-3.5 py-2.5 text-sm text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                    placeholder="Ulangi password baru"
+                    placeholder={t('security.confirmPassPlaceholder')}
                   />
                 </div>
               </div>
@@ -594,10 +591,10 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
               <button
                 type="submit"
                 disabled={isChangingPass}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>{isChangingPass ? 'Memproses...' : 'Perbarui Password'}</span>
+                <span>{isChangingPass ? t('security.processing') : t('security.submit')}</span>
               </button>
             </form>
           )}

@@ -33,7 +33,7 @@ const formatSize = (bytes) => {
  * Endpointnya memerlukan header Authorization, sementara navigasi <a href>
  * tidak dapat menyertakan header tersebut.
  */
-const downloadArtifact = async (file) => {
+const downloadArtifact = async (file, t) => {
   try {
     const blob = await fetchArtifactBlob(file.artifact_id);
     const url = URL.createObjectURL(blob);
@@ -46,7 +46,7 @@ const downloadArtifact = async (file) => {
     URL.revokeObjectURL(url);
   } catch (err) {
     console.error('Gagal mengunduh berkas:', err);
-    alert(err.message || 'Berkas gagal diunduh.');
+    alert(err.message || (t ? t('chat.downloadFailed') : 'Failed to download file.'));
   }
 };
 
@@ -592,7 +592,7 @@ const ChatMessage = ({
             {message.artifacts.map((file) => (
               <button
                 key={file.artifact_id}
-                onClick={() => downloadArtifact(file)}
+                onClick={() => downloadArtifact(file, t)}
                 className="flex w-full min-w-0 max-w-full sm:w-auto sm:max-w-sm items-center gap-2.5 px-3.5 py-2.5 bg-surface-raised border border-line rounded-2xl hover:border-accent transition-colors text-left group cursor-pointer"
               >
                 <span className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg shrink-0">

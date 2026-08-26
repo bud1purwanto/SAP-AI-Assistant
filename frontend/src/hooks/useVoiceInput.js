@@ -32,7 +32,7 @@ export function periksaDukungan() {
   return ALASAN.SIAP;
 }
 
-export function useVoiceInput({ onTeks, bahasa = 'id-ID' } = {}) {
+export function useVoiceInput({ onTeks, language = 'en' } = {}) {
   const [mendengar, setMendengar] = useState(false);
   const [galat, setGalat] = useState('');
   const pengenalRef = useRef(null);
@@ -56,10 +56,8 @@ export function useVoiceInput({ onTeks, bahasa = 'id-ID' } = {}) {
 
     setGalat('');
     const pengenal = new Pengenal();
-    pengenal.lang = bahasa;
+    pengenal.lang = language === 'id' ? 'id-ID' : 'en-US';
     pengenal.continuous = false;
-    // Hasil sementara dikirim agar teksnya terlihat tumbuh saat berbicara,
-    // bukan muncul sekaligus setelah selesai.
     pengenal.interimResults = true;
 
     let terakhirFinal = '';
@@ -78,14 +76,15 @@ export function useVoiceInput({ onTeks, bahasa = 'id-ID' } = {}) {
 
     pengenal.onerror = (e) => {
       const kode = e.error || '';
+      const isEn = language !== 'id';
       if (kode === 'not-allowed' || kode === 'service-not-allowed') {
-        setGalat('Izin mikrofon ditolak. Aktifkan lewat pengaturan peramban.');
+        setGalat(isEn ? 'Microphone permission denied. Enable in browser settings.' : 'Izin mikrofon ditolak. Aktifkan lewat pengaturan peramban.');
       } else if (kode === 'no-speech') {
-        setGalat('Tidak ada suara yang terdengar.');
+        setGalat(isEn ? 'No speech detected.' : 'Tidak ada suara yang terdengar.');
       } else if (kode === 'network') {
-        setGalat('Pengenalan suara membutuhkan koneksi internet.');
+        setGalat(isEn ? 'Voice recognition requires an active internet connection.' : 'Pengenalan suara membutuhkan koneksi internet.');
       } else if (kode !== 'aborted') {
-        setGalat('Pengenalan suara gagal. Coba lagi.');
+        setGalat(isEn ? 'Voice recognition failed. Please try again.' : 'Pengenalan suara gagal. Coba lagi.');
       }
       setMendengar(false);
     };
@@ -97,10 +96,10 @@ export function useVoiceInput({ onTeks, bahasa = 'id-ID' } = {}) {
       pengenal.start();
       setMendengar(true);
     } catch {
-      setGalat('Pengenalan suara tidak dapat dimulai.');
+      setGalat(language !== 'id' ? 'Voice recognition could not be started.' : 'Pengenalan suara tidak dapat dimulai.');
       setMendengar(false);
     }
-  }, [bahasa]);
+  }, [language]);
 
   // Meninggalkan halaman selagi mikrofon aktif akan membiarkannya menyala.
   useEffect(() => () => {

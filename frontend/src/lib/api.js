@@ -44,22 +44,27 @@ export function clearSession() {
   }
 }
 
+function getActiveLanguage() {
+  try {
+    return localStorage.getItem('sap_assistant_lang') || 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 /**
  * Pesan untuk kegagalan di tingkat jaringan.
- *
- * "Periksa koneksi jaringan Anda" menyesatkan: penyebab tersering justru
- * backend yang tidak berjalan, sementara jaringan penggunanya baik-baik saja.
  */
 function connectionErrorMessage() {
+  const isEn = getActiveLanguage() === 'en';
   let offline = false;
   try {
     offline = typeof navigator !== 'undefined' && navigator.onLine === false;
   } catch { /* navigator tidak tersedia */ }
 
-  // Dinilai saat error terjadi, bukan saat modul dimuat: status koneksi berubah.
   return offline
-    ? 'Perangkat Anda sedang offline. Periksa koneksi internet.'
-    : 'Server tidak merespons. Pastikan layanan backend berjalan, lalu coba lagi.';
+    ? (isEn ? 'Your device is offline. Check your internet connection.' : 'Perangkat Anda sedang offline. Periksa koneksi internet.')
+    : (isEn ? 'Server is not responding. Ensure backend service is running, then try again.' : 'Server tidak merespons. Pastikan layanan backend berjalan, lalu coba lagi.');
 }
 
 export class ApiError extends Error {
@@ -72,12 +77,9 @@ export class ApiError extends Error {
 
 /**
  * Pembungkus fetch untuk seluruh API.
- *
- * Identitas dibawa oleh token JWT di header Authorization. Header X-User-Name
- * yang lama sengaja tidak lagi dikirim: nilainya dapat dipalsukan siapa pun
- * sehingga tidak pernah menjadi bukti identitas.
  */
 export async function apiFetch(path, { method = 'GET', body, auth = true, signal } = {}) {
+  const isEn = getActiveLanguage() === 'en';
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -100,7 +102,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   if (res.status === 401) {
     clearSession();
     onUnauthorized();
-    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
   }
 
   if (res.status === 204) return null;
@@ -117,21 +119,19 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 
   if (!res.ok) {
     let detail = (data && data.detail) || (typeof data === 'string' ? data : '');
-    // Jika respons berupa dokumen HTML dari reverse proxy (mis. 502 Bad Gateway Nginx),
-    // ubah menjadi pesan teks bersih yang mudah dipahami pengguna.
     if (typeof detail === 'string' && (detail.trim().startsWith('<') || res.status >= 500)) {
       if (res.status === 502) {
-        detail = 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
+        detail = isEn ? 'Backend server is unreachable or offline (502 Bad Gateway).' : 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
       } else if (res.status === 503) {
-        detail = 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
+        detail = isEn ? 'Backend service is temporarily under maintenance (503 Service Unavailable).' : 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
       } else if (res.status === 504) {
-        detail = 'Koneksi ke server backend timeout (504 Gateway Timeout).';
+        detail = isEn ? 'Connection to backend server timed out (504 Gateway Timeout).' : 'Koneksi ke server backend timeout (504 Gateway Timeout).';
       } else if (detail.trim().startsWith('<')) {
-        detail = `Terjadi kesalahan pada server (HTTP ${res.status}).`;
+        detail = isEn ? `Server error occurred (HTTP ${res.status}).` : `Terjadi kesalahan pada server (HTTP ${res.status}).`;
       }
     }
     if (!detail) {
-      detail = `Permintaan gagal (HTTP ${res.status}).`;
+      detail = isEn ? `Request failed (HTTP ${res.status}).` : `Permintaan gagal (HTTP ${res.status}).`;
     }
     throw new ApiError(detail, res.status);
   }
@@ -210,6 +210,7 @@ export const api = {
  * tautan biasa — berkasnya diambil di sini lalu disimpan dari sisi browser.
  */
 export async function fetchArtifactBlob(artifactId) {
+  const isEn = getActiveLanguage() === 'en';
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/artifacts/${artifactId}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -218,21 +219,19 @@ export async function fetchArtifactBlob(artifactId) {
   if (res.status === 401) {
     clearSession();
     onUnauthorized();
-    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
   }
   if (!res.ok) {
-    throw new ApiError('Berkas tidak ditemukan atau sudah kedaluwarsa.', res.status);
+    throw new ApiError(isEn ? 'File not found or has expired.' : 'Berkas tidak ditemukan atau sudah kedaluwarsa.', res.status);
   }
   return res.blob();
 }
 
 /**
  * Unggah satu lampiran (gambar/dokumen) sebagai konteks percakapan.
- *
- * Dikirim sebagai multipart, sehingga Content-Type harus dibiarkan diisi
- * browser lengkap dengan boundary-nya.
  */
 export async function uploadAttachment(file, sessionId) {
+  const isEn = getActiveLanguage() === 'en';
   const form = new FormData();
   form.append('file', file);
   if (sessionId) form.append('session_id', sessionId);
@@ -246,44 +245,38 @@ export async function uploadAttachment(file, sessionId) {
       body: form,
     });
   } catch {
-    throw new ApiError(`${connectionErrorMessage()} (gagal saat mengunggah berkas)`, 0);
+    throw new ApiError(`${connectionErrorMessage()} (${isEn ? 'failed uploading file' : 'gagal saat mengunggah berkas'})`, 0);
   }
 
   if (res.status === 401) {
     clearSession();
     onUnauthorized();
-    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
   }
 
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new ApiError((data && data.detail) || 'Berkas gagal diunggah.', res.status);
+    throw new ApiError((data && data.detail) || (isEn ? 'Failed to upload file.' : 'Berkas gagal diunggah.'), res.status);
   }
   return data;
 }
 
 /** URL pratinjau lampiran; perlu token sehingga diambil sebagai blob. */
 export async function fetchAttachmentBlob(uploadId) {
+  const isEn = getActiveLanguage() === 'en';
   const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/uploads/${uploadId}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  if (!res.ok) throw new ApiError('Lampiran tidak dapat dimuat.', res.status);
+  if (!res.ok) throw new ApiError(isEn ? 'Failed to load attachment.' : 'Lampiran tidak dapat dimuat.', res.status);
   return res.blob();
 }
 
 /**
  * Kirim pesan chat sambil menerima progres pengerjaannya.
- *
- * EventSource tidak dipakai karena tidak dapat mengirim POST maupun header
- * Authorization; aliran SSE dibaca langsung dari body respons fetch.
- *
- * `onProgress` dipanggil untuk setiap tahap.
- * `onToken` dipanggil saat jawaban mengalir: `onToken(teks)` menambahkan teks,
- * `onToken(null)` membatalkan teks yang sudah mengalir (server memutuskan
- * potongan itu bukan jawaban akhir). Mengembalikan hasil akhir chat.
  */
 export async function chatWithProgress(payload, { onProgress, onToken, signal } = {}) {
+  const isEn = getActiveLanguage() === 'en';
   const token = getToken();
   let res;
   try {
@@ -304,7 +297,7 @@ export async function chatWithProgress(payload, { onProgress, onToken, signal } 
   if (res.status === 401) {
     clearSession();
     onUnauthorized();
-    throw new ApiError('Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
   }
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
@@ -316,17 +309,17 @@ export async function chatWithProgress(payload, { onProgress, onToken, signal } 
     }
     if (typeof detail === 'string' && (detail.trim().startsWith('<') || res.status >= 500)) {
       if (res.status === 502) {
-        detail = 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
+        detail = isEn ? 'Backend server is unreachable or offline (502 Bad Gateway).' : 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
       } else if (res.status === 503) {
-        detail = 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
+        detail = isEn ? 'Backend service is temporarily under maintenance (503 Service Unavailable).' : 'Layanan backend sedang dalam pemeliharaan (503 Service Unavailable).';
       } else if (res.status === 504) {
-        detail = 'Koneksi ke server backend timeout (504 Gateway Timeout).';
+        detail = isEn ? 'Connection to backend server timed out (504 Gateway Timeout).' : 'Koneksi ke server backend timeout (504 Gateway Timeout).';
       } else if (detail.trim().startsWith('<')) {
-        detail = `Terjadi kesalahan pada server (HTTP ${res.status}).`;
+        detail = isEn ? `Server error occurred (HTTP ${res.status}).` : `Terjadi kesalahan pada server (HTTP ${res.status}).`;
       }
     }
     if (!detail) {
-      detail = `Permintaan gagal (HTTP ${res.status}).`;
+      detail = isEn ? `Request failed (HTTP ${res.status}).` : `Permintaan gagal (HTTP ${res.status}).`;
     }
     throw new ApiError(detail, res.status);
   }
@@ -337,8 +330,6 @@ export async function chatWithProgress(payload, { onProgress, onToken, signal } 
   let result = null;
   let failure = null;
 
-  // SSE memisahkan peristiwa dengan baris kosong; potongan dapat terbelah
-  // sembarang tempat sehingga sisa buffer harus disimpan antar pembacaan.
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -367,6 +358,6 @@ export async function chatWithProgress(payload, { onProgress, onToken, signal } 
   }
 
   if (failure) throw failure;
-  if (!result) throw new ApiError('Server menutup koneksi sebelum jawaban selesai.', 500);
+  if (!result) throw new ApiError(isEn ? 'Server closed connection before response completed.' : 'Server menutup koneksi sebelum jawaban selesai.', 500);
   return result;
 }

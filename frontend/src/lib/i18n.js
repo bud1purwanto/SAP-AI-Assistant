@@ -54,7 +54,7 @@ export const TRANSLATIONS = {
 
     // Suggestions on Empty Screen
     'suggestions.heroTitle': 'SAP AI Co-Pilot',
-    'suggestions.heroSubtitle': 'Ask about SAP ECC 6.0 & S/4HANA workflows, transactions, live tables, ABAP development, or internal SOPs.',
+    'suggestions.heroSubtitle': 'Ask about SAP ECC 6.0 workflows, transactions, live tables, ABAP development, or internal SOPs.',
     'suggestions.stockCheck.title': 'Check Stock Availability',
     'suggestions.stockCheck.subtitle': 'View current stock levels in our plants',
     'suggestions.stockCheck.query': 'What is the current stock availability in our plant?',
@@ -104,6 +104,7 @@ export const TRANSLATIONS = {
     'chat.closeDetails': 'Close details',
     'chat.sourceLabel': 'Source:',
     'chat.clickToDownload': 'click to download',
+    'chat.downloadFailed': 'Failed to download file.',
     'chat.scrollTableHint': 'Scroll table horizontally to view more columns',
     'chat.codeTerminal': 'ABAP / Source Code',
     'chat.sourceReadTable': 'SAP Data Table Query',
@@ -182,12 +183,15 @@ export const TRANSLATIONS = {
     'security.submit': 'Update Password',
     'security.processing': 'Updating…',
     'security.success': 'Password updated successfully!',
+    'security.failed': 'Failed to update password.',
     'security.mismatch': 'Password confirmation does not match.',
-    'security.tooShort': 'New password must be at least 8 characters.',
+    'security.tooShort': 'New password must be at least 4 characters.',
 
     // Login Modal
     'login.title': 'SAP AI Co-Pilot Login',
     'login.subtitle': 'Sign in to access Enterprise SAP services & knowledge base without prompt limits.',
+    'login.guestLimitReached': 'Daily free prompt limit for guest has been reached. Please sign in to continue.',
+    'login.sessionExpired': 'Your session has expired. Please sign in again.',
     'login.usernameLabel': 'SAP Username',
     'login.usernamePlaceholder': 'Enter SAP username',
     'login.passwordLabel': 'Password',
@@ -244,12 +248,6 @@ export const TRANSLATIONS = {
     'admin.roleAbaper': 'ABAP Developer',
     'admin.roleGuest': 'Guest',
 
-    // Confirm Dialogs
-    'confirm.defaultTitle': 'Confirmation',
-    'confirm.defaultMessage': 'Are you sure you want to proceed with this action?',
-    'confirm.yes': 'Confirm',
-    'confirm.cancel': 'Cancel',
-
     // Common
     'common.cancel': 'Cancel',
     'common.save': 'Save',
@@ -302,7 +300,7 @@ export const TRANSLATIONS = {
 
     // Suggestions on Empty Screen
     'suggestions.heroTitle': 'Asisten SAP AI Co-Pilot',
-    'suggestions.heroSubtitle': 'Tanyakan seputar alur proses SAP ECC 6.0 & S/4HANA, transaksi, data tabel live, pengembangan ABAP, atau SOP internal.',
+    'suggestions.heroSubtitle': 'Tanyakan seputar alur proses SAP ECC 6.0, transaksi, data tabel live, pengembangan ABAP, atau SOP internal.',
     'suggestions.stockCheck.title': 'Cek Ketersediaan Stok',
     'suggestions.stockCheck.subtitle': 'Lihat stok barang di plant saat ini',
     'suggestions.stockCheck.query': 'Berapa ketersediaan stok material di plant kita saat ini?',
@@ -352,6 +350,7 @@ export const TRANSLATIONS = {
     'chat.closeDetails': 'Tutup detail',
     'chat.sourceLabel': 'Sumber:',
     'chat.clickToDownload': 'klik untuk unduh',
+    'chat.downloadFailed': 'Berkas gagal diunduh.',
     'chat.scrollTableHint': 'Geser tabel ke samping untuk melihat kolom lainnya',
     'chat.codeTerminal': 'ABAP / Source Code',
     'chat.sourceReadTable': 'Pembacaan tabel data SAP',
@@ -430,12 +429,15 @@ export const TRANSLATIONS = {
     'security.submit': 'Perbarui Password',
     'security.processing': 'Memproses…',
     'security.success': 'Password berhasil diperbarui!',
+    'security.failed': 'Gagal mengubah password.',
     'security.mismatch': 'Konfirmasi password tidak cocok.',
-    'security.tooShort': 'Password baru minimal 8 karakter.',
+    'security.tooShort': 'Password baru minimal 4 karakter.',
 
     // Login Modal
     'login.title': 'Masuk SAP AI Co-Pilot',
     'login.subtitle': 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen tanpa batas prompt.',
+    'login.guestLimitReached': 'Batas prompt gratis per hari untuk tamu sudah tercapai. Silakan login untuk melanjutkan.',
+    'login.sessionExpired': 'Sesi Anda telah berakhir. Silakan login kembali.',
     'login.usernameLabel': 'Username SAP',
     'login.usernamePlaceholder': 'Masukkan username SAP',
     'login.passwordLabel': 'Password',
@@ -491,12 +493,6 @@ export const TRANSLATIONS = {
     'admin.roleUser': 'User',
     'admin.roleAbaper': 'Developer ABAP',
     'admin.roleGuest': 'Tamu (Guest)',
-
-    // Confirm Dialogs
-    'confirm.defaultTitle': 'Konfirmasi',
-    'confirm.defaultMessage': 'Apakah Anda yakin ingin melanjutkan tindakan ini?',
-    'confirm.yes': 'Ya, Lanjutkan',
-    'confirm.cancel': 'Batal',
 
     // Common
     'common.cancel': 'Batal',

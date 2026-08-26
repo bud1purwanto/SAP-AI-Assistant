@@ -69,7 +69,7 @@ const hidePendingArtifact = (text) => {
   return marker === -1 ? text : text.slice(0, marker).trimEnd();
 };
 
-const aliasOf = (srv) => srv.aliases?.[0] || srv.name.toLowerCase().replace(/\s+/g, '-');
+const aliasOf = (srv) => srv?.alias || srv?.aliases?.[0] || srv?.name?.toLowerCase()?.replace(/\s+/g, '-') || srv?.sid?.toLowerCase() || 'default';
 const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
@@ -174,11 +174,11 @@ const ChatLayout = () => {
       setSessionLoadingMap({});
       setSessionProgressMap({});
       setSessionErrorMap({});
-      setCustomLoginMsg('Sesi Anda telah berakhir. Silakan login kembali.');
+      setCustomLoginMsg(t('login.sessionExpired'));
       setIsLoginModalOpen(true);
     });
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [t]);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -440,7 +440,7 @@ const ChatLayout = () => {
     setDeleteConfirmState({
       isOpen: true,
       sessionId: sid,
-      title: session.title || 'Percakapan SAP',
+      title: session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'),
       isLoading: false,
     });
   };
@@ -505,7 +505,7 @@ const ChatLayout = () => {
   const startRenameSession = (e, session) => {
     e.stopPropagation();
     setEditingSessionId(session.session_id || session.id);
-    setEditingTitle(session.title || 'Percakapan SAP');
+    setEditingTitle(session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'));
   };
 
   const cancelRenameSession = (e) => {
@@ -671,7 +671,7 @@ const ChatLayout = () => {
       if (err.name === 'AbortError') {
         setMessagesMap((prev) => ({
           ...prev,
-          [targetKey]: [...(prev[targetKey] || outgoing), { role: 'assistant', content: '_Permintaan dibatalkan._' }],
+          [targetKey]: [...(prev[targetKey] || outgoing), { role: 'assistant', content: language === 'en' ? '_Request cancelled._' : '_Permintaan dibatalkan._' }],
         }));
         return;
       }
@@ -681,7 +681,7 @@ const ChatLayout = () => {
       if (err instanceof ApiError && err.status === 429) {
         setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
         if (isGuest) {
-          setCustomLoginMsg(err.message);
+          setCustomLoginMsg(t('login.guestLimitReached'));
           setIsLoginModalOpen(true);
         } else {
           api.quotaSaya().then(setKuota).catch(() => {});
@@ -726,7 +726,7 @@ const ChatLayout = () => {
       } catch (err) {
         setSessionErrorMap((prev) => ({
           ...prev,
-          [activeSessionKey]: { message: `Gagal menyiapkan pembuatan ulang: ${err.message}` },
+          [activeSessionKey]: { message: language === 'en' ? `Failed to prepare regenerate: ${err.message}` : `Gagal menyiapkan pembuatan ulang: ${err.message}` },
         }));
         return;
       }
@@ -756,7 +756,7 @@ const ChatLayout = () => {
       } catch (err) {
         setSessionErrorMap((prev) => ({
           ...prev,
-          [activeSessionKey]: { message: `Gagal menyimpan perubahan: ${err.message}` },
+          [activeSessionKey]: { message: language === 'en' ? `Failed to save changes: ${err.message}` : `Gagal menyimpan perubahan: ${err.message}` },
         }));
         return;
       }
@@ -794,8 +794,13 @@ const ChatLayout = () => {
   };
 
   // Peringatan bila target yang dipilih adalah sistem SAP produksi.
-  const selectedServer = sapSubServers.find((s) => `sap:${aliasOf(s)}` === activeServer);
-  const isProductionTarget = Boolean(selectedServer?.production_warning);
+  const selectedServer = sapSubServers.find((s) => `sap:${aliasOf(s)}` === activeServer) || sapSubServers[0];
+  const isProductionTarget = Boolean(
+    selectedServer?.production_warning ||
+    selectedServer?.name?.toLowerCase()?.includes('prod') ||
+    selectedServer?.sid?.toLowerCase()?.includes('prt') ||
+    selectedServer?.sid?.toLowerCase()?.includes('trp')
+  );
 
   const ThemeIcon = THEME_ICON[theme];
 
@@ -819,7 +824,7 @@ const ChatLayout = () => {
           ${isSidebarOpen
             ? 'translate-x-0 shadow-2xl'
             : `-translate-x-full ${compactLandscape ? '' : 'md:translate-x-0'}`}`}
-        aria-label="Navigasi percakapan"
+        aria-label={language === 'en' ? 'Conversation navigation' : 'Navigasi percakapan'}
       >
         <div className="p-3.5 sm:p-4 border-b border-line flex items-center justify-between">
           <div className="flex items-center gap-2.5 sm:gap-3">

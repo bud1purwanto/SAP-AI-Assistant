@@ -141,11 +141,11 @@ export const QuotaChip = ({ quota }) => {
       </span>
       <div
         role="progressbar"
-        aria-label="Sisa kuota token hari ini"
+        aria-label={language === 'en' ? "Today's remaining token quota" : "Sisa kuota token hari ini"}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={sisaPersen}
-        aria-valuetext={`${sisaPersen} percent (${angka(sisa, language)} tokens remaining)`}
+        aria-valuetext={language === 'en' ? `${sisaPersen} percent (${angka(sisa, language)} tokens remaining)` : `${sisaPersen} persen (sisa ${angka(sisa, language)} token)`}
         className="h-1.5 w-9 overflow-hidden rounded-full bg-line/80 sm:w-16"
       >
         <div

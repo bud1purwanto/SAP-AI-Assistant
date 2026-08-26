@@ -547,7 +547,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <ThumbsDown className="w-4 h-4 shrink-0" />
-            <span>Penilaian Jawaban</span>
+            <span>{t('admin.tabFeedback')}</span>
           </button>
 
           <button
@@ -559,7 +559,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             }`}
           >
             <History className="w-4 h-4 shrink-0" />
-            <span>Audit Log &amp; Chats</span>
+            <span>{t('admin.tabAudit')}</span>
           </button>
         </div>
 
@@ -572,17 +572,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Ringkasan &amp; Metrik Sistem
+                      {language === 'en' ? 'System Overview & Metrics' : 'Ringkasan & Metrik Sistem'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Statistik aktivitas percakapan, kepuasan pengguna, dan status live server MCP.
+                      {language === 'en' ? 'Chat activity statistics, user satisfaction, and live MCP server status.' : 'Statistik aktivitas percakapan, kepuasan pengguna, dan status live server MCP.'}
                     </p>
                   </div>
                   <button 
                     onClick={fetchStats}
                     className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer w-fit"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> Refresh Status
+                    <RefreshCw className="w-3.5 h-3.5" /> {language === 'en' ? 'Refresh Status' : 'Refresh Status'}
                   </button>
                 </div>
 
@@ -590,35 +590,35 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                   <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200/70 dark:border-indigo-900/50">
                     <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total User</span>
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Users' : 'Total User'}</span>
                       <Users className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
                     <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_users ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">Akun aktif terdaftar di PostgreSQL</p>
+                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Active accounts in PostgreSQL' : 'Akun aktif terdaftar di PostgreSQL'}</p>
                   </div>
 
                   <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/40 dark:to-slate-900 border border-purple-200/70 dark:border-purple-900/50">
                     <div className="flex items-center justify-between text-purple-600 dark:text-purple-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total Sesi Chat</span>
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Chat Sessions' : 'Total Sesi Chat'}</span>
                       <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
                     <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_sessions ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">Percakapan tersimpan di sistem</p>
+                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Conversations stored in system' : 'Percakapan tersimpan di sistem'}</p>
                   </div>
 
                   <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-slate-900 border border-emerald-200/70 dark:border-emerald-900/50">
                     <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Total Pesan</span>
+                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Messages' : 'Total Pesan'}</span>
                       <Database className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
                     <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                       {stats?.total_messages ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">Query user &amp; jawaban AI</p>
+                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'User queries & AI answers' : 'Query user & jawaban AI'}</p>
                   </div>
                 </div>
 
@@ -626,10 +626,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                     <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted flex items-center gap-2 font-display">
-                      <ThumbsUp className="w-4 h-4 text-teal-500" /> Metrik Kepuasan Respon AI
+                      <ThumbsUp className="w-4 h-4 text-teal-500" /> {language === 'en' ? 'AI Response Satisfaction Metrics' : 'Metrik Kepuasan Respon AI'}
                     </h4>
                     <span className="text-xs text-content-muted">
-                      Total {stats?.total_feedback ?? 0} Rating Pengguna
+                      {language === 'en' ? `Total ${stats?.total_feedback ?? 0} User Ratings` : `Total ${stats?.total_feedback ?? 0} Rating Pengguna`}
                     </span>
                   </div>
 
@@ -637,37 +637,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     {/* Satisfaction Rate */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-100/50 dark:from-teal-950/40 dark:to-slate-900 border border-teal-200/70 dark:border-teal-900/50 flex flex-col justify-between">
                       <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Tingkat Kepuasan</span>
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Satisfaction Rate' : 'Tingkat Kepuasan'}</span>
                         <Star className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 fill-amber-500" />
                       </div>
                       <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
                         {stats?.satisfaction_rate !== null && stats?.satisfaction_rate !== undefined ? `${stats.satisfaction_rate}%` : '100%'}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">Rasio respon yang dinilai membantu</p>
+                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Ratio of responses rated helpful' : 'Rasio respon yang dinilai membantu'}</p>
                     </div>
 
                     {/* Likes count */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
                       <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Membantu (Like)</span>
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Helpful (Like)' : 'Membantu (Like)'}</span>
                         <ThumbsUp className="w-4 h-4" />
                       </div>
                       <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-teal-600 dark:text-teal-400">
                         {stats?.likes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">Jawaban yang memuaskan pengguna</p>
+                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Responses satisfying user requirements' : 'Jawaban yang memuaskan pengguna'}</p>
                     </div>
 
                     {/* Dislikes count */}
                     <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
                       <div className="flex items-center justify-between text-rose-600 dark:text-rose-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">Kurang Sesuai (Dislike)</span>
+                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Unhelpful (Dislike)' : 'Kurang Sesuai (Dislike)'}</span>
                         <ThumbsDown className="w-4 h-4" />
                       </div>
                       <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-rose-600 dark:text-rose-400">
                         {stats?.dislikes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">Jawaban yang perlu perbaikan/akurasi</p>
+                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Responses needing accuracy improvement' : 'Jawaban yang perlu perbaikan/akurasi'}</p>
                     </div>
                   </div>
                 </div>
@@ -675,7 +675,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MCP Live Status Card */}
                 <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
                   <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
-                    <Server className="w-4 h-4 text-emerald-500" /> Status Live MCP Servers
+                    <Server className="w-4 h-4 text-emerald-500" /> {language === 'en' ? 'Live MCP Servers Status' : 'Status Live MCP Servers'}
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     {/* MCP SAP Card */}
@@ -693,7 +693,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         )}
                       </div>
                       <p className="text-[11px] sm:text-xs text-content-muted mt-2">
-                        {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} Tools tersedia • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
+                        {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} {language === 'en' ? 'Tools available' : 'Tools tersedia'} • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
                       </p>
                     </div>
 
@@ -712,7 +712,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         )}
                       </div>
                       <p className="text-[11px] sm:text-xs text-content-muted mt-2">
-                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} Vector Search &amp; Document Tools
+                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} {language === 'en' ? 'Vector Search & Document Tools' : 'Vector Search & Document Tools'}
                       </p>
                     </div>
 
@@ -731,7 +731,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         )}
                       </div>
                       <p className="text-[11px] sm:text-xs text-content-muted mt-2">
-                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} Email &amp; Dispatcher Tools
+                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} {language === 'en' ? 'Email & Dispatcher Tools' : 'Email & Dispatcher Tools'}
                       </p>
                     </div>
                   </div>
@@ -740,7 +740,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* Top Active Users */}
                 <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface-raised">
                   <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
-                    <UserCheck className="w-4 h-4 text-indigo-500" /> User Paling Aktif
+                    <UserCheck className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Most Active Users' : 'User Paling Aktif'}
                   </h4>
                   <div className="divide-y divide-line">
                     {stats?.top_users?.length > 0 ? (
@@ -753,12 +753,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             <span className="font-medium text-xs sm:text-sm text-content truncate">{u.username}</span>
                           </div>
                           <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 bg-surface-sunken text-content-muted rounded-md shrink-0">
-                            {u.sessions} Sesi Chat
+                            {u.sessions} {language === 'en' ? 'Chat Sessions' : 'Sesi Chat'}
                           </span>
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-content-muted py-3">Belum ada data aktivitas sesi.</p>
+                      <p className="text-xs text-content-muted py-3">{language === 'en' ? 'No session activity recorded yet.' : 'Belum ada data aktivitas sesi.'}</p>
                     )}
                   </div>
                 </div>
@@ -771,10 +771,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Manajemen Pengguna ({usersList.length})
+                      {language === 'en' ? `User Management (${usersList.length})` : `Manajemen Pengguna (${usersList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Tambah akun baru, kelola role superadmin/user, reset password, atau atur persona pribadi.
+                      {language === 'en' ? 'Add new accounts, manage superadmin/user roles, reset passwords, or set individual personas.' : 'Tambah akun baru, kelola role superadmin/user, reset password, atau atur persona pribadi.'}
                     </p>
                   </div>
 
@@ -783,7 +783,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                       <input 
                         type="text"
-                        placeholder="Cari user..."
+                        placeholder={language === 'en' ? 'Search user...' : 'Cari user...'}
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
                         className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-56 text-content"
@@ -793,7 +793,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onClick={() => setIsAddUserOpen(true)}
                       className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
                     >
-                      <Plus className="w-4 h-4" /> User Baru
+                      <Plus className="w-4 h-4" /> {language === 'en' ? 'New User' : 'User Baru'}
                     </button>
                   </div>
                 </div>
@@ -805,10 +805,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <thead className="bg-surface-sunken border-b border-line text-content-muted text-[11px] sm:text-xs uppercase tracking-wider font-semibold whitespace-nowrap">
                         <tr>
                           <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Username</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Nama Lengkap</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
                           <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Role</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Persona Pribadi</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">Aksi</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
+                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line text-content-secondary">
@@ -822,7 +822,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   </div>
                                   <span>{u.username}</span>
                                   {u.username === user.username && (
-                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.2 rounded font-normal">Anda</span>
+                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.2 rounded font-normal">{language === 'en' ? 'You' : 'Anda'}</span>
                                   )}
                                 </div>
                               </td>
@@ -839,7 +839,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 </span>
                               </td>
                               <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-xs text-content-muted max-w-xs truncate">
-                                {u.assistant_persona || <span className="italic text-content-subtle">Mengikuti persona organisasi</span>}
+                                {u.assistant_persona || <span className="italic text-content-subtle">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
                               </td>
                               <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right space-x-1 whitespace-nowrap">
                                 <button
@@ -848,7 +848,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                     setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
                                   }}
                                   className="p-1.5 text-content-muted hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
-                                  title="Edit user"
+                                  title={language === 'en' ? 'Edit user' : 'Edit user'}
                                   aria-label={`Edit user ${u.username}`}
                                 >
                                   <Edit3 className="w-4 h-4" />
@@ -861,7 +861,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                       ? 'text-content-subtle cursor-not-allowed opacity-40' 
                                       : 'text-content-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-hover'
                                   }`}
-                                  title="Hapus user"
+                                  title={language === 'en' ? 'Delete user' : 'Hapus user'}
                                   aria-label={`Hapus user ${u.username}`}
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -872,7 +872,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         ) : (
                           <tr>
                             <td colSpan="5" className="text-center py-6 text-content-subtle text-xs">
-                              Tidak ada data user yang sesuai.
+                              {language === 'en' ? 'No matching users found.' : 'Tidak ada data user yang sesuai.'}
                             </td>
                           </tr>
                         )}
@@ -887,7 +887,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Plus className="w-4 h-4 text-indigo-500" /> Tambah User Baru
+                          <Plus className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Add New User' : 'Tambah User Baru'}
                         </h4>
                         <button onClick={() => setIsAddUserOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
@@ -903,18 +903,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={newUserForm.username}
                             onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="misal: TRST-USER1"
+                            placeholder="e.g. TRST-USER1"
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Nama Lengkap</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
                           <input
                             type="text"
                             value={newUserForm.full_name}
                             onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
-                            placeholder="misal: Andi Wijaya"
+                            placeholder="e.g. Andi Wijaya"
                           />
                         </div>
 
@@ -926,8 +926,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={newUserForm.password}
                             onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Minimal 8 karakter"
-                            minLength={8}
+                            placeholder={language === 'en' ? 'Minimum 4 characters' : 'Minimal 4 karakter'}
+                            minLength={4}
                           />
                         </div>
 
@@ -938,21 +938,21 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
-                            <option value="abaper">ABAPer (boleh ubah program)</option>
-                            <option value="functional">Functional (baca saja)</option>
-                            <option value="user">User Biasa</option>
+                            <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
+                            <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
+                            <option value="user">{language === 'en' ? 'Standard User' : 'User Biasa'}</option>
                             <option value="superadmin">Super Admin</option>
                           </select>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Persona Pribadi (Opsional)</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Personal Persona (Optional)' : 'Persona Pribadi (Opsional)'}</label>
                           <textarea 
                             rows="2"
                             value={newUserForm.assistant_persona}
                             onChange={(e) => setNewUserForm({ ...newUserForm, assistant_persona: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                            placeholder="Penyesuaian di atas persona organisasi, khusus user ini…"
+                            placeholder={language === 'en' ? 'Customization on top of organization persona for this user…' : 'Penyesuaian di atas persona organisasi, khusus user ini…'}
                           />
                         </div>
 
@@ -962,13 +962,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onClick={() => setIsAddUserOpen(false)}
                             className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
-                            Batal
+                            {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
                           >
-                            Buat Akun
+                            {language === 'en' ? 'Create Account' : 'Buat Akun'}
                           </button>
                         </div>
                       </form>
@@ -982,7 +982,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Edit3 className="w-4 h-4 text-indigo-500" /> Edit User '{editingUser.username}'
+                          <Edit3 className="w-4 h-4 text-indigo-500" /> {language === 'en' ? `Edit User '${editingUser.username}'` : `Edit User '${editingUser.username}'`}
                         </h4>
                         <button onClick={() => setEditingUser(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
@@ -991,13 +991,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                       <form onSubmit={handleUpdateUser} className="space-y-3 text-xs sm:text-sm">
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Nama Lengkap</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
                           <input
                             type="text"
                             value={editUserForm.full_name}
                             onChange={(e) => setEditUserForm({ ...editUserForm, full_name: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
-                            placeholder="misal: Andi Wijaya"
+                            placeholder="e.g. Andi Wijaya"
                           />
                         </div>
 
@@ -1008,35 +1008,35 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                           >
-                            <option value="abaper">ABAPer (boleh ubah program)</option>
-                            <option value="functional">Functional (baca saja)</option>
-                            <option value="user">User Biasa</option>
+                            <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
+                            <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
+                            <option value="user">{language === 'en' ? 'Standard User' : 'User Biasa'}</option>
                             <option value="superadmin">Super Admin</option>
                           </select>
                         </div>
 
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">
-                            Reset Password (kosongkan jika tidak ingin diubah)
+                            {language === 'en' ? 'Reset Password (leave empty to keep unchanged)' : 'Reset Password (kosongkan jika tidak ingin diubah)'}
                           </label>
                           <input 
                             type="password"
                             value={editUserForm.password}
                             onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Password baru (minimal 8 karakter)…"
-                            minLength={8}
+                            placeholder={language === 'en' ? 'New password (minimum 4 characters)…' : 'Password baru (minimal 4 karakter)…'}
+                            minLength={4}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Persona Pribadi</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</label>
                           <textarea 
                             rows="3"
                             value={editUserForm.assistant_persona}
                             onChange={(e) => setEditUserForm({ ...editUserForm, assistant_persona: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                            placeholder="Kosongkan agar user ini sepenuhnya mengikuti persona organisasi…"
+                            placeholder={language === 'en' ? 'Leave empty so this user fully follows organization persona…' : 'Kosongkan agar user ini sepenuhnya mengikuti persona organisasi…'}
                           />
                         </div>
 
@@ -1046,13 +1046,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onClick={() => setEditingUser(null)}
                             className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
-                            Batal
+                            {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
                           >
-                            Simpan Perubahan
+                            {language === 'en' ? 'Save Changes' : 'Simpan Perubahan'}
                           </button>
                         </div>
                       </form>
@@ -1068,10 +1068,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Persona Organisasi
+                      {language === 'en' ? 'Organization Global Persona' : 'Persona Organisasi'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Aturan dasar dan gaya respons yang berlaku sebagai pedoman AI ke <strong>seluruh pengguna</strong>.
+                      {language === 'en' ? 'Core instructions and guidelines applicable to AI assistant for all users.' : 'Aturan dasar dan gaya respons yang berlaku sebagai pedoman AI ke seluruh pengguna.'}
                     </p>
                   </div>
 
@@ -1081,26 +1081,27 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-60 cursor-pointer shrink-0"
                   >
                     <Save className="w-4 h-4" />
-                    {personaSaving ? 'Menyimpan…' : 'Simpan Persona Organisasi'}
+                    {personaSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Organization Persona' : 'Simpan Persona Organisasi')}
                   </button>
                 </div>
 
                 <div className="bg-surface-sunken border border-line rounded-2xl p-4 sm:p-5 text-xs text-content-secondary leading-relaxed space-y-2">
-                  <p className="font-semibold text-content text-sm">Cara persona diterapkan</p>
+                  <p className="font-semibold text-content text-sm">{language === 'en' ? 'How Persona is Applied' : 'Cara persona diterapkan'}</p>
                   <p>
-                    Persona organisasi menjadi <strong>lapisan dasar</strong>. Di atasnya, persona pribadi
-                    yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.
+                    {language === 'en' 
+                      ? 'The organization persona serves as the foundational layer. On top of it, personal preferences configured by individual users in Settings are applied.'
+                      : 'Persona organisasi menjadi lapisan dasar. Di atasnya, persona pribadi yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.'}
                   </p>
                   <p>
-                    Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang
-                    jawaban — preferensi pribadi yang menang. Namun untuk aturan <strong>keakuratan data,
-                    keamanan, dan kepatuhan</strong>, persona organisasi selalu diutamakan.
+                    {language === 'en'
+                      ? 'When both contradict on writing style or length, personal preference takes precedence. However, for data accuracy, security, and compliance, the organization persona always prevails.'
+                      : 'Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang jawaban — preferensi pribadi yang menang. Namun untuk aturan keakuratan data, keamanan, dan kepatuhan, persona organisasi selalu diutamakan.'}
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <label htmlFor="global-persona" className="block text-xs font-semibold text-content-muted">
-                    Instruksi persona organisasi (System Prompt Global)
+                    {language === 'en' ? 'Organization Persona Instructions (Global System Prompt)' : 'Instruksi persona organisasi (System Prompt Global)'}
                   </label>
                   <textarea
                     id="global-persona"
@@ -1108,10 +1109,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     value={globalPersona}
                     onChange={(e) => setGlobalPersona(e.target.value)}
                     className="w-full px-4 py-3 text-xs font-mono bg-surface-sunken border border-line rounded-2xl outline-none resize-y leading-relaxed text-content focus:ring-2 focus:ring-indigo-500"
-                    placeholder={'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
+                    placeholder={language === 'en' 
+                      ? 'Example:\n- Always specify source SAP table for all numbers displayed.\n- Never reveal employee data other than the requester.\n- Format dates and currencies clearly.'
+                      : 'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
                   />
                   <p className="text-[11px] text-content-subtle">
-                    Kosongkan untuk memakai perilaku bawaan asisten.
+                    {language === 'en' ? 'Leave empty to use default assistant behaviors.' : 'Kosongkan untuk memakai perilaku bawaan asisten.'}
                   </p>
                 </div>
               </div>
@@ -1123,10 +1126,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Katalog Skill Asisten ({skillsList.length})
+                      {language === 'en' ? `Assistant Skill Catalog (${skillsList.length})` : `Katalog Skill Asisten (${skillsList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Kelola modul keahlian dan SOP khusus (misal: SAP ABAP, SAP PP, dsb.) yang wajib dibaca &amp; dipatuhi AI saat melayani support.
+                      {language === 'en' ? 'Manage domain skill modules and SOPs (e.g. SAP ABAP, SAP PP, etc.) that the AI references during assistance.' : 'Kelola modul keahlian dan SOP khusus (misal: SAP ABAP, SAP PP, dsb.) yang wajib dibaca & dipatuhi AI saat melayani support.'}
                     </p>
                   </div>
 
@@ -1135,7 +1138,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                       <input 
                         type="text"
-                        placeholder="Cari skill..."
+                        placeholder={language === 'en' ? 'Search skill...' : 'Cari skill...'}
                         value={skillSearch}
                         onChange={(e) => setSkillSearch(e.target.value)}
                         className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48 text-content"
@@ -1145,7 +1148,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onClick={() => setIsAddSkillOpen(true)}
                       className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
                     >
-                      <Plus className="w-4 h-4" /> Skill Baru
+                      <Plus className="w-4 h-4" /> {language === 'en' ? 'New Skill' : 'Skill Baru'}
                     </button>
                   </div>
                 </div>
@@ -1166,7 +1169,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   {sk.name}
                                 </h4>
                                 <p className="text-[11px] text-content-muted line-clamp-1">
-                                  {sk.description || 'Tidak ada deskripsi singkat'}
+                                  {sk.description || (language === 'en' ? 'No brief description' : 'Tidak ada deskripsi singkat')}
                                 </p>
                               </div>
                             </div>
@@ -1178,10 +1181,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
                                   : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-line'
                               }`}
-                              title={sk.enabled ? 'Klik untuk nonaktifkan skill ini' : 'Klik untuk mengaktifkan skill ini'}
+                              title={sk.enabled ? (language === 'en' ? 'Click to disable this skill' : 'Klik untuk nonaktifkan skill ini') : (language === 'en' ? 'Click to enable this skill' : 'Klik untuk mengaktifkan skill ini')}
                             >
                               <span className={`w-1.5 h-1.5 rounded-full ${sk.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                              {sk.enabled ? 'Aktif' : 'Nonaktif'}
+                              {sk.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}
                             </button>
                           </div>
 
@@ -1208,12 +1211,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               }}
                               className="px-3 py-1.5 bg-surface-raised hover:bg-surface-hover border border-line text-content rounded-lg font-medium flex items-center gap-1 cursor-pointer transition-colors"
                             >
-                              <Edit3 className="w-3.5 h-3.5 text-indigo-500" /> Edit Skill
+                              <Edit3 className="w-3.5 h-3.5 text-indigo-500" /> {language === 'en' ? 'Edit Skill' : 'Edit Skill'}
                             </button>
                             <button
                               onClick={() => handleDeleteSkill(sk.id, sk.name)}
                               className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 rounded-lg cursor-pointer transition-colors"
-                              title="Hapus Skill"
+                              title={language === 'en' ? 'Delete Skill' : 'Hapus Skill'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1224,8 +1227,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   ) : (
                     <div className="col-span-full py-12 text-center text-content-muted bg-surface rounded-2xl border border-line">
                       <BookOpen className="w-8 h-8 mx-auto mb-2 text-content-subtle opacity-60" />
-                      <p className="text-sm font-medium">Belum ada skill yang ditemukan.</p>
-                      <p className="text-xs mt-1 text-content-subtle">Klik tombol "+ Skill Baru" untuk menambahkan modul panduan keahlian.</p>
+                      <p className="text-sm font-medium">{language === 'en' ? 'No skills found.' : 'Belum ada skill yang ditemukan.'}</p>
+                      <p className="text-xs mt-1 text-content-subtle">{language === 'en' ? 'Click "+ New Skill" to add domain knowledge modules.' : 'Klik tombol "+ Skill Baru" untuk menambahkan modul panduan keahlian.'}</p>
                     </div>
                   )}
                 </div>
@@ -1236,7 +1239,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Plus className="w-4 h-4 text-indigo-500" /> Tambah Skill Baru
+                          <Plus className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Add New Skill' : 'Tambah Skill Baru'}
                         </h4>
                         <button onClick={() => setIsAddSkillOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
@@ -1246,14 +1249,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <form onSubmit={handleCreateSkill} className="space-y-3 text-xs sm:text-sm">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-2">
-                            <label className="block text-xs font-semibold text-content-muted mb-1">Nama Skill *</label>
+                            <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Skill Name *' : 'Nama Skill *'}</label>
                             <input 
                               type="text"
                               required
                               value={newSkillForm.name}
                               onChange={(e) => setNewSkillForm({ ...newSkillForm, name: e.target.value })}
                               className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
-                              placeholder="misal: SAP ABAP, SAP PP, SAP MM"
+                              placeholder="e.g. SAP ABAP, SAP PP, SAP MM"
                             />
                           </div>
 
@@ -1266,25 +1269,25 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 onChange={(e) => setNewSkillForm({ ...newSkillForm, enabled: e.target.checked })}
                                 className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                               />
-                              <span className="text-xs font-medium text-content">{newSkillForm.enabled ? 'Aktif' : 'Nonaktif'}</span>
+                              <span className="text-xs font-medium text-content">{newSkillForm.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}</span>
                             </label>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Deskripsi Singkat</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Brief Description' : 'Deskripsi Singkat'}</label>
                           <input
                             type="text"
                             value={newSkillForm.description}
                             onChange={(e) => setNewSkillForm({ ...newSkillForm, description: e.target.value })}
                             className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none text-content"
-                            placeholder="Ringkasan ruang lingkup skill ini (misal: Standar penulisan program ABAP dan best practice)"
+                            placeholder={language === 'en' ? 'Scope overview of this skill module' : 'Ringkasan ruang lingkup skill ini (misal: Standar penulisan program ABAP dan best practice)'}
                           />
                         </div>
 
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">
-                            Panduan / SOP Keahlian (Format Markdown) *
+                            {language === 'en' ? 'Skill SOP / Guidelines (Markdown Format) *' : 'Panduan / SOP Keahlian (Format Markdown) *'}
                           </label>
                           <textarea 
                             rows="10"
@@ -1292,10 +1295,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             value={newSkillForm.content}
                             onChange={(e) => setNewSkillForm({ ...newSkillForm, content: e.target.value })}
                             className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
-                            placeholder={'# Panduan Keahlian: SAP ...\n\n## 1. Standar & Aturan\n- Selalu gunakan tabel X...\n- Cek field Y...\n\n## 2. Prosedur Support\n- Pastikan langkah investigasi...'}
+                            placeholder={language === 'en' 
+                              ? '# Skill Guide: SAP ...\n\n## 1. Standards & Rules\n- Always use table X...\n- Check field Y...\n\n## 2. Support Procedure\n- Verify steps...'
+                              : '# Panduan Keahlian: SAP ...\n\n## 1. Standar & Aturan\n- Selalu gunakan tabel X...\n- Cek field Y...\n\n## 2. Prosedur Support\n- Pastikan langkah investigasi...'}
                           />
                           <p className="text-[11px] text-content-subtle mt-1">
-                            Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.
+                            {language === 'en' ? 'Specify operational standards, naming conventions, essential table references, or best practices for the AI.' : 'Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.'}
                           </p>
                         </div>
 
@@ -1305,14 +1310,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onClick={() => setIsAddSkillOpen(false)}
                             className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
-                            Batal
+                            {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             disabled={skillSaving}
                             className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
                           >
-                            {skillSaving ? 'Menyimpan…' : 'Simpan Skill'}
+                            {skillSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Skill' : 'Simpan Skill')}
                           </button>
                         </div>
                       </form>
@@ -1326,7 +1331,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Edit3 className="w-4 h-4 text-indigo-500" /> Edit Skill '{editingSkill.name}'
+                          <Edit3 className="w-4 h-4 text-indigo-500" /> {language === 'en' ? `Edit Skill '${editingSkill.name}'` : `Edit Skill '${editingSkill.name}'`}
                         </h4>
                         <button onClick={() => setEditingSkill(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
                           <X className="w-4 h-4" />
@@ -1336,7 +1341,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       <form onSubmit={handleUpdateSkill} className="space-y-3 text-xs sm:text-sm">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-2">
-                            <label className="block text-xs font-semibold text-content-muted mb-1">Nama Skill *</label>
+                            <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Skill Name *' : 'Nama Skill *'}</label>
                             <input 
                               type="text"
                               required
@@ -1355,13 +1360,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 onChange={(e) => setEditSkillForm({ ...editSkillForm, enabled: e.target.checked })}
                                 className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                               />
-                              <span className="text-xs font-medium text-content">{editSkillForm.enabled ? 'Aktif' : 'Nonaktif'}</span>
+                              <span className="text-xs font-medium text-content">{editSkillForm.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}</span>
                             </label>
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Deskripsi Singkat</label>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Brief Description' : 'Deskripsi Singkat'}</label>
                           <input
                             type="text"
                             value={editSkillForm.description}
@@ -1372,7 +1377,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">
-                            Panduan / SOP Keahlian (Format Markdown) *
+                            {language === 'en' ? 'Skill SOP / Guidelines (Markdown Format) *' : 'Panduan / SOP Keahlian (Format Markdown) *'}
                           </label>
                           <textarea 
                             rows="10"
@@ -1382,7 +1387,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
                           />
                           <p className="text-[11px] text-content-subtle mt-1">
-                            Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.
+                            {language === 'en' ? 'Specify operational standards, naming conventions, essential table references, or best practices for the AI.' : 'Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.'}
                           </p>
                         </div>
 
@@ -1392,14 +1397,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onClick={() => setEditingSkill(null)}
                             className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
                           >
-                            Batal
+                            {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             disabled={skillSaving}
                             className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
                           >
-                            {skillSaving ? 'Menyimpan…' : 'Simpan Perubahan'}
+                            {skillSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Changes' : 'Simpan Perubahan')}
                           </button>
                         </div>
                       </form>
@@ -1415,10 +1420,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Konfigurasi AI Provider &amp; Server MCP
+                      {language === 'en' ? 'AI Provider & MCP Server Configuration' : 'Konfigurasi AI Provider & Server MCP'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Edit Model AI utama, Model AI fallback, API Key OpenRouter, dan konfigurasi MCP di database.
+                      {language === 'en' ? 'Edit primary AI model, fallback model, API keys, and MCP server endpoints in database.' : 'Edit Model AI utama, Model AI fallback, API Key OpenRouter, dan konfigurasi MCP di database.'}
                     </p>
                   </div>
                   <button
@@ -1427,7 +1432,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
-                    {mcpSaving ? 'Menyimpan...' : 'Simpan Konfigurasi'}
+                    {mcpSaving ? (language === 'en' ? 'Saving...' : 'Menyimpan...') : (language === 'en' ? 'Save Configuration' : 'Simpan Konfigurasi')}
                   </button>
                 </div>
 
@@ -1449,7 +1454,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             9Router (Local Gateway)
                           </h4>
                           <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
-                            Prioritas Utama / Internal Network
+                            {language === 'en' ? 'Primary Priority / Internal Network' : 'Prioritas Utama / Internal Network'}
                           </span>
                         </div>
                       </div>
@@ -1496,7 +1501,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                         <div>
                           <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                            API Key (Opsional)
+                            {language === 'en' ? 'API Key (Optional)' : 'API Key (Opsional)'}
                           </label>
                           <input 
                             type="password"
@@ -1504,7 +1509,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setNineRouterApiKey(e.target.value)}
                             disabled={!nineRouterEnabled}
                             className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
-                            placeholder="Kosongkan jika tanpa auth"
+                            placeholder={language === 'en' ? 'Leave empty if unauthenticated' : 'Kosongkan jika tanpa auth'}
                           />
                         </div>
                       </div>
@@ -1527,7 +1532,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             OpenRouter (Cloud AI)
                           </h4>
                           <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                            Cloud Failover / Alternatif
+                            {language === 'en' ? 'Cloud Failover / Alternative' : 'Cloud Failover / Alternatif'}
                           </span>
                         </div>
                       </div>
@@ -1604,7 +1609,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8001/sse"}'
                     />
                     <p className="text-[11px] text-content-subtle mt-1">
-                      Format konfigurasi SSE atau stdio untuk koneksi ke SAP MCP Server.
+                      {language === 'en' ? 'SSE or stdio config format for connecting to SAP MCP Server.' : 'Format konfigurasi SSE atau stdio untuk koneksi ke SAP MCP Server.'}
                     </p>
                   </div>
 
@@ -1621,7 +1626,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       placeholder='{"type": "sse", "url": "http://127.0.0.1:8002/sse"}'
                     />
                     <p className="text-[11px] text-content-subtle mt-1">
-                      Format konfigurasi SSE atau stdio untuk koneksi ke RAG Knowledge Base.
+                      {language === 'en' ? 'SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi SSE atau stdio untuk koneksi ke RAG Knowledge Base.'}
                     </p>
                   </div>
 
@@ -1638,7 +1643,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       placeholder='{\n  "mcpServers": {\n    "email-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8092/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
                     />
                     <p className="text-[11px] text-content-subtle mt-1">
-                      Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP Email Server.
+                      {language === 'en' ? 'SSE or HTTP/JSON-RPC config format for connecting to MCP Email Server.' : 'Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP Email Server.'}
                     </p>
                   </div>
                 </div>
@@ -1652,9 +1657,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
-                    <h3 className="text-lg font-bold text-content">Kuota Token</h3>
+                    <h3 className="text-lg font-bold text-content">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
                     <p className="text-sm text-content-muted">
-                      Pemakaian dihitung untuk tanggal {kuota?.usage_date || '—'} (reset tengah malam WIB).
+                      {language === 'en' 
+                        ? `Usage calculated for ${kuota?.usage_date || '—'} (resets at midnight WIB).`
+                        : `Pemakaian dihitung untuk tanggal ${kuota?.usage_date || '—'} (reset tengah malam WIB).`}
                     </p>
                   </div>
                   <button
@@ -1663,24 +1670,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer disabled:opacity-60"
                   >
                     <RefreshCw className={`w-4 h-4 ${kuotaLoading ? 'animate-spin' : ''}`} />
-                    Muat ulang
+                    {language === 'en' ? 'Refresh' : 'Muat ulang'}
                   </button>
                 </div>
 
                 {/* Saklar penegakan */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-line bg-surface">
                   <div className="min-w-0">
-                    <p className="font-semibold text-content">Penegakan batas</p>
+                    <p className="font-semibold text-content">{language === 'en' ? 'Quota Enforcement' : 'Penegakan batas'}</p>
                     <p className="text-sm text-content-muted">
                       {kuota?.enforced
-                        ? 'Aktif — permintaan ditolak begitu kuota harian habis.'
-                        : 'Nonaktif — pemakaian tetap dicatat, tetapi tidak ada yang diblokir.'}
+                        ? (language === 'en' ? 'Active — requests will be rejected once daily quota is exceeded.' : 'Aktif — permintaan ditolak begitu kuota harian habis.')
+                        : (language === 'en' ? 'Inactive — usage is tracked without blocking requests.' : 'Nonaktif — pemakaian tetap dicatat, tetapi tidak ada yang diblokir.')}
                     </p>
                   </div>
                   <button
                     onClick={() => gantiSaklar(!kuota?.enforced)}
                     disabled={!kuota}
-                    aria-label="Penegakan batas token"
+                    aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
                     aria-pressed={!!kuota?.enforced}
                     className={`relative h-7 w-14 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
                       kuota?.enforced ? 'bg-indigo-600' : 'bg-line'
@@ -1696,9 +1703,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* Batas per peran */}
                 <div className="rounded-2xl border border-line bg-surface p-4">
-                  <p className="font-semibold text-content mb-1">Batas per peran</p>
+                  <p className="font-semibold text-content mb-1">{language === 'en' ? 'Limits Per Role' : 'Batas per peran'}</p>
                   <p className="text-sm text-content-muted mb-4">
-                    Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.
+                    {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
                   </p>
                   <div className="space-y-3">
                     {Object.keys(kuota?.role_limits || {}).map((peran) => (
@@ -1707,12 +1714,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         className="flex flex-col sm:flex-row sm:items-end gap-3 p-3 rounded-xl bg-surface-raised border border-line"
                       >
                         <div className="sm:w-32 shrink-0">
-                          <p className="text-xs font-bold uppercase tracking-wider text-content-subtle">Peran</p>
+                          <p className="text-xs font-bold uppercase tracking-wider text-content-subtle">{language === 'en' ? 'Role' : 'Peran'}</p>
                           <p className="font-mono text-sm text-content">{peran}</p>
                         </div>
                         <div className="flex-1 min-w-0">
                           <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`harian-${peran}`}>
-                            Token per hari
+                            {language === 'en' ? 'Daily Tokens' : 'Token per hari'}
                           </label>
                           <input
                             id={`harian-${peran}`}
@@ -1730,7 +1737,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
                         <div className="flex-1 min-w-0">
                           <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`menit-${peran}`}>
-                            Permintaan per menit
+                            {language === 'en' ? 'Requests Per Minute' : 'Permintaan per menit'}
                           </label>
                           <input
                             id={`menit-${peran}`}
@@ -1748,16 +1755,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
                         <button
                           onClick={() => simpanBatas(peran)}
-                          aria-label={`Simpan batas ${peran}`}
+                          aria-label={`${language === 'en' ? 'Save limits for' : 'Simpan batas'} ${peran}`}
                           className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors cursor-pointer shrink-0"
                         >
                           <Save className="w-4 h-4" />
-                          Simpan
+                          {t('common.save')}
                         </button>
                       </div>
                     ))}
                     {!kuotaLoading && !Object.keys(kuota?.role_limits || {}).length && (
-                      <p className="text-sm text-content-muted">Batas peran belum tersedia.</p>
+                      <p className="text-sm text-content-muted">{language === 'en' ? 'Role limits unavailable.' : 'Batas peran belum tersedia.'}</p>
                     )}
                   </div>
                 </div>
@@ -1766,9 +1773,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="rounded-2xl border border-line bg-surface p-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <div>
-                      <p className="font-semibold text-content">Pemakaian hari ini</p>
+                      <p className="font-semibold text-content">{language === 'en' ? "Today's Usage" : 'Pemakaian hari ini'}</p>
                       <p className="text-sm text-content-muted">
-                        Tanda ~ berarti angka ditaksir karena penyedia model tidak melaporkan jumlah token.
+                        {language === 'en' ? '~ indicates estimated tokens when the AI provider does not report exact token counts.' : 'Tanda ~ berarti angka ditaksir karena penyedia model tidak melaporkan jumlah token.'}
                       </p>
                     </div>
                     <button
@@ -1776,25 +1783,25 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer shrink-0"
                     >
                       <RotateCcw className="w-4 h-4" />
-                      Reset semua
+                      {language === 'en' ? 'Reset All' : 'Reset semua'}
                     </button>
                   </div>
 
                   {kuotaLoading ? (
-                    <p className="text-sm text-content-muted">Memuat pemakaian…</p>
+                    <p className="text-sm text-content-muted">{language === 'en' ? 'Loading usage…' : 'Memuat pemakaian…'}</p>
                   ) : !kuota?.usage?.length ? (
-                    <p className="text-sm text-content-muted">Belum ada pemakaian tercatat hari ini.</p>
+                    <p className="text-sm text-content-muted">{language === 'en' ? 'No usage recorded yet today.' : 'Belum ada pemakaian tercatat hari ini.'}</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[640px] text-sm">
                         <thead>
                           <tr className="text-left text-xs font-bold uppercase tracking-wider text-content-subtle border-b border-line">
-                            <th className="py-2 pr-3">Pengguna</th>
-                            <th className="py-2 pr-3">Peran</th>
-                            <th className="py-2 pr-3 text-right">Token</th>
-                            <th className="py-2 pr-3 text-right">Batas</th>
-                            <th className="py-2 pr-3 text-right">Permintaan</th>
-                            <th className="py-2 text-right">Aksi</th>
+                            <th className="py-2 pr-3">{language === 'en' ? 'User' : 'Pengguna'}</th>
+                            <th className="py-2 pr-3">{language === 'en' ? 'Role' : 'Peran'}</th>
+                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Tokens' : 'Token'}</th>
+                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Limit' : 'Batas'}</th>
+                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Requests' : 'Permintaan'}</th>
+                            <th className="py-2 text-right">{language === 'en' ? 'Action' : 'Aksi'}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1807,10 +1814,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 <td className="py-2.5 pr-3 font-mono text-xs text-content-muted">{baris.role}</td>
                                 <td className="py-2.5 pr-3 text-right tabular-nums text-content">
                                   {baris.estimated ? '~' : ''}
-                                  {baris.total_tokens.toLocaleString('id-ID')}
+                                  {baris.total_tokens.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}
                                 </td>
                                 <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">
-                                  {batas ? `${batas.toLocaleString('id-ID')} (${persen}%)` : '∞'}
+                                  {batas ? `${batas.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')} (${persen}%)` : '∞'}
                                 </td>
                                 <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">{baris.requests}</td>
                                 <td className="py-2.5 text-right">
@@ -1837,18 +1844,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="space-y-5 animate-fadeIn">
                 <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-content">Penilaian Jawaban</h3>
+                    <h3 className="text-lg font-bold text-content">{language === 'en' ? 'Response Evaluation' : 'Penilaian Jawaban'}</h3>
                     <p className="mt-0.5 text-xs text-content-muted">
-                      Jawaban yang dinilai pengguna beserta pertanyaan pemicunya — bahan untuk
-                      memperbaiki persona global dan skill.
+                      {language === 'en' 
+                        ? 'User-evaluated responses along with triggering prompts for quality improvements.'
+                        : 'Jawaban yang dinilai pengguna beserta pertanyaan pemicunya — bahan untuk memperbaiki persona global dan skill.'}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <div className="flex rounded-xl border border-line bg-surface-sunken p-0.5">
                       {[
-                        { key: 'dislike', label: 'Kurang sesuai', icon: ThumbsDown },
-                        { key: 'like', label: 'Membantu', icon: ThumbsUp },
+                        { key: 'dislike', label: language === 'en' ? 'Unhelpful' : 'Kurang sesuai', icon: ThumbsDown },
+                        { key: 'like', label: language === 'en' ? 'Helpful' : 'Membantu', icon: ThumbsUp },
                       ].map((opt) => {
                         const Icon = opt.icon;
                         return (
@@ -1870,8 +1878,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <button
                       onClick={() => fetchFeedback(feedbackKind)}
                       className="rounded-xl border border-line p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                      title="Muat ulang"
-                      aria-label="Muat ulang daftar penilaian"
+                      title={language === 'en' ? 'Refresh' : 'Muat ulang'}
+                      aria-label={language === 'en' ? 'Refresh feedback list' : 'Muat ulang daftar penilaian'}
                     >
                       <RefreshCw className={`h-4 w-4 ${feedbackLoading ? 'animate-spin' : ''}`} />
                     </button>
@@ -1887,17 +1895,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 ) : !feedbackData || feedbackData.items.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-line py-14 text-center">
                     <MessageSquare className="mx-auto mb-2 h-7 w-7 text-content-subtle" />
-                    <p className="text-sm font-semibold text-content">Belum ada penilaian</p>
+                    <p className="text-sm font-semibold text-content">{language === 'en' ? 'No feedback recorded yet' : 'Belum ada penilaian'}</p>
                     <p className="mt-1 text-xs text-content-muted">
                       {feedbackKind === 'dislike'
-                        ? 'Belum ada jawaban yang ditandai kurang sesuai.'
-                        : 'Belum ada jawaban yang ditandai membantu.'}
+                        ? (language === 'en' ? 'No responses marked as unhelpful.' : 'Belum ada jawaban yang ditandai kurang sesuai.')
+                        : (language === 'en' ? 'No responses marked as helpful.' : 'Belum ada jawaban yang ditandai membantu.')}
                     </p>
                   </div>
                 ) : (
                   <>
                     <p className="text-xs text-content-muted">
-                      Menampilkan {feedbackData.items.length} dari {feedbackData.total} penilaian.
+                      {language === 'en'
+                        ? `Showing ${feedbackData.items.length} of ${feedbackData.total} ratings.`
+                        : `Menampilkan ${feedbackData.items.length} dari ${feedbackData.total} penilaian.`}
                     </p>
 
                     <div className="space-y-3">
@@ -1913,14 +1923,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             </span>
                             <span className="truncate max-w-[16rem]">{item.session_title}</span>
                             {item.created_at && (
-                              <span>{new Date(item.created_at).toLocaleString('id-ID')}</span>
+                              <span>{new Date(item.created_at).toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}</span>
                             )}
                           </div>
 
                           {item.question && (
                             <div className="mb-2.5 rounded-xl bg-surface-sunken px-3 py-2">
                               <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
-                                Pertanyaan
+                                {language === 'en' ? 'Question' : 'Pertanyaan'}
                               </p>
                               <p className="whitespace-pre-wrap text-xs text-content-secondary">
                                 {item.question}
@@ -1930,7 +1940,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                           <div>
                             <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
-                              Jawaban asisten
+                              {language === 'en' ? 'Assistant response' : 'Jawaban asisten'}
                             </p>
                             <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-content">
                               {item.answer}
@@ -1949,10 +1959,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line shrink-0">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      Audit Log Percakapan
+                      {language === 'en' ? 'Chat Audit Logs' : 'Audit Log Percakapan'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      Pantau riwayat percakapan dari seluruh user untuk keperluan audit dan troubleshooting.
+                      {language === 'en' ? 'Monitor chat history across all users for compliance and troubleshooting.' : 'Pantau riwayat percakapan dari seluruh user untuk keperluan audit dan troubleshooting.'}
                     </p>
                   </div>
 
@@ -1960,7 +1970,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                     <input 
                       type="text"
-                      placeholder="Cari user / judul chat..."
+                      placeholder={language === 'en' ? 'Search user / chat title...' : 'Cari user / judul chat...'}
                       value={auditSearch}
                       onChange={(e) => setAuditSearch(e.target.value)}
                       className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-72 text-content"
@@ -1994,13 +2004,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <p className="text-xs text-content-muted truncate mt-1">{s.title}</p>
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-[10px] bg-surface-sunken px-1.5 py-0.5 rounded text-content-muted">
-                              {s.message_count} pesan
+                              {s.message_count} {language === 'en' ? 'messages' : 'pesan'}
                             </span>
                           </div>
                         </button>
                       ))
                     ) : (
-                      <p className="text-center text-xs text-content-muted py-8">Belum ada riwayat sesi ditemukan.</p>
+                      <p className="text-center text-xs text-content-muted py-8">{language === 'en' ? 'No session history found.' : 'Belum ada riwayat sesi ditemukan.'}</p>
                     )}
                   </div>
 
@@ -2015,7 +2025,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           onClick={() => setSelectedAuditSession(null)}
                           className="md:hidden flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 py-1 cursor-pointer"
                         >
-                          <ArrowLeft className="w-3.5 h-3.5" /> Kembali ke daftar sesi
+                          <ArrowLeft className="w-3.5 h-3.5" /> {language === 'en' ? 'Back to session list' : 'Kembali ke daftar sesi'}
                         </button>
 
                         <div className="pb-3 border-b border-line flex items-center justify-between">
@@ -2041,12 +2051,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                     <span>{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
                                     {m.role !== 'user' && (m.feedback === 'like' || m.feedback === 'up') && (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
-                                        <ThumbsUp className="w-2.5 h-2.5" /> Membantu
+                                        <ThumbsUp className="w-2.5 h-2.5" /> {language === 'en' ? 'Helpful' : 'Membantu'}
                                       </span>
                                     )}
                                     {m.role !== 'user' && (m.feedback === 'dislike' || m.feedback === 'down') && (
                                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                                        <ThumbsDown className="w-2.5 h-2.5" /> Kurang Sesuai
+                                        <ThumbsDown className="w-2.5 h-2.5" /> {language === 'en' ? 'Unhelpful' : 'Kurang Sesuai'}
                                       </span>
                                     )}
                                   </div>
@@ -2056,14 +2066,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               </div>
                             ))
                           ) : (
-                            <p className="text-center text-xs text-content-muted py-6">Memuat pesan...</p>
+                            <p className="text-center text-xs text-content-muted py-6">{language === 'en' ? 'Loading messages...' : 'Memuat pesan...'}</p>
                           )}
                         </div>
                       </div>
                     ) : (
                       <div className="h-full flex flex-col items-center justify-center text-content-muted text-xs py-16">
                         <MessageSquare className="w-8 h-8 mb-2 opacity-30" />
-                        Pilih salah satu sesi di sebelah kiri untuk melihat pesan percakapan.
+                        {language === 'en' ? 'Select a session on the left to view conversation messages.' : 'Pilih salah satu sesi di sebelah kiri untuk melihat pesan percakapan.'}
                       </div>
                     )}
                   </div>
