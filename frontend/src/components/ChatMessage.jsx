@@ -7,6 +7,7 @@ import { copyToClipboard } from '../lib/clipboard';
 import { useLanguage } from '../hooks/useLanguage';
 import MermaidDiagram from './MermaidDiagram';
 import UsagePill from './UsagePill';
+import { ABAP_TOKEN_CLASS, isAbapLanguage, tokenizeAbap } from '../lib/abapHighlight';
 
 const ARTIFACT_ICON = {
   xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
@@ -119,7 +120,7 @@ const AttachmentChip = ({ item }) => {
 /**
  * Komponen blok kode dengan tombol salin mandiri.
  */
-const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
+const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
   const { t } = useLanguage();
   // Kode pendek cukup dibaca di tempat; panel baru berguna untuk yang panjang.
   const layakDipanel = onBukaPanel && codeString.split('\n').length > 12;
@@ -185,7 +186,15 @@ const CodeBlock = ({ codeString, onBukaPanel, ...props }) => {
         </div>
       </div>
       <pre className="block bg-surface-raised text-content font-mono text-xs p-4 overflow-x-auto leading-relaxed">
-        <code {...props}>{codeString}</code>
+        <code {...props}>
+          {isAbapLanguage(language)
+            ? tokenizeAbap(codeString).map((tok, i) => (
+                tok.type
+                  ? <span key={i} className={ABAP_TOKEN_CLASS[tok.type]}>{tok.text}</span>
+                  : tok.text
+              ))
+            : codeString}
+        </code>
       </pre>
     </div>
   );
@@ -318,6 +327,7 @@ const ChatMessage = ({
         return (
           <CodeBlock
             codeString={codeString}
+            language={match ? match[1] : ''}
             onBukaPanel={onBukaPanel}
             {...props}
           />

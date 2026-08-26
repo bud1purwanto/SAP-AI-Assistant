@@ -37,6 +37,12 @@
   --color-warning:          var(--warning);
   --color-warning-soft:     var(--warning-soft);
   --color-success:          var(--success);
+
+  /* Pewarnaan sintaks ABAP, mengikuti ABAP Development Tools (Eclipse). */
+  --color-abap-keyword:     var(--abap-keyword);
+  --color-abap-comment:     var(--abap-comment);
+  --color-abap-string:      var(--abap-string);
+  --color-abap-number:      var(--abap-number);
 }
 
 /* --- Tema terang (default) --- */
@@ -67,6 +73,10 @@
   --danger-soft:       #fff1f2;
   --warning:           #d97706;
   --warning-soft:      #fffbeb;
+  --abap-keyword:      #00007f;
+  --abap-comment:      #3f7f5f;
+  --abap-string:       #2a00ff;
+  --abap-number:       #1e293b;
   --success:           #059669;
 }
 
@@ -97,6 +107,10 @@
   --danger-soft:       #4c0519;
   --warning:           #fbbf24;
   --warning-soft:      #451a03;
+  --abap-keyword:      #569cd6;
+  --abap-comment:      #6a9955;
+  --abap-string:       #ce9178;
+  --abap-number:       #b5cea8;
   --success:           #34d399;
 }
 
@@ -129,6 +143,10 @@
     --danger-soft:       #4c0519;
     --warning:           #fbbf24;
     --warning-soft:      #451a03;
+    --abap-keyword:      #569cd6;
+    --abap-comment:      #6a9955;
+    --abap-string:       #ce9178;
+    --abap-number:       #b5cea8;
     --success:           #34d399;
   }
 }
