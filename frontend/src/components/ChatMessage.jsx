@@ -47,7 +47,6 @@ const downloadArtifact = async (file, t) => {
     URL.revokeObjectURL(url);
   } catch (err) {
     console.error('Gagal mengunduh berkas:', err);
-    alert(err.message || (t ? t('chat.downloadFailed') : 'Failed to download file.'));
   }
 };
 

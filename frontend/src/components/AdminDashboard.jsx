@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import ConfirmModal from './ConfirmModal';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
   const { t, language } = useLanguage();
@@ -10,6 +11,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [personaSaving, setPersonaSaving] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
   const [actionError, setActionError] = useState('');
+
+  // Reusable Standardized Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: '',
+    cancelText: '',
+    variant: 'danger',
+    isLoading: false,
+    onConfirm: null,
+  });
 
   // Stats State
   const [stats, setStats] = useState(null);
@@ -225,18 +238,33 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const resetKuota = async (username) => {
-    setActionError('');
-    setActionSuccess('');
+  const resetKuota = (username) => {
     const sasaran = username || (language === 'en' ? 'ALL users' : 'SEMUA pengguna');
-    if (!window.confirm(language === 'en' ? `Reset token usage to 0 for ${sasaran}?` : `Nolkan pemakaian token hari ini untuk ${sasaran}?`)) return;
-    try {
-      const hasil = await api.adminQuotaReset(username);
-      setActionSuccess(language === 'en' ? `Usage for ${hasil.direset} reset to 0.` : `Pemakaian ${hasil.direset} sudah dinolkan.`);
-      fetchKuota();
-    } catch (err) {
-      setActionError(err.message);
-    }
+    setConfirmModal({
+      isOpen: true,
+      variant: 'reset',
+      title: language === 'en' ? 'Reset Token Quota' : 'Reset Kuota Token',
+      message: language === 'en' 
+        ? `Are you sure you want to reset today's token usage to 0 for ${sasaran}?`
+        : `Apakah Anda yakin ingin menolkan pemakaian token hari ini untuk ${sasaran}?`,
+      confirmText: language === 'en' ? 'Reset' : 'Reset',
+      cancelText: language === 'en' ? 'Cancel' : 'Batal',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, isLoading: true }));
+        setActionError('');
+        setActionSuccess('');
+        try {
+          const hasil = await api.adminQuotaReset(username);
+          setActionSuccess(language === 'en' ? `Usage for ${hasil.direset} reset to 0.` : `Pemakaian ${hasil.direset} sudah dinolkan.`);
+          fetchKuota();
+          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
+        } catch (err) {
+          setActionError(err.message);
+          setConfirmModal((m) => ({ ...m, isLoading: false }));
+        }
+      },
+    });
   };
 
   const handleCreateUser = async (e) => {
@@ -270,18 +298,33 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleDeleteUser = async (username) => {
-    if (!window.confirm(language === 'en' ? `Are you sure you want to delete user ${username}?` : `Apakah Anda yakin ingin menghapus user ${username}?`)) return;
-    setActionError('');
-    setActionSuccess('');
-    try {
-      await api.adminDeleteUser(username);
-      setActionSuccess(language === 'en' ? `User '${username}' deleted!` : `User '${username}' berhasil dihapus!`);
-      fetchUsers();
-      fetchStats();
-    } catch (err) {
-      setActionError(err.message);
-    }
+  const handleDeleteUser = (username) => {
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: language === 'en' ? 'Delete User' : 'Hapus User',
+      message: language === 'en' 
+        ? `Are you sure you want to permanently delete user "${username}"? This action cannot be undone.`
+        : `Apakah Anda yakin ingin menghapus user "${username}" secara permanen? Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: language === 'en' ? 'Delete' : 'Hapus',
+      cancelText: language === 'en' ? 'Cancel' : 'Batal',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, isLoading: true }));
+        setActionError('');
+        setActionSuccess('');
+        try {
+          await api.adminDeleteUser(username);
+          setActionSuccess(language === 'en' ? `User '${username}' deleted!` : `User '${username}' berhasil dihapus!`);
+          fetchUsers();
+          fetchStats();
+          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
+        } catch (err) {
+          setActionError(err.message);
+          setConfirmModal((m) => ({ ...m, isLoading: false }));
+        }
+      },
+    });
   };
 
   const handleSaveGlobalPersona = async (e) => {
@@ -337,17 +380,32 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleDeleteSkill = async (id, name) => {
-    if (!window.confirm(language === 'en' ? `Delete skill ${name}?` : `Hapus skill ${name}?`)) return;
-    setActionError('');
-    setActionSuccess('');
-    try {
-      await api.adminDeleteSkill(id);
-      setActionSuccess(language === 'en' ? `Skill '${name}' deleted!` : `Skill '${name}' berhasil dihapus!`);
-      fetchSkills();
-    } catch (err) {
-      setActionError(err.message);
-    }
+  const handleDeleteSkill = (id, name) => {
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: language === 'en' ? 'Delete Skill' : 'Hapus Skill',
+      message: language === 'en' 
+        ? `Are you sure you want to delete skill "${name}"?`
+        : `Apakah Anda yakin ingin menghapus skill "${name}"?`,
+      confirmText: language === 'en' ? 'Delete' : 'Hapus',
+      cancelText: language === 'en' ? 'Cancel' : 'Batal',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, isLoading: true }));
+        setActionError('');
+        setActionSuccess('');
+        try {
+          await api.adminDeleteSkill(id);
+          setActionSuccess(language === 'en' ? `Skill '${name}' deleted!` : `Skill '${name}' berhasil dihapus!`);
+          fetchSkills();
+          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
+        } catch (err) {
+          setActionError(err.message);
+          setConfirmModal((m) => ({ ...m, isLoading: false }));
+        }
+      },
+    });
   };
 
   const handleToggleSkill = async (skill) => {
@@ -409,10 +467,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
-      style={{ height: 'var(--app-height, 100dvh)' }}
-    >
+    <>
+      <div
+        className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
+        style={{ height: 'var(--app-height, 100dvh)' }}
+      >
       {/* Header Modal */}
       <div
         className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line bg-surface shrink-0"
@@ -2129,5 +2188,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           </div>
         </div>
       </div>
+
+      {/* Standardized Confirmation Modal */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => {
+          if (!confirmModal.isLoading) {
+            setConfirmModal((m) => ({ ...m, isOpen: false }));
+          }
+        }}
+        onConfirm={confirmModal.onConfirm}
+        isLoading={confirmModal.isLoading}
+        variant={confirmModal.variant}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+      />
+    </>
   );
 }

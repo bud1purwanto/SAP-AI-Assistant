@@ -1,11 +1,13 @@
 import React, { useEffect } from 'react';
-import { AlertTriangle, LogOut, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Info, LogOut, RotateCcw, Trash2, X } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 
 const ICONS = {
   danger: Trash2,
   warning: AlertTriangle,
   logout: LogOut,
+  reset: RotateCcw,
+  info: Info,
 };
 
 const ConfirmModal = ({
@@ -16,7 +18,7 @@ const ConfirmModal = ({
   message,
   confirmText,
   cancelText,
-  variant = 'danger', // 'danger' | 'warning' | 'logout'
+  variant = 'danger', // 'danger' | 'warning' | 'logout' | 'reset' | 'info'
   isLoading = false,
 }) => {
   const { t } = useLanguage();
@@ -42,6 +44,18 @@ const ConfirmModal = ({
 
   const getVariantStyles = () => {
     switch (variant) {
+      case 'reset':
+        return {
+          iconBg: 'bg-rose-500/15 text-rose-500 border border-rose-500/30',
+          btnBg: 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/20',
+          glow: 'from-rose-500/10 via-transparent to-transparent',
+        };
+      case 'info':
+        return {
+          iconBg: 'bg-indigo-500/15 text-indigo-500 border border-indigo-500/30',
+          btnBg: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-900/20',
+          glow: 'from-indigo-500/10 via-transparent to-transparent',
+        };
       case 'logout':
         return {
           iconBg: 'bg-amber-500/15 text-amber-500 border border-amber-500/30',
