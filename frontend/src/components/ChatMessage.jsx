@@ -407,33 +407,27 @@ const ChatMessage = ({
             {timeLabel && <span className="text-xs text-content-subtle">{timeLabel}</span>}
             <span className="text-xs font-semibold text-content-secondary">{t('chat.you')}</span>
 
-            {/* Tombol aksi melayang untuk bubble pengguna */}
             {/* Tombol aksi untuk bubble pengguna (selalu tampil di HP / touch, muncul saat hover di desktop) */}
             {!isEditing && (
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 {onEditMessage && (
                   <button
                     type="button"
                     onClick={startEdit}
-                    className="p-1 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-colors cursor-pointer"
                     className="p-1 sm:p-1.5 rounded-lg text-content-muted hover:text-content bg-surface-raised/70 sm:bg-transparent hover:bg-surface-raised transition-colors cursor-pointer"
                     title={t('chat.editQuestion')}
                     aria-label={t('chat.editQuestion')}
                   >
-                    <Pencil className="w-3 h-3" />
                     <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="p-1 rounded-lg text-content-muted hover:text-content hover:bg-surface-raised transition-colors cursor-pointer"
                   className="p-1 sm:p-1.5 rounded-lg text-content-muted hover:text-content bg-surface-raised/70 sm:bg-transparent hover:bg-surface-raised transition-colors cursor-pointer"
                   title={copied ? t('chat.copied') : t('chat.copy')}
                   aria-label={t('chat.copy')}
                 >
-                  {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                   {copied ? <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-500" /> : <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                 </button>
               </div>
