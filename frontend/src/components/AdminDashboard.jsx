@@ -62,6 +62,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [kuota, setKuota] = useState(null);
   const [kuotaLoading, setKuotaLoading] = useState(false);
   const [batasDraft, setBatasDraft] = useState({});
+  const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
   const fetchStats = async () => {
     try {
@@ -1780,13 +1781,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         {language === 'en' ? '~ indicates estimated tokens when the AI provider does not report exact token counts.' : 'Tanda ~ berarti angka ditaksir karena penyedia model tidak melaporkan jumlah token.'}
                       </p>
                     </div>
-                    <button
-                      onClick={() => resetKuota(null)}
-                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer shrink-0"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      {language === 'en' ? 'Reset All' : 'Reset semua'}
-                    </button>
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <div className="relative w-full sm:w-56">
+                        <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
+                        <input
+                          type="text"
+                          placeholder={language === 'en' ? 'Search user or role...' : 'Cari user atau peran...'}
+                          value={kuotaUserSearch}
+                          onChange={(e) => setKuotaUserSearch(e.target.value)}
+                          className="pl-9 pr-8 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full text-content"
+                        />
+                        {kuotaUserSearch && (
+                          <button
+                            onClick={() => setKuotaUserSearch('')}
+                            className="absolute right-2.5 top-2.5 text-content-subtle hover:text-content p-0.5 cursor-pointer"
+                            aria-label="Clear search"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => resetKuota(null)}
+                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors cursor-pointer shrink-0"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        {language === 'en' ? 'Reset All' : 'Reset semua'}
+                      </button>
+                    </div>
                   </div>
 
                   {kuotaLoading ? (
@@ -1794,49 +1816,70 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   ) : !kuota?.usage?.length ? (
                     <p className="text-sm text-content-muted">{language === 'en' ? 'No usage recorded yet today.' : 'Belum ada pemakaian tercatat hari ini.'}</p>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[640px] text-sm">
-                        <thead>
-                          <tr className="text-left text-xs font-bold uppercase tracking-wider text-content-subtle border-b border-line">
-                            <th className="py-2 pr-3">{language === 'en' ? 'User' : 'Pengguna'}</th>
-                            <th className="py-2 pr-3">{language === 'en' ? 'Role' : 'Peran'}</th>
-                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Tokens' : 'Token'}</th>
-                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Limit' : 'Batas'}</th>
-                            <th className="py-2 pr-3 text-right">{language === 'en' ? 'Requests' : 'Permintaan'}</th>
-                            <th className="py-2 text-right">{language === 'en' ? 'Action' : 'Aksi'}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {kuota.usage.map((baris) => {
-                            const batas = kuota.role_limits?.[baris.role]?.daily_token_limit || 0;
-                            const persen = batas ? Math.min(100, Math.round((baris.total_tokens / batas) * 100)) : 0;
-                            return (
-                              <tr key={baris.username} className="border-b border-line/60 last:border-0">
-                                <td className="py-2.5 pr-3 font-medium text-content break-all">{baris.username}</td>
-                                <td className="py-2.5 pr-3 font-mono text-xs text-content-muted">{baris.role}</td>
-                                <td className="py-2.5 pr-3 text-right tabular-nums text-content">
-                                  {baris.estimated ? '~' : ''}
-                                  {baris.total_tokens.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}
-                                </td>
-                                <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">
-                                  {batas ? `${batas.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')} (${persen}%)` : '∞'}
-                                </td>
-                                <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">{baris.requests}</td>
-                                <td className="py-2.5 text-right">
-                                  <button
-                                    onClick={() => resetKuota(baris.username)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5" />
-                                    Reset
-                                  </button>
-                                </td>
+                    (() => {
+                      const filteredUsage = (kuota.usage || []).filter((baris) => {
+                        if (!kuotaUserSearch.trim()) return true;
+                        const query = kuotaUserSearch.toLowerCase().trim();
+                        return (
+                          baris.username?.toLowerCase().includes(query) ||
+                          baris.role?.toLowerCase().includes(query)
+                        );
+                      });
+
+                      if (filteredUsage.length === 0) {
+                        return (
+                          <div className="p-4 text-center text-sm text-content-muted bg-surface-sunken rounded-xl border border-line">
+                            {language === 'en' ? `No users match "${kuotaUserSearch}".` : `Tidak ada user yang cocok dengan "${kuotaUserSearch}".`}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[640px] text-sm">
+                            <thead>
+                              <tr className="text-left text-xs font-bold uppercase tracking-wider text-content-subtle border-b border-line">
+                                <th className="py-2 pr-3">{language === 'en' ? 'User' : 'Pengguna'}</th>
+                                <th className="py-2 pr-3">{language === 'en' ? 'Role' : 'Peran'}</th>
+                                <th className="py-2 pr-3 text-right">{language === 'en' ? 'Tokens' : 'Token'}</th>
+                                <th className="py-2 pr-3 text-right">{language === 'en' ? 'Limit' : 'Batas'}</th>
+                                <th className="py-2 pr-3 text-right">{language === 'en' ? 'Requests' : 'Permintaan'}</th>
+                                <th className="py-2 text-right">{language === 'en' ? 'Action' : 'Aksi'}</th>
                               </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                            </thead>
+                            <tbody>
+                              {filteredUsage.map((baris) => {
+                                const batas = kuota.role_limits?.[baris.role]?.daily_token_limit || 0;
+                                const persen = batas ? Math.min(100, Math.round((baris.total_tokens / batas) * 100)) : 0;
+                                return (
+                                  <tr key={baris.username} className="border-b border-line/60 last:border-0">
+                                    <td className="py-2.5 pr-3 font-medium text-content break-all">{baris.username}</td>
+                                    <td className="py-2.5 pr-3 font-mono text-xs text-content-muted">{baris.role}</td>
+                                    <td className="py-2.5 pr-3 text-right tabular-nums text-content">
+                                      {baris.estimated ? '~' : ''}
+                                      {baris.total_tokens.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}
+                                    </td>
+                                    <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">
+                                      {batas ? `${batas.toLocaleString(language === 'en' ? 'en-US' : 'id-ID')} (${persen}%)` : '∞'}
+                                    </td>
+                                    <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">{baris.requests}</td>
+                                    <td className="py-2.5 text-right">
+                                      <button
+                                        onClick={() => resetKuota(baris.username)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        Reset
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()
                   )}
                 </div>
               </div>
