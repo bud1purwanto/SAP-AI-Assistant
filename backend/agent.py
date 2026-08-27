@@ -553,6 +553,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
         f"## FORMAT JAWABAN\n"
         f"1. Responlah secara alami dalam bahasa yang digunakan oleh pengguna (English sebagai default utama, atau Bahasa Indonesia jika pengguna bertanya dalam Bahasa Indonesia). Pastikan struktur jawaban jelas, profesional, dan rapi.\n"
+        f"2. Jika jawaban mengambil data live dari SAP, sertakan indikator sumber data "
         f"berformat: 📦 **Data langsung dari sistem NAMA_SERVER** — ganti NAMA_SERVER "
         f"dengan nama sistem SAP aktif yang disebutkan pada bagian KONTEKS PERMINTAAN INI "
         f"di bagian bawah prompt ini.\n"
@@ -572,8 +573,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"tanda baca tidak merusak diagram, dan batasi sekitar 12 simpul agar "
         f"tetap terbaca di layar ponsel. Sertakan penjelasan singkat berupa teks "
         f"di samping diagram — jangan hanya diagram saja.\n"
-        f"6. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
-        f"7. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
+        f"6. HINDARI menuliskan format struktur, pola penomoran, atau rangkaian teks menggunakan sintaks LaTeX formula seperti `$$\\text{...}$$` atau `$...$`. Gunakan selalu format Markdown standar: inline code (misal `| a | b | c | d | e | f |`), tabel markdown, atau blok kode teks biasa agar bersih dan rapi.\n"
+        f"7. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
+        f"8. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
         f"'We performed a RAG search...', atau 'Doc 1 snippet:'.\n\n"
 
         f"{ARTIFACT_PROMPT}\n"

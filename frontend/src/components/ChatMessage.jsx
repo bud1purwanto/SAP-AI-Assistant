@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
@@ -512,7 +514,8 @@ const ChatMessage = ({
           
           <div className="prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full">
             <ReactMarkdown 
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={[rehypeKatex]}
               components={markdownComponents}
             >
               {message.content}

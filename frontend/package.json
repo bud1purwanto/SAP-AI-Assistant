@@ -11,12 +11,15 @@
     "test:e2e": "bash ../scripts/e2e.sh"
   },
   "dependencies": {
+    "katex": "^0.18.4",
     "lucide-react": "^1.21.0",
     "mermaid": "^11.17.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
