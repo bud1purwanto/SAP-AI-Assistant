@@ -1,26 +1,11 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
 node_modules/
 dist/
-.DS_Store
-# Environment files (jangan pernah commit nilai asli)
-.env
-.env.*
-!.env.example
-!*.env.example
-!.env.*.example
-
-# Local SQLite development databases
-*.db
-
-# Lingkungan virtual Python lokal
-.venv/
 venv/
-
-# Hasil tes end-to-end (Playwright)
-frontend/test-results/
-frontend/playwright-report/
-frontend/blob-report/
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+.DS_Store
+*.log
+_noderfc.log

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Code2, Maximize2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { AlertTriangle, Code2, Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 
 /**
@@ -71,7 +71,41 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   const [galat, setGalat] = useState('');
   const [lihatSumber, setLihatSumber] = useState(false);
   const [diperbesar, setDiperbesar] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const idRef = useRef(`mermaid-${(nomorUrut += 1)}`);
+
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  const handleZoomIn = () => setScale((s) => Math.min(s + 0.25, 4));
+  const handleZoomOut = () => setScale((s) => Math.max(s - 0.25, 0.25));
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    setScale((prevScale) => Math.min(Math.max(prevScale * zoomFactor, 0.25), 4));
+  };
+
+  const handleMouseDown = (e) => {
+    if (e.button !== 0) return; // hanya klik kiri
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
 
   useEffect(() => {
     // Selama jawaban masih ditulis, teks diagram belum tentu utuh.
@@ -178,25 +212,75 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
 
       {diperbesar && (
         <div
-          className="fixed inset-0 z-50 flex flex-col bg-surface/95 backdrop-blur-sm pt-safe pb-safe"
+          className="fixed inset-0 z-50 flex flex-col bg-surface/95 backdrop-blur-sm pt-safe pb-safe select-none"
           role="dialog"
           aria-label={t('diagram.title')}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <span className="text-sm font-semibold text-content">{t('diagram.title')}</span>
+          <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-content">{t('diagram.title')}</span>
+              <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-xl border border-line">
+                <button
+                  type="button"
+                  onClick={handleZoomIn}
+                  className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleZoomOut}
+                  className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetZoom}
+                  className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+                  title="Reset Zoom"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+                <span className="text-[11px] font-medium text-content-muted px-2">
+                  {Math.round(scale * 100)}%
+                </span>
+              </div>
+            </div>
             <button
               type="button"
-              onClick={() => setDiperbesar(false)}
-              className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+              onClick={() => {
+                setDiperbesar(false);
+                resetZoom();
+              }}
+              className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
               aria-label={t('diagram.close')}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
           <div
-            className="flex-1 overflow-auto p-4 sm:p-8 flex items-center justify-center [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[85vh] [&_svg]:w-auto [&_svg]:max-w-full"
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
+            className={`flex-1 overflow-hidden p-4 sm:p-8 flex items-center justify-center ${
+              isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+          >
+            <div
+              style={{
+                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                transformOrigin: 'center center',
+              }}
+              className="[&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[85vh] [&_svg]:w-auto [&_svg]:max-w-full pointer-events-none"
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          </div>
         </div>
       )}
     </>
