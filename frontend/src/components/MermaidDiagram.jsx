@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { AlertTriangle, Code2, Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 
@@ -81,6 +81,13 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const pinchStartDistRef = useRef(0);
   const pinchStartScaleRef = useRef(1);
+
+  // Isolasi ID pada modal agar marker, clip-path, dan style SVG tidak bentrok
+  // dengan diagram inline yang sedang tampil di bubble percakapan.
+  const modalSvg = useMemo(() => {
+    if (!svg) return '';
+    return svg.replaceAll(idRef.current, `${idRef.current}-modal`);
+  }, [svg]);
 
   const resetZoom = useCallback(() => {
     setScale(1);
@@ -386,8 +393,9 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
           {/* Interactive Zoom & Pan Viewport */}
           <div
             ref={containerRef}
-            className={`relative flex-1 w-full h-full overflow-hidden flex items-center justify-center touch-none select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
-              }`}
+            className={`relative flex-1 w-full h-full overflow-hidden flex items-center justify-center touch-none select-none ${
+              isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            }`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -400,8 +408,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                 transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.2, 0, 0, 1)',
                 transformOrigin: 'center center',
               }}
-              className="flex items-center justify-center pointer-events-none [&_svg]:!max-w-[85vw] [&_svg]:!max-h-[75vh] [&_svg]:!w-auto [&_svg]:!h-auto [&_svg]:block select-none"
-              dangerouslySetInnerHTML={{ __html: svg }}
+              className="inline-flex items-center justify-center pointer-events-none p-4 min-w-[320px] max-w-[85vw] max-h-[80vh] [&_svg]:mx-auto [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[80vh] [&_svg]:block select-none"
+              dangerouslySetInnerHTML={{ __html: modalSvg }}
             />
           </div>
         </div>
