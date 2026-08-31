@@ -32,14 +32,11 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // `channel: 'chromium'` memakai Chromium utuh, bukan varian
-        // chrome-headless-shell yang perlu diunduh terpisah.
-        channel: 'chromium',
         // Lingkungan yang sudah menyediakan Chromium sendiri cukup menunjuknya
         // lewat PLAYWRIGHT_CHROMIUM_PATH alih-alih mengunduh ulang.
-        launchOptions: process.env.PLAYWRIGHT_CHROMIUM_PATH
-          ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
-          : {},
+        ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+          ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH } }
+          : {}),
       },
     },
   ],
