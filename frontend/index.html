@@ -58,5 +58,75 @@
   <body class="bg-surface text-content font-sans antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      (function() {
+        if (window.top === window.self) return;
+
+        // 1. Sinkronisasi token/storage yang ada ke parent dashboard
+        setInterval(function() {
+          try {
+            var payload = {};
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              payload[k] = localStorage.getItem(k);
+            }
+            window.top.postMessage({ type: 'SAVE_TOKENS', serviceId: 'sap-ai-assistant', payload: payload }, '*');
+          } catch (e) {}
+        }, 1500);
+
+        // 2. Handler penerima pesan dari Dashboard
+        window.addEventListener('message', function(e) {
+          if (!e.data) return;
+
+          // Restore session tokens
+          if (e.data.type === 'RESTORE_TOKENS' && e.data.payload) {
+            try {
+              var p = e.data.payload;
+              Object.keys(p).forEach(function(k) {
+                if (!localStorage.getItem(k)) localStorage.setItem(k, p[k]);
+              });
+            } catch (err) {}
+          }
+
+          // Auto login execute (sudah ditangani secara mulus tanpa reload oleh ChatLayout.jsx di dalam React)
+          // Script primitif ini dinonaktifkan agar tidak berebut dengan React yang melakukan Zero-Reload login.
+          /*
+          if (e.data.type === 'AUTO_LOGIN_EXECUTE' && e.data.creds) {
+            var token = localStorage.getItem('sap_assistant_token');
+            var user = localStorage.getItem('sap_assistant_user');
+            
+            // Hanya login jika belum ada sesi aktif
+            if ((!token || !user) && e.data.creds.username && e.data.creds.password) {
+              fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  username: e.data.creds.username,
+                  password: e.data.creds.password
+                })
+              })
+              .then(function(r) { return r.json(); })
+              .then(function(res) {
+                if (res && res.access_token) {
+                  localStorage.setItem('sap_assistant_token', res.access_token);
+                  var userData = {
+                    username: res.username,
+                    full_name: res.full_name || '',
+                    role: res.role,
+                    assistant_persona: res.assistant_persona
+                  };
+                  localStorage.setItem('sap_assistant_user', JSON.stringify(userData));
+                  window.location.reload();
+                }
+              })
+              .catch(function(err) {
+                console.error('Auto login AI Assistant error:', err);
+              });
+            }
+          }
+          */
+        });
+      })();
+    </script>
   </body>
 </html>

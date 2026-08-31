@@ -409,7 +409,52 @@ const ChatLayout = () => {
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    
+    // ZERO-RELOAD AUTO-LOGIN LISTENER
+    // Terima instruksi login langsung dari Dashboard PWA tanpa reload
+    const handleDashboardMessage = (e) => {
+      if (!e.data) return;
+      if (e.data.type === 'AUTO_LOGIN_EXECUTE' && e.data.creds) {
+        const { username, password } = e.data.creds;
+        const currentUser = getStoredUser();
+        // Hanya login jika belum ada sesi aktif
+        if ((!currentUser || currentUser.role === 'guest') && username && password) {
+          api.login(username, password)
+            .then(data => {
+              if (data && data.access_token) {
+                // Simpan token & user
+                const userData = {
+                  username: data.username,
+                  full_name: data.full_name || '',
+                  role: data.role,
+                  assistant_persona: data.assistant_persona
+                };
+                saveSession(data.access_token, userData);
+                
+                // Update React State tanpa reload!
+                setUser(userData);
+                setSessions([]);
+                setCurrentSessionId(null);
+                setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+                setSessionLoadingMap({});
+                setSessionProgressMap({});
+                setSessionErrorMap({});
+                api.quotaSaya().then(setKuota).catch(() => setKuota(null));
+                setIsLoginModalOpen(false);
+                setCustomLoginMsg('');
+                setError(null);
+              }
+            })
+            .catch(err => console.error('Dashboard Auto-Login React Error:', err));
+        }
+      }
+    };
+    window.addEventListener('message', handleDashboardMessage);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('message', handleDashboardMessage);
+    };
   }, []);
 
   const createNewSession = () => {
