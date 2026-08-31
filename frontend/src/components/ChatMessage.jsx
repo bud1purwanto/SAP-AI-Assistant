@@ -335,7 +335,7 @@ const ChatMessage = ({
         );
       }
       return (
-        <code className="inline-flex items-center whitespace-nowrap bg-accent-soft border border-accent/40 text-accent-soft-fg font-mono text-[12.5px] px-2 py-0.5 mx-0.5 rounded-lg font-semibold shadow-2xs select-all" {...props}>
+        <code className="inline bg-accent-soft border border-accent/40 text-accent-soft-fg font-mono text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg font-semibold shadow-2xs select-all break-words [overflow-wrap:anywhere]" {...props}>
           {codeString}
         </code>
       );
@@ -370,16 +370,16 @@ const ChatMessage = ({
       );
     },
     ul({ children }) {
-      return <ul className="my-2 list-disc pl-5 space-y-1 text-content-secondary">{children}</ul>;
+      return <ul className="my-2 list-disc pl-5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ul>;
     },
     ol({ children }) {
-      return <ol className="my-2 list-decimal pl-5 space-y-1 text-content-secondary">{children}</ol>;
+      return <ol className="my-2 list-decimal pl-5 space-y-1 text-content-secondary break-words [overflow-wrap:anywhere]">{children}</ol>;
     },
     li({ children }) {
-      return <li className="leading-relaxed">{children}</li>;
+      return <li className="leading-relaxed break-words [overflow-wrap:anywhere]">{children}</li>;
     },
     p({ children }) {
-      return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
+      return <p className="mb-3 last:mb-0 leading-relaxed break-words [overflow-wrap:anywhere]">{children}</p>;
     },
     h1({ children }) {
       return <h1 className="text-lg font-bold text-content mt-4 mb-2 first:mt-0 font-display">{children}</h1>;
