@@ -74,38 +74,150 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
   const idRef = useRef(`mermaid-${(nomorUrut += 1)}`);
+  const containerRef = useRef(null);
+  const pointerMapRef = useRef(new Map());
+  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
+  const pinchStartDistRef = useRef(0);
+  const pinchStartScaleRef = useRef(1);
 
   const resetZoom = useCallback(() => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
   }, []);
 
-  const handleZoomIn = () => setScale((s) => Math.min(s + 0.25, 4));
-  const handleZoomOut = () => setScale((s) => Math.max(s - 0.25, 0.25));
+  const handleZoomIn = useCallback(() => {
+    setScale((s) => Math.min(Number((s + 0.25).toFixed(2)), 4));
+  }, []);
 
-  const handleWheel = (e) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    setScale((prevScale) => Math.min(Math.max(prevScale * zoomFactor, 0.25), 4));
+  const handleZoomOut = useCallback(() => {
+    setScale((s) => Math.max(Number((s - 0.25).toFixed(2)), 0.25));
+  }, []);
+
+  const handleDoubleClick = useCallback(() => {
+    setScale((prev) => (prev > 1.2 ? 1 : 1.75));
+    setPosition({ x: 0, y: 0 });
+  }, []);
+
+  // Pointer drag & multi-touch pinch handling
+  const handlePointerDown = (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Abaikan jika pointer capture tidak didukung
+    }
+
+    pointerMapRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointerMapRef.current.size === 1) {
+      setIsDragging(true);
+      dragStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        posX: position.x,
+        posY: position.y,
+      };
+    } else if (pointerMapRef.current.size === 2) {
+      // Start multi-touch pinch
+      const points = Array.from(pointerMapRef.current.values());
+      const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      pinchStartDistRef.current = dist;
+      pinchStartScaleRef.current = scale;
+      setIsDragging(false);
+    }
   };
 
-  const handleMouseDown = (e) => {
-    if (e.button !== 0) return; // hanya klik kiri
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  const handlePointerMove = (e) => {
+    if (!pointerMapRef.current.has(e.pointerId)) return;
+    pointerMapRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointerMapRef.current.size === 1 && isDragging) {
+      const dx = e.clientX - dragStartRef.current.x;
+      const dy = e.clientY - dragStartRef.current.y;
+      setPosition({
+        x: dragStartRef.current.posX + dx,
+        y: dragStartRef.current.posY + dy,
+      });
+    } else if (pointerMapRef.current.size === 2 && pinchStartDistRef.current > 0) {
+      // Handle multi-touch pinch zoom
+      const points = Array.from(pointerMapRef.current.values());
+      const currentDist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      const ratio = currentDist / pinchStartDistRef.current;
+      const nextScale = Math.min(Math.max(pinchStartScaleRef.current * ratio, 0.25), 4);
+      setScale(Number(nextScale.toFixed(2)));
+    }
   };
 
-  const handleMouseMove = (e) => {
-    if (!isDragging) return;
-    setPosition({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    });
+  const handlePointerUp = (e) => {
+    pointerMapRef.current.delete(e.pointerId);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Abaikan
+    }
+
+    if (pointerMapRef.current.size === 0) {
+      setIsDragging(false);
+      pinchStartDistRef.current = 0;
+    } else if (pointerMapRef.current.size === 1) {
+      // Transisi dari pinch kembali ke single finger drag
+      const remainingPoint = Array.from(pointerMapRef.current.values())[0];
+      dragStartRef.current = {
+        x: remainingPoint.x,
+        y: remainingPoint.y,
+        posX: position.x,
+        posY: position.y,
+      };
+      setIsDragging(true);
+    }
   };
 
-  const handleMouseUp = () => setIsDragging(false);
+  // Wheel zoom via non-passive event listener to allow preventDefault reliably
+  useEffect(() => {
+    if (!diperbesar) return undefined;
+
+    const container = containerRef.current;
+    if (!container) return undefined;
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const factor = e.deltaY < 0 ? 1.15 : 0.88;
+      setScale((prev) => Math.min(Math.max(Number((prev * factor).toFixed(2)), 0.25), 4));
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheel);
+    };
+  }, [diperbesar]);
+
+  // Keyboard shortcut (Esc untuk tutup, +/- untuk zoom, 0 untuk reset)
+  useEffect(() => {
+    if (!diperbesar) return undefined;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setDiperbesar(false);
+        resetZoom();
+      } else if (e.key === '+' || e.key === '=') {
+        handleZoomIn();
+      } else if (e.key === '-') {
+        handleZoomOut();
+      } else if (e.key === '0') {
+        resetZoom();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [diperbesar, resetZoom, handleZoomIn, handleZoomOut]);
 
   useEffect(() => {
     // Selama jawaban masih ditulis, teks diagram belum tentu utuh.
@@ -186,7 +298,10 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
             </button>
             <button
               type="button"
-              onClick={() => setDiperbesar(true)}
+              onClick={() => {
+                resetZoom();
+                setDiperbesar(true);
+              }}
               className="rounded-lg p-1.5 text-content-subtle transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
               title={t('diagram.expand')}
               aria-label={t('diagram.expand')}
@@ -214,11 +329,11 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
         <div
           className="fixed inset-0 z-50 flex flex-col bg-surface/95 backdrop-blur-sm pt-safe pb-safe select-none"
           role="dialog"
+          aria-modal="true"
           aria-label={t('diagram.title')}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
         >
-          <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface">
+          {/* Header & Controls Toolbar */}
+          <div className="flex items-center justify-between border-b border-line px-4 py-3 bg-surface z-10">
             <div className="flex items-center gap-3">
               <span className="text-sm font-semibold text-content">{t('diagram.title')}</span>
               <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-xl border border-line">
@@ -226,7 +341,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={handleZoomIn}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Zoom In"
+                  title="Zoom In (+)"
+                  aria-label="Zoom In"
                 >
                   <ZoomIn className="h-4 w-4" />
                 </button>
@@ -234,7 +350,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={handleZoomOut}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Zoom Out"
+                  title="Zoom Out (-)"
+                  aria-label="Zoom Out"
                 >
                   <ZoomOut className="h-4 w-4" />
                 </button>
@@ -242,11 +359,12 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={resetZoom}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Reset Zoom"
+                  title="Reset Zoom (0)"
+                  aria-label="Reset Zoom"
                 >
                   <RotateCcw className="h-4 w-4" />
                 </button>
-                <span className="text-[11px] font-medium text-content-muted px-2">
+                <span className="text-[11px] font-medium text-content-muted px-2 min-w-[3rem] text-center">
                   {Math.round(scale * 100)}%
                 </span>
               </div>
@@ -259,25 +377,31 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
               }}
               className="rounded-xl p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
               aria-label={t('diagram.close')}
+              title={t('diagram.close')}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
+
+          {/* Interactive Zoom & Pan Viewport */}
           <div
-            className={`flex-1 overflow-hidden p-4 sm:p-8 flex items-center justify-center ${
+            ref={containerRef}
+            className={`relative flex-1 w-full h-full overflow-hidden flex items-center justify-center touch-none select-none ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             }`}
-            onWheel={handleWheel}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onDoubleClick={handleDoubleClick}
           >
             <div
               style={{
-                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+                transform: `translate3d(${position.x}px, ${position.y}px, 0) scale(${scale})`,
+                transition: isDragging ? 'none' : 'transform 0.12s cubic-bezier(0.2, 0, 0, 1)',
                 transformOrigin: 'center center',
               }}
-              className="[&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[85vh] [&_svg]:w-auto [&_svg]:max-w-full pointer-events-none"
+              className="flex items-center justify-center pointer-events-none [&_svg]:!max-w-[85vw] [&_svg]:!max-h-[75vh] [&_svg]:!w-auto [&_svg]:!h-auto [&_svg]:block select-none"
               dangerouslySetInnerHTML={{ __html: svg }}
             />
           </div>
