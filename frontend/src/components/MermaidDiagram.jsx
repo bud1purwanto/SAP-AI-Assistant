@@ -74,7 +74,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  
+
   const idRef = useRef(`mermaid-${(nomorUrut += 1)}`);
   const containerRef = useRef(null);
   const pointerMapRef = useRef(new Map());
@@ -103,7 +103,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   // Pointer drag & multi-touch pinch handling
   const handlePointerDown = (e) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    
+
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -386,9 +386,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
           {/* Interactive Zoom & Pan Viewport */}
           <div
             ref={containerRef}
-            className={`relative flex-1 w-full h-full overflow-hidden flex items-center justify-center touch-none select-none ${
-              isDragging ? 'cursor-grabbing' : 'cursor-grab'
-            }`}
+            className={`relative flex-1 w-full h-full overflow-hidden flex items-center justify-center touch-none select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'
+              }`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
