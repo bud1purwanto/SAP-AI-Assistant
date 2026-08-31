@@ -17,18 +17,33 @@ import { useLanguage } from '../hooks/useLanguage';
 
 let mermaidPromise = null;
 
+const MERMAID_CONFIG = {
+  startOnLoad: false,
+  securityLevel: 'strict',
+  fontFamily: 'Inter, system-ui, sans-serif',
+  flowchart: {
+    useMaxWidth: true,
+    htmlLabels: true,
+    curve: 'basis',
+    nodeSpacing: 30,
+    rankSpacing: 40,
+    padding: 12,
+  },
+  sequence: {
+    useMaxWidth: true,
+    boxMargin: 10,
+    boxTextMargin: 5,
+    noteMargin: 10,
+    messageMargin: 35,
+  },
+};
+
 /** Satu instans mermaid dipakai bersama; inisialisasi ulang mahal dan tidak perlu. */
 function muatMermaid() {
   if (!mermaidPromise) {
     mermaidPromise = import('mermaid').then((mod) => {
       const mermaid = mod.default;
-      mermaid.initialize({
-        startOnLoad: false,
-        securityLevel: 'strict',   // jangan izinkan skrip/HTML dari isi diagram
-        fontFamily: 'Inter, system-ui, sans-serif',
-        flowchart: { useMaxWidth: true, htmlLabels: false },
-        sequence: { useMaxWidth: true },
-      });
+      mermaid.initialize(MERMAID_CONFIG);
       return mermaid;
     });
   }
@@ -76,7 +91,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
       try {
         const mermaid = await muatMermaid();
         if (dibatalkan) return;
-        mermaid.initialize({ startOnLoad: false, theme: temaMermaid() });
+        mermaid.initialize({ ...MERMAID_CONFIG, theme: temaMermaid() });
         const { svg: hasil } = await mermaid.render(idRef.current, chart);
         simpanan.set(kunci, hasil);
         if (!dibatalkan) {
@@ -152,10 +167,10 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
             {chart}
           </pre>
         ) : (
-          // Diagram lebar digulir di dalam wadahnya sendiri; halaman tidak
-          // boleh ikut bergeser ke samping.
+          // Diagram berukuran wajar sesuai isi; diagram pendek tidak ditarik paksa
+          // melebar ke seluruh layar, dan diagram besar dapat digulir horizontal.
           <div
-            className="overflow-x-auto overscroll-x-contain px-3 py-3 [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-w-none"
+            className="overflow-x-auto overscroll-x-contain p-3 sm:p-4 flex items-center justify-center min-h-[4rem] [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[30rem] [&_svg]:w-auto [&_svg]:max-w-full"
             dangerouslySetInnerHTML={{ __html: svg }}
           />
         )}
@@ -179,7 +194,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
             </button>
           </div>
           <div
-            className="flex-1 overflow-auto p-4 [&_svg]:mx-auto [&_svg]:h-auto"
+            className="flex-1 overflow-auto p-4 sm:p-8 flex items-center justify-center [&_svg]:mx-auto [&_svg]:h-auto [&_svg]:max-h-[85vh] [&_svg]:w-auto [&_svg]:max-w-full"
             dangerouslySetInnerHTML={{ __html: svg }}
           />
         </div>
