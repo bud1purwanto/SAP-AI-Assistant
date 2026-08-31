@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
 /* Tema aktif ditentukan oleh atribut data-theme pada <html>.
    Kelas .dark dipertahankan agar utilitas dark: warisan tetap berfungsi
@@ -427,4 +428,45 @@ input[type="search"]::-webkit-search-decoration {
   .composer-disclaimer {
     display: none;
   }
+}
+
+/* ==========================================================================
+   KATEX & MATH FORMULA STYLING FIXES
+   Memastikan rumus matematika (terutama pecahan/frac dan variabel) dirender
+   rapi tanpa garis pecahan menabrak/menimpa angka penyebut (denominator).
+   ========================================================================== */
+
+.katex-display {
+  display: block !important;
+  margin: 0.85rem 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 0.4rem 0.25rem !important;
+  text-align: left !important;
+  max-width: 100% !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.katex {
+  font-size: 1.08em;
+  text-indent: 0;
+  text-rendering: auto;
+}
+
+.katex .mfrac .vlist-t {
+  display: inline-table;
+  table-layout: fixed;
+}
+
+/* Berikan jarak vertikal yang cukup antara garis pecahan dan angka pembilang/penyebut */
+.katex .mfrac .frac-line {
+  border-bottom-width: 0.08em !important;
+  margin-top: 0.12em !important;
+  margin-bottom: 0.12em !important;
+}
+
+/* Pastikan rumus di dalam .prose tidak tertimpa line-height berlebih */
+.prose .katex-display,
+.prose .katex {
+  color: inherit;
 }
