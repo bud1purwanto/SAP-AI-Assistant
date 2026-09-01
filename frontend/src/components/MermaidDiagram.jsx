@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { AlertTriangle, Code2, Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Code2, Copy, Check, Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import { sanitizeMermaid } from '../lib/mermaidUtils';
+import { copyToClipboard } from '../lib/clipboard';
 
 /**
  * Diagram alur dari blok ```mermaid pada jawaban asisten.
@@ -19,7 +21,7 @@ let mermaidPromise = null;
 
 const MERMAID_CONFIG = {
   startOnLoad: false,
-  securityLevel: 'strict',
+  securityLevel: 'loose',
   fontFamily: 'Inter, system-ui, sans-serif',
   flowchart: {
     useMaxWidth: true,
@@ -226,6 +228,17 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [diperbesar, resetZoom, handleZoomIn, handleZoomOut]);
 
+  const [salinSukses, setSalinSukses] = useState(false);
+  const [percobaanUlang, setPercobaanUlang] = useState(0);
+
+  const handleSalinKode = async () => {
+    const ok = await copyToClipboard(chart);
+    if (ok) {
+      setSalinSukses(true);
+      setTimeout(() => setSalinSukses(false), 2000);
+    }
+  };
+
   useEffect(() => {
     // Selama jawaban masih ditulis, teks diagram belum tentu utuh.
     if (isStreaming) return undefined;
@@ -245,23 +258,71 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
         const mermaid = await muatMermaid();
         if (dibatalkan) return;
         mermaid.initialize({ ...MERMAID_CONFIG, theme: temaMermaid() });
-        const { svg: hasil } = await mermaid.render(idRef.current, chart);
-        simpanan.set(kunci, hasil);
-        if (!dibatalkan) {
-          setSvg(hasil);
-          setGalat('');
+
+        // Sanitasi awal
+        const sanitized = sanitizeMermaid(chart);
+
+        let hasil = null;
+        let lastError = null;
+
+        // Upaya 1: Render kode yang telah dinormalisasi & disanitasi
+        const renderId1 = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        try {
+          const res = await mermaid.render(renderId1, sanitized);
+          hasil = res.svg;
+        } catch (err1) {
+          lastError = err1;
+          document.getElementById(renderId1)?.remove();
+          document.getElementById(`d${renderId1}`)?.remove();
+        }
+
+        // Upaya 2: Fallback jika upaya 1 gagal, gunakan pembungkusan kutip ganda agresif
+        if (!hasil) {
+          const renderId2 = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          try {
+            const aggressive = sanitized
+              .replace(/\[([^"\]\n]+)\]/g, (m, txt) => `["${txt.replace(/"/g, "'")}"]`)
+              .replace(/\{([^"\}\n]+)\}/g, (m, txt) => `{"${txt.replace(/"/g, "'")}"}`);
+            const res = await mermaid.render(renderId2, aggressive);
+            hasil = res.svg;
+          } catch (err2) {
+            lastError = err2;
+            document.getElementById(renderId2)?.remove();
+            document.getElementById(`d${renderId2}`)?.remove();
+          }
+        }
+
+        // Upaya 3: Coba teks asli langsung jika sanitasi tidak cocok
+        if (!hasil) {
+          const renderId3 = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+          try {
+            const res = await mermaid.render(renderId3, chart);
+            hasil = res.svg;
+          } catch (err3) {
+            lastError = err3;
+            document.getElementById(renderId3)?.remove();
+            document.getElementById(`d${renderId3}`)?.remove();
+          }
+        }
+
+        if (hasil) {
+          simpanan.set(kunci, hasil);
+          if (!dibatalkan) {
+            setSvg(hasil);
+            setGalat('');
+          }
+        } else {
+          throw lastError || new Error('Diagram could not be rendered.');
         }
       } catch (e) {
         if (!dibatalkan) {
-          // Gambar sebelumnya dipertahankan bila ada; layar tidak perlu
-          // berkedip hanya karena satu percobaan gagal.
           setGalat(e?.message || 'Diagram could not be rendered.');
         }
       }
     })();
 
     return () => { dibatalkan = true; };
-  }, [chart, isStreaming]);
+  }, [chart, isStreaming, percobaanUlang]);
 
   if (isStreaming) {
     return (
@@ -276,12 +337,34 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
   // agar isinya tidak hilang begitu saja.
   if (galat && !svg) {
     return (
-      <div className="my-3 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/40">
-        <div className="flex items-center gap-2 px-4 py-2 text-[11px] font-semibold text-warning">
-          <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
-          {t('diagram.error')}
+      <div className="my-3 overflow-hidden rounded-2xl border border-warning/40 bg-warning-soft/30 shadow-xs">
+        <div className="flex items-center justify-between border-b border-warning/30 px-3.5 py-2.5 bg-warning-soft/50">
+          <div className="flex items-center gap-2 text-xs font-semibold text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{t('diagram.error')}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleSalinKode}
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-warning/40 text-content hover:bg-warning-soft transition-colors cursor-pointer"
+              title="Salin kode diagram"
+            >
+              {salinSukses ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+              <span>{salinSukses ? 'Disalin' : 'Salin'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPercobaanUlang((p) => p + 1)}
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-warning/40 text-content hover:bg-warning-soft transition-colors cursor-pointer"
+              title="Coba gambar ulang"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Coba Lagi</span>
+            </button>
+          </div>
         </div>
-        <pre className="overflow-x-auto px-4 pb-3 text-[11px] leading-relaxed text-content-secondary">
+        <pre className="overflow-x-auto p-3 text-[11.5px] leading-relaxed text-content-secondary font-mono bg-surface-sunken/60">
           {chart}
         </pre>
       </div>

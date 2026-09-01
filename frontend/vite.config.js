@@ -4,15 +4,24 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig({
-  server: {
-    host: '0.0.0.0', // Memungkinkan akses via Local IP / LAN (misal http://192.168.x.x:5173)
-    port: 5173,
-  },
-  preview: {
-    host: '0.0.0.0',
-    port: 5173,
-  },
+export default defineConfig(({ mode }) => {
+  const backendPort = process.env.VITE_BACKEND_PORT || '8006';
+
+  return {
+    server: {
+      host: '0.0.0.0', // Memungkinkan akses via Local IP / LAN (misal http://192.168.x.x:5173)
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: `http://127.0.0.1:${backendPort}`,
+          changeOrigin: true,
+        },
+      },
+    },
+    preview: {
+      host: '0.0.0.0',
+      port: 5173,
+    },
   plugins: [
     react(),
     tailwindcss(),
@@ -85,4 +94,5 @@ export default defineConfig({
       }
     })
   ],
-})
+};
+});
