@@ -877,7 +877,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                         res_str = f"Execution Error: {res_str or tool_result.content}"
                         
                     sources.append(SourceReference(
-                        type="MCP",
+                        type=server_name.upper() if server_name in ("sap", "sql", "email", "rag") else "MCP",
                         name=f"Tool: {actual_tool_name}",
                         content=res_str[:500] if len(res_str) > 500 else res_str
                     ))
@@ -959,8 +959,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                 content_str = "\n".join(texts)
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
+                source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else "MCP"
                 sources.append(SourceReference(
-                    type="MCP" if server_name == "sap" else "RAG",
+                    type=source_type,
                     name=f"Tool: {mcp_name}",
                     content=content_str[:500] + ("..." if len(content_str) > 500 else "")
                 ))

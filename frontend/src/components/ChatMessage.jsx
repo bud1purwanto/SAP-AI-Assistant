@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Pencil, RefreshCw, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
+import { BookOpen, Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Mail, Pencil, RefreshCw, Server, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
 import { useLanguage } from '../hooks/useLanguage';
@@ -52,14 +52,64 @@ const downloadArtifact = async (file, t) => {
   }
 };
 
-/** Terjemahkan nama tool internal menjadi keterangan yang dapat dipahami pengguna. */
-const describeSource = (src, t) => {
+/** Dapatkan informasi metadata sumber (tipe, judul, deskripsi, icon, badge). */
+const getSourceMeta = (src, t) => {
+  const type = (src.type || '').toUpperCase();
   const name = (src.name || '').toLowerCase();
-  if (name.includes('read_table')) return t('chat.sourceReadTable');
-  if (name.includes('program') || name.includes('abap')) return t('chat.sourceAbap');
-  if (name.includes('function')) return t('chat.sourceFunction');
-  if (name.includes('search')) return t('chat.sourceSearch');
-  return src.type === 'MCP' ? t('chat.sourceDefaultMcp') : t('chat.sourceDefaultDoc');
+
+  // 1. SQL Database
+  if (type === 'SQL' || type === 'MCP_SQL' || name.includes('sql')) {
+    let desc = t('chat.sourceDefaultSql');
+    if (name.includes('query')) desc = t('chat.sourceSqlQuery');
+    else if (name.includes('table') || name.includes('schema') || name.includes('describe')) desc = t('chat.sourceSqlTable');
+    return {
+      title: t('chat.sourceTitleSql'),
+      description: desc,
+      icon: <Server className="w-3.5 h-3.5" aria-hidden="true" />,
+      badgeClass: 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+    };
+  }
+
+  // 2. Email Service
+  if (type === 'EMAIL' || type === 'MCP_EMAIL' || name.includes('email') || name.includes('mail') || name.includes('outlook')) {
+    let desc = t('chat.sourceDefaultEmail');
+    if (name.includes('search') || name.includes('find')) desc = t('chat.sourceEmailSearch');
+    else if (name.includes('read') || name.includes('get')) desc = t('chat.sourceEmailRead');
+    else if (name.includes('send') || name.includes('dispatch') || name.includes('draft')) desc = t('chat.sourceEmailSend');
+    return {
+      title: t('chat.sourceTitleEmail'),
+      description: desc,
+      icon: <Mail className="w-3.5 h-3.5" aria-hidden="true" />,
+      badgeClass: 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+    };
+  }
+
+  // 3. RAG / Internal Knowledge Document
+  if (type === 'RAG' || type === 'DOC' || type === 'DOCUMENT' || name.includes('rag_') || name.includes('knowledge')) {
+    let desc = t('chat.sourceDefaultDoc');
+    if (name.includes('search') || name.includes('query')) desc = t('chat.sourceSearch');
+    return {
+      title: t('chat.sourceTitleRag'),
+      description: desc,
+      icon: <BookOpen className="w-3.5 h-3.5" aria-hidden="true" />,
+      badgeClass: 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+    };
+  }
+
+  // 4. SAP Live System (Default untuk MCP SAP)
+  let desc = t('chat.sourceDefaultSap');
+  if (name.includes('read_table')) desc = t('chat.sourceReadTable');
+  else if (name.includes('program') || name.includes('abap')) desc = t('chat.sourceAbap');
+  else if (name.includes('function') || name.includes('bapi') || name.includes('rfc')) desc = t('chat.sourceFunction');
+  else if (name.includes('document') || name.includes('get_sap')) desc = t('chat.sourceDocument');
+  else if (name.includes('search')) desc = t('chat.sourceSearch');
+
+  return {
+    title: t('chat.sourceTitleSap'),
+    description: desc,
+    icon: <Database className="w-3.5 h-3.5" aria-hidden="true" />,
+    badgeClass: 'bg-accent-soft text-accent-soft-fg border border-accent/20'
+  };
 };
 
 const formatTime = (value, language) => {
@@ -634,21 +684,19 @@ const ChatMessage = ({
         {showSources && message.sources && (
           <div className="mt-1.5 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
             {message.sources.map((src, idx) => {
-              const isLive = src.type === 'MCP';
+              const meta = getSourceMeta(src, t);
               return (
                 <div key={idx} className="bg-surface-raised border border-line rounded-2xl overflow-hidden">
                   <div className="flex items-center gap-2.5 px-4 py-3">
-                    <span className={`p-1.5 rounded-lg shrink-0 ${isLive ? 'bg-accent-soft text-accent-soft-fg' : 'bg-surface-sunken text-content-muted'}`}>
-                      {isLive
-                        ? <Database className="w-3.5 h-3.5" aria-hidden="true" />
-                        : <Info className="w-3.5 h-3.5" aria-hidden="true" />}
+                    <span className={`p-1.5 rounded-lg shrink-0 ${meta.badgeClass}`}>
+                      {meta.icon}
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-xs font-semibold text-content">
-                        {isLive ? t('chat.liveSapData') : t('chat.internalDoc')}
+                        {meta.title}
                       </span>
                       <span className="block text-xs text-content-muted truncate">
-                        {describeSource(src, t)}
+                        {meta.description}
                       </span>
                     </span>
                     <button
