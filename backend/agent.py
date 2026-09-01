@@ -2,6 +2,7 @@ import json
 import logging
 import time
 import re
+from datetime import datetime
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from mcp_manager import mcp_manager
@@ -179,7 +180,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
     # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
     progress = on_progress or _noop_progress
-    MAX_ITERATIONS = 6
+    MAX_ITERATIONS = 12
 
     async def report(stage: str, label: str, step: int = 0):
         try:
@@ -579,7 +580,24 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"6. HINDARI menuliskan format struktur, pola penomoran, atau rangkaian teks menggunakan sintaks LaTeX formula seperti `$$\\text{...}$$` atau `$...$`. Gunakan selalu format Markdown standar: inline code (misal `| a | b | c | d | e | f |`), tabel markdown, atau blok kode teks biasa agar bersih dan rapi.\n"
         f"7. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
         f"8. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
-        f"'We performed a RAG search...', atau 'Doc 1 snippet:'.\n\n"
+        f"'We performed a RAG search...', atau 'Doc 1 snippet:'.\n"
+        f"9. PEMBUATAN / EKSEKUSI TRANSAKSI & BAPI VIA RFC:\n"
+        f"   - BEDAKAN SECARA TEGAS ANTARA MEMBACA DATA VS MEMBUAT DATA BARU:\n"
+        f"     Bila pengguna berkata 'buatkan data testing', 'buatkan PO', 'bikin', 'generate', 'posting', atau 'buat transaksi via RFC', ini adalah perintah untuk MEMBUAT (CREATE/POST) DOKUMEN TRANSAKSI BARU di SAP melalui BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).\n"
+        f"     DILARANG KERAS hanya membaca tabel (misal membaca tabel EKKO) lalu menyodorkan nomor-nomor dokumen lama yang sudah ada seolah-olah itu data testing baru!\n"
+        f"   - Bila pengguna meminta pembuatan transaksi di server non-production (Sandbox/Dev):\n"
+        f"     1) Untuk pembuatan PO di Sandbox New Company (TRS), gunakan template parameter teruji berikut agar tidak perlu membuang iterasi membaca tabel:\n"
+        f"        * POHEADER: COMP_CODE='9999', DOC_TYPE='PO07', VENDOR='2131000399', PURCH_ORG='TPOL', PUR_GROUP='P01', DOC_DATE=tanggal server (misal '20290128')\n"
+        f"        * POHEADERX: COMP_CODE='X', DOC_TYPE='X', VENDOR='X', PURCH_ORG='X', PUR_GROUP='X', DOC_DATE='X'\n"
+        f"        * POITEM: [{{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}}]\n"
+        f"        * POITEMX: [{{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}}]\n"
+        f"        * POSCHEDULE: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari (misal '20290215'), 'QUANTITY': 10.0}}]\n"
+        f"        * POSCHEDULEX: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}}]\n"
+        f"        (Catatan: DELIVERY_DATE wajib minimal 14 hari ke depan dari DOC_DATE agar tidak terkena error SAP 'Can delivery date be met?').\n"
+        f"     2) Panggil `call_function` dengan function_name `BAPI_PO_CREATE1` dan `parameters` di atas.\n"
+        f"     3) Jika `RETURN` tidak mengandung error (Type E/A), SEGERA panggil `call_function` untuk `BAPI_TRANSACTION_COMMIT` dengan parameter `{{\"WAIT\": \"X\"}}` agar PO tersimpan permanen ke database SAP.\n"
+        f"     4) Tampilkan nomor dokumen baru yang berhasil dibuat (dari `EXPPURCHASEORDER` / pesan Type S 'PO created under number ...') secara jelas dan bangga kepada pengguna!\n"
+        f"   - Jika pengguna meminta jumlah banyak sekaligus (misal 10 data PO), buatkan 1-2 dokumen PO nyata terlebih dahulu via BAPI, tunjukkan nomor PO barunya yang sukses terbit, dan konfirmasikan untuk memproses sisanya agar respon tetap cepat dan terkontrol.\n\n"
 
         f"{ARTIFACT_PROMPT}\n"
     )
@@ -636,9 +654,11 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     # ------------------------------------------------------------------
     panjang_stabil = len(system_prompt)
 
+    now_real = datetime.now()
     konteks = [
         "\n\n## KONTEKS PERMINTAAN INI\n",
         f"- Role pengguna: {user_role}\n",
+        f"- Tanggal sistem saat ini (real-world): {now_real.strftime('%d.%m.%Y')} (format SAP: {now_real.strftime('%Y%m%d')}). Gunakan tanggal riil ini bila membuat dokumen atau transaksi. HINDARI menggunakan tahun masa depan (seperti 2028) bila tool get_server_date membaca tanggal anomali dari tabel USR02 testing.\n",
         (
             "- Hak ubah program: DIIZINKAN. Anda boleh membantu membuat dan mengubah "
             "objek/program di SAP bila diminta.\n"

@@ -385,6 +385,12 @@ class MCPManager:
         request user lain tidak dapat menyisip di antaranya dan mengalihkan
         query ke sistem yang salah.
         """
+        # Bersihkan meta-key yang lazim disisipkan LLM (seperti 'reason', 'comment', 'note')
+        # yang ditolak ketat oleh interface PyRFC SAP ('field reason not found').
+        final_args = arguments
+        if server_name == "sap" and isinstance(arguments, dict):
+            final_args = self._sanitize_sap_arguments(tool_name, arguments)
+
         if server_name == "sap" and sap_target:
             async with self._sap_lock:
                 async with httpx.AsyncClient() as http_client:
@@ -400,10 +406,35 @@ class MCPManager:
                             is_error=True,
                         )
                     client = self.get_client(server_name)
-                    return await client.call_tool(http_client, tool_name, arguments)
+                    return await client.call_tool(http_client, tool_name, final_args)
 
         async with httpx.AsyncClient() as http_client:
             client = self.get_client(server_name)
-            return await client.call_tool(http_client, tool_name, arguments)
+            return await client.call_tool(http_client, tool_name, final_args)
+
+    @staticmethod
+    def _sanitize_sap_arguments(tool_name: str, arguments: dict) -> dict:
+        """Bersihkan meta-field yang dihasilkan LLM dari parameter RFC/BAPI SAP."""
+        METAKEYS = {
+            "reason", "explanation", "comment", "note", "description",
+            "keterangan", "alasan", "justification", "intent", "purpose"
+        }
+
+        def _clean(val):
+            if isinstance(val, dict):
+                return {
+                    k: _clean(v)
+                    for k, v in val.items()
+                    if str(k).lower() not in METAKEYS
+                }
+            if isinstance(val, list):
+                return [_clean(x) for x in val]
+            return val
+
+        cleaned = _clean(arguments)
+        if tool_name == "call_function" and "parameters" in cleaned and isinstance(cleaned["parameters"], dict):
+            # Pastikan dict parameters bersih dari meta-keys
+            cleaned["parameters"] = _clean(cleaned["parameters"])
+        return cleaned
 
 mcp_manager = MCPManager()
