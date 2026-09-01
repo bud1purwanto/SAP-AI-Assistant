@@ -314,6 +314,9 @@ class MCPManager:
 
     async def _set_active_sap_server_unlocked(self, http_client, target_sap: str):
         """Set server aktif pada MCP SAP. Pemanggil wajib memegang _sap_lock."""
+        if self._active_sap_target and str(self._active_sap_target).strip().lower() == str(target_sap).strip().lower():
+            # Server sudah aktif pada sesi koneksi ini. Jangan reset koneksi agar LUW buffer SAP tidak ter-rollback!
+            return True
         try:
             sap_client = self.get_client("sap")
             res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
@@ -406,11 +409,73 @@ class MCPManager:
                             is_error=True,
                         )
                     client = self.get_client(server_name)
-                    return await client.call_tool(http_client, tool_name, final_args)
+                    return await self._handle_sap_call(http_client, client, tool_name, final_args)
 
         async with httpx.AsyncClient() as http_client:
             client = self.get_client(server_name)
+            if server_name == "sap":
+                return await self._handle_sap_call(http_client, client, tool_name, final_args)
             return await client.call_tool(http_client, tool_name, final_args)
+
+    @staticmethod
+    def _is_mutation_bapi(func_name: str) -> bool:
+        if not func_name:
+            return False
+        u = str(func_name).upper()
+        return (
+            u.startswith("BAPI_")
+            and any(k in u for k in ["CREATE", "CHANGE", "POST", "CANCEL", "RELEASE", "CONFIRM"])
+            and "COMMIT" not in u
+            and "ROLLBACK" not in u
+        )
+
+    async def _handle_sap_call(self, http_client, client, tool_name: str, final_args: dict) -> MCPCallResult:
+        """Eksekusi tool SAP dengan perlindungan Atomic Auto-Commit untuk BAPI mutasi."""
+        res = await client.call_tool(http_client, tool_name, final_args)
+        if tool_name != "call_function" or res.is_error or not res.content:
+            return res
+
+        func_name = str(final_args.get("function_name", ""))
+        auto_commit_requested = final_args.get("commit") is True or final_args.get("auto_commit") is True
+        if self._is_mutation_bapi(func_name) or auto_commit_requested:
+            try:
+                raw_text = res.content[0].text
+                data = json.loads(raw_text)
+                res_data = data.get("result", {})
+                returns = res_data.get("RETURN", [])
+                if isinstance(returns, dict):
+                    returns = [returns]
+                has_error = any(
+                    isinstance(r, dict) and str(r.get("TYPE", "")).upper() in ("E", "A")
+                    for r in returns
+                )
+
+                if not has_error:
+                    logger.info(f"Menjalankan Atomic Auto-Commit untuk {func_name} pada sesi koneksi SAP aktif...")
+                    await client.call_tool(http_client, "call_function", {
+                        "function_name": "BAPI_TRANSACTION_COMMIT",
+                        "parameters": {"WAIT": "X"}
+                    })
+                    data["auto_commit"] = {
+                        "status": "SUCCESS",
+                        "message": "Dokumen berhasil di-commit secara permanen ke database SAP (Single LUW)."
+                    }
+                    res.content[0].text = json.dumps(data, indent=2)
+                else:
+                    logger.warning(f"BAPI {func_name} memiliki pesan error, menjalankan rollback otomatis...")
+                    await client.call_tool(http_client, "call_function", {
+                        "function_name": "BAPI_TRANSACTION_ROLLBACK",
+                        "parameters": {}
+                    })
+                    data["auto_commit"] = {
+                        "status": "ROLLED_BACK",
+                        "message": "BAPI dibatalkan karena terdapat pesan error Type E/A."
+                    }
+                    res.content[0].text = json.dumps(data, indent=2)
+            except Exception as ex:
+                logger.warning(f"Pengecualian saat auto-commit untuk {func_name}: {ex}")
+
+        return res
 
     @staticmethod
     def _sanitize_sap_arguments(tool_name: str, arguments: dict) -> dict:

@@ -180,7 +180,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
     # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
     progress = on_progress or _noop_progress
-    MAX_ITERATIONS = 12
+    MAX_ITERATIONS = 15
 
     async def report(stage: str, label: str, step: int = 0):
         try:
@@ -585,19 +585,20 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"   - BEDAKAN SECARA TEGAS ANTARA MEMBACA DATA VS MEMBUAT DATA BARU:\n"
         f"     Bila pengguna berkata 'buatkan data testing', 'buatkan PO', 'bikin', 'generate', 'posting', atau 'buat transaksi via RFC', ini adalah perintah untuk MEMBUAT (CREATE/POST) DOKUMEN TRANSAKSI BARU di SAP melalui BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).\n"
         f"     DILARANG KERAS hanya membaca tabel (misal membaca tabel EKKO) lalu menyodorkan nomor-nomor dokumen lama yang sudah ada seolah-olah itu data testing baru!\n"
-        f"   - Bila pengguna meminta pembuatan transaksi di server non-production (Sandbox/Dev):\n"
-        f"     1) Untuk pembuatan PO di Sandbox New Company (TRS), gunakan template parameter teruji berikut agar tidak perlu membuang iterasi membaca tabel:\n"
-        f"        * POHEADER: COMP_CODE='9999', DOC_TYPE='PO07', VENDOR='2131000399', PURCH_ORG='TPOL', PUR_GROUP='P01', DOC_DATE=tanggal server (misal '20290128')\n"
-        f"        * POHEADERX: COMP_CODE='X', DOC_TYPE='X', VENDOR='X', PURCH_ORG='X', PUR_GROUP='X', DOC_DATE='X'\n"
-        f"        * POITEM: [{{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}}]\n"
-        f"        * POITEMX: [{{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}}]\n"
-        f"        * POSCHEDULE: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari (misal '20290215'), 'QUANTITY': 10.0}}]\n"
-        f"        * POSCHEDULEX: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}}]\n"
-        f"        (Catatan: DELIVERY_DATE wajib minimal 14 hari ke depan dari DOC_DATE agar tidak terkena error SAP 'Can delivery date be met?').\n"
-        f"     2) Panggil `call_function` dengan function_name `BAPI_PO_CREATE1` dan `parameters` di atas.\n"
-        f"     3) Jika `RETURN` tidak mengandung error (Type E/A), SEGERA panggil `call_function` untuk `BAPI_TRANSACTION_COMMIT` dengan parameter `{{\"WAIT\": \"X\"}}` agar PO tersimpan permanen ke database SAP.\n"
-        f"     4) Tampilkan nomor dokumen baru yang berhasil dibuat (dari `EXPPURCHASEORDER` / pesan Type S 'PO created under number ...') secara jelas dan bangga kepada pengguna!\n"
-        f"   - Jika pengguna meminta jumlah banyak sekaligus (misal 10 data PO), buatkan 1-2 dokumen PO nyata terlebih dahulu via BAPI, tunjukkan nomor PO barunya yang sukses terbit, dan konfirmasikan untuk memproses sisanya agar respon tetap cepat dan terkontrol.\n\n"
+        f"   - FITUR ATOMIC AUTO-COMMIT SISTEM:\n"
+        f"     Backend sistem telah dilengkapi fitur Atomic Auto-Commit otomatis. Setiap kali Anda memanggil `BAPI_PO_CREATE1` (atau BAPI mutasi lainnya), sistem otomatis langsung mengeksekusi `BAPI_TRANSACTION_COMMIT` di dalam sesi koneksi PyRFC yang sama persis bila tidak ada error Type E/A. Anda TIDAK PERLU lagi memanggil `BAPI_TRANSACTION_COMMIT` terpisah!\n"
+        f"   - PEMBUATAN BATCH DATA (MISAL 10 PURCHASE ORDER):\n"
+        f"     Jika pengguna meminta 10 data PO, BUATKAN SEMUA 10 DATA TERSEBUT! Anda dapat memanggil tool `call_function` untuk `BAPI_PO_CREATE1` beberapa kali secara paralel atau berurutan dalam satu respons. Berikan sedikit variasi pada tiap PO (misal kuantitas 10, 15, 20, 25, 30... atau variasi delivery date).\n"
+        f"   - TEMPLATE PARAMETER PO VALID DI SANDBOX NEW COMPANY (TRS):\n"
+        f"     Gunakan parameter teruji berikut agar tidak membuang iterasi membaca tabel:\n"
+        f"     * POHEADER: COMP_CODE='9999', DOC_TYPE='PO07', VENDOR='2131000399', PURCH_ORG='TPOL', PUR_GROUP='P01', DOC_DATE=tanggal server (misal '20290128')\n"
+        f"     * POHEADERX: COMP_CODE='X', DOC_TYPE='X', VENDOR='X', PURCH_ORG='X', PUR_GROUP='X', DOC_DATE='X'\n"
+        f"     * POITEM: [{{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}}]\n"
+        f"     * POITEMX: [{{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}}]\n"
+        f"     * POSCHEDULE: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari (misal '20290215'), 'QUANTITY': 10.0}}]\n"
+        f"     * POSCHEDULEX: [{{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}}]\n"
+        f"     (Catatan: DELIVERY_DATE wajib minimal 14 hari ke depan dari DOC_DATE).\n"
+        f"   - Tampilkan tabel rekap lengkap seluruh nomor PO baru yang berhasil terbit (dari `EXPPURCHASEORDER` / pesan Type S 'PO created under number ...') secara jelas dan rapi kepada pengguna!\n\n"
 
         f"{ARTIFACT_PROMPT}\n"
     )
