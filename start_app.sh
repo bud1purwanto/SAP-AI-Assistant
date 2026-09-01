@@ -114,7 +114,8 @@ fi
 
 (
     cd "$PROJECT_ROOT/frontend" || exit 1
-    VITE_BACKEND_PORT="$BACKEND_PORT" exec npm run dev -- --host 0.0.0.0 --port 5173
+    # Pastikan NODE_ENV=development agar Vite menginjeksi React Refresh preamble dengan benar
+    NODE_ENV=development VITE_BACKEND_PORT="$BACKEND_PORT" exec npm run dev -- --host 0.0.0.0 --port 5173
 ) &
 FRONTEND_PID=$!
 
