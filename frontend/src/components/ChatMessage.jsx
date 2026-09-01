@@ -276,16 +276,19 @@ const ScrollableTable = ({ children }) => {
   }, []);
 
   return (
-    <div className="my-3">
+    <div className="my-3.5 w-full max-w-full">
       <div
         ref={scrollRef}
-        className="overflow-x-auto overscroll-x-contain rounded-xl border border-line shadow-sm"
+        className="overflow-x-auto overscroll-x-contain rounded-2xl border border-line bg-surface-raised shadow-xs [scrollbar-width:thin]"
       >
-        <table className="w-max min-w-full divide-y divide-line text-xs">{children}</table>
+        <table className="w-max min-w-full text-left text-xs border-collapse">
+          {children}
+        </table>
       </div>
       {overflows && (
-        <p className="mt-1 text-[10px] text-content-subtle sm:hidden">
-          {t('chat.scrollTableHint')}
+        <p className="mt-1.5 text-[11px] text-content-subtle flex items-center gap-1.5 px-1 select-none">
+          <span className="text-accent font-bold">⇄</span>
+          <span>{t('chat.scrollTableHint')}</span>
         </p>
       )}
     </div>
@@ -385,7 +388,7 @@ const ChatMessage = ({
         );
       }
       return (
-        <code className="inline bg-accent-soft border border-accent/40 text-accent-soft-fg font-mono text-[12.5px] px-1.5 py-0.5 mx-0.5 rounded-lg font-semibold shadow-2xs select-all break-words [overflow-wrap:anywhere]" {...props}>
+        <code className="inline-block bg-accent-soft border border-accent/30 text-accent-soft-fg font-mono text-[12px] px-1.5 py-0.5 mx-0.5 rounded-lg font-semibold shadow-2xs whitespace-nowrap select-all align-middle" {...props}>
           {codeString}
         </code>
       );
@@ -393,16 +396,23 @@ const ChatMessage = ({
     table({ children }) {
       return <ScrollableTable>{children}</ScrollableTable>;
     },
+    tr({ children }) {
+      return (
+        <tr className="hover:bg-surface-hover/50 transition-colors">
+          {children}
+        </tr>
+      );
+    },
     th({ children }) {
       return (
-        <th className="bg-surface-sunken px-3.5 py-2 text-left font-semibold text-content border-b border-line whitespace-nowrap">
+        <th className="bg-surface-sunken/80 px-4 py-3 text-left font-semibold text-content border-b border-line whitespace-nowrap text-xs select-none tracking-wide">
           {children}
         </th>
       );
     },
     td({ children }) {
       return (
-        <td className="px-3.5 py-2 text-content-secondary border-b border-line align-top min-w-[5rem]">
+        <td className="px-4 py-2.5 text-content-secondary border-b border-line/50 align-middle whitespace-nowrap text-xs">
           {children}
         </td>
       );
