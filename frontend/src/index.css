@@ -393,6 +393,8 @@ input[type="search"]::-webkit-search-decoration {
    sendiri, jadi menambah safe-area penuh membuat jarak bawah terasa jauh. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .pwa-chat-input-bar {
+  .pwa-chat-input-bar,
+  .composer-container {
     padding-bottom: max(0.25rem, calc(env(safe-area-inset-bottom, 0px) * 0.2)) !important;
   }
 
@@ -402,6 +404,8 @@ input[type="search"]::-webkit-search-decoration {
 }
 
 .is-pwa-standalone .pwa-chat-input-bar {
+.is-pwa-standalone .pwa-chat-input-bar,
+.is-pwa-standalone .composer-container {
   padding-bottom: max(0.25rem, calc(env(safe-area-inset-bottom, 0px) * 0.2)) !important;
 }
 

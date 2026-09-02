@@ -91,7 +91,26 @@ const ChatInput = ({
     return () => clearInterval(interval);
   }, [input, activePlaceholdersList]);
 
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 640 : false));
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const activePlaceholder = activePlaceholdersList[placeholderIndex % activePlaceholdersList.length];
+
+  const displayedPlaceholder = useMemo(() => {
+    if (!activePlaceholder) return '';
+    // Pada layar ponsel/PWA, potong teks maksimal ~38 karakter dengan elipsis '…'
+    // agar selalu muat rapi dalam 1 baris tanpa bertumpuk atau terpotong toolbar.
+    const maxLen = isMobile ? 38 : 65;
+    if (activePlaceholder.length > maxLen) {
+      return `${activePlaceholder.slice(0, maxLen - 1).trimEnd()}…`;
+    }
+    return activePlaceholder;
+  }, [activePlaceholder, isMobile]);
 
   const suara = useVoiceInput({
     language,
@@ -224,8 +243,10 @@ const ChatInput = ({
   return (
     <div
       className="composer-container max-w-4xl mx-auto w-full px-2 sm:px-4"
+      className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4"
       style={{
         paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.625rem)',
+        paddingBottom: isMobile ? 'max(0.25rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) * 0.25))' : '0.625rem',
       }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -310,9 +331,9 @@ const ChatInput = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={activePlaceholder}
+            placeholder={displayedPlaceholder}
             aria-label={activePlaceholder}
-            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
+            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
