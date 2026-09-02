@@ -1126,6 +1126,36 @@ async def chat_stream_endpoint(
     )
 
 
+@app.get("/api/chat/suggestions")
+async def get_chat_suggestions_endpoint(
+    lang: str = "id",
+    user: dict = Depends(get_current_user_optional),
+):
+    """Kembalikan 3 saran pertanyaan personal berbasis role & riwayat chat user."""
+    from agent import generate_chat_suggestions
+    from database import get_user_by_username, get_recent_user_queries
+
+    is_guest = user.get("is_guest", True)
+    role = "guest"
+    persona = ""
+    recent_queries = []
+
+    if not is_guest and user.get("username"):
+        profile = get_user_by_username(user["username"])
+        if profile:
+            role = profile.get("role", "user")
+            persona = profile.get("assistant_persona", "")
+        recent_queries = get_recent_user_queries(user["username"], limit=6)
+
+    suggestions = await generate_chat_suggestions(
+        role=role,
+        persona=persona,
+        recent_queries=recent_queries,
+        lang=lang,
+    )
+    return {"suggestions": suggestions}
+
+
 async def _run_chat(
     request: Request,
     chat_req: ChatRequest,

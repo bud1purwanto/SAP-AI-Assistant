@@ -168,6 +168,9 @@ export const api = {
   chat: (payload, signal) =>
     apiFetch('/api/chat', { method: 'POST', body: payload, auth: true, signal }),
 
+  getSuggestions: (lang = 'id') =>
+    apiFetch(`/api/chat/suggestions?lang=${encodeURIComponent(lang || 'id')}`, { auth: true }),
+
   setMessageFeedback: (messageId, feedback) =>
     apiFetch(`/api/messages/${messageId}/feedback`, {
       method: 'POST',

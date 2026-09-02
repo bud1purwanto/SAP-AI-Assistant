@@ -55,6 +55,9 @@ export const TRANSLATIONS = {
     // Suggestions on Empty Screen
     'suggestions.heroTitle': 'Start from here',
     'suggestions.heroSubtitle': 'Choose an example below, or write your own question',
+    'suggestions.loading': 'Analyzing role & personalizing suggestions…',
+    'suggestions.personalized': 'AI Personalized',
+    'suggestions.refresh': 'Refresh suggestions',
     'suggestions.stockCheck.title': 'Check Stock Availability',
     'suggestions.stockCheck.subtitle': 'View current stock levels in our plants',
     'suggestions.stockCheck.query': 'What is the current stock availability in our plant?',
@@ -358,6 +361,9 @@ export const TRANSLATIONS = {
     // Suggestions on Empty Screen
     'suggestions.heroTitle': 'Mulai dari sini',
     'suggestions.heroSubtitle': 'Pilih salah satu contoh, atau tulis pertanyaan Anda sendiri di bawah',
+    'suggestions.loading': 'Menganalisis peran & menyiapkan rekomendasi…',
+    'suggestions.personalized': 'Dipersonalisasi AI',
+    'suggestions.refresh': 'Segarkan saran',
     'suggestions.stockCheck.title': 'Cek Ketersediaan Stok',
     'suggestions.stockCheck.subtitle': 'Lihat stok barang di plant saat ini',
     'suggestions.stockCheck.query': 'Berapa ketersediaan stok material di plant kita saat ini?',

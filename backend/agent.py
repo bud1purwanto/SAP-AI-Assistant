@@ -1,4 +1,5 @@
 import json
+import asyncio
 import logging
 import time
 import re
@@ -1016,3 +1017,207 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     return ChatResponse(
         reply=reply_text, sources=sources, artifacts=artifacts, usage=statistik
     )
+
+
+DEFAULT_SUGGESTIONS = {
+    "id": {
+        "abaper": [
+            {
+                "title": "Kode ABAP & BAPI",
+                "subtitle": "Best practice pemanggilan function & tabel",
+                "query": "Tunjukkan pola kode ABAP yang direkomendasikan untuk membaca MARC/MARD menggunakan BAPI atau SQL efisien.",
+                "icon": "Code"
+            },
+            {
+                "title": "Analisis Dump ST22",
+                "subtitle": "Panduan investigasi runtime error ABAP",
+                "query": "Bagaimana cara menganalisis short dump runtime error ST22 dan langkah isolasi bug-nya?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Optimasi Query SAP",
+                "subtitle": "Teknik indexing & FOR ALL ENTRIES",
+                "query": "Jelaskan best practice optimasi query Open SQL SAP dengan FOR ALL ENTRIES dan index table.",
+                "icon": "Database"
+            }
+        ],
+        "functional": [
+            {
+                "title": "Cek Ketersediaan Stok",
+                "subtitle": "Lihat stok barang di plant saat ini",
+                "query": "Berapa ketersediaan stok material di plant kita saat ini?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Status Purchase Order",
+                "subtitle": "Pantau PO terbuka dan jadwal pengiriman",
+                "query": "Tampilkan Purchase Order (PO) terbuka terbaru dan status penerimaan barangnya.",
+                "icon": "Search"
+            },
+            {
+                "title": "Production Order & PP",
+                "subtitle": "Analisis alur rilis order dan reservasi",
+                "query": "Jelaskan alur rilis Production Order dan pengecekan reservasi komponen RESB.",
+                "icon": "Package"
+            }
+        ],
+        "default": [
+            {
+                "title": "Cek Ketersediaan Stok",
+                "subtitle": "Lihat stok barang di plant saat ini",
+                "query": "Berapa ketersediaan stok material di plant kita saat ini?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Status Purchase Order",
+                "subtitle": "Pantau PO terbuka dan jadwal pengiriman",
+                "query": "Tampilkan Purchase Order (PO) terbuka terbaru dan status penerimaan barangnya.",
+                "icon": "Search"
+            },
+            {
+                "title": "Kode ABAP & BAPI",
+                "subtitle": "Best practice pemanggilan function & tabel",
+                "query": "Tunjukkan pola kode ABAP yang direkomendasikan untuk membaca MARC/MARD menggunakan BAPI atau SQL efisien.",
+                "icon": "FileSpreadsheet"
+            }
+        ]
+    },
+    "en": {
+        "abaper": [
+            {
+                "title": "ABAP Code & BAPI",
+                "subtitle": "Best practices for function modules & tables",
+                "query": "Show me the recommended ABAP pattern for reading MARC/MARD using BAPI or clean SQL.",
+                "icon": "Code"
+            },
+            {
+                "title": "Analyze ST22 Short Dump",
+                "subtitle": "Investigation guide for ABAP runtime errors",
+                "query": "How do I systematically troubleshoot an ST22 runtime error short dump in SAP?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "SAP SQL Optimization",
+                "subtitle": "Indexing & FOR ALL ENTRIES best practices",
+                "query": "Explain best practices for optimizing Open SQL queries with FOR ALL ENTRIES and primary keys.",
+                "icon": "Database"
+            }
+        ],
+        "functional": [
+            {
+                "title": "Check Stock Availability",
+                "subtitle": "View current stock levels in our plants",
+                "query": "What is the current stock availability in our plant?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Purchase Order Status",
+                "subtitle": "Track open POs and pending delivery items",
+                "query": "Show recent open Purchase Orders (PO) and their delivery status.",
+                "icon": "Search"
+            },
+            {
+                "title": "Production Orders & PP",
+                "subtitle": "Analyze order release and reservations",
+                "query": "Explain the Production Order release flow and RESB component reservations check.",
+                "icon": "Package"
+            }
+        ],
+        "default": [
+            {
+                "title": "Check Stock Availability",
+                "subtitle": "View current stock levels in our plants",
+                "query": "What is the current stock availability in our plant?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Purchase Order Status",
+                "subtitle": "Track open POs and pending delivery items",
+                "query": "Show recent open Purchase Orders (PO) and their delivery status.",
+                "icon": "Search"
+            },
+            {
+                "title": "ABAP Code & BAPI",
+                "subtitle": "Best practices for function modules & tables",
+                "query": "Show me the recommended ABAP pattern for reading MARC/MARD using BAPI or clean SQL.",
+                "icon": "FileSpreadsheet"
+            }
+        ]
+    }
+}
+
+
+async def generate_chat_suggestions(
+    role: str = "guest",
+    persona: str = "",
+    recent_queries: list[str] | None = None,
+    lang: str = "id",
+) -> list[dict]:
+    """Hasilkan saran pertanyaan dinamis menggunakan LLM berdasarkan role & riwayat chat user."""
+    lang_key = "en" if str(lang).lower().startswith("en") else "id"
+    role_key = (role or "").lower()
+    fallback_list = (
+        DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
+        or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
+        or DEFAULT_SUGGESTIONS["id"]["default"]
+    )
+
+    try:
+        from database import get_system_config
+        sys_cfg = get_system_config()
+        provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
+        model_name = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
+        llm = _buat_llm(provider, model_name, sys_cfg)
+
+        if not llm:
+            return fallback_list
+
+        queries_context = ""
+        if recent_queries:
+            queries_context = "\n- " + "\n- ".join(recent_queries[:6])
+        else:
+            queries_context = "(Belum ada riwayat pertanyaan / pengguna baru)"
+
+        language_instruction = "Indonesian (Bahasa Indonesia)" if lang_key == "id" else "English"
+
+        prompt = f"""You are an AI prompt recommendation assistant for an Enterprise SAP ERP AI Assistant.
+Generate exactly 3 diverse, actionable, and highly relevant chat prompt starter cards for this user based on their role and recent interests:
+- User Role: {role} (e.g. abaper = ABAP developer / technical; functional = SAP functional consultant MM/SD/PP/FI/CO; superadmin = Admin; guest = general user)
+- User Preferences / Persona: {persona or 'Standard user'}
+- Recent Topics / Questions Asked By User:
+{queries_context}
+
+Format: Return a JSON list of 3 items. Each item MUST have:
+1. "title": Short action title (2 to 4 words, e.g. "Cek PO Outstanding", "Optimasi Query BAPI")
+2. "subtitle": Short description / context (5 to 10 words)
+3. "query": The exact, natural user prompt that will be sent into chat when clicked
+4. "icon": One of ["Layers", "Search", "FileSpreadsheet", "Database", "Code", "Package", "TrendingUp", "Zap", "Shield"]
+
+Language of title, subtitle, and query: {language_instruction}.
+Return ONLY valid JSON array with no markdown formatting around it."""
+
+        res = await asyncio.wait_for(
+            llm.ainvoke([HumanMessage(content=prompt)]),
+            timeout=4.5
+        )
+        content = _extract_text(res.content).strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content)
+            content = re.sub(r"\s*```$", "", content)
+        data = json.loads(content)
+        if isinstance(data, list) and len(data) >= 3:
+            cleaned = []
+            for item in data[:3]:
+                if isinstance(item, dict) and item.get("title") and item.get("query"):
+                    cleaned.append({
+                        "title": str(item["title"]).strip(),
+                        "subtitle": str(item.get("subtitle", "")).strip(),
+                        "query": str(item["query"]).strip(),
+                        "icon": str(item.get("icon") or "Layers").strip()
+                    })
+            if len(cleaned) == 3:
+                return cleaned
+    except Exception as e:
+        logger.warning(f"Gagal generate dynamic suggestions via LLM, menggunakan fallback: {e}")
+
+    return fallback_list

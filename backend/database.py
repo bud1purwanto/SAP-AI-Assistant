@@ -1394,6 +1394,37 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
         return []
 
 
+def get_recent_user_queries(username: str, limit: int = 8) -> list[str]:
+    """Ambil daftar pertanyaan terakhir yang diajukan oleh pengguna di seluruh sesinya."""
+    if not username or username.strip().lower() == "guest":
+        return []
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("""
+                    SELECT m.content
+                    FROM ai_assistant.chat_messages m
+                    JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                    WHERE LOWER(s.username) = LOWER(:u) AND m.role = 'user'
+                    ORDER BY m.id DESC
+                    LIMIT :lim
+                """),
+                {"u": username.strip(), "lim": limit}
+            ).fetchall()
+            seen = set()
+            result = []
+            for r in rows:
+                txt = (r[0] or "").strip()
+                if txt and txt not in seen:
+                    seen.add(txt)
+                    result.append(txt[:200])
+            return result
+    except Exception as e:
+        logger.error(f"Error get_recent_user_queries: {e}")
+        return []
+
+
 # --- SUPER ADMIN FUNCTIONS ---
 
 def list_all_users():

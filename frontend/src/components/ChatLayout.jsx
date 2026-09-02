@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, Cpu, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Pencil, Plus, Search, Settings, ShieldAlert, ShieldCheck, Sun, Trash2, X,
+  AlertTriangle, Check, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -22,6 +22,19 @@ import {
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
+
+const SUGGESTION_ICONS = {
+  Layers,
+  Search,
+  FileSpreadsheet,
+  Code,
+  Database,
+  Package,
+  TrendingUp,
+  Zap,
+  Shield: ShieldCheck,
+  Cpu,
+};
 
 const groupSessionsByDate = (sessionsList, t) => {
   const groups = {
@@ -118,6 +131,9 @@ const ChatLayout = () => {
       return '';
     }
   });
+
+  const [dynamicSuggestions, setDynamicSuggestions] = useState(null);
+  const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -460,6 +476,27 @@ const ChatLayout = () => {
     return false;
   }, [isGuest, language, fetchSessions]);
 
+  const loadSuggestions = useCallback(async (force = false) => {
+    setIsSuggestionsLoading(true);
+    try {
+      const res = await api.getSuggestions(language);
+      if (res?.suggestions && Array.isArray(res.suggestions) && res.suggestions.length >= 3) {
+        setDynamicSuggestions(res.suggestions);
+      } else {
+        setDynamicSuggestions(null);
+      }
+    } catch (err) {
+      console.warn('Gagal memuat saran dinamis LLM, fallback ke default:', err);
+      setDynamicSuggestions(null);
+    } finally {
+      setIsSuggestionsLoading(false);
+    }
+  }, [language]);
+
+  useEffect(() => {
+    loadSuggestions();
+  }, [user.username, user.role, language, loadSuggestions]);
+
   useEffect(() => {
     setSessions([]);
     setCurrentSessionId(null);
@@ -567,6 +604,7 @@ const ChatLayout = () => {
       ...prev,
       [DRAFT_SESSION_KEY]: null,
     }));
+    loadSuggestions(true);
   };
 
   const promptDeleteSession = (e, session) => {
@@ -1435,55 +1473,98 @@ const ChatLayout = () => {
                   <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-3">
                     <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-content font-display">{t('suggestions.heroTitle')}</h3>
-                  <p className="text-xs sm:text-sm text-content-muted mt-1 sm:mt-1.5 max-w-lg mx-auto">
+                  <div className="flex items-center justify-center gap-2 mb-1">
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display">{t('suggestions.heroTitle')}</h3>
+                    {dynamicSuggestions && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 border border-indigo-500/25 flex items-center gap-1">
+                        <Sparkles className="w-2.5 h-2.5" />
+                        {t('suggestions.personalized')}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => loadSuggestions(true)}
+                      disabled={isSuggestionsLoading}
+                      title={t('suggestions.refresh')}
+                      aria-label={t('suggestions.refresh')}
+                      className="p-1 text-content-muted hover:text-content hover:bg-surface-hover rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
+                    </button>
+                  </div>
+                  <p className="text-xs sm:text-sm text-content-muted mt-1 max-w-lg mx-auto">
                     {t('suggestions.heroSubtitle')}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                  {[
-                    {
-                      title: t('suggestions.stockCheck.title'),
-                      subtitle: t('suggestions.stockCheck.subtitle'),
-                      query: t('suggestions.stockCheck.query'),
-                      icon: Layers,
-                    },
-                    {
-                      title: t('suggestions.poStatus.title'),
-                      subtitle: t('suggestions.poStatus.subtitle'),
-                      query: t('suggestions.poStatus.query'),
-                      icon: Search,
-                    },
-                    {
-                      title: t('suggestions.abapHelper.title'),
-                      subtitle: t('suggestions.abapHelper.subtitle'),
-                      query: t('suggestions.abapHelper.query'),
-                      icon: FileSpreadsheet,
-                    },
-                  ].map((item) => {
-                    const IconComp = item.icon;
-                    return (
-                      <button
-                        key={item.title}
-                        onClick={() => handleSendMessage(item.query)}
-                        className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
-                      >
-                        <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors sm:mb-3.5 shrink-0">
-                          <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block">
-                            {item.title}
-                          </span>
-                          <span className="text-[11px] sm:text-xs text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed block truncate sm:whitespace-normal">
-                            {item.subtitle}
-                          </span>
+                {isSuggestionsLoading ? (
+                  <div>
+                    <div className="flex items-center justify-center gap-2 mb-3 text-xs text-indigo-500 font-medium">
+                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                      <span>{t('suggestions.loading')}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                      {[1, 2, 3].map((i) => (
+                        <div
+                          key={i}
+                          className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised border border-line animate-pulse gap-3 sm:gap-0"
+                        >
+                          <div className="w-9 h-9 rounded-lg sm:rounded-xl bg-surface-sunken sm:mb-3.5 shrink-0" />
+                          <div className="min-w-0 flex-1 w-full space-y-2">
+                            <div className="h-4 bg-surface-sunken rounded-md w-3/4" />
+                            <div className="h-3 bg-surface-sunken rounded-md w-full" />
+                          </div>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 animate-fadeIn">
+                    {(dynamicSuggestions && dynamicSuggestions.length >= 3
+                      ? dynamicSuggestions
+                      : [
+                          {
+                            title: t('suggestions.stockCheck.title'),
+                            subtitle: t('suggestions.stockCheck.subtitle'),
+                            query: t('suggestions.stockCheck.query'),
+                            icon: 'Layers',
+                          },
+                          {
+                            title: t('suggestions.poStatus.title'),
+                            subtitle: t('suggestions.poStatus.subtitle'),
+                            query: t('suggestions.poStatus.query'),
+                            icon: 'Search',
+                          },
+                          {
+                            title: t('suggestions.abapHelper.title'),
+                            subtitle: t('suggestions.abapHelper.subtitle'),
+                            query: t('suggestions.abapHelper.query'),
+                            icon: 'FileSpreadsheet',
+                          },
+                        ]
+                    ).map((item, idx) => {
+                      const IconComp = (typeof item.icon === 'string' ? SUGGESTION_ICONS[item.icon] : item.icon) || Layers;
+                      return (
+                        <button
+                          key={item.title || idx}
+                          onClick={() => handleSendMessage(item.query)}
+                          className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
+                        >
+                          <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors sm:mb-3.5 shrink-0">
+                            <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block">
+                              {item.title}
+                            </span>
+                            <span className="text-[11px] sm:text-xs text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed block truncate sm:whitespace-normal">
+                              {item.subtitle}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
