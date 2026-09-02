@@ -327,21 +327,32 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         merged = None
         terkumpul = ""
         terkirim = ""
+        is_tool_call = False
+        BUFFER_THRESHOLD = 80  # Tahan ~80 karakter awal untuk memastikan model tidak memanggil tool
+
         try:
             async for chunk in model.astream(msgs):
                 merged = chunk if merged is None else merged + chunk
+
+                # Deteksi awal apakah model sedang memanggil tool
+                if getattr(chunk, "tool_call_chunks", None) or getattr(chunk, "tool_calls", None):
+                    is_tool_call = True
+                    if terkirim:
+                        await reset_stream()
+                        terkirim = ""
+                    continue
+
+                if is_tool_call:
+                    continue
+
                 potongan = _chunk_text(chunk.content)
                 if not potongan:
                     continue
                 terkumpul += potongan
 
-                # Jalur cepat: selama tidak ada penanda yang perlu dibersihkan,
-                # potongan diteruskan apa adanya. Tanpa ini setiap potongan akan
-                # memicu regex atas seluruh teks — biaya kuadratik pada jawaban
-                # panjang.
-                if not _PERLU_BERSIH.search(terkumpul):
-                    terkirim += potongan
-                    await emit_token(potongan)
+                # Jangan langsung kirim ke antarmuka bila teks masih di bawah batas buffer,
+                # agar kalimat pengantar sebelum pemanggilan tool tidak membocorkan bubble chat terpotong.
+                if len(terkumpul) < BUFFER_THRESHOLD:
                     continue
 
                 # Tahan selama blok penalaran belum ditutup.
@@ -365,12 +376,28 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             # Sebagian teks mungkin sudah terkirim sebelum gagal.
             await reset_stream()
             raise
+
         if merged is None:
             # Provider menutup aliran tanpa mengirim apa pun.
             hasil = await model.ainvoke(msgs)
             catat_pemakaian(hasil)
             return hasil
+
         catat_pemakaian(merged)
+
+        # Bila putaran ini memanggil tool, pastikan stream bersih (teks pengantar tidak tampil di bubble chat)
+        if getattr(merged, "tool_calls", None):
+            if terkirim:
+                await reset_stream()
+            return merged
+
+        # Bila ini adalah jawaban akhir (tanpa tool) dan belum terkirim karena berada di bawah batas buffer:
+        tampil_akhir = _clean_thinking_process(terkumpul)
+        if tampil_akhir and not terkirim:
+            await emit_token(tampil_akhir)
+        elif tampil_akhir and len(tampil_akhir) > len(terkirim) and tampil_akhir.startswith(terkirim):
+            await emit_token(tampil_akhir[len(terkirim):])
+
         return merged
 
     await report("connecting", "Menyiapkan permintaan…")
@@ -567,6 +594,11 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi SAP.\n\n"
         f"Bila sebuah permintaan menggabungkan beberapa jenis (misalnya: ambil data SAP lalu "
         f"rapikan jadi Excel), kerjakan berurutan: ambil datanya dulu, baru olah hasilnya.\n\n"
+        f"**ATURAN PEMANGGILAN TOOL (PENTING):**\n"
+        f"Ketika Anda memutuskan untuk memanggil tool (SAP, RAG, SQL, dsb.), panggil tool tersebut "
+        f"secara langsung tanpa menulis kalimat pengantar atau narasi obrolan sebelumnya (misalnya: JANGAN katakan "
+        f"'Sekarang saya akan...', 'Saya cari di RAG...', 'Tunggu sebentar...'). Seluruh penjelasan dan "
+        f"jawaban akhir hanya ditulis setelah seluruh hasil data dari tool selesai diperoleh.\n\n"
 
         f"## MEMORI PERCAKAPAN\n"
         f"Anda memiliki akses ke riwayat percakapan sesi ini. Untuk pertanyaan lanjutan atau "
