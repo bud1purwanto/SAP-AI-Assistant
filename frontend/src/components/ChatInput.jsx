@@ -242,10 +242,8 @@ const ChatInput = ({
 
   return (
     <div
-      className="composer-container max-w-4xl mx-auto w-full px-2 sm:px-4"
       className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4"
       style={{
-        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.625rem)',
         paddingBottom: isMobile ? 'max(0.25rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) * 0.25))' : '0.625rem',
       }}
       onDragEnter={handleDragEnter}
