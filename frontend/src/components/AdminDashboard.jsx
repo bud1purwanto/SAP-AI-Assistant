@@ -1713,39 +1713,62 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <p className="font-mono text-sm text-content">{peran}</p>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`harian-${peran}`}>
-                            {language === 'en' ? 'Daily Tokens' : 'Token per hari'}
-                          </label>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <label className="block text-xs font-medium text-content-muted" htmlFor={`harian-${peran}`}>
+                              {language === 'en' ? 'Daily Tokens' : 'Token per hari'}
+                            </label>
+                            {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit) && (
+                              <span className={`text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md ${
+                                Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0
+                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                  : 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'
+                              }`}>
+                                {Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0 ? '♾️ ' : '≈ '}
+                                {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit)}
+                              </span>
+                            )}
+                          </div>
                           <input
                             id={`harian-${peran}`}
-                            type="number"
-                            min="0"
-                            value={batasDraft[peran]?.daily_token_limit ?? ''}
-                            onChange={(e) =>
+                            type="text"
+                            inputMode="numeric"
+                            value={formatNumberSeparator(batasDraft[peran]?.daily_token_limit)}
+                            onChange={(e) => {
+                              const cleanDigits = e.target.value.replace(/\D/g, '');
                               setBatasDraft((d) => ({
                                 ...d,
-                                [peran]: { ...d[peran], daily_token_limit: e.target.value },
-                              }))
-                            }
-                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                [peran]: { ...d[peran], daily_token_limit: cleanDigits },
+                              }));
+                            }}
+                            placeholder="0"
+                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <label className="block text-xs font-medium text-content-muted mb-1" htmlFor={`menit-${peran}`}>
-                            {language === 'en' ? 'Requests Per Minute' : 'Permintaan per menit'}
-                          </label>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <label className="block text-xs font-medium text-content-muted" htmlFor={`menit-${peran}`}>
+                              {language === 'en' ? 'Requests Per Minute' : 'Permintaan per menit'}
+                            </label>
+                            {Number(String(batasDraft[peran]?.per_minute_limit).replace(/\D/g, '')) === 0 && (
+                              <span className="text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                                ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
+                              </span>
+                            )}
+                          </div>
                           <input
                             id={`menit-${peran}`}
-                            type="number"
-                            min="0"
-                            value={batasDraft[peran]?.per_minute_limit ?? ''}
-                            onChange={(e) =>
+                            type="text"
+                            inputMode="numeric"
+                            value={formatNumberSeparator(batasDraft[peran]?.per_minute_limit)}
+                            onChange={(e) => {
+                              const cleanDigits = e.target.value.replace(/\D/g, '');
                               setBatasDraft((d) => ({
                                 ...d,
-                                [peran]: { ...d[peran], per_minute_limit: e.target.value },
-                              }))
-                            }
-                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                [peran]: { ...d[peran], per_minute_limit: cleanDigits },
+                              }));
+                            }}
+                            placeholder="0"
+                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                           />
                         </div>
                         <button
