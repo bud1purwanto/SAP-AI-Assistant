@@ -211,6 +211,8 @@ export const api = {
   adminUpdateMode: (id, payload) => apiFetch(`/api/admin/modes/${id}`, { method: 'PUT', body: payload }),
   adminDeleteMode: (id) => apiFetch(`/api/admin/modes/${id}`, { method: 'DELETE' }),
   adminSetDefaultMode: (id) => apiFetch(`/api/admin/modes/${id}/default`, { method: 'POST' }),
+  adminReorderModes: (modeIds) =>
+    apiFetch('/api/admin/modes/reorder', { method: 'POST', body: { mode_ids: modeIds } }),
   adminToggleModesMaster: (enabled) =>
     apiFetch('/api/admin/modes/enabled', { method: 'POST', body: { enabled } }),
   adminRoleModes: () => apiFetch('/api/admin/modes/roles'),

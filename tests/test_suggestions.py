@@ -73,3 +73,18 @@ def test_suggestions_with_mocked_llm(client, make_user, monkeypatch):
     data = res.json()
     assert data["suggestions"] == mock_llm_suggestions
 
+
+def test_suggestions_disabled_toggle(client, admin_auth):
+    """Admin dapat menonaktifkan ai_suggestions_enabled sehingga sistem langsung memakai fallback tanpa LLM."""
+    res_off = client.post("/api/config", json={"ai_suggestions_enabled": False}, headers=admin_auth)
+    assert res_off.status_code == 200
+
+    res_sug = client.get("/api/chat/suggestions?lang=id")
+    assert res_sug.status_code == 200
+    data = res_sug.json()
+    assert data.get("dynamic") is False
+    assert len(data["suggestions"]) >= 3
+
+    res_on = client.post("/api/config", json={"ai_suggestions_enabled": True}, headers=admin_auth)
+    assert res_on.status_code == 200
+

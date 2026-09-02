@@ -280,6 +280,7 @@ class ConfigUpdate(BaseModel):
     assistant_persona: str = ""
     full_name: str = None
     global_assistant_persona: str = None
+    ai_suggestions_enabled: bool = None
 
 
 @app.get("/api/config")
@@ -320,6 +321,7 @@ async def get_config(user: dict = Depends(get_current_user)):
             "nine_router_api_key_set": bool(sys_cfg.get("nine_router_api_key")),
             "openrouter_api_key": _mask_secret(sys_cfg.get("openrouter_api_key", "")),
             "openrouter_api_key_set": bool(sys_cfg.get("openrouter_api_key")),
+            "ai_suggestions_enabled": sys_cfg.get("ai_suggestions_enabled", True),
         })
 
     return payload
@@ -360,6 +362,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             openrouter_fallback_model=config.openrouter_fallback_model,
             openrouter_api_key=open_key,
             global_assistant_persona=config.global_assistant_persona,
+            ai_suggestions_enabled=config.ai_suggestions_enabled,
         )
 
     return {"status": "success"}
@@ -790,6 +793,10 @@ class AdminUpdateModeRequest(BaseModel):
     sort_order: Optional[int] = None
 
 
+class AdminReorderModesRequest(BaseModel):
+    mode_ids: list[int]
+
+
 class AdminToggleModeMasterRequest(BaseModel):
     enabled: bool
 
@@ -981,6 +988,18 @@ async def set_default_mode_endpoint(mode_id: int, admin: dict = Depends(require_
     return {"status": "success", "message": f"Mode '{existing['name']}' berhasil dijadikan default."}
 
 
+@app.post("/api/admin/modes/reorder")
+async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = Depends(require_superadmin)):
+    """Perbarui urutan sort_order seluruh mode chat."""
+    from database import reorder_chat_modes, get_chat_modes
+    if not req.mode_ids:
+        raise HTTPException(status_code=400, detail="Daftar ID mode tidak boleh kosong.")
+    ok = reorder_chat_modes(req.mode_ids)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan urutan mode.")
+    return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
+
+
 # --- CHAT ---
 
 def _batas_peran(role: str) -> dict:
@@ -1147,13 +1166,25 @@ async def get_chat_suggestions_endpoint(
             persona = profile.get("assistant_persona", "")
         recent_queries = get_recent_user_queries(user["username"], limit=6)
 
+    sys_cfg = get_system_config()
+    if not sys_cfg.get("ai_suggestions_enabled", True):
+        from agent import DEFAULT_SUGGESTIONS
+        lang_key = "en" if str(lang).lower().startswith("en") else "id"
+        role_key = (role or "").lower()
+        fallback = (
+            DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
+            or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
+            or DEFAULT_SUGGESTIONS["id"]["default"]
+        )
+        return {"suggestions": fallback, "dynamic": False}
+
     suggestions = await generate_chat_suggestions(
         role=role,
         persona=persona,
         recent_queries=recent_queries,
         lang=lang,
     )
-    return {"suggestions": suggestions}
+    return {"suggestions": suggestions, "dynamic": True}
 
 
 async def _run_chat(

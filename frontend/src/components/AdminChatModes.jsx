@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Edit3,
   Key,
   Lock,
@@ -9,6 +11,7 @@ import {
   Save,
   Server,
   Sliders,
+  Sparkles,
   Star,
   Trash2,
   X,
@@ -60,6 +63,7 @@ export default function AdminChatModes({
   const [modesList, setModesList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [masterEnabled, setMasterEnabled] = useState(true);
+  const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const [roleMatrix, setRoleMatrix] = useState([]);
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -102,6 +106,7 @@ export default function AdminChatModes({
         setOpenrouterApiKey(configRes.openrouter_api_key || '');
         setOpenrouterModel(configRes.openrouter_model || 'openrouter/auto');
         setOpenrouterFallbackModel(configRes.openrouter_fallback_model || 'openrouter/free');
+        setSuggestionsEnabled(configRes.ai_suggestions_enabled !== undefined ? configRes.ai_suggestions_enabled : true);
       }
 
       if (onRefreshModes) onRefreshModes();
@@ -162,6 +167,24 @@ export default function AdminChatModes({
         );
       }
       if (onRefreshModes) onRefreshModes();
+    } catch (err) {
+      if (setActionError) setActionError(err.message);
+    }
+  };
+
+  const handleToggleSuggestions = async (enabled) => {
+    if (setActionError) setActionError('');
+    if (setActionSuccess) setActionSuccess('');
+    try {
+      await api.saveConfig({ ai_suggestions_enabled: enabled });
+      setSuggestionsEnabled(enabled);
+      if (setActionSuccess) {
+        setActionSuccess(
+          enabled
+            ? (language === 'en' ? 'AI Dynamic Suggestions & Placeholders enabled.' : 'Saran Percakapan & Placeholder Dinamis AI berhasil diaktifkan.')
+            : (language === 'en' ? 'AI Dynamic Suggestions disabled (static suggestions used).' : 'Saran Percakapan & Placeholder Dinamis AI dinonaktifkan (menggunakan saran statis bawaan).')
+        );
+      }
     } catch (err) {
       if (setActionError) setActionError(err.message);
     }
@@ -259,6 +282,32 @@ export default function AdminChatModes({
       fetchData();
     } catch (err) {
       if (setActionError) setActionError(err.message);
+    }
+  };
+
+  const handleMoveMode = async (index, direction) => {
+    if (setActionError) setActionError('');
+    if (setActionSuccess) setActionSuccess('');
+
+    const targetIndex = direction === 'left' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= modesList.length) return;
+
+    const newModes = [...modesList];
+    const temp = newModes[index];
+    newModes[index] = newModes[targetIndex];
+    newModes[targetIndex] = temp;
+
+    setModesList(newModes);
+
+    try {
+      const modeIds = newModes.map((m) => m.id);
+      await api.adminReorderModes(modeIds);
+      if (setActionSuccess) {
+        setActionSuccess(language === 'en' ? 'Mode order updated successfully!' : 'Urutan mode berhasil disimpan!');
+      }
+    } catch (err) {
+      if (setActionError) setActionError(err.message);
+      fetchData();
     }
   };
 
@@ -510,54 +559,95 @@ export default function AdminChatModes({
         </div>
       </div>
 
-      {/* Master Switch */}
-      <div
-        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-          masterEnabled
-            ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800/60'
-            : 'bg-surface border-line'
-        }`}
-      >
-        <div className="flex items-start sm:items-center gap-3">
-          <div
-            className={`p-2 rounded-xl shrink-0 ${
-              masterEnabled ? 'bg-indigo-600 text-white' : 'bg-surface-sunken text-content-subtle'
-            }`}
-          >
-            <Sliders className="w-5 h-5" />
+      {/* Controls Grid: Chat Modes Master Switch & AI Suggestions Switch */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+        {/* Master Toggle */}
+        <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface flex items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                masterEnabled ? 'bg-indigo-600 text-white' : 'bg-surface-sunken text-content-subtle'
+              }`}
+            >
+              <Sliders className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs sm:text-sm font-bold text-content flex items-center gap-2 flex-wrap">
+                <span>{language === 'en' ? 'Chat Modes (Master)' : 'Fitur Mode Chat (Master)'}</span>
+                <span
+                  className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full ${
+                    masterEnabled
+                      ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold'
+                      : 'bg-surface-sunken text-content-subtle'
+                  }`}
+                >
+                  {masterEnabled
+                    ? (language === 'en' ? 'Active' : 'Aktif')
+                    : (language === 'en' ? 'Disabled' : 'Nonaktif')}
+                </span>
+              </h4>
+              <p className="text-xs text-content-muted mt-0.5 line-clamp-2">
+                {language === 'en'
+                  ? 'When disabled, all users use standard default mode without dropdown selector.'
+                  : 'Bila dimatikan, seluruh pengguna menggunakan mode default tanpa popover pilihan.'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h4 className="text-xs sm:text-sm font-bold text-content flex items-center gap-2">
-              {language === 'en' ? 'Chat Modes Feature (Master Switch)' : 'Fitur Mode Chat (Master Switch)'}
-              <span
-                className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full ${
-                  masterEnabled
-                    ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold'
-                    : 'bg-surface-sunken text-content-subtle'
-                }`}
-              >
-                {masterEnabled
-                  ? (language === 'en' ? 'Active' : 'Aktif')
-                  : (language === 'en' ? 'Disabled' : 'Nonaktif')}
-              </span>
-            </h4>
-            <p className="text-xs text-content-muted mt-0.5">
-              {language === 'en'
-                ? 'When disabled, all users use standard single-mode settings without dropdown selector.'
-                : 'Bila dimatikan, seluruh pengguna menggunakan mode default tanpa popover pilihan.'}
-            </p>
-          </div>
+
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={masterEnabled}
+              onChange={(e) => handleToggleMaster(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
+          </label>
         </div>
 
-        <label className="relative inline-flex items-center cursor-pointer shrink-0">
-          <input
-            type="checkbox"
-            checked={masterEnabled}
-            onChange={(e) => handleToggleMaster(e.target.checked)}
-            className="sr-only peer"
-          />
-          <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600" />
-        </label>
+        {/* AI Dynamic Suggestions & Placeholders Toggle */}
+        <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface flex items-start sm:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3 min-w-0">
+            <div
+              className={`p-2 rounded-xl shrink-0 ${
+                suggestionsEnabled ? 'bg-purple-600 text-white' : 'bg-surface-sunken text-content-subtle'
+              }`}
+            >
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs sm:text-sm font-bold text-content flex items-center gap-2 flex-wrap">
+                <span>{language === 'en' ? 'AI Suggestions & Ideas' : 'Saran Percakapan AI'}</span>
+                <span
+                  className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full ${
+                    suggestionsEnabled
+                      ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold'
+                      : 'bg-surface-sunken text-content-subtle'
+                  }`}
+                >
+                  {suggestionsEnabled
+                    ? (language === 'en' ? 'Active' : 'Aktif')
+                    : (language === 'en' ? 'Disabled' : 'Nonaktif')}
+                </span>
+              </h4>
+              <p className="text-xs text-content-muted mt-0.5 line-clamp-2">
+                {language === 'en'
+                  ? 'Personalized prompt cards & placeholder ideas based on role & chat history. If off, uses static defaults.'
+                  : 'Saran pertanyaan & ide kolom ketik dari role & riwayat chat. Bila nonaktif, memakai saran statis.'}
+              </p>
+            </div>
+          </div>
+
+          <label className="relative inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={suggestionsEnabled}
+              onChange={(e) => handleToggleSuggestions(e.target.checked)}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600" />
+          </label>
+        </div>
       </div>
 
       {/* Modes Grid */}
@@ -592,7 +682,9 @@ export default function AdminChatModes({
                   m.code?.toLowerCase().includes(search.toLowerCase()) ||
                   m.description?.toLowerCase().includes(search.toLowerCase())
               )
-              .map((mode) => (
+              .map((mode) => {
+                const realIndex = modesList.findIndex((m) => m.id === mode.id);
+                return (
                 <div
                   key={mode.id}
                   className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
@@ -700,6 +792,36 @@ export default function AdminChatModes({
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {/* Tombol Geser Posisi Urutan */}
+                      <div className="flex items-center border border-line rounded-lg bg-surface-sunken/60 mr-1 p-0.5">
+                        <button
+                          type="button"
+                          disabled={realIndex <= 0}
+                          onClick={() => handleMoveMode(realIndex, 'left')}
+                          className="p-1 rounded text-content-muted hover:text-indigo-600 hover:bg-surface disabled:opacity-20 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                          title={language === 'en' ? 'Move earlier (left)' : 'Geser ke kiri / urutan sebelumnya'}
+                          aria-label={language === 'en' ? 'Move left' : 'Geser kiri'}
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <span
+                          className="text-[10px] font-mono font-bold text-content-subtle px-1 select-none"
+                          title={language === 'en' ? `Position #${realIndex + 1}` : `Urutan ke-${realIndex + 1}`}
+                        >
+                          {realIndex + 1}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={realIndex >= modesList.length - 1}
+                          onClick={() => handleMoveMode(realIndex, 'right')}
+                          className="p-1 rounded text-content-muted hover:text-indigo-600 hover:bg-surface disabled:opacity-20 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                          title={language === 'en' ? 'Move later (right)' : 'Geser ke kanan / urutan setelahnya'}
+                          aria-label={language === 'en' ? 'Move right' : 'Geser kanan'}
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => {
@@ -740,7 +862,8 @@ export default function AdminChatModes({
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
           </div>
         )}
       </div>

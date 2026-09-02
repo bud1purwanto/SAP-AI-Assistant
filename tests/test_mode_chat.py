@@ -161,3 +161,28 @@ def test_admin_master_switch_toggle(client, admin_auth):
     )
     assert res_enable.status_code == 200
     assert get_system_config().get("chat_modes_enabled") is True
+
+
+def test_admin_reorder_modes(client, admin_auth):
+    """Superadmin dapat mengubah urutan sort_order mode dan mempengaruhi endpoint user."""
+    res = client.get("/api/admin/modes", headers=admin_auth)
+    modes = res.json()["modes"]
+    assert len(modes) >= 3
+
+    original_ids = [m["id"] for m in modes]
+    reversed_ids = list(reversed(original_ids))
+
+    reorder_res = client.post(
+        "/api/admin/modes/reorder",
+        json={"mode_ids": reversed_ids},
+        headers=admin_auth,
+    )
+    assert reorder_res.status_code == 200
+
+    after_res = client.get("/api/admin/modes", headers=admin_auth)
+    new_admin_ids = [m["id"] for m in after_res.json()["modes"]]
+    assert new_admin_ids == reversed_ids
+
+    user_res = client.get("/api/modes")
+    new_user_ids = [m["id"] for m in user_res.json()["modes"]]
+    assert new_user_ids == reversed_ids

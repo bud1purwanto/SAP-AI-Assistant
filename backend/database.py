@@ -584,6 +584,7 @@ def get_system_config():
     global_persona = settings.assistant_persona or ""
     token_limit_enabled = bool(settings.token_limit_enabled)
     chat_modes_enabled = True
+    ai_suggestions_enabled = True
 
     try:
         engine = get_engine()
@@ -600,6 +601,8 @@ def get_system_config():
                     token_limit_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'chat_modes_enabled' and r.value is not None:
                     chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'ai_suggestions_enabled' and r.value is not None:
+                    ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -640,6 +643,7 @@ def get_system_config():
         "global_assistant_persona": global_persona,
         "token_limit_enabled": token_limit_enabled,
         "chat_modes_enabled": chat_modes_enabled,
+        "ai_suggestions_enabled": ai_suggestions_enabled,
     }
 
 def update_system_config(
@@ -658,6 +662,7 @@ def update_system_config(
     global_assistant_persona: str = None,
     token_limit_enabled: bool = None,
     chat_modes_enabled: bool = None,
+    ai_suggestions_enabled: bool = None,
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
@@ -676,6 +681,13 @@ def update_system_config(
                     VALUES ('chat_modes_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if chat_modes_enabled else "false"})
+
+            if ai_suggestions_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('ai_suggestions_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if ai_suggestions_enabled else "false"})
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
@@ -2311,6 +2323,23 @@ def set_default_chat_mode(mode_id: int) -> bool:
             return (res.rowcount or 0) > 0
     except Exception as e:
         logger.error(f"Error set_default_chat_mode: {e}")
+        return False
+
+
+def reorder_chat_modes(mode_ids: list[int]) -> bool:
+    """Perbarui urutan sort_order mode chat sesuai daftar ID yang diberikan."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            for idx, mid in enumerate(mode_ids):
+                conn.execute(
+                    text("UPDATE ai_assistant.chat_modes SET sort_order = :ord WHERE id = :id"),
+                    {"ord": idx, "id": mid}
+                )
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error reorder_chat_modes: {e}")
         return False
 
 
