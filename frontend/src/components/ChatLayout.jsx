@@ -106,6 +106,8 @@ const ChatLayout = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [sessionErrorMap, setSessionErrorMap] = useState({});
   const abortControllersRef = useRef({});
+  const isStreamActiveRef = useRef({});
+  const lastStreamActivityRef = useRef({});
 
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
@@ -437,7 +439,7 @@ const ChatLayout = () => {
       ...prev,
       [sessionId]: {
         stage: 'reconnecting',
-        label: language === 'en' ? 'Reconnecting to fetch response…' : 'Menghubungkan kembali mengambil jawaban…',
+        label: language === 'en' ? 'Resuming response…' : 'Melanjutkan jawaban…',
         step: 0,
         max_steps: 1,
       },
@@ -576,7 +578,14 @@ const ChatLayout = () => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !isGuest && currentSessionId) {
         if (sessionLoadingMap[currentSessionId]) {
-          recoverBackgroundMessage(currentSessionId, 6);
+          // Jika stream masih aktif berjalan (misal hanya pindah tab beberapa saat di desktop/HP),
+          // biarkan proses streaming melanjutkan secara alami tanpa menginterupsi atau memicu reconnecting.
+          const isAlive = isStreamActiveRef.current[currentSessionId];
+          const lastActivity = lastStreamActivityRef.current[currentSessionId] || 0;
+          if (isAlive && Date.now() - lastActivity < 20000) {
+            return;
+          }
+          recoverBackgroundMessage(currentSessionId, 8);
         }
       }
     };
@@ -722,6 +731,8 @@ const ChatLayout = () => {
   };
 
   const stopGeneration = (targetSessionKey = activeSessionKey) => {
+    delete isStreamActiveRef.current[targetSessionKey];
+    delete lastStreamActivityRef.current[targetSessionKey];
     const controller = abortControllersRef.current[targetSessionKey];
     if (controller) {
       controller.abort();
@@ -778,6 +789,8 @@ const ChatLayout = () => {
 
     const controller = new AbortController();
     abortControllersRef.current[targetKey] = controller;
+    isStreamActiveRef.current[targetKey] = true;
+    lastStreamActivityRef.current[targetKey] = Date.now();
 
     try {
       const history = prevMessages
@@ -796,9 +809,11 @@ const ChatLayout = () => {
         {
           signal: controller.signal,
           onProgress: (event) => {
+            lastStreamActivityRef.current[targetKey] = Date.now();
             setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
           },
           onToken: (chunk) => {
+            lastStreamActivityRef.current[targetKey] = Date.now();
             setSessionStreamMap((prev) => ({
               ...prev,
               // `null` berarti server membatalkan teks yang sudah mengalir.
@@ -904,6 +919,8 @@ const ChatLayout = () => {
         [targetKey]: { message: err.message, retry: () => { setMessagesMap((p) => ({ ...p, [targetKey]: prevMessages })); handleSendMessage(text, attachments, prevMessages); } },
       }));
     } finally {
+      delete isStreamActiveRef.current[targetKey];
+      delete lastStreamActivityRef.current[targetKey];
       delete abortControllersRef.current[targetKey];
       setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: false }));
       setSessionProgressMap((prev) => ({ ...prev, [targetKey]: null }));

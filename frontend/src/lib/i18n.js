@@ -141,6 +141,8 @@ export const TRANSLATIONS = {
 
     // Thinking Indicator
     'thinking.connecting': 'Connecting to assistant',
+    'thinking.reconnecting': 'Resuming response…',
+    'thinking.reconnecting_hint': 'Syncing conversation with server',
     'thinking.reading': 'Reading your attachments',
     'thinking.thinking': 'Reasoning & formulating response',
     'thinking.tool': 'Querying SAP live data',
@@ -449,6 +451,8 @@ export const TRANSLATIONS = {
 
     // Thinking Indicator
     'thinking.connecting': 'Menghubungi asisten',
+    'thinking.reconnecting': 'Melanjutkan jawaban…',
+    'thinking.reconnecting_hint': 'Menyinkronkan percakapan dengan server',
     'thinking.reading': 'Membaca lampiran Anda',
     'thinking.thinking': 'Menyusun jawaban & penalaran',
     'thinking.tool': 'Mengambil data live SAP',
