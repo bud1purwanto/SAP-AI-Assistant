@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FileSpreadsheet, FileText, FileType, Image, Loader2, Mic, MicOff, Paperclip, Send, Square, X } from 'lucide-react';
 
 import { uploadAttachment } from '../lib/api';
@@ -29,17 +29,69 @@ const formatSize = (bytes) => (bytes < 1024 * 1024
   ? `${Math.max(1, Math.round(bytes / 1024))} KB`
   : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
+const ROTATING_PLACEHOLDERS_ID = [
+  'Tanyakan sesuatu tentang SAP…',
+  'Coba: Berapa stok material di Plant 1000 saat ini?',
+  'Coba: Cek status Purchase Order terbaru…',
+  'Coba: Jelaskan alur rilis PR menjadi PO…',
+  'Coba: Analisis penyebab runtime error ST22 short dump…',
+  'Coba: Buatkan contoh kode ABAP BAPI yang aman…',
+];
+
+const ROTATING_PLACEHOLDERS_EN = [
+  'Ask something about SAP…',
+  'Try: What is the current stock level in plant 1000?',
+  'Try: Check latest Purchase Order delivery status…',
+  'Try: Explain the release strategy flow for PO…',
+  'Try: How to troubleshoot an ST22 short dump?',
+  'Try: Show recommended ABAP BAPI code pattern…',
+];
+
 const ChatInput = ({
   onSendMessage,
   isLoading,
   modes = [],
   selectedMode = '',
   onSelectMode,
+  suggestions = null,
 }) => {
   const { t, language } = useLanguage();
   const [input, setInput] = useState('');
   const teksSebelumBicaraRef = useRef('');
   const [pesanSuara, setPesanSuara] = useState('');
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+
+  const activePlaceholdersList = useMemo(() => {
+    const defaultList = language === 'en' ? ROTATING_PLACEHOLDERS_EN : ROTATING_PLACEHOLDERS_ID;
+    if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
+      const dynamicList = suggestions
+        .map((s) => {
+          const q = s.query || s.title;
+          if (!q) return null;
+          const cleanQ = q.length > 55 ? `${q.slice(0, 52)}…` : q;
+          return language === 'en' ? `Try: ${cleanQ}` : `Coba: ${cleanQ}`;
+        })
+        .filter(Boolean);
+      return [
+        language === 'en' ? 'Ask something about SAP…' : 'Tanyakan sesuatu tentang SAP…',
+        ...dynamicList,
+        ...defaultList.slice(1),
+      ];
+    }
+    return defaultList;
+  }, [suggestions, language]);
+
+  useEffect(() => {
+    if (input.trim()) return;
+
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prev) => (prev + 1) % activePlaceholdersList.length);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [input, activePlaceholdersList]);
+
+  const activePlaceholder = activePlaceholdersList[placeholderIndex % activePlaceholdersList.length];
 
   const suara = useVoiceInput({
     language,
@@ -255,8 +307,8 @@ const ChatInput = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={t('input.placeholder')}
-            aria-label={t('input.placeholder')}
+            placeholder={activePlaceholder}
+            aria-label={activePlaceholder}
             className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />

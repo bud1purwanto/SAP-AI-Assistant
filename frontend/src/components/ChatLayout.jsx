@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Check, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -1549,9 +1549,14 @@ const ChatLayout = () => {
                           onClick={() => handleSendMessage(item.query)}
                           className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
                         >
-                          <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors sm:mb-3.5 shrink-0">
-                            <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-                          </span>
+                          <div className="flex items-center justify-between w-full sm:mb-3.5 shrink-0">
+                            <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors shrink-0">
+                              <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
+                            </span>
+                            <span className="hidden sm:inline-flex p-1 rounded-md text-content-subtle group-hover:text-accent transition-colors">
+                              <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+                            </span>
+                          </div>
                           <div className="min-w-0 flex-1">
                             <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block">
                               {item.title}
@@ -1560,6 +1565,9 @@ const ChatLayout = () => {
                               {item.subtitle}
                             </span>
                           </div>
+                          <span className="sm:hidden p-1.5 rounded-lg bg-surface-sunken text-content-muted group-hover:text-accent group-hover:bg-accent-soft transition-colors shrink-0">
+                            <ChevronRight className="w-4 h-4" />
+                          </span>
                         </button>
                       );
                     })}
@@ -1577,6 +1585,7 @@ const ChatLayout = () => {
           isLoading={isCurrentLoading}
           modes={chatModesEnabled ? modesList : []}
           selectedMode={selectedMode}
+          suggestions={dynamicSuggestions}
           onSelectMode={(modeCode) => {
             setSelectedMode(modeCode);
             try {
