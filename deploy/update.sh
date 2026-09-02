@@ -54,7 +54,7 @@ fi
 
 echo "⚛️ [3/4] Melakukan build ulang Frontend..."
 cd "${PROJECT_DIR}/frontend"
-npm install --silent
+NODE_ENV=development npm install --include=dev
 npm run build
 
 echo "⚙️ [4/4] Merestart service backend..."
