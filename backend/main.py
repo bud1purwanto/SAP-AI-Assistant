@@ -1148,9 +1148,11 @@ async def chat_stream_endpoint(
 @app.get("/api/chat/suggestions")
 async def get_chat_suggestions_endpoint(
     lang: str = "id",
+    refresh: bool = False,
     user: dict = Depends(get_current_user_optional),
 ):
     """Kembalikan 3 saran pertanyaan personal berbasis role & riwayat chat user."""
+    import random
     from agent import generate_chat_suggestions
     from database import get_user_by_username, get_recent_user_queries
 
@@ -1171,11 +1173,12 @@ async def get_chat_suggestions_endpoint(
         from agent import DEFAULT_SUGGESTIONS
         lang_key = "en" if str(lang).lower().startswith("en") else "id"
         role_key = (role or "").lower()
-        fallback = (
+        pool = (
             DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
             or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
             or DEFAULT_SUGGESTIONS["id"]["default"]
         )
+        fallback = random.sample(pool, min(len(pool), 3)) if len(pool) >= 3 else pool
         return {"suggestions": fallback, "dynamic": False}
 
     suggestions = await generate_chat_suggestions(
@@ -1183,6 +1186,7 @@ async def get_chat_suggestions_endpoint(
         persona=persona,
         recent_queries=recent_queries,
         lang=lang,
+        refresh=refresh,
     )
     return {"suggestions": suggestions, "dynamic": True}
 

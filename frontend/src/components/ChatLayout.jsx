@@ -479,7 +479,7 @@ const ChatLayout = () => {
   const loadSuggestions = useCallback(async (force = false) => {
     setIsSuggestionsLoading(true);
     try {
-      const res = await api.getSuggestions(language);
+      const res = await api.getSuggestions(language, force);
       if (res?.suggestions && Array.isArray(res.suggestions) && res.suggestions.length >= 3) {
         setDynamicSuggestions(res.suggestions);
       } else {

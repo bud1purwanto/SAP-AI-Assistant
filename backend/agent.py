@@ -1045,6 +1045,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Teknik indexing & FOR ALL ENTRIES",
                 "query": "Jelaskan best practice optimasi query Open SQL SAP dengan FOR ALL ENTRIES dan index table.",
                 "icon": "Database"
+            },
+            {
+                "title": "Troubleshooting IDoc & RFC",
+                "subtitle": "Investigasi status WE02 dan koneksi SM59",
+                "query": "Bagaimana cara melacak IDoc error di transaksi WE02 dan menguji koneksi RFC via SM59?",
+                "icon": "Zap"
+            },
+            {
+                "title": "Desain CDS View",
+                "subtitle": "Pembuatan Core Data Services di SAP HANA",
+                "query": "Beri contoh pembuatan CDS View ABAP dengan anotasi analitik dan asosiasi tabel.",
+                "icon": "Layers"
+            },
+            {
+                "title": "Analisis Lock SM12",
+                "subtitle": "Cek entri penguncian objek yang tertahan",
+                "query": "Bagaimana prosedur aman memeriksa dan menangani lock entries yang menggantung di transaksi SM12?",
+                "icon": "Shield"
             }
         ],
         "functional": [
@@ -1065,6 +1083,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Analisis alur rilis order dan reservasi",
                 "query": "Jelaskan alur rilis Production Order dan pengecekan reservasi komponen RESB.",
                 "icon": "Package"
+            },
+            {
+                "title": "Analisis Delivery SD",
+                "subtitle": "Pantau outbound delivery dan picking status",
+                "query": "Bagaimana cara memeriksa status pengiriman outbound delivery di VL06O dan kendala picking?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Rekonsiliasi Faktur & GR",
+                "subtitle": "Pemeriksaan selisih akun GR/IR (MIRO)",
+                "query": "Tunjukkan langkah analisis selisih nilai akun kliring GR/IR pada verifikasi faktur MIRO.",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Evaluasi Kebutuhan MRP",
+                "subtitle": "Simulasi stok MD04 dan proposal order",
+                "query": "Jelaskan cara mengevaluasi hasil kalkulasi kebutuhan material di Stock/Requirements List MD04.",
+                "icon": "Database"
             }
         ],
         "superadmin": [
@@ -1085,6 +1121,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Rekomendasi konfigurasi model sistem",
                 "query": "Bagaimana rekomendasi pengaturan provider model AI dan mode chat terbaik untuk beban kerja saat ini?",
                 "icon": "Zap"
+            },
+            {
+                "title": "Monitoring Job SM37",
+                "subtitle": "Lacak batch job yang gagal atau delayed",
+                "query": "Tampilkan daftar background job yang berstatus canceled atau berjalan abnormal di SM37 hari ini.",
+                "icon": "Zap"
+            },
+            {
+                "title": "Audit Otorisasi Kritis",
+                "subtitle": "Tinjau akses SAP_ALL dan role istimewa",
+                "query": "Bagaimana cara melakukan audit user aktif yang memiliki hak akses SAP_ALL atau profil kritis di SUIM?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Kesehatan Database BA130",
+                "subtitle": "Periksa performa tabel dan ruang storage",
+                "query": "Periksa status kesehatan database, kueri berat, dan ketersediaan tabel pada instance BA130.",
+                "icon": "Database"
             }
         ],
         "default": [
@@ -1105,6 +1159,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Best practice pemanggilan function & tabel",
                 "query": "Tunjukkan pola kode ABAP yang direkomendasikan untuk membaca MARC/MARD menggunakan BAPI atau SQL efisien.",
                 "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Monitoring Transaksi SAP",
+                "subtitle": "Panduan transaksi penting per modul",
+                "query": "Tampilkan daftar t-code SAP paling sering digunakan untuk modul MM, SD, dan PP.",
+                "icon": "Zap"
+            },
+            {
+                "title": "Konektivitas Sistem SAP",
+                "subtitle": "Cek status server dan respon layanan",
+                "query": "Bagaimana kondisi koneksi sistem SAP dan waktu respons server saat ini?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Ringkasan Integrasi ERP",
+                "subtitle": "Alur integrasi logistik dan keuangan",
+                "query": "Jelaskan gambaran umum alur dokumen dari Order hingga Pembayaran (Order-to-Cash) di SAP.",
+                "icon": "TrendingUp"
             }
         ]
     },
@@ -1127,6 +1199,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Indexing & FOR ALL ENTRIES best practices",
                 "query": "Explain best practices for optimizing Open SQL queries with FOR ALL ENTRIES and primary keys.",
                 "icon": "Database"
+            },
+            {
+                "title": "IDoc & RFC Diagnostics",
+                "subtitle": "Inspect WE02 errors & SM59 connection test",
+                "query": "What are the troubleshooting steps for stuck outbound IDocs in WE02 and testing RFC destinations in SM59?",
+                "icon": "Zap"
+            },
+            {
+                "title": "CDS View Modeling",
+                "subtitle": "Building clean Core Data Services views",
+                "query": "Provide a clean example of an ABAP CDS View with analytical annotations and table associations.",
+                "icon": "Layers"
+            },
+            {
+                "title": "SM12 Enqueue Lock Audit",
+                "subtitle": "Safely inspect lingering table locks",
+                "query": "How do I safely analyze and manage lingering enqueue locks in transaction SM12?",
+                "icon": "Shield"
             }
         ],
         "functional": [
@@ -1147,6 +1237,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Analyze order release and reservations",
                 "query": "Explain the Production Order release flow and RESB component reservations check.",
                 "icon": "Package"
+            },
+            {
+                "title": "Outbound Delivery Flow",
+                "subtitle": "Monitor shipping & picking status in VL06O",
+                "query": "How do I check open outbound deliveries and resolve picking bottlenecks in VL06O?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "GR/IR Account Clearance",
+                "subtitle": "Identify invoice price variances in MIRO",
+                "query": "What are the recommended steps to clear price variances in GR/IR clearing accounts during invoice verification?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "MRP Run Evaluation",
+                "subtitle": "Simulate stock demands in MD04 list",
+                "query": "How do I interpret MRP stock/requirements exceptions in MD04 for delayed replenishment?",
+                "icon": "Database"
             }
         ],
         "superadmin": [
@@ -1167,6 +1275,24 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Recommended model routing configurations",
                 "query": "What are the recommended settings for AI model providers and chat modes for our workload?",
                 "icon": "Zap"
+            },
+            {
+                "title": "SM37 Batch Job Monitor",
+                "subtitle": "Track failed and aborted background jobs",
+                "query": "List all background jobs in SM37 that aborted or experienced long execution delays today.",
+                "icon": "Zap"
+            },
+            {
+                "title": "Privileged Role Audit",
+                "subtitle": "Review users with SAP_ALL in SUIM",
+                "query": "Show guidelines to audit active dialog users holding SAP_ALL authorizations in production.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Database Instance BA130",
+                "subtitle": "Inspect table growth and slow queries",
+                "query": "Check database health, long-running queries, and storage status for BA130 instance.",
+                "icon": "Database"
             }
         ],
         "default": [
@@ -1187,9 +1313,46 @@ DEFAULT_SUGGESTIONS = {
                 "subtitle": "Best practices for function modules & tables",
                 "query": "Show me the recommended ABAP pattern for reading MARC/MARD using BAPI or clean SQL.",
                 "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Essential SAP T-Codes",
+                "subtitle": "Quick guide for common transactions",
+                "query": "Provide a cheat-sheet of essential SAP transaction codes across MM, SD, and FI modules.",
+                "icon": "Zap"
+            },
+            {
+                "title": "System Connectivity Status",
+                "subtitle": "Check server response times and health",
+                "query": "What is the current health and response time of our connected SAP environments?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Procure-to-Pay Overview",
+                "subtitle": "End-to-end document lifecycle flow",
+                "query": "Explain the end-to-end Procure-to-Pay cycle and key document statuses in SAP.",
+                "icon": "TrendingUp"
             }
         ]
     }
+}
+
+FOCUS_THEMES = {
+    "id": [
+        "Investigasi Kendala, Error Troubleshooting & Isolasi Bug",
+        "Optimasi Kinerja, Efisiensi Query & Best Practice Arsitektur",
+        "Monitoring Operasional, Kesehatan Server & Cek Konektivitas",
+        "Otomasi Alur Bisnis, Status Dokumen Terbuka & Rekonsiliasi",
+        "Integritas Data, Audit Jejak Rekam & Keamanan Otorisasi",
+        "Pemeriksaan Database, Analisis Struktur Tabel & Eksekusi Rutin",
+    ],
+    "en": [
+        "Troubleshooting, Error Diagnostics & Bug Isolation",
+        "Performance Optimization, Query Efficiency & Architecture Best Practices",
+        "Operational Monitoring, System Health, Logs & Connectivity",
+        "Business Workflow Automation, Open Status Tracking & Reconciliation",
+        "Data Integrity, Audit Trails & Authorization Security Checks",
+        "Database Inspection, Table Consistency & Deep Execution Routines",
+    ],
 }
 
 
@@ -1198,50 +1361,65 @@ async def generate_chat_suggestions(
     persona: str = "",
     recent_queries: list[str] | None = None,
     lang: str = "id",
+    refresh: bool = False,
 ) -> list[dict]:
     """Hasilkan saran pertanyaan dinamis menggunakan LLM berdasarkan role & riwayat chat user."""
+    import random
     lang_key = "en" if str(lang).lower().startswith("en") else "id"
     role_key = (role or "").lower()
-    fallback_list = (
+    pool = (
         DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
         or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
         or DEFAULT_SUGGESTIONS["id"]["default"]
     )
+    fallback_list = random.sample(pool, min(len(pool), 3)) if len(pool) >= 3 else pool
 
     try:
         from database import get_system_config
         sys_cfg = get_system_config()
         provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
         model_name = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
-        llm = _buat_llm(provider, model_name, sys_cfg, max_tokens=350, temperature=0.7)
+        llm = _buat_llm(provider, model_name, sys_cfg, max_tokens=350, temperature=0.85)
 
         if not llm:
             return fallback_list
 
         queries_context = ""
         if recent_queries:
-            queries_context = "\n- " + "\n- ".join(recent_queries[:6])
+            sampled_queries = list(recent_queries[:6])
+            if refresh:
+                random.shuffle(sampled_queries)
+            queries_context = "\n- " + "\n- ".join(sampled_queries)
         else:
             queries_context = "(Belum ada riwayat pertanyaan / pengguna baru)"
 
         language_instruction = "Indonesian (Bahasa Indonesia)" if lang_key == "id" else "English"
+        themes_list = FOCUS_THEMES.get(lang_key, FOCUS_THEMES["id"])
+        selected_theme = random.choice(themes_list)
+        random_seed = random.randint(1000, 999999)
 
-        prompt = f"""You are an AI prompt recommendation assistant for an Enterprise SAP ERP AI Assistant.
-Generate exactly 3 fresh, diverse, actionable, and highly relevant chat prompt starter cards for this user based on their role and recent interests:
+        prompt = f"""You are an expert Enterprise SAP ERP AI Assistant generating diverse chat starter prompt cards.
+Generate exactly 3 DISTINCT, ACTIONABLE, and HIGHLY RELEVANT chat prompt starter cards for this user:
 - User Role: {role} (e.g. abaper = ABAP developer; functional = SAP functional consultant; superadmin = SAP Basis & System Admin; guest/user = Standard user)
 - User Preferences / Persona: {persona or 'Standard user'}
-- Recent Topics / Questions Asked By User:
+- Recent Topics / Inquiries Asked By User:
 {queries_context}
 
-CRITICAL RULES:
-1. Do NOT just repeat the user's past questions word-for-word.
-2. Instead, generate 3 FRESH, SMART, ACTIONABLE next-step or related questions suited to their role and interests.
-3. For superadmin/Basis: focus on system health, RFC ping, job monitoring, token audit, or security.
-4. For ABAP: focus on BAPI code, performance tuning, dump debugging, CDS views.
-5. For Functional: focus on POs, inventory, sales delivery, MRP, production order flow.
+CREATIVE FOCUS ANGLE FOR THIS SET (Variasi Segar):
+- Special Focus Theme: "{selected_theme}"
+- Variation Entropy Seed: #{random_seed}
+
+CRITICAL RULES FOR MAXIMUM VARIETY & APPLICABILITY:
+1. Ground every question firmly in SAP ERP enterprise operations and the user's role and topics.
+2. DO NOT repeat earlier suggestions word-for-word. Each refresh must reveal new dimensions of their workflow!
+3. Dedicate this set to explore the theme: "{selected_theme}".
+4. Make all 3 cards distinct in intent:
+   - Card 1: Diagnostic / Status / Health check (e.g. tracking, logs, active state).
+   - Card 2: Deep-dive / Root cause / Investigation inquiry (e.g. troubleshooting, analyzing exceptions).
+   - Card 3: Optimization / Best practice / Automation action (e.g. performance tuning, automation, security audit).
 
 Format: Return a JSON list of 3 items. Each item MUST have:
-1. "title": Short action title (2 to 4 words)
+1. "title": Short punchy action title (2 to 4 words)
 2. "subtitle": Short description / context (5 to 10 words)
 3. "query": The exact, natural user prompt that will be sent into chat when clicked
 4. "icon": One of ["Layers", "Search", "FileSpreadsheet", "Database", "Code", "Package", "TrendingUp", "Zap", "Shield"]

@@ -34,7 +34,7 @@ def test_suggestions_abaper_role(client, make_user):
     data = res.json()
     assert len(data["suggestions"]) >= 3
     titles = [s["title"] for s in data["suggestions"]]
-    assert any("ABAP" in t or "ST22" in t or "Query" in t for t in titles)
+    assert any(any(k in t for k in ["ABAP", "ST22", "Query", "IDoc", "CDS", "SM12", "BAPI"]) for t in titles)
 
 
 def test_suggestions_with_mocked_llm(client, make_user, monkeypatch):
@@ -62,7 +62,7 @@ def test_suggestions_with_mocked_llm(client, make_user, monkeypatch):
         }
     ]
 
-    async def fake_generate(role="guest", persona="", recent_queries=None, lang="id"):
+    async def fake_generate(role="guest", persona="", recent_queries=None, lang="id", **kwargs):
         return mock_llm_suggestions
 
     monkeypatch.setattr(agent, "generate_chat_suggestions", fake_generate)
