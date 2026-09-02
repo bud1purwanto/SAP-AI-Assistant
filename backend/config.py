@@ -1,6 +1,7 @@
 import os
 import secrets
 from pathlib import Path
+from dotenv import dotenv_values
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -86,7 +87,16 @@ class Settings(BaseSettings):
         return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-settings = Settings()
+def _load_settings() -> Settings:
+    s = Settings()
+    # Prioritaskan JWT_SECRET dari .env file jika ada di file
+    if ENV_PATH.exists():
+        dot_env_vals = dotenv_values(ENV_PATH)
+        if dot_env_vals.get("JWT_SECRET"):
+            s.jwt_secret = dot_env_vals["JWT_SECRET"]
+    return s
+
+settings = _load_settings()
 
 # Secret ephemeral hanya sebagai jaring pengaman pengembangan; produksi harus set JWT_SECRET.
 if not settings.jwt_secret:

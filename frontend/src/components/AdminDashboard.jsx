@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
+import AdminChatModes from './AdminChatModes';
 
-export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers }) {
+export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers, onRefreshModes }) {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'persona' | 'mcp' | 'audit'
   const [globalPersona, setGlobalPersona] = useState('');
@@ -161,14 +162,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchConfig();
       fetchAuditSessions();
     }
-  }, [isOpen, user]);
+  }, [isOpen, user?.role]);
 
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin' && activeTab === 'feedback') {
       fetchFeedback(feedbackKind);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, user, activeTab, feedbackKind]);
+  }, [isOpen, user?.role, activeTab, feedbackKind]);
 
   const fetchKuota = async () => {
     setKuotaLoading(true);
@@ -197,7 +198,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchKuota();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, user, activeTab]);
+  }, [isOpen, user?.role, activeTab]);
 
   const gantiSaklar = async (aktif) => {
     setActionError('');
@@ -284,13 +285,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleUpdateUser = async (username, e) => {
-    e.preventDefault();
+  const handleUpdateUser = async (e, username = editingUser?.username) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const targetUsername = typeof username === 'string' ? username : editingUser?.username;
+    if (!targetUsername) return;
     setActionError('');
     setActionSuccess('');
     try {
-      await api.adminUpdateUser(username, editUserForm);
-      setActionSuccess(language === 'en' ? `User '${username}' updated successfully!` : `User '${username}' berhasil diupdate!`);
+      await api.adminUpdateUser(targetUsername, editUserForm);
+      setActionSuccess(language === 'en' ? `User '${targetUsername}' updated successfully!` : `User '${targetUsername}' berhasil diupdate!`);
       setEditingUser(null);
       fetchUsers();
     } catch (err) {
@@ -328,7 +331,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   };
 
   const handleSaveGlobalPersona = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setPersonaSaving(true);
     setActionError('');
     setActionSuccess('');
@@ -346,7 +349,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   };
 
   const handleCreateSkill = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setSkillSaving(true);
     setActionError('');
     setActionSuccess('');
@@ -363,13 +366,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const handleUpdateSkill = async (id, e) => {
-    e.preventDefault();
+  const handleUpdateSkill = async (e, id = editingSkill?.id) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const targetId = (typeof id === 'number' || typeof id === 'string') ? id : editingSkill?.id;
+    if (!targetId) return;
     setSkillSaving(true);
     setActionError('');
     setActionSuccess('');
     try {
-      await api.adminUpdateSkill(id, editSkillForm);
+      await api.adminUpdateSkill(targetId, editSkillForm);
       setActionSuccess(language === 'en' ? `Skill '${editSkillForm.name}' updated!` : `Skill '${editSkillForm.name}' berhasil diupdate!`);
       setEditingSkill(null);
       fetchSkills();
@@ -418,7 +423,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   };
 
   const handleSaveMcpConfig = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setMcpSaving(true);
     setActionError('');
     setActionSuccess('');
@@ -428,17 +433,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         mcp_rag_config_json: mcpRagConfig,
         mcp_sql_config_json: mcpSqlConfig,
         mcp_email_config_json: mcpSqlConfig,
-        nine_router_enabled: nineRouterEnabled,
-        nine_router_base_url: nineRouterBaseUrl,
-        nine_router_model: nineRouterModel,
-        nine_router_api_key: nineRouterApiKey,
-        openrouter_enabled: openrouterEnabled,
-        openrouter_model: openrouterModel,
-        openrouter_fallback_model: openrouterFallbackModel,
-        openrouter_api_key: openrouterApiKey,
         assistant_persona: user.assistant_persona || ""
       });
-      setActionSuccess(t('admin.saved'));
+      setActionSuccess(language === 'en' ? 'MCP server configuration saved successfully!' : 'Konfigurasi server MCP berhasil disimpan!');
       if (onRefreshMcpServers) onRefreshMcpServers();
       fetchStats();
     } catch (err) {
@@ -550,6 +547,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           >
             <Users className="w-4 h-4 shrink-0" />
             <span>{t('admin.tabUsers')}</span>
+          </button>
+
+          <button
+            onClick={() => { setActiveTab('chat_modes'); setSelectedAuditSession(null); }}
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
+              activeTab === 'chat_modes'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'text-content-muted hover:bg-surface-hover hover:text-content'
+            }`}
+          >
+            <Sliders className="w-4 h-4 shrink-0" />
+            <span>{t('admin.tabChatModes')}</span>
           </button>
 
           <button
@@ -1051,7 +1060,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </button>
                       </div>
 
-                      <form onSubmit={handleUpdateUser} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={(e) => handleUpdateUser(e, editingUser?.username)} className="space-y-3 text-xs sm:text-sm">
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
                           <input
@@ -1122,6 +1131,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 )}
               </div>
+            )}
+
+            {/* TAB: CHAT MODES */}
+            {activeTab === 'chat_modes' && (
+              <AdminChatModes
+                onRefreshModes={onRefreshModes}
+                setActionSuccess={setActionSuccess}
+                setActionError={setActionError}
+                setConfirmModal={setConfirmModal}
+              />
             )}
 
             {/* TAB: PERSONA ORGANISASI */}
@@ -1400,7 +1419,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </button>
                       </div>
 
-                      <form onSubmit={handleUpdateSkill} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={(e) => handleUpdateSkill(e, editingSkill?.id)} className="space-y-3 text-xs sm:text-sm">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-2">
                             <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Skill Name *' : 'Nama Skill *'}</label>
@@ -1476,16 +1495,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               </div>
             )}
 
-            {/* TAB 3: MCP CONFIGURATION & AI MODEL */}
+            {/* TAB 3: MCP CONFIGURATION */}
             {activeTab === 'mcp' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      {language === 'en' ? 'AI Provider & MCP Server Configuration' : 'Konfigurasi AI Provider & Server MCP'}
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <Server className="w-5 h-5 text-indigo-500" />
+                      {language === 'en' ? 'MCP Server Connections' : 'Konfigurasi Server MCP'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      {language === 'en' ? 'Edit primary AI model, fallback model, API keys, and MCP server endpoints in database.' : 'Edit Model AI utama, Model AI fallback, API Key OpenRouter, dan konfigurasi MCP di database.'}
+                      {language === 'en'
+                        ? 'Manage JSON endpoint configurations and authentication headers for SAP ERP, RAG Knowledge Base, and SQL Database MCP gateways.'
+                        : 'Kelola konfigurasi endpoint JSON dan header autentikasi untuk server gateway MCP SAP ERP, Basis Dokumen RAG, dan Database SQL.'}
                     </p>
                   </div>
                   <button
@@ -1494,218 +1516,76 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
-                    {mcpSaving ? (language === 'en' ? 'Saving...' : 'Menyimpan...') : (language === 'en' ? 'Save Configuration' : 'Simpan Konfigurasi')}
+                    {mcpSaving
+                      ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
+                      : (language === 'en' ? 'Save MCP Config' : 'Simpan Konfigurasi MCP')}
                   </button>
                 </div>
 
-                {/* AI Providers Setting Cards (2 Options) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-                  {/* Card 1: 9Router (Local Gateway) */}
-                  <div className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all ${
-                    nineRouterEnabled 
-                      ? 'border-indigo-300 dark:border-indigo-700/80 bg-indigo-50/50 dark:bg-indigo-950/20 shadow-sm' 
-                      : 'border-line bg-surface opacity-75'
-                  } space-y-3`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-indigo-600 text-white rounded-lg">
-                          <Server className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-content">
-                            9Router (Local Gateway)
-                          </h4>
-                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
-                            {language === 'en' ? 'Primary Priority / Internal Network' : 'Prioritas Utama / Internal Network'}
-                          </span>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={nineRouterEnabled} 
-                          onChange={(e) => setNineRouterEnabled(e.target.checked)} 
-                          className="sr-only peer"
-                        />
-                        <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
-                      </label>
-                    </div>
-
-                    <div className="space-y-2.5 pt-1">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                          Base URL
-                        </label>
-                        <input 
-                          type="text"
-                          value={nineRouterBaseUrl}
-                          onChange={(e) => setNineRouterBaseUrl(e.target.value)}
-                          disabled={!nineRouterEnabled}
-                          className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
-                          placeholder="http://192.168.88.83:20128/v1"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                            Model Name
-                          </label>
-                          <input 
-                            type="text"
-                            value={nineRouterModel}
-                            onChange={(e) => setNineRouterModel(e.target.value)}
-                            disabled={!nineRouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
-                            placeholder="ag/gemini-3.7-flash-medium"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                            {language === 'en' ? 'API Key (Optional)' : 'API Key (Opsional)'}
-                          </label>
-                          <input 
-                            type="password"
-                            value={nineRouterApiKey}
-                            onChange={(e) => setNineRouterApiKey(e.target.value)}
-                            disabled={!nineRouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50"
-                            placeholder={language === 'en' ? 'Leave empty if unauthenticated' : 'Kosongkan jika tanpa auth'}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card 2: OpenRouter (Cloud Gateway) */}
-                  <div className={`p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border transition-all ${
-                    openrouterEnabled 
-                      ? 'border-emerald-300 dark:border-emerald-700/80 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-sm' 
-                      : 'border-line bg-surface opacity-75'
-                  } space-y-3`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
-                          <Key className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-content">
-                            OpenRouter (Cloud AI)
-                          </h4>
-                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                            {language === 'en' ? 'Cloud Failover / Alternative' : 'Cloud Failover / Alternatif'}
-                          </span>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={openrouterEnabled} 
-                          onChange={(e) => setOpenrouterEnabled(e.target.checked)} 
-                          className="sr-only peer"
-                        />
-                        <div className="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
-                      </label>
-                    </div>
-
-                    <div className="space-y-2.5 pt-1">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                          API Key
-                        </label>
-                        <input 
-                          type="password"
-                          value={openrouterApiKey}
-                          onChange={(e) => setOpenrouterApiKey(e.target.value)}
-                          disabled={!openrouterEnabled}
-                          className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
-                          placeholder="sk-or-v1-..."
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                            Primary Model
-                          </label>
-                          <input 
-                            type="text"
-                            value={openrouterModel}
-                            onChange={(e) => setOpenrouterModel(e.target.value)}
-                            disabled={!openrouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
-                            placeholder="openrouter/auto"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-content-secondary mb-1">
-                            Fallback Model
-                          </label>
-                          <input 
-                            type="text"
-                            value={openrouterFallbackModel}
-                            onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
-                            disabled={!openrouterEnabled}
-                            className="w-full text-xs px-3 py-2 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none disabled:opacity-50"
-                            placeholder="openrouter/free"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3 sm:space-y-4">
+                <div className="space-y-4">
                   {/* MCP SAP Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
-                      <Database className="w-4 h-4 text-amber-500" /> MCP SAP Config (JSON)
-                    </label>
+                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
+                        <Database className="w-4 h-4 text-amber-500" /> MCP SAP Config (JSON)
+                      </label>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+                        SAP ERP Gateway
+                      </span>
+                    </div>
                     <textarea 
-                      rows="5"
+                      rows="6"
                       value={mcpSapConfig}
                       onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
-                      placeholder='{"type": "sse", "url": "http://127.0.0.1:8001/sse"}'
+                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      placeholder='{"type": "http", "url": "http://192.168.1.162:8091/mcp"}'
                     />
-                    <p className="text-[11px] text-content-subtle mt-1">
-                      {language === 'en' ? 'SSE or stdio config format for connecting to SAP MCP Server.' : 'Format konfigurasi SSE atau stdio untuk koneksi ke SAP MCP Server.'}
+                    <p className="text-[11px] text-content-subtle">
+                      {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to SAP MCP Server.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke SAP MCP Server.'}
                     </p>
                   </div>
 
                   {/* MCP RAG Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
-                      <Database className="w-4 h-4 text-emerald-500" /> MCP RAG Config (JSON)
-                    </label>
+                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
+                        <Database className="w-4 h-4 text-emerald-500" /> MCP RAG Config (JSON)
+                      </label>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">
+                        RAG Knowledge Gateway
+                      </span>
+                    </div>
                     <textarea 
-                      rows="5"
+                      rows="6"
                       value={mcpRagConfig}
                       onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
-                      placeholder='{"type": "sse", "url": "http://127.0.0.1:8002/sse"}'
+                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      placeholder='{"type": "http", "url": "http://192.168.1.162:8090/mcp"}'
                     />
-                    <p className="text-[11px] text-content-subtle mt-1">
-                      {language === 'en' ? 'SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi SSE atau stdio untuk koneksi ke RAG Knowledge Base.'}
+                    <p className="text-[11px] text-content-subtle">
+                      {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke Basis Pengetahuan Dokumen RAG.'}
                     </p>
                   </div>
 
                   {/* MCP SQL Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border border-line bg-surface">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-content-secondary mb-2 flex items-center gap-2">
-                      <Database className="w-4 h-4 text-emerald-500" /> MCP SQL CONFIG (JSON)
-                    </label>
+                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
+                        <Database className="w-4 h-4 text-sky-500" /> MCP SQL & Tools Config (JSON)
+                      </label>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold">
+                        SQL & Utility Gateway
+                      </span>
+                    </div>
                     <textarea 
-                      rows="5"
+                      rows="6"
                       value={mcpSqlConfig}
                       onChange={(e) => setMcpSqlConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3 sm:px-3.5 py-2.5 sm:py-3 bg-surface-raised border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
-                      placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8093/mcp",\n      "headers": { "Authorization": "Bearer Trias123" }\n    }\n  }\n}'
+                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8090/mcp",\n      "headers": { "Authorization": "Bearer ..." }\n    }\n  }\n}'
                     />
-                    <p className="text-[11px] text-content-subtle mt-1">
-                      {language === 'en' ? 'SSE or HTTP/JSON-RPC config format for connecting to MCP SQL Server.' : 'Format konfigurasi SSE atau HTTP/JSON-RPC untuk koneksi ke MCP SQL Server.'}
+                    <p className="text-[11px] text-content-subtle">
+                      {language === 'en' ? 'HTTP/SSE config format for connecting to SQL & Database MCP Server cluster.' : 'Format konfigurasi HTTP/SSE untuk koneksi ke kluster MCP SQL Server & Database.'}
                     </p>
                   </div>
                 </div>

@@ -109,6 +109,15 @@ const ChatLayout = () => {
     }
   });
   const [sapSubServers, setSapSubServers] = useState([]);
+  const [modesList, setModesList] = useState([]);
+  const [chatModesEnabled, setChatModesEnabled] = useState(true);
+  const [selectedMode, setSelectedMode] = useState(() => {
+    try {
+      return localStorage.getItem('sap_chat_mode') || '';
+    } catch {
+      return '';
+    }
+  });
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -211,20 +220,42 @@ const ChatLayout = () => {
     }
   };
 
+  const fetchModes = useCallback(async () => {
+    try {
+      const data = await api.getModes();
+      const isMasterEnabled = data?.chat_modes_enabled !== false;
+      setChatModesEnabled(isMasterEnabled);
+      const list = data?.modes || [];
+      setModesList(list);
+      setSelectedMode((current) => {
+        const availableModes = list.filter((m) => m.available);
+        if (availableModes.length === 0) return '';
+        const found = availableModes.find((m) => m.code === current);
+        if (found) return current;
+        const def = availableModes.find((m) => m.is_default) || availableModes[0];
+        return def?.code || '';
+      });
+    } catch (e) {
+      console.error('Gagal memuat mode percakapan:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchServers();
-  }, [fetchServers]);
+    fetchModes();
+  }, [fetchServers, fetchModes]);
 
   // Validasi token tersimpan saat aplikasi dibuka: profil bisa saja sudah
   // diubah atau dihapus admin sejak login terakhir.
   useEffect(() => {
+    fetchModes();
     if (isGuest) return;
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     api.me()
       .then((profile) => setUser(profile))
       .catch(() => { /* 401 sudah ditangani handler di atas */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.username]);
 
   useEffect(() => {
     scrollToBottom(true);
@@ -340,7 +371,7 @@ const ChatLayout = () => {
     } catch (err) {
       setError({ message: err.message, retry: () => loadSession(sessionId) });
     }
-  }, [user, sessionLoadingMap]);
+  }, [user?.username, sessionLoadingMap]);
 
   const fetchSessions = useCallback(async (keepCurrentId = false, silent = false) => {
     if (isGuest) {
@@ -636,6 +667,7 @@ const ChatLayout = () => {
           session_id: targetSessionId,
           active_server: activeServer,
           attachment_ids: attachments.map((a) => a.upload_id),
+          mode: selectedMode || undefined,
         },
         {
           signal: controller.signal,
@@ -1377,7 +1409,18 @@ const ChatLayout = () => {
           </div>
         </div>
 
-        <ChatInput onSendMessage={handleSendMessage} isLoading={isCurrentLoading} />
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          isLoading={isCurrentLoading}
+          modes={chatModesEnabled ? modesList : []}
+          selectedMode={selectedMode}
+          onSelectMode={(modeCode) => {
+            setSelectedMode(modeCode);
+            try {
+              localStorage.setItem('sap_chat_mode', modeCode);
+            } catch {}
+          }}
+        />
       </main>
 
       <SidePanel isi={isiPanel} onTutup={tutupPanel} />
@@ -1401,6 +1444,7 @@ const ChatLayout = () => {
         onClose={() => setIsAdminOpen(false)}
         user={user}
         onRefreshMcpServers={fetchServers}
+        onRefreshModes={fetchModes}
       />
 
       {/* Confirmation Modal - Logout */}

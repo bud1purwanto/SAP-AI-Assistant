@@ -70,6 +70,16 @@ from database import (
     create_skill,
     update_skill,
     delete_skill,
+    get_chat_modes,
+    get_chat_mode_by_id,
+    get_chat_mode_by_code,
+    create_chat_mode,
+    update_chat_mode,
+    delete_chat_mode,
+    set_default_chat_mode,
+    get_role_modes,
+    set_role_mode,
+    get_modes_for_role,
 )
 from mcp_manager import mcp_manager
 from models import ChatRequest, ChatResponse, UsageStats
@@ -745,6 +755,230 @@ async def delete_skill_endpoint(skill_id: int, admin: dict = Depends(require_sup
     if not ok:
         raise HTTPException(status_code=404, detail="Skill tidak ditemukan atau gagal dihapus.")
     return {"status": "success", "message": f"Skill ID {skill_id} berhasil dihapus."}
+
+
+
+# --- CHAT MODES & ACCESS CONTROL ENDPOINTS ---
+
+class AdminCreateModeRequest(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+    icon: str = "zap"
+    provider: str = "nine_router"
+    model: str = "ag/gemini-3.7-flash-medium"
+    fallback_provider: str = "openrouter"
+    fallback_model: str = "openrouter/free"
+    max_iterations: int = 15
+    enabled: bool = True
+    is_default: bool = False
+    sort_order: int = 0
+
+
+class AdminUpdateModeRequest(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    fallback_provider: Optional[str] = None
+    fallback_model: Optional[str] = None
+    max_iterations: Optional[int] = None
+    enabled: Optional[bool] = None
+    is_default: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class AdminToggleModeMasterRequest(BaseModel):
+    enabled: bool
+
+
+class AdminUpdateRoleModeRequest(BaseModel):
+    role: str
+    mode_code: str
+    enabled: Optional[bool] = None
+    allowed: Optional[bool] = None
+
+
+@app.get("/api/modes")
+async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_user_optional)):
+    """Mengambil daftar mode chat yang tersedia untuk role user saat ini."""
+    user_role = "guest"
+    if user and not user.get("is_guest"):
+        user_role = user.get("role", "user")
+    modes = get_modes_for_role(user_role)
+    cfg = get_system_config()
+    return {
+        "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
+        "modes": modes,
+    }
+
+
+@app.get("/api/admin/modes")
+async def get_admin_modes_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil seluruh mode chat lengkap dengan konfigurasi model dan master switch."""
+    modes = get_chat_modes(enabled_only=False)
+    cfg = get_system_config()
+    return {
+        "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
+        "modes": modes,
+    }
+
+
+@app.post("/api/admin/modes")
+async def create_mode_endpoint(req: AdminCreateModeRequest, admin: dict = Depends(require_superadmin)):
+    """Membuat mode chat baru."""
+    if not req.code or not req.code.strip():
+        raise HTTPException(status_code=400, detail="Kode mode wajib diisi.")
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Nama mode wajib diisi.")
+    if not req.provider or not req.provider.strip():
+        raise HTTPException(status_code=400, detail="AI Provider wajib dipilih.")
+    if not req.model or not req.model.strip():
+        raise HTTPException(status_code=400, detail="Model wajib diisi.")
+
+    code_clean = req.code.strip().lower()
+    existing = get_chat_mode_by_code(code_clean)
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Mode dengan kode '{code_clean}' sudah ada.")
+
+    try:
+        new_mode = create_chat_mode(
+            code=code_clean,
+            name=req.name.strip(),
+            description=req.description.strip(),
+            icon=req.icon.strip() if req.icon else "zap",
+            provider=req.provider.strip(),
+            model=req.model.strip(),
+            fallback_provider=req.fallback_provider.strip() if req.fallback_provider else "openrouter",
+            fallback_model=req.fallback_model.strip() if req.fallback_model else "openrouter/free",
+            max_iterations=req.max_iterations or 15,
+            enabled=req.enabled,
+            is_default=req.is_default,
+            sort_order=req.sort_order or 0,
+        )
+        return new_mode
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal membuat mode chat: {str(e)}")
+
+
+
+@app.get("/api/admin/modes/roles")
+async def get_role_modes_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil matrix hak akses mode chat per role."""
+    matrix = get_role_modes()
+    cfg = get_system_config()
+    return {
+        "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
+        "matrix": matrix,
+    }
+
+
+@app.put("/api/admin/modes/roles")
+async def set_role_mode_endpoint(req: AdminUpdateRoleModeRequest, admin: dict = Depends(require_superadmin)):
+    """Mengubah hak akses mode untuk suatu role."""
+    cfg = get_system_config()
+    if not cfg.get("chat_modes_enabled", True):
+        raise HTTPException(
+            status_code=400,
+            detail="Fitur mode chat sedang dinonaktifkan secara global. Aktifkan master switch terlebih dahulu untuk mengubah perizinan."
+        )
+
+    mode = get_chat_mode_by_code(req.mode_code)
+    if not mode:
+        raise HTTPException(status_code=404, detail=f"Mode dengan kode '{req.mode_code}' tidak ditemukan.")
+
+    target_enabled = req.enabled if req.enabled is not None else (req.allowed if req.allowed is not None else True)
+    ok = set_role_mode(req.role, req.mode_code, target_enabled)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan perizinan role mode.")
+    return {"status": "success", "role": req.role, "mode_code": req.mode_code, "enabled": target_enabled, "allowed": target_enabled}
+
+
+@app.post("/api/admin/modes/enabled")
+async def toggle_chat_modes_master_endpoint(req: AdminToggleModeMasterRequest, admin: dict = Depends(require_superadmin)):
+    """Mengaktifkan atau menonaktifkan master switch fitur mode chat."""
+    ok = update_system_config(chat_modes_enabled=req.enabled)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal mengubah status master switch mode chat.")
+    return {"status": "success", "chat_modes_enabled": req.enabled}
+
+
+@app.put("/api/admin/modes/{mode_id}")
+async def update_mode_endpoint(mode_id: int, req: AdminUpdateModeRequest, admin: dict = Depends(require_superadmin)):
+    """Memperbarui mode chat."""
+    existing = get_chat_mode_by_id(mode_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Mode chat tidak ditemukan.")
+
+    if req.code is not None:
+        code_clean = req.code.strip().lower()
+        if not code_clean:
+            raise HTTPException(status_code=400, detail="Kode mode tidak boleh kosong.")
+        other = get_chat_mode_by_code(code_clean)
+        if other and other["id"] != mode_id:
+            raise HTTPException(status_code=400, detail=f"Mode dengan kode '{code_clean}' sudah digunakan.")
+        req.code = code_clean
+
+    try:
+        updated = update_chat_mode(
+            mode_id=mode_id,
+            code=req.code,
+            name=req.name.strip() if req.name is not None else None,
+            description=req.description.strip() if req.description is not None else None,
+            icon=req.icon.strip() if req.icon is not None else None,
+            provider=req.provider.strip() if req.provider is not None else None,
+            model=req.model.strip() if req.model is not None else None,
+            fallback_provider=req.fallback_provider.strip() if req.fallback_provider is not None else None,
+            fallback_model=req.fallback_model.strip() if req.fallback_model is not None else None,
+            max_iterations=req.max_iterations,
+            enabled=req.enabled,
+            is_default=req.is_default,
+            sort_order=req.sort_order,
+        )
+        return updated
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Gagal memperbarui mode chat: {str(e)}")
+
+
+@app.delete("/api/admin/modes/{mode_id}")
+async def delete_mode_endpoint(mode_id: int, admin: dict = Depends(require_superadmin)):
+    """Menghapus mode chat."""
+    existing = get_chat_mode_by_id(mode_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Mode chat tidak ditemukan.")
+
+    if existing.get("is_default"):
+        raise HTTPException(
+            status_code=400,
+            detail="Mode default tidak dapat dihapus. Tetapkan mode lain sebagai default terlebih dahulu."
+        )
+
+    all_modes = get_chat_modes()
+    cfg = get_system_config()
+    if cfg.get("chat_modes_enabled", True) and len(all_modes) <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak dapat menghapus seluruh mode saat fitur mode chat aktif. Nonaktifkan master switch terlebih dahulu."
+        )
+
+    ok = delete_chat_mode(mode_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Gagal menghapus mode chat.")
+    return {"status": "success", "message": f"Mode '{existing['name']}' berhasil dihapus."}
+
+
+@app.post("/api/admin/modes/{mode_id}/default")
+async def set_default_mode_endpoint(mode_id: int, admin: dict = Depends(require_superadmin)):
+    """Menetapkan mode chat sebagai default."""
+    existing = get_chat_mode_by_id(mode_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Mode chat tidak ditemukan.")
+    ok = set_default_chat_mode(mode_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Gagal menetapkan mode default.")
+    return {"status": "success", "message": f"Mode '{existing['name']}' berhasil dijadikan default."}
 
 
 # --- CHAT ---

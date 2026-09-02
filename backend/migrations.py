@@ -195,12 +195,99 @@ def _m0005_kuota_token(conn):
         """), {"r": peran, "h": harian, "m": per_menit})
 
 
+def _m0006_mode_chat(conn):
+    """Tabel konfigurasi mode chat AI dan perizinan akses mode per role pengguna."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.chat_modes (
+            id SERIAL PRIMARY KEY,
+            code VARCHAR(40) NOT NULL UNIQUE,
+            name VARCHAR(100) NOT NULL,
+            description VARCHAR(255) DEFAULT '',
+            icon VARCHAR(40) DEFAULT 'zap',
+            provider VARCHAR(40) DEFAULT 'nine_router',
+            model VARCHAR(150) DEFAULT 'ag/gemini-3.7-flash-medium',
+            fallback_provider VARCHAR(40) DEFAULT 'openrouter',
+            fallback_model VARCHAR(150) DEFAULT 'openrouter/free',
+            max_iterations INTEGER NOT NULL DEFAULT 15,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.role_modes (
+            role VARCHAR(40) NOT NULL,
+            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (role, mode_code)
+        )
+    """))
+
+    # Seed Default Chat Modes
+    initial_modes = [
+        ("fast", "Fast", "For everyday tasks & quick answers", "zap", "nine_router", "ag/gemini-3.7-flash-medium", "openrouter", "openrouter/free", 10, True, True, 1),
+        ("medium", "Medium", "For complex tasks & data analysis", "gauge", "nine_router", "ag/gemini-3.7-flash-medium", "openrouter", "openrouter/free", 15, True, False, 2),
+        ("expert", "Expert", "For toughest challenges & in-depth reasoning", "brain", "nine_router", "ag/gemini-3.7-flash-medium", "openrouter", "openrouter/free", 25, True, False, 3),
+    ]
+
+    for code, name, desc, icon, provider, model, fb_prov, fb_model, max_iter, enabled, is_default, order in initial_modes:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.chat_modes
+                (code, name, description, icon, provider, model, fallback_provider, fallback_model, max_iterations, enabled, is_default, sort_order)
+            VALUES
+                (:c, :n, :d, :i, :p, :m, :fbp, :fbm, :mi, :en, :def, :ord)
+            ON CONFLICT (code) DO NOTHING
+        """), {
+            "c": code, "n": name, "d": desc, "i": icon,
+            "p": provider, "m": model, "fbp": fb_prov, "fbm": fb_model,
+            "mi": max_iter, "en": enabled, "def": is_default, "ord": order
+        })
+
+    # Seed Role Permissions
+    role_permissions = [
+        ("superadmin", "fast", True),
+        ("superadmin", "medium", True),
+        ("superadmin", "expert", True),
+        ("abaper", "fast", True),
+        ("abaper", "medium", True),
+        ("abaper", "expert", True),
+        ("functional", "fast", True),
+        ("functional", "medium", True),
+        ("functional", "expert", False),
+        ("user", "fast", True),
+        ("user", "medium", True),
+        ("user", "expert", False),
+        ("guest", "fast", True),
+        ("guest", "medium", False),
+        ("guest", "expert", False),
+    ]
+
+    for role, code, enabled in role_permissions:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+            VALUES (:r, :c, :en)
+            ON CONFLICT (role, mode_code) DO NOTHING
+        """), {"r": role, "c": code, "en": enabled})
+
+    # Seed Master Switch
+    conn.execute(text("""
+        INSERT INTO ai_assistant.system_config (key, value)
+        VALUES ('chat_modes_enabled', 'true')
+        ON CONFLICT (key) DO NOTHING
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
     ("0003_indeks_feedback", _m0003_indeks_feedback),
     ("0004_peran_abaper_dan_functional", _m0004_peran_abaper_dan_functional),
     ("0005_kuota_token", _m0005_kuota_token),
+    ("0006_mode_chat", _m0006_mode_chat),
 ]
 
 

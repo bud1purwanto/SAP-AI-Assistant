@@ -23,11 +23,19 @@ const iconFor = (item) => {
   return <FileText className="w-3.5 h-3.5" aria-hidden="true" />;
 };
 
+import ModeSelector from './ModeSelector';
+
 const formatSize = (bytes) => (bytes < 1024 * 1024
   ? `${Math.max(1, Math.round(bytes / 1024))} KB`
   : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
-const ChatInput = ({ onSendMessage, isLoading }) => {
+const ChatInput = ({
+  onSendMessage,
+  isLoading,
+  modes = [],
+  selectedMode = '',
+  onSelectMode,
+}) => {
   const { t, language } = useLanguage();
   const [input, setInput] = useState('');
   const teksSebelumBicaraRef = useRef('');
@@ -229,7 +237,7 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
           </p>
         )}
 
-        <div className="flex items-end gap-1">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-1.5 sm:gap-1">
           <input
             ref={fileInputRef}
             type="file"
@@ -238,34 +246,8 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             className="hidden"
             onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover transition-colors shrink-0 cursor-pointer"
-            aria-label={t('input.attach')}
-            title={t('input.attach')}
-          >
-            <Paperclip className="w-4 h-4" aria-hidden="true" />
-          </button>
 
-          <button
-            type="button"
-            onClick={tekanMikrofon}
-            className={`p-2 sm:p-2.5 mb-0.5 rounded-xl sm:rounded-2xl transition-colors shrink-0 cursor-pointer ${
-              suara.mendengar
-                ? 'bg-danger/15 text-danger'
-                : 'text-content-muted hover:text-accent hover:bg-surface-hover'
-            }`}
-            aria-label={suara.mendengar ? t('input.stop') : t('input.voice')}
-            title={suara.mendengar ? t('input.stop') : t('input.voice')}
-          >
-            {suara.mendengar
-              ? <Square className="w-4 h-4 fill-current" aria-hidden="true" />
-              : suara.dukungan === ALASAN.SIAP
-                ? <Mic className="w-4 h-4" aria-hidden="true" />
-                : <MicOff className="w-4 h-4" aria-hidden="true" />}
-          </button>
-
+          {/* Textarea: Full width di HP (order-1), Tengah flex-1 di Desktop (order-2) */}
           <textarea
             ref={textareaRef}
             rows={1}
@@ -275,15 +257,77 @@ const ChatInput = ({ onSendMessage, isLoading }) => {
             onPaste={handlePaste}
             placeholder={t('input.placeholder')}
             aria-label={t('input.placeholder')}
-            className="no-focus-outline flex-1 max-h-[120px] sm:max-h-[180px] py-2 sm:py-2.5 px-1.5 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
+            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
             disabled={isLoading}
           />
 
-          <div className="flex items-center gap-1 sm:gap-1.5 pb-0.5">
+          {/* Toolbar Actions: Baris bawah di HP (order-2), Sisi kiri di Desktop (order-1) */}
+          <div className="order-2 sm:order-1 flex items-center justify-between sm:justify-start gap-1 sm:gap-1.5 w-full sm:w-auto">
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="h-8 w-8 sm:h-9 sm:w-9 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                aria-label={t('input.attach')}
+                title={t('input.attach')}
+              >
+                <Paperclip className="w-4 h-4" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                onClick={tekanMikrofon}
+                className={`h-8 w-8 sm:h-9 sm:w-9 sm:mb-1 rounded-xl sm:rounded-2xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                  suara.mendengar
+                    ? 'bg-danger/15 text-danger'
+                    : 'text-content-muted hover:text-accent hover:bg-surface-hover'
+                }`}
+                aria-label={suara.mendengar ? t('input.stop') : t('input.voice')}
+                title={suara.mendengar ? t('input.stop') : t('input.voice')}
+              >
+                {suara.mendengar
+                  ? <Square className="w-4 h-4 fill-current" aria-hidden="true" />
+                  : suara.dukungan === ALASAN.SIAP
+                    ? <Mic className="w-4 h-4" aria-hidden="true" />
+                    : <MicOff className="w-4 h-4" aria-hidden="true" />}
+              </button>
+
+              {modes && modes.length > 0 && (
+                <div className="sm:mb-1 shrink-0 flex items-center">
+                  <ModeSelector
+                    modes={modes}
+                    selectedMode={selectedMode}
+                    onSelectMode={onSelectMode}
+                    disabled={isLoading}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Tombol Send khusus HP di sisi kanan toolbar */}
+            <div className="sm:hidden flex items-center">
+              <button
+                type="submit"
+                disabled={busy || (!input.trim() && attachments.length === 0)}
+                className={`h-8 w-8 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                  !busy && (input.trim() || attachments.length > 0)
+                    ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
+                    : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
+                }`}
+                title={t('input.send')}
+                aria-label={t('input.send')}
+              >
+                <Send className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          {/* Tombol Send khusus Desktop (Order 3) */}
+          <div className="order-3 hidden sm:flex items-center gap-1 sm:gap-1.5 sm:mb-1">
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
-              className={`p-2 sm:p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
+              className={`h-9 w-9 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
                 !busy && (input.trim() || attachments.length > 0)
                   ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'

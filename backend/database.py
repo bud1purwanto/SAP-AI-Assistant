@@ -583,6 +583,7 @@ def get_system_config():
     # persona masing-masing user diterapkan sebagai penyesuaian.
     global_persona = settings.assistant_persona or ""
     token_limit_enabled = bool(settings.token_limit_enabled)
+    chat_modes_enabled = True
 
     try:
         engine = get_engine()
@@ -597,6 +598,8 @@ def get_system_config():
                     sql_cfg = r.value
                 elif r.key == 'token_limit_enabled' and r.value is not None:
                     token_limit_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'chat_modes_enabled' and r.value is not None:
+                    chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -636,6 +639,7 @@ def get_system_config():
         "openrouter_api_key": api_key,
         "global_assistant_persona": global_persona,
         "token_limit_enabled": token_limit_enabled,
+        "chat_modes_enabled": chat_modes_enabled,
     }
 
 def update_system_config(
@@ -653,8 +657,9 @@ def update_system_config(
     openrouter_api_key: str = None,
     global_assistant_persona: str = None,
     token_limit_enabled: bool = None,
+    chat_modes_enabled: bool = None,
 ):
-    """Update konfigurasi MCP, 9Router, OpenRouter, dan persona global di database."""
+    """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -664,6 +669,13 @@ def update_system_config(
                     VALUES ('token_limit_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if token_limit_enabled else "false"})
+
+            if chat_modes_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('chat_modes_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if chat_modes_enabled else "false"})
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
@@ -2046,4 +2058,308 @@ def delete_skill(skill_id: int) -> bool:
     except Exception as e:
         logger.error(f"Error delete_skill: {e}")
         return False
+
+
+
+
+# --- CHAT MODES & ROLE ACCESS ---
+
+def get_chat_modes(enabled_only: bool = False) -> list[dict]:
+    """Mengambil daftar seluruh mode chat, diurutkan berdasarkan sort_order lalu id."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            query = "SELECT * FROM ai_assistant.chat_modes"
+            if enabled_only:
+                query += " WHERE enabled = TRUE"
+            query += " ORDER BY sort_order ASC, id ASC"
+            rows = conn.execute(text(query)).fetchall()
+            return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Error get_chat_modes: {e}")
+        return []
+
+
+def get_chat_mode_by_id(mode_id: int) -> dict | None:
+    """Mengambil mode chat berdasarkan ID."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT * FROM ai_assistant.chat_modes WHERE id = :id"),
+                {"id": mode_id}
+            ).fetchone()
+            return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Error get_chat_mode_by_id: {e}")
+        return None
+
+
+def get_chat_mode_by_code(code: str) -> dict | None:
+    """Mengambil mode chat berdasarkan code string unik."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT * FROM ai_assistant.chat_modes WHERE code = :code"),
+                {"code": code}
+            ).fetchone()
+            return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Error get_chat_mode_by_code: {e}")
+        return None
+
+
+def get_default_chat_mode() -> dict | None:
+    """Mengambil mode chat default (atau mode aktif pertama jika default tidak diset)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT * FROM ai_assistant.chat_modes WHERE is_default = TRUE AND enabled = TRUE LIMIT 1")
+            ).fetchone()
+            if not row:
+                row = conn.execute(
+                    text("SELECT * FROM ai_assistant.chat_modes WHERE enabled = TRUE ORDER BY sort_order ASC, id ASC LIMIT 1")
+                ).fetchone()
+            return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Error get_default_chat_mode: {e}")
+        return None
+
+
+def create_chat_mode(
+    code: str,
+    name: str,
+    description: str = "",
+    icon: str = "zap",
+    provider: str = "nine_router",
+    model: str = "ag/gemini-3.7-flash-medium",
+    fallback_provider: str = "openrouter",
+    fallback_model: str = "openrouter/free",
+    max_iterations: int = 15,
+    enabled: bool = True,
+    is_default: bool = False,
+    sort_order: int = 0,
+) -> dict:
+    """Membuat mode chat baru dan mendaftarkan perizinan default untuk semua role."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if is_default:
+                conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE"))
+
+            row = conn.execute(text("""
+                INSERT INTO ai_assistant.chat_modes
+                    (code, name, description, icon, provider, model, fallback_provider, fallback_model, max_iterations, enabled, is_default, sort_order)
+                VALUES
+                    (:c, :n, :d, :i, :p, :m, :fbp, :fbm, :mi, :en, :def, :ord)
+                RETURNING *
+            """), {
+                "c": code, "n": name, "d": description, "i": icon,
+                "p": provider, "m": model, "fbp": fallback_provider, "fbm": fallback_model,
+                "mi": max_iterations, "en": enabled, "def": is_default, "ord": sort_order
+            }).fetchone()
+
+            # Daftarkan hak akses awal untuk semua role standar
+            roles = ["superadmin", "abaper", "functional", "user", "guest"]
+            for role in roles:
+                role_en = True if role in ("superadmin", "abaper") else False
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                    VALUES (:r, :c, :en)
+                    ON CONFLICT (role, mode_code) DO NOTHING
+                """), {"r": role, "c": code, "en": role_en})
+
+            conn.commit()
+            return dict(row._mapping) if row else {}
+    except Exception as e:
+        logger.error(f"Error create_chat_mode: {e}")
+        raise
+
+
+
+def update_chat_mode(
+    mode_id: int,
+    code: str = None,
+    name: str = None,
+    description: str = None,
+    icon: str = None,
+    provider: str = None,
+    model: str = None,
+    fallback_provider: str = None,
+    fallback_model: str = None,
+    max_iterations: int = None,
+    enabled: bool = None,
+    is_default: bool = None,
+    sort_order: int = None,
+) -> dict | None:
+    """Memperbarui mode chat yang sudah ada."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            if is_default:
+                conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE WHERE id != :id"), {"id": mode_id})
+
+            fields = []
+            params = {"id": mode_id}
+            if code is not None:
+                fields.append("code = :code")
+                params["code"] = code
+            if name is not None:
+                fields.append("name = :name")
+                params["name"] = name
+            if description is not None:
+                fields.append("description = :description")
+                params["description"] = description
+            if icon is not None:
+                fields.append("icon = :icon")
+                params["icon"] = icon
+            if provider is not None:
+                fields.append("provider = :provider")
+                params["provider"] = provider
+            if model is not None:
+                fields.append("model = :model")
+                params["model"] = model
+            if fallback_provider is not None:
+                fields.append("fallback_provider = :fallback_provider")
+                params["fallback_provider"] = fallback_provider
+            if fallback_model is not None:
+                fields.append("fallback_model = :fallback_model")
+                params["fallback_model"] = fallback_model
+            if max_iterations is not None:
+                fields.append("max_iterations = :max_iterations")
+                params["max_iterations"] = max_iterations
+            if enabled is not None:
+                fields.append("enabled = :enabled")
+                params["enabled"] = enabled
+            if is_default is not None:
+                fields.append("is_default = :is_default")
+                params["is_default"] = is_default
+            if sort_order is not None:
+                fields.append("sort_order = :sort_order")
+                params["sort_order"] = sort_order
+
+            if not fields:
+                return get_chat_mode_by_id(mode_id)
+
+            fields.append("updated_at = CURRENT_TIMESTAMP")
+            sql = f"UPDATE ai_assistant.chat_modes SET {', '.join(fields)} WHERE id = :id RETURNING *"
+            row = conn.execute(text(sql), params).fetchone()
+            conn.commit()
+            return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Error update_chat_mode: {e}")
+        raise
+
+
+def delete_chat_mode(mode_id: int) -> bool:
+    """Menghapus mode chat berdasarkan ID (role_modes terhapus via CASCADE)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            res = conn.execute(text("DELETE FROM ai_assistant.chat_modes WHERE id = :id"), {"id": mode_id})
+            conn.commit()
+            return (res.rowcount or 0) > 0
+    except Exception as e:
+        logger.error(f"Error delete_chat_mode: {e}")
+        return False
+
+
+def set_default_chat_mode(mode_id: int) -> bool:
+    """Menjadikan mode tertentu sebagai default dan melepas flag default dari mode lain."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE"))
+            res = conn.execute(
+                text("UPDATE ai_assistant.chat_modes SET is_default = TRUE, enabled = TRUE WHERE id = :id"),
+                {"id": mode_id}
+            )
+            conn.commit()
+            return (res.rowcount or 0) > 0
+    except Exception as e:
+        logger.error(f"Error set_default_chat_mode: {e}")
+        return False
+
+
+def get_role_modes() -> list[dict]:
+    """Mengembalikan daftar matrix perizinan peran -> mode_code."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT role, mode_code, enabled FROM ai_assistant.role_modes ORDER BY role, mode_code")).fetchall()
+            return [
+                {
+                    "role": r.role,
+                    "mode_code": r.mode_code,
+                    "allowed": bool(r.enabled),
+                    "enabled": bool(r.enabled),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error get_role_modes: {e}")
+        return []
+
+
+def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
+    """Mengatur perizinan akses peran tertentu terhadap mode tertentu."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled, updated_at)
+                VALUES (:r, :c, :en, CURRENT_TIMESTAMP)
+                ON CONFLICT (role, mode_code) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"r": role, "c": mode_code, "en": enabled})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error set_role_mode: {e}")
+        return False
+
+
+def get_modes_for_role(role: str) -> list[dict]:
+    """Mengambil seluruh mode chat yang ada, beserta status `available` untuk role yang bersangkutan."""
+    try:
+        cfg = get_system_config()
+        master_enabled = cfg.get("chat_modes_enabled", True)
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            modes = conn.execute(
+                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
+            ).fetchall()
+
+            role_rows = conn.execute(
+                text("SELECT mode_code, enabled FROM ai_assistant.role_modes WHERE role = :r"),
+                {"r": role}
+            ).fetchall()
+            role_map = {r.mode_code: bool(r.enabled) for r in role_rows}
+
+            result = []
+            for m in modes:
+                mode_dict = dict(m._mapping)
+                is_def = mode_dict["is_default"]
+                is_mode_enabled = mode_dict["enabled"]
+                is_role_allowed = role_map.get(mode_dict["code"], True)
+
+                # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
+                # dan mode diaktifkan di level sistem, serta role memiliki izin.
+                if not master_enabled:
+                    available = is_def and is_mode_enabled
+                else:
+                    available = is_mode_enabled and is_role_allowed
+
+                mode_dict["available"] = bool(available)
+                result.append(mode_dict)
+
+            return result
+    except Exception as e:
+        logger.error(f"Error get_modes_for_role: {e}")
+        return []
+
 

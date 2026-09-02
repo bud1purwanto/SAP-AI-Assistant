@@ -99,7 +99,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     throw new ApiError(connectionErrorMessage(), 0);
   }
 
-  if (res.status === 401) {
+  if (res.status === 401 && path !== '/api/login') {
     clearSession();
     onUnauthorized();
     throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
@@ -201,6 +201,18 @@ export const api = {
   adminCreateSkill: (payload) => apiFetch('/api/admin/skills', { method: 'POST', body: payload }),
   adminUpdateSkill: (id, payload) => apiFetch(`/api/admin/skills/${id}`, { method: 'PUT', body: payload }),
   adminDeleteSkill: (id) => apiFetch(`/api/admin/skills/${id}`, { method: 'DELETE' }),
+
+  getModes: () => apiFetch('/api/modes', { auth: true }),
+  adminModes: () => apiFetch('/api/admin/modes'),
+  adminCreateMode: (payload) => apiFetch('/api/admin/modes', { method: 'POST', body: payload }),
+  adminUpdateMode: (id, payload) => apiFetch(`/api/admin/modes/${id}`, { method: 'PUT', body: payload }),
+  adminDeleteMode: (id) => apiFetch(`/api/admin/modes/${id}`, { method: 'DELETE' }),
+  adminSetDefaultMode: (id) => apiFetch(`/api/admin/modes/${id}/default`, { method: 'POST' }),
+  adminToggleModesMaster: (enabled) =>
+    apiFetch('/api/admin/modes/enabled', { method: 'POST', body: { enabled } }),
+  adminRoleModes: () => apiFetch('/api/admin/modes/roles'),
+  adminUpdateRoleMode: (payload) =>
+    apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
 };
 
 /**

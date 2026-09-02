@@ -171,16 +171,85 @@ def _strip_images(messages: list) -> list:
     return cleaned
 
 
+def _buat_llm(provider: str, model_name: str, sys_cfg: dict):
+    """Buat instance ChatOpenAI sesuai provider ('nine_router' atau 'openrouter') dan model."""
+    prov = (provider or "").lower().strip()
+    if prov in ("nine_router", "9router", "local"):
+        nine_router_base_url = sys_cfg.get("nine_router_base_url") or settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
+        nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "sk-9router-local"
+        return ChatOpenAI(
+            model=model_name or "ag/gemini-3.7-flash-medium",
+            openai_api_key=nine_router_api_key,
+            openai_api_base=nine_router_base_url,
+            max_retries=1,
+            max_tokens=4096,
+        )
+    elif prov == "openrouter":
+        openrouter_api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
+        if not openrouter_api_key or openrouter_api_key == "your_openrouter_api_key_here":
+            return None
+        return ChatOpenAI(
+            model=model_name or "openrouter/free",
+            openai_api_key=openrouter_api_key,
+            openai_api_base="https://openrouter.ai/api/v1",
+            default_headers={
+                "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
+                "X-Title": "SAP AI Assistant",
+            },
+            max_retries=1,
+            max_tokens=4096,
+        )
+    return None
+
+
 async def _noop_progress(**kwargs):
     """Penerima progres bawaan untuk pemanggil yang tidak memerlukannya."""
 
 
 async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
                        username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
+    # 0. Resolusi Mode Chat & Batas Iterasi
+    from database import (
+        get_system_config,
+        get_chat_mode_by_code,
+        get_default_chat_mode,
+        get_modes_for_role,
+    )
+    sys_cfg = get_system_config()
+
+    chat_modes_enabled = sys_cfg.get("chat_modes_enabled", True)
+    active_mode = None
+    if chat_modes_enabled and chat_req.mode:
+        target = get_chat_mode_by_code(chat_req.mode)
+        if target and target.get("enabled"):
+            user_modes = get_modes_for_role(user_role)
+            if any(m["code"] == target["code"] and m.get("available") for m in user_modes):
+                active_mode = target
+
+    if not active_mode:
+        active_mode = get_default_chat_mode()
+
+    if active_mode:
+        MAX_ITERATIONS = int(active_mode.get("max_iterations") or 15)
+        primary_provider = active_mode.get("provider") or "nine_router"
+        mode_model = active_mode.get("model")
+        if not mode_model or (primary_provider == "nine_router" and sys_cfg.get("nine_router_model") and not chat_req.mode):
+            primary_model_name = sys_cfg.get("nine_router_model") or mode_model or "ag/gemini-3.7-flash-medium"
+        else:
+            primary_model_name = mode_model or "ag/gemini-3.7-flash-medium"
+        fallback_provider = active_mode.get("fallback_provider") or "openrouter"
+        fallback_model_name = active_mode.get("fallback_model") or sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+    else:
+        MAX_ITERATIONS = 15
+        nine_router_enabled = sys_cfg.get("nine_router_enabled", True)
+        primary_provider = "nine_router" if nine_router_enabled else "openrouter"
+        primary_model_name = sys_cfg.get("nine_router_model") if nine_router_enabled else (sys_cfg.get("openrouter_model") or "openrouter/auto")
+        fallback_provider = "openrouter"
+        fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+
     # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
     # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
     progress = on_progress or _noop_progress
-    MAX_ITERATIONS = 15
 
     async def report(stage: str, label: str, step: int = 0):
         try:
@@ -361,74 +430,20 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         })
         tool_map[tool_name] = {"server": server, "mcp_name": t.name}
 
-    # 3. Setup LLM (Dual Provider: 9Router Proxy & OpenRouter)
-    from database import get_system_config
-    sys_cfg = get_system_config()
+    # 3. Setup LLM (Berdasarkan konfigurasi mode chat & fallback provider)
+    llm_primary = _buat_llm(primary_provider, primary_model_name, sys_cfg)
+    llm_fallback = _buat_llm(fallback_provider, fallback_model_name, sys_cfg)
 
-    nine_router_enabled = sys_cfg.get("nine_router_enabled", True)
-    nine_router_base_url = sys_cfg.get("nine_router_base_url") or settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
-    nine_router_model = sys_cfg.get("nine_router_model") or settings.nine_router_model or "ag/gemini-3.7-flash-medium"
-    nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "sk-9router-local"
-
-    openrouter_enabled = sys_cfg.get("openrouter_enabled", False)
-    openrouter_api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
-    openrouter_model = sys_cfg.get("openrouter_model") or settings.openrouter_model or "openrouter/auto"
-    openrouter_fallback_model = sys_cfg.get("openrouter_fallback_model") or settings.openrouter_fallback_model or "openrouter/free"
-
-    # Prioritas provider LLM
-    if nine_router_enabled:
-        llm_primary = ChatOpenAI(
-            model=nine_router_model,
-            openai_api_key=nine_router_api_key,
-            openai_api_base=nine_router_base_url,
-            max_retries=1,
-            max_tokens=4096,
-        )
-        if openrouter_enabled and openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here":
-            llm_fallback = ChatOpenAI(
-                model=openrouter_fallback_model or openrouter_model,
-                openai_api_key=openrouter_api_key,
-                openai_api_base="https://openrouter.ai/api/v1",
-                default_headers={
-                    "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
-                    "X-Title": "SAP AI Assistant",
-                },
-                max_retries=1,
-                max_tokens=4096,
-            )
-        else:
-            llm_fallback = llm_primary
-    elif openrouter_enabled or (openrouter_api_key and openrouter_api_key != "your_openrouter_api_key_here"):
-        if not openrouter_api_key or openrouter_api_key == "your_openrouter_api_key_here":
-            return ChatResponse(
-                reply="Mohon maaf, 9Router dinonaktifkan dan API Key OpenRouter belum dikonfigurasi. Silakan atur konfigurasi AI Provider pada Dashboard Admin.",
-                sources=[]
-            )
-        llm_primary = ChatOpenAI(
-            model=openrouter_model,
-            openai_api_key=openrouter_api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
-            default_headers={
-                "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
-                "X-Title": "SAP AI Assistant",
-            },
-            max_retries=1,
-            max_tokens=4096,
-        )
-        llm_fallback = ChatOpenAI(
-            model=openrouter_fallback_model,
-            openai_api_key=openrouter_api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
-            default_headers={
-                "HTTP-Referer": "https://github.com/bud1purwanto/SAP-AI-Assistant",
-                "X-Title": "SAP AI Assistant",
-            },
-            max_retries=1,
-            max_tokens=4096,
-        )
-    else:
+    # Fallback jika salah satu provider tidak terkonfigurasi (misal API key OpenRouter kosong)
+    if llm_primary is None and llm_fallback is not None:
+        llm_primary = llm_fallback
+        primary_model_name = fallback_model_name
+    elif llm_fallback is None and llm_primary is not None:
+        llm_fallback = llm_primary
+        fallback_model_name = primary_model_name
+    elif llm_primary is None and llm_fallback is None:
         return ChatResponse(
-            reply="Mohon maaf, tidak ada AI Provider yang aktif. Silakan aktifkan 9Router atau OpenRouter melalui Dashboard Admin.",
+            reply="Mohon maaf, tidak ada AI Provider yang aktif atau terkonfigurasi untuk mode ini. Silakan hubungi Administrator.",
             sources=[]
         )
 
@@ -771,9 +786,6 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         messages.append(HumanMessage(content=parts))
     else:
         messages.append(HumanMessage(content=user_content))
-
-    primary_model_name = nine_router_model if nine_router_enabled else openrouter_model
-    fallback_model_name = openrouter_fallback_model if openrouter_enabled else primary_model_name
 
     # 5. Agentic Loop
     sources = []

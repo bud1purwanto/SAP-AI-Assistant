@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     attachment_ids: List[str] = Field(default_factory=list, description="ID lampiran sebagai konteks")
+    mode: Optional[str] = Field(default=None, description="Kode mode chat yang dipilih (misal: 'fast', 'medium', 'expert')")
 
 class GeneratedArtifact(BaseModel):
     """Berkas (Excel/CSV) yang dihasilkan asisten dan siap diunduh."""
