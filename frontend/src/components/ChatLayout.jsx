@@ -1549,7 +1549,7 @@ const ChatLayout = () => {
                           onClick={() => handleSendMessage(item.query)}
                           className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
                         >
-                          <div className="flex items-center justify-between w-full sm:mb-3.5 shrink-0">
+                          <div className="flex items-center justify-between w-auto sm:w-full sm:mb-3.5 shrink-0">
                             <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors shrink-0">
                               <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
                             </span>
@@ -1557,8 +1557,8 @@ const ChatLayout = () => {
                               <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                             </span>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block">
+                          <div className="min-w-0 flex-1 sm:w-full">
+                            <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block truncate sm:whitespace-normal">
                               {item.title}
                             </span>
                             <span className="text-[11px] sm:text-xs text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed block truncate sm:whitespace-normal">

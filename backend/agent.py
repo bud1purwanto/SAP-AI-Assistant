@@ -172,9 +172,13 @@ def _strip_images(messages: list) -> list:
     return cleaned
 
 
-def _buat_llm(provider: str, model_name: str, sys_cfg: dict):
+def _buat_llm(provider: str, model_name: str, sys_cfg: dict, max_tokens: int = 4096, temperature: float = None):
     """Buat instance ChatOpenAI sesuai provider ('nine_router' atau 'openrouter') dan model."""
     prov = (provider or "").lower().strip()
+    extra_kwargs = {}
+    if temperature is not None:
+        extra_kwargs["temperature"] = temperature
+
     if prov in ("nine_router", "9router", "local"):
         nine_router_base_url = sys_cfg.get("nine_router_base_url") or settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
         nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "sk-9router-local"
@@ -183,7 +187,8 @@ def _buat_llm(provider: str, model_name: str, sys_cfg: dict):
             openai_api_key=nine_router_api_key,
             openai_api_base=nine_router_base_url,
             max_retries=1,
-            max_tokens=4096,
+            max_tokens=max_tokens,
+            **extra_kwargs,
         )
     elif prov == "openrouter":
         openrouter_api_key = sys_cfg.get("openrouter_api_key") or settings.openrouter_api_key
@@ -198,7 +203,8 @@ def _buat_llm(provider: str, model_name: str, sys_cfg: dict):
                 "X-Title": "SAP AI Assistant",
             },
             max_retries=1,
-            max_tokens=4096,
+            max_tokens=max_tokens,
+            **extra_kwargs,
         )
     return None
 
@@ -1061,6 +1067,26 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "Package"
             }
         ],
+        "superadmin": [
+            {
+                "title": "Status & Health SAP",
+                "subtitle": "Koneksi RFC & pemeriksaan MCP Server",
+                "query": "Periksa status koneksi SAP RFC dan kesehatan server MCP aktif.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Audit Pemakaian Token",
+                "subtitle": "Pantau kuota token dan aktivitas user",
+                "query": "Tampilkan ringkasan audit penggunaan token hari ini dan pengguna paling aktif.",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Optimasi Mode & Model AI",
+                "subtitle": "Rekomendasi konfigurasi model sistem",
+                "query": "Bagaimana rekomendasi pengaturan provider model AI dan mode chat terbaik untuk beban kerja saat ini?",
+                "icon": "Zap"
+            }
+        ],
         "default": [
             {
                 "title": "Cek Ketersediaan Stok",
@@ -1123,6 +1149,26 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "Package"
             }
         ],
+        "superadmin": [
+            {
+                "title": "SAP Health & Connectivity",
+                "subtitle": "Inspect RFC connections & MCP servers",
+                "query": "Check SAP RFC connection status and active MCP server health.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Token Usage Audit",
+                "subtitle": "Monitor daily token quotas & user stats",
+                "query": "Show token usage audit summary for today and list of most active users.",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "AI Modes & Provider Tuning",
+                "subtitle": "Recommended model routing configurations",
+                "query": "What are the recommended settings for AI model providers and chat modes for our workload?",
+                "icon": "Zap"
+            }
+        ],
         "default": [
             {
                 "title": "Check Stock Availability",
@@ -1167,7 +1213,7 @@ async def generate_chat_suggestions(
         sys_cfg = get_system_config()
         provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
         model_name = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
-        llm = _buat_llm(provider, model_name, sys_cfg)
+        llm = _buat_llm(provider, model_name, sys_cfg, max_tokens=350, temperature=0.7)
 
         if not llm:
             return fallback_list
@@ -1181,14 +1227,21 @@ async def generate_chat_suggestions(
         language_instruction = "Indonesian (Bahasa Indonesia)" if lang_key == "id" else "English"
 
         prompt = f"""You are an AI prompt recommendation assistant for an Enterprise SAP ERP AI Assistant.
-Generate exactly 3 diverse, actionable, and highly relevant chat prompt starter cards for this user based on their role and recent interests:
-- User Role: {role} (e.g. abaper = ABAP developer / technical; functional = SAP functional consultant MM/SD/PP/FI/CO; superadmin = Admin; guest = general user)
+Generate exactly 3 fresh, diverse, actionable, and highly relevant chat prompt starter cards for this user based on their role and recent interests:
+- User Role: {role} (e.g. abaper = ABAP developer; functional = SAP functional consultant; superadmin = SAP Basis & System Admin; guest/user = Standard user)
 - User Preferences / Persona: {persona or 'Standard user'}
 - Recent Topics / Questions Asked By User:
 {queries_context}
 
+CRITICAL RULES:
+1. Do NOT just repeat the user's past questions word-for-word.
+2. Instead, generate 3 FRESH, SMART, ACTIONABLE next-step or related questions suited to their role and interests.
+3. For superadmin/Basis: focus on system health, RFC ping, job monitoring, token audit, or security.
+4. For ABAP: focus on BAPI code, performance tuning, dump debugging, CDS views.
+5. For Functional: focus on POs, inventory, sales delivery, MRP, production order flow.
+
 Format: Return a JSON list of 3 items. Each item MUST have:
-1. "title": Short action title (2 to 4 words, e.g. "Cek PO Outstanding", "Optimasi Query BAPI")
+1. "title": Short action title (2 to 4 words)
 2. "subtitle": Short description / context (5 to 10 words)
 3. "query": The exact, natural user prompt that will be sent into chat when clicked
 4. "icon": One of ["Layers", "Search", "FileSpreadsheet", "Database", "Code", "Package", "TrendingUp", "Zap", "Shield"]
@@ -1198,7 +1251,7 @@ Return ONLY valid JSON array with no markdown formatting around it."""
 
         res = await asyncio.wait_for(
             llm.ainvoke([HumanMessage(content=prompt)]),
-            timeout=4.5
+            timeout=15.0
         )
         content = _extract_text(res.content).strip()
         if content.startswith("```"):
