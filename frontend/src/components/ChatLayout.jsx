@@ -884,7 +884,7 @@ const ChatLayout = () => {
             <div>
               <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content flex items-center gap-1.5">
                 <span>SAP AI</span>
-                <span className="text-[10px] uppercase font-semibold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md">Co-Pilot</span>
+                <span className="text-[10px] uppercase font-semibold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md">Assistant</span>
               </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-2 h-2 rounded-full bg-success animate-pulse" />

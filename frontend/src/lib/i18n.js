@@ -201,7 +201,7 @@ export const TRANSLATIONS = {
     'security.tooShort': 'New password must be at least 4 characters.',
 
     // Login Modal
-    'login.title': 'SAP AI Co-Pilot Login',
+    'login.title': 'SAP AI Assistant Login',
     'login.subtitle': 'Sign in to access Enterprise SAP services & knowledge base without prompt limits.',
     'login.guestLimitReached': 'Daily free prompt limit for guest has been reached. Please sign in to continue.',
     'login.sessionExpired': 'Your session has expired. Please sign in again.',
@@ -470,7 +470,7 @@ export const TRANSLATIONS = {
     'security.tooShort': 'Password baru minimal 4 karakter.',
 
     // Login Modal
-    'login.title': 'Masuk SAP AI Co-Pilot',
+    'login.title': 'Masuk SAP AI Assistant',
     'login.subtitle': 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen tanpa batas prompt.',
     'login.guestLimitReached': 'Batas prompt gratis per hari untuk tamu sudah tercapai. Silakan login untuk melanjutkan.',
     'login.sessionExpired': 'Sesi Anda telah berakhir. Silakan login kembali.',

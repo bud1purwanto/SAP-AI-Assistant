@@ -30,7 +30,7 @@ export default defineConfig(({ mode }) => {
       manifest: {
         name: 'SAP AI Assistant',
         short_name: 'SAP AI',
-        description: 'Enterprise AI Co-Pilot & Assistant untuk SAP ERP',
+        description: 'Enterprise AI Assistant untuk SAP ERP',
         theme_color: '#0F172A',
         background_color: '#0F172A',
         display: 'standalone',
