@@ -492,6 +492,33 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     s.title.toLowerCase().includes(auditSearch.toLowerCase())
   );
 
+  const tabCategories = [
+    {
+      groupName: language === 'en' ? 'Monitoring & Metrics' : 'Monitoring & Metrik',
+      tabs: [
+        { id: 'overview', icon: Activity, label: t('admin.tabOverview') },
+        { id: 'audit', icon: History, label: t('admin.tabAudit') },
+        { id: 'feedback', icon: ThumbsDown, label: t('admin.tabFeedback') },
+      ],
+    },
+    {
+      groupName: language === 'en' ? 'Users & Quotas' : 'Pengguna & Kuota',
+      tabs: [
+        { id: 'users', icon: Users, label: t('admin.tabUsers') },
+        { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
+      ],
+    },
+    {
+      groupName: language === 'en' ? 'AI & System Config' : 'Konfigurasi AI & Sistem',
+      tabs: [
+        { id: 'chat_modes', icon: Sliders, label: t('admin.tabChatModes') },
+        { id: 'persona', icon: Sparkles, label: t('admin.tabPersona') },
+        { id: 'mcp', icon: Server, label: t('admin.tabMcp') },
+        { id: 'skills', icon: BookOpen, label: t('admin.tabSkills') },
+      ],
+    },
+  ];
+
   return (
     <>
       <div
@@ -500,32 +527,56 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       >
       {/* Header Modal */}
       <div
-        className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line bg-surface shrink-0"
+        className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line/80 bg-surface/90 backdrop-blur-xl shrink-0"
         style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1rem)' }}
       >
-        <div className="flex items-center gap-3 min-w-0 pr-4">
-          <div className="p-2 rounded-xl bg-indigo-600/15 text-indigo-500 border border-indigo-500/25 flex items-center justify-center shrink-0 shadow-sm">
+        <div className="flex items-center gap-3.5 min-w-0 pr-4">
+          <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-500/10">
             <ShieldCheck className="w-5 h-5" />
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-bold tracking-tight text-content truncate font-display leading-tight">
-              {t('admin.title')}
-            </h2>
-            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
-              {language === 'en'
-                ? 'Manage Users, Skills Catalog, MCP Servers, Chat Audit Logs, and System Metrics'
-                : 'Kelola User, Katalog Skill, Server MCP, Audit Riwayat Chat, dan Metrik Sistem'}
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm sm:text-base font-extrabold tracking-tight text-content truncate font-display leading-tight">
+                {t('admin.title')}
+              </h2>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
+                SUPER
+              </span>
+            </div>
+            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5 flex items-center gap-1.5">
+              <span>{language === 'en' ? 'Administration Console' : 'Konsol Administrasi'}</span>
+              <span className="text-content-subtle">/</span>
+              <span className="text-accent font-semibold">
+                {activeTab === 'overview' ? t('admin.tabOverview') :
+                 activeTab === 'users' ? t('admin.tabUsers') :
+                 activeTab === 'chat_modes' ? t('admin.tabChatModes') :
+                 activeTab === 'persona' ? t('admin.tabPersona') :
+                 activeTab === 'skills' ? t('admin.tabSkills') :
+                 activeTab === 'mcp' ? t('admin.tabMcp') :
+                 activeTab === 'kuota' ? t('admin.tabTokenQuota') :
+                 activeTab === 'feedback' ? t('admin.tabFeedback') : t('admin.tabAudit')}
+              </span>
             </p>
           </div>
         </div>
         
-        <button 
-          onClick={onClose}
-          className="-mr-1 p-3 sm:p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-transparent hover:border-line"
-          aria-label={t('admin.closeAria')}
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <kbd className="hidden sm:inline-flex items-center text-[10px] font-mono font-medium px-2 py-1 rounded-md bg-surface-sunken border border-line text-content-subtle">
+            Esc
+          </kbd>
+          <button 
+            onClick={onClose}
+            className="-mr-1 p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-line/60 hover:border-line"
+            aria-label={t('admin.closeAria')}
+            title="Tutup (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Global Notifications Alert */}
@@ -549,118 +600,42 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         </div>
       )}
 
-      {/* Main Content Area: Horizontal tabs on mobile, Vertical sidebar on desktop */}
+      {/* Main Content Area: Horizontal tabs on mobile, Vertical categorized sidebar on desktop */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         
-        {/* Navigation Tabs */}
-        <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-line bg-surface p-3 sm:p-4 flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
-          <button
-            onClick={() => { setActiveTab('overview'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'overview'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Activity className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabOverview')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('users'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'users'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Users className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabUsers')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('chat_modes'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'chat_modes'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Sliders className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabChatModes')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('persona'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'persona'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabPersona')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('skills'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'skills'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <BookOpen className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabSkills')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('mcp'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'mcp'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Server className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabMcp')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('kuota'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'kuota'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <Gauge className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabTokenQuota')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('feedback'); setSelectedAuditSession(null); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'feedback'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <ThumbsDown className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabFeedback')}</span>
-          </button>
-
-          <button
-            onClick={() => { setActiveTab('audit'); }}
-            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer ${
-              activeTab === 'audit'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                : 'text-content-muted hover:bg-surface-hover hover:text-content'
-            }`}
-          >
-            <History className="w-4 h-4 shrink-0" />
-            <span>{t('admin.tabAudit')}</span>
-          </button>
+        {/* Categorized Navigation Tabs */}
+        <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-line/80 bg-surface p-2.5 sm:p-3.5 flex flex-row md:flex-col gap-2 md:gap-3 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
+          {tabCategories.map((group) => (
+            <div key={group.groupName} className="flex flex-row md:flex-col gap-1 shrink-0 md:shrink">
+              <div className="hidden md:flex items-center gap-2 px-3 pt-2 pb-1">
+                <span className="text-[10px] font-bold tracking-wider text-content-subtle uppercase">
+                  {group.groupName}
+                </span>
+                <div className="h-px flex-1 bg-line/60" />
+              </div>
+              {group.tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setActiveTab(tab.id);
+                      if (tab.id !== 'audit') setSelectedAuditSession(null);
+                    }}
+                    className={`flex items-center gap-2.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer group ${
+                      isActive
+                        ? 'bg-accent/15 text-accent font-bold border border-accent/35 shadow-xs shadow-accent/10'
+                        : 'text-content-muted hover:bg-surface-hover hover:text-content border border-transparent'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-105 ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content'}`} />
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
 
         {/* Tab Content Panel */}
@@ -687,150 +662,171 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Metrics Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200/70 dark:border-indigo-900/50">
-                    <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Users' : 'Total User'}</span>
-                      <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                  {/* Total Users */}
+                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-indigo-500/40 hover:shadow-md transition-all group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Users' : 'Total Pengguna'}</span>
+                      <div className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center shadow-xs">
+                        <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
                       {stats?.total_users ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Active accounts in PostgreSQL' : 'Akun aktif terdaftar di PostgreSQL'}</p>
+                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                      {language === 'en' ? 'Active registered accounts' : 'Akun aktif terdaftar di sistem'}
+                    </p>
                   </div>
 
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-50 to-purple-100/50 dark:from-purple-950/40 dark:to-slate-900 border border-purple-200/70 dark:border-purple-900/50">
-                    <div className="flex items-center justify-between text-purple-600 dark:text-purple-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Chat Sessions' : 'Total Sesi Chat'}</span>
-                      <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+                  {/* Total Chat Sessions */}
+                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-violet-500/40 hover:shadow-md transition-all group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Sessions' : 'Total Sesi Chat'}</span>
+                      <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/25 flex items-center justify-center shadow-xs">
+                        <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
                       {stats?.total_sessions ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Conversations stored in system' : 'Percakapan tersimpan di sistem'}</p>
+                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                      {language === 'en' ? 'Conversations stored in database' : 'Percakapan tersimpan di sistem'}
+                    </p>
                   </div>
 
-                  <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-slate-900 border border-emerald-200/70 dark:border-emerald-900/50">
-                    <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
-                      <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Total Messages' : 'Total Pesan'}</span>
-                      <Database className="w-4 h-4 sm:w-5 sm:h-5" />
+                  {/* Total Messages */}
+                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-emerald-500/40 hover:shadow-md transition-all group">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Messages' : 'Total Pesan'}</span>
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center shadow-xs">
+                        <Database className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
+                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
                       {stats?.total_messages ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'User queries & AI answers' : 'Query user & jawaban AI'}</p>
+                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      {language === 'en' ? 'Queries & AI responses' : 'Query pengguna & respon AI'}
+                    </p>
                   </div>
                 </div>
 
                 {/* User Satisfaction & Feedback Card */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                    <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted flex items-center gap-2 font-display">
-                      <ThumbsUp className="w-4 h-4 text-teal-500" /> {language === 'en' ? 'AI Response Satisfaction Metrics' : 'Metrik Kepuasan Respon AI'}
+                <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                    <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
+                      <ThumbsUp className="w-4 h-4 text-emerald-500" /> {language === 'en' ? 'AI Response Satisfaction Metrics' : 'Metrik Kepuasan Respon AI'}
                     </h4>
-                    <span className="text-xs text-content-muted">
+                    <span className="text-xs font-medium text-content-muted bg-surface-sunken px-2.5 py-1 rounded-lg border border-line/60">
                       {language === 'en' ? `Total ${stats?.total_feedback ?? 0} User Ratings` : `Total ${stats?.total_feedback ?? 0} Rating Pengguna`}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
                     {/* Satisfaction Rate */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-100/50 dark:from-teal-950/40 dark:to-slate-900 border border-teal-200/70 dark:border-teal-900/50 flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Satisfaction Rate' : 'Tingkat Kepuasan'}</span>
-                        <Star className="w-4 h-4 sm:w-5 sm:h-5 text-amber-500 fill-amber-500" />
+                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-amber-500">
+                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Satisfaction Rate' : 'Tingkat Kepuasan'}</span>
+                        <Star className="w-4 h-4 fill-amber-500" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content">
+                      <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono">
                         {stats?.satisfaction_rate !== null && stats?.satisfaction_rate !== undefined ? `${stats.satisfaction_rate}%` : '100%'}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Ratio of responses rated helpful' : 'Rasio respon yang dinilai membantu'}</p>
+                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Ratio of responses rated helpful' : 'Rasio respon yang dinilai membantu'}</p>
                     </div>
 
                     {/* Likes count */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-teal-600 dark:text-teal-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Helpful (Like)' : 'Membantu (Like)'}</span>
+                    <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-emerald-500">
+                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Helpful (Like)' : 'Membantu (Like)'}</span>
                         <ThumbsUp className="w-4 h-4" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-teal-600 dark:text-teal-400">
+                      <p className="text-2xl sm:text-3xl font-black mt-2 text-emerald-500 font-mono">
                         {stats?.likes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Responses satisfying user requirements' : 'Jawaban yang memuaskan pengguna'}</p>
+                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Responses satisfying user requirements' : 'Jawaban yang memuaskan pengguna'}</p>
                     </div>
 
                     {/* Dislikes count */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line flex flex-col justify-between">
-                      <div className="flex items-center justify-between text-rose-600 dark:text-rose-400">
-                        <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider">{language === 'en' ? 'Unhelpful (Dislike)' : 'Kurang Sesuai (Dislike)'}</span>
+                    <div className="p-4 rounded-xl bg-rose-500/5 border border-rose-500/20 flex flex-col justify-between">
+                      <div className="flex items-center justify-between text-rose-500">
+                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Unhelpful (Dislike)' : 'Kurang Sesuai (Dislike)'}</span>
                         <ThumbsDown className="w-4 h-4" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-extrabold mt-1.5 sm:mt-2 text-content text-rose-600 dark:text-rose-400">
+                      <p className="text-2xl sm:text-3xl font-black mt-2 text-rose-500 font-mono">
                         {stats?.dislikes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1">{language === 'en' ? 'Responses needing accuracy improvement' : 'Jawaban yang perlu perbaikan/akurasi'}</p>
+                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Responses needing accuracy improvement' : 'Jawaban yang perlu perbaikan/akurasi'}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* MCP Live Status Card */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface">
-                  <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
-                    <Server className="w-4 h-4 text-emerald-500" /> {language === 'en' ? 'Live MCP Servers Status' : 'Status Live MCP Servers'}
+                <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
+                  <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-3.5 flex items-center gap-2 font-display">
+                    <Server className="w-4 h-4 text-accent" /> {language === 'en' ? 'Live MCP Servers Status' : 'Status Live MCP Servers'}
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
                     {/* MCP SAP Card */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
+                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs sm:text-sm text-content">MCP SAP Gateway</span>
                         {(stats?.mcp_status?.sap?.status === 'online' || stats?.mcp_status?.sap?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.sap?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.sap?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
+                      <p className="text-[11px] text-content-muted mt-2">
                         {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} {language === 'en' ? 'Tools available' : 'Tools tersedia'} • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
                       </p>
                     </div>
 
                     {/* MCP RAG Card */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
+                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs sm:text-sm text-content">MCP RAG Knowledge</span>
                         {(stats?.mcp_status?.rag?.status === 'online' || stats?.mcp_status?.rag?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.rag?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.rag?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
+                      <p className="text-[11px] text-content-muted mt-2">
                         {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} {language === 'en' ? 'Vector Search & Document Tools' : 'Vector Search & Document Tools'}
                       </p>
                     </div>
 
                     {/* MCP SQL Card */}
-                    <div className="p-3.5 sm:p-4 rounded-xl bg-surface-raised border border-line">
+                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-xs sm:text-sm text-content">MCP SQL Server</span>
                         {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true || stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] sm:text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] sm:text-xs text-content-muted mt-2">
+                      <p className="text-[11px] text-content-muted mt-2">
                         {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} {language === 'en' ? 'SQL & Database Tools' : 'Alat SQL & Database'}
                       </p>
                     </div>
@@ -838,21 +834,21 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Top Active Users */}
-                <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface-raised">
-                  <h4 className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-content-muted mb-3 flex items-center gap-2 font-display">
-                    <UserCheck className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Most Active Users' : 'User Paling Aktif'}
+                <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
+                  <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-3.5 flex items-center gap-2 font-display">
+                    <UserCheck className="w-4 h-4 text-indigo-400" /> {language === 'en' ? 'Most Active Users' : 'User Paling Aktif'}
                   </h4>
-                  <div className="divide-y divide-line">
+                  <div className="divide-y divide-line/60">
                     {stats?.top_users?.length > 0 ? (
                       stats.top_users.map((u, i) => (
                         <div key={i} className="py-2.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2 min-w-0 pr-2">
-                            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0">
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 font-bold text-xs flex items-center justify-center shrink-0">
                               {i + 1}
                             </div>
-                            <span className="font-medium text-xs sm:text-sm text-content truncate">{u.username}</span>
+                            <span className="font-semibold text-xs sm:text-sm text-content truncate">{u.username}</span>
                           </div>
-                          <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 bg-surface-sunken text-content-muted rounded-md shrink-0">
+                          <span className="text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 bg-surface-sunken text-content-muted rounded-full border border-line/60 shrink-0 font-mono">
                             {u.sessions} {language === 'en' ? 'Chat Sessions' : 'Sesi Chat'}
                           </span>
                         </div>
@@ -880,18 +876,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                   <div className="flex items-center gap-2.5">
                     <div className="relative flex-1 sm:flex-initial">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                       <input 
                         type="text"
                         placeholder={language === 'en' ? 'Search user...' : 'Cari user...'}
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-56 text-content"
+                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full sm:w-60 text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddUserOpen(true)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
                       <Plus className="w-4 h-4" /> {language === 'en' ? 'New User' : 'User Baru'}
                     </button>
@@ -899,55 +895,59 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Users Table: Responsive Scroll on Mobile */}
-                <div className="border border-line rounded-xl sm:rounded-2xl overflow-hidden shadow-sm bg-surface">
+                <div className="border border-line/80 rounded-2xl overflow-hidden shadow-xs bg-surface">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-surface-sunken border-b border-line text-content-muted text-[11px] sm:text-xs uppercase tracking-wider font-semibold whitespace-nowrap">
+                      <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
                         <tr>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Username</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">Role</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
-                          <th className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
+                          <th className="px-4 py-3">Username</th>
+                          <th className="px-4 py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
+                          <th className="px-4 py-3">Role</th>
+                          <th className="px-4 py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
+                          <th className="px-4 py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-line text-content-secondary">
+                      <tbody className="divide-y divide-line/60 text-content-secondary">
                         {filteredUsers.length > 0 ? (
                           filteredUsers.map((u) => (
-                            <tr key={u.username} className="hover:bg-surface-hover transition-colors">
-                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 font-semibold text-content whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-surface-sunken flex items-center justify-center text-xs font-bold text-indigo-600 shrink-0">
+                            <tr key={u.username} className="hover:bg-surface-hover/70 transition-colors">
+                              <td className="px-4 py-3 font-semibold text-content whitespace-nowrap">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-accent shrink-0">
                                     {u.username.substring(0, 2).toUpperCase()}
                                   </div>
-                                  <span>{u.username}</span>
+                                  <span className="font-semibold text-xs text-content">{u.username}</span>
                                   {u.username === user.username && (
-                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-600 px-1.5 py-0.2 rounded font-normal">{language === 'en' ? 'You' : 'Anda'}</span>
+                                    <span className="text-[9px] bg-accent-soft text-accent px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">{language === 'en' ? 'You' : 'Anda'}</span>
                                   )}
                                 </div>
                               </td>
-                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal">
+                              <td className="px-4 py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal text-xs">
                                 {u.full_name || <span className="italic text-content-subtle">—</span>}
                               </td>
-                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-semibold ${
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border ${
                                   u.role === 'superadmin' 
-                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' 
-                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' 
+                                    : u.role === 'abaper'
+                                    ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+                                    : u.role === 'functional'
+                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
                                 }`}>
                                   {u.role}
                                 </span>
                               </td>
-                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-xs text-content-muted max-w-xs truncate">
-                                {u.assistant_persona || <span className="italic text-content-subtle">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
+                              <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
+                                {u.assistant_persona || <span className="italic text-content-subtle text-[11px]">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
                               </td>
-                              <td className="px-3.5 sm:px-4 py-2.5 sm:py-3 text-right space-x-1 whitespace-nowrap">
+                              <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                                 <button
                                   onClick={() => {
                                     setEditingUser(u);
                                     setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
                                   }}
-                                  className="p-1.5 text-content-muted hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
+                                  className="p-1.5 text-content-subtle hover:text-accent hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
                                   title={language === 'en' ? 'Edit user' : 'Edit user'}
                                   aria-label={`Edit user ${u.username}`}
                                 >
@@ -958,8 +958,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   disabled={u.username === user.username}
                                   className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                                     u.username === user.username 
-                                      ? 'text-content-subtle cursor-not-allowed opacity-40' 
-                                      : 'text-content-muted hover:text-rose-600 dark:hover:text-rose-400 hover:bg-surface-hover'
+                                      ? 'text-content-subtle cursor-not-allowed opacity-30' 
+                                      : 'text-content-subtle hover:text-rose-500 hover:bg-surface-raised'
                                   }`}
                                   title={language === 'en' ? 'Delete user' : 'Hapus user'}
                                   aria-label={`Hapus user ${u.username}`}
@@ -971,7 +971,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           ))
                         ) : (
                           <tr>
-                            <td colSpan="5" className="text-center py-6 text-content-subtle text-xs">
+                            <td colSpan="5" className="text-center py-8 text-content-subtle text-xs">
                               {language === 'en' ? 'No matching users found.' : 'Tidak ada data user yang sesuai.'}
                             </td>
                           </tr>
@@ -984,23 +984,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
                     style={{
                       paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
                       paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
                     }}
                   >
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between">
+                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
+                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Plus className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Add New User' : 'Tambah User Baru'}
+                          <Plus className="w-4 h-4 text-accent" /> {language === 'en' ? 'Add New User' : 'Tambah User Baru'}
                         </h4>
-                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={handleCreateUser} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs sm:text-sm">
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">Username *</label>
                           <input 
@@ -1008,7 +1008,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             required
                             value={newUserForm.username}
                             onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder="e.g. TRST-USER1"
                           />
                         </div>
@@ -1019,7 +1019,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             type="text"
                             value={newUserForm.full_name}
                             onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder="e.g. Andi Wijaya"
                           />
                         </div>
@@ -1031,7 +1031,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             required
                             value={newUserForm.password}
                             onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder={language === 'en' ? 'Minimum 4 characters' : 'Minimal 4 karakter'}
                             minLength={4}
                           />
@@ -1042,7 +1042,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <select
                             value={newUserForm.role}
                             onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content cursor-pointer transition-all"
                           >
                             <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
                             <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
@@ -1057,22 +1057,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             rows="2"
                             value={newUserForm.assistant_persona}
                             onChange={(e) => setNewUserForm({ ...newUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none resize-none text-content transition-all"
                             placeholder={language === 'en' ? 'Customization on top of organization persona for this user…' : 'Penyesuaian di atas persona organisasi, khusus user ini…'}
                           />
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-2">
+                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
                           <button
                             type="button"
                             onClick={() => setIsAddUserOpen(false)}
-                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
                           >
                             {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
-                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
+                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 cursor-pointer active:scale-95 transition-all"
                           >
                             {language === 'en' ? 'Create Account' : 'Buat Akun'}
                           </button>
@@ -1085,30 +1085,30 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
                     style={{
                       paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
                       paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
                     }}
                   >
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between">
+                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
+                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Edit3 className="w-4 h-4 text-indigo-500" /> {language === 'en' ? `Edit User '${editingUser.username}'` : `Edit User '${editingUser.username}'`}
+                          <Edit3 className="w-4 h-4 text-accent" /> {language === 'en' ? `Edit User '${editingUser.username}'` : `Edit User '${editingUser.username}'`}
                         </h4>
-                        <button onClick={() => setEditingUser(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                        <button onClick={() => setEditingUser(null)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={(e) => handleUpdateUser(e, editingUser?.username)} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={(e) => handleUpdateUser(e, editingUser?.username)} className="space-y-3.5 text-xs sm:text-sm">
                         <div>
                           <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
                           <input
                             type="text"
                             value={editUserForm.full_name}
                             onChange={(e) => setEditUserForm({ ...editUserForm, full_name: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder="e.g. Andi Wijaya"
                           />
                         </div>
@@ -1118,7 +1118,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <select
                             value={editUserForm.role}
                             onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content cursor-pointer transition-all"
                           >
                             <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
                             <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
@@ -1135,7 +1135,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             type="password"
                             value={editUserForm.password}
                             onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content transition-all"
                             placeholder={language === 'en' ? 'New password (minimum 4 characters)…' : 'Password baru (minimal 4 karakter)…'}
                             minLength={4}
                           />
@@ -1147,22 +1147,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             rows="3"
                             value={editUserForm.assistant_persona}
                             onChange={(e) => setEditUserForm({ ...editUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none resize-none text-content transition-all"
                             placeholder={language === 'en' ? 'Leave empty so this user fully follows organization persona…' : 'Kosongkan agar user ini sepenuhnya mengikuti persona organisasi…'}
                           />
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-2">
+                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
                           <button
                             type="button"
                             onClick={() => setEditingUser(null)}
-                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
                           >
                             {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
-                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md cursor-pointer"
+                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 cursor-pointer active:scale-95 transition-all"
                           >
                             {language === 'en' ? 'Save Changes' : 'Simpan Perubahan'}
                           </button>
@@ -1187,9 +1187,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB: PERSONA ORGANISASI */}
             {activeTab === 'persona' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'Organization Global Persona' : 'Persona Organisasi'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1200,15 +1201,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <button
                     onClick={handleSaveGlobalPersona}
                     disabled={personaSaving}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-60 cursor-pointer shrink-0"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
                   >
                     <Save className="w-4 h-4" />
                     {personaSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Organization Persona' : 'Simpan Persona Organisasi')}
                   </button>
                 </div>
 
-                <div className="bg-surface-sunken border border-line rounded-2xl p-4 sm:p-5 text-xs text-content-secondary leading-relaxed space-y-2">
-                  <p className="font-semibold text-content text-sm">{language === 'en' ? 'How Persona is Applied' : 'Cara persona diterapkan'}</p>
+                <div className="bg-surface border border-line/80 rounded-2xl p-5 text-xs text-content-muted leading-relaxed space-y-2.5 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center font-bold text-xs">
+                      i
+                    </div>
+                    <p className="font-bold text-content text-xs sm:text-sm font-display">{language === 'en' ? 'How Persona is Applied' : 'Cara persona diterapkan'}</p>
+                  </div>
                   <p>
                     {language === 'en' 
                       ? 'The organization persona serves as the foundational layer. On top of it, personal preferences configured by individual users in Settings are applied.'
@@ -1221,8 +1227,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <label htmlFor="global-persona" className="block text-xs font-semibold text-content-muted">
+                <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
+                  <label htmlFor="global-persona" className="block text-xs font-bold uppercase tracking-wider text-content font-display">
                     {language === 'en' ? 'Organization Persona Instructions (Global System Prompt)' : 'Instruksi persona organisasi (System Prompt Global)'}
                   </label>
                   <textarea
@@ -1230,7 +1236,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     rows="12"
                     value={globalPersona}
                     onChange={(e) => setGlobalPersona(e.target.value)}
-                    className="w-full px-4 py-3 text-xs font-mono bg-surface-sunken border border-line rounded-2xl outline-none resize-y leading-relaxed text-content focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-4 py-3.5 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed text-content focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-all"
                     placeholder={language === 'en' 
                       ? 'Example:\n- Always specify source SAP table for all numbers displayed.\n- Never reveal employee data other than the requester.\n- Format dates and currencies clearly.'
                       : 'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
@@ -1245,9 +1251,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB: KATALOG SKILL (MODUL & SPESIALISASI) */}
             {activeTab === 'skills' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
                   <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <BookOpen className="w-5 h-5 text-accent" />
                       {language === 'en' ? `Assistant Skill Catalog (${skillsList.length})` : `Katalog Skill Asisten (${skillsList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1257,18 +1264,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                   <div className="flex items-center gap-2.5">
                     <div className="relative flex-1 sm:flex-initial">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                       <input 
                         type="text"
                         placeholder={language === 'en' ? 'Search skill...' : 'Cari skill...'}
                         value={skillSearch}
                         onChange={(e) => setSkillSearch(e.target.value)}
-                        className="pl-9 pr-3 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48 text-content"
+                        className="pl-9 pr-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 w-full sm:w-56 text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddSkillOpen(true)}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
                       <Plus className="w-4 h-4" /> {language === 'en' ? 'New Skill' : 'Skill Baru'}
                     </button>
@@ -1279,11 +1286,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {filteredSkills.length > 0 ? (
                     filteredSkills.map((sk) => (
-                      <div key={sk.id} className="p-4 sm:p-5 rounded-2xl border border-line bg-surface flex flex-col justify-between space-y-3.5 hover:border-indigo-500/40 transition-all shadow-sm">
-                        <div className="space-y-2">
+                      <div key={sk.id} className="p-5 rounded-2xl border border-line/80 bg-surface flex flex-col justify-between space-y-4 hover:border-indigo-500/40 hover:shadow-md transition-all shadow-xs">
+                        <div className="space-y-3">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center font-bold shrink-0 shadow-2xs">
                                 <Code className="w-4 h-4" />
                               </span>
                               <div className="min-w-0">
@@ -1298,26 +1305,26 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                             <button
                               onClick={() => handleToggleSkill(sk)}
-                              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
                                 sk.enabled 
-                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
-                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-line'
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                                  : 'bg-surface-sunken text-content-subtle border border-line/60'
                               }`}
                               title={sk.enabled ? (language === 'en' ? 'Click to disable this skill' : 'Klik untuk nonaktifkan skill ini') : (language === 'en' ? 'Click to enable this skill' : 'Klik untuk mengaktifkan skill ini')}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${sk.enabled ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                              <span className={`w-1.5 h-1.5 rounded-full ${sk.enabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
                               {sk.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}
                             </button>
                           </div>
 
                           {/* Markdown Snippet Box */}
-                          <div className="p-3 bg-surface-sunken border border-line rounded-xl text-xs font-mono text-content-secondary max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text">
+                          <div className="p-3.5 bg-surface-sunken border border-line/70 rounded-xl text-xs font-mono text-content-muted max-h-40 overflow-y-auto leading-relaxed whitespace-pre-wrap select-text">
                             {sk.content}
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-2 border-t border-line text-xs">
-                          <span className="text-[11px] text-content-subtle">
+                        <div className="flex items-center justify-between pt-3 border-t border-line/70 text-xs">
+                          <span className="text-[11px] font-mono text-content-subtle">
                             ID: #{sk.id}
                           </span>
                           <div className="flex items-center gap-2">
@@ -1331,13 +1338,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   enabled: sk.enabled
                                 });
                               }}
-                              className="px-3 py-1.5 bg-surface-raised hover:bg-surface-hover border border-line text-content rounded-lg font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                              className="px-3 py-1.5 bg-surface-sunken/80 hover:bg-surface-hover border border-line hover:border-line-strong text-content rounded-xl font-semibold flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs text-xs"
                             >
-                              <Edit3 className="w-3.5 h-3.5 text-indigo-500" /> {language === 'en' ? 'Edit Skill' : 'Edit Skill'}
+                              <Edit3 className="w-3.5 h-3.5 text-accent" /> {language === 'en' ? 'Edit Skill' : 'Edit Skill'}
                             </button>
                             <button
                               onClick={() => handleDeleteSkill(sk.id, sk.name)}
-                              className="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/80 rounded-lg cursor-pointer transition-colors"
+                              className="p-1.5 bg-surface-sunken/80 hover:bg-rose-500/15 border border-line hover:border-rose-500/30 text-content-subtle hover:text-rose-400 rounded-xl cursor-pointer transition-all shadow-2xs"
                               title={language === 'en' ? 'Delete Skill' : 'Hapus Skill'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1347,8 +1354,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     ))
                   ) : (
-                    <div className="col-span-full py-12 text-center text-content-muted bg-surface rounded-2xl border border-line">
-                      <BookOpen className="w-8 h-8 mx-auto mb-2 text-content-subtle opacity-60" />
+                    <div className="col-span-full py-12 text-center text-content-muted bg-surface rounded-2xl border border-dashed border-line/80">
+                      <BookOpen className="w-8 h-8 mx-auto mb-2 text-content-subtle opacity-40" />
                       <p className="text-sm font-medium">{language === 'en' ? 'No skills found.' : 'Belum ada skill yang ditemukan.'}</p>
                       <p className="text-xs mt-1 text-content-subtle">{language === 'en' ? 'Click "+ New Skill" to add domain knowledge modules.' : 'Klik tombol "+ Skill Baru" untuk menambahkan modul panduan keahlian.'}</p>
                     </div>
@@ -1358,23 +1365,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: TAMBAH SKILL */}
                 {isAddSkillOpen && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
                     style={{
                       paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
                       paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
                     }}
                   >
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between">
+                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-2xl w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
+                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Plus className="w-4 h-4 text-indigo-500" /> {language === 'en' ? 'Add New Skill' : 'Tambah Skill Baru'}
+                          <Plus className="w-4 h-4 text-accent" /> {language === 'en' ? 'Add New Skill' : 'Tambah Skill Baru'}
                         </h4>
-                        <button onClick={() => setIsAddSkillOpen(false)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                        <button onClick={() => setIsAddSkillOpen(false)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={handleCreateSkill} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={handleCreateSkill} className="space-y-3.5 text-xs sm:text-sm">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-2">
                             <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Skill Name *' : 'Nama Skill *'}</label>
@@ -1383,19 +1390,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               required
                               value={newSkillForm.name}
                               onChange={(e) => setNewSkillForm({ ...newSkillForm, name: e.target.value })}
-                              className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                              className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                               placeholder="e.g. SAP ABAP, SAP PP, SAP MM"
                             />
                           </div>
 
                           <div>
                             <label className="block text-xs font-semibold text-content-muted mb-1">Status</label>
-                            <label className="flex items-center gap-2 px-3 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
+                            <label className="flex items-center gap-2 px-3.5 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
                               <input 
                                 type="checkbox"
                                 checked={newSkillForm.enabled}
                                 onChange={(e) => setNewSkillForm({ ...newSkillForm, enabled: e.target.checked })}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                className="rounded text-indigo-600 focus:ring-accent/30 cursor-pointer"
                               />
                               <span className="text-xs font-medium text-content">{newSkillForm.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}</span>
                             </label>
@@ -1408,7 +1415,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             type="text"
                             value={newSkillForm.description}
                             onChange={(e) => setNewSkillForm({ ...newSkillForm, description: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none text-content"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder={language === 'en' ? 'Scope overview of this skill module' : 'Ringkasan ruang lingkup skill ini (misal: Standar penulisan program ABAP dan best practice)'}
                           />
                         </div>
@@ -1422,7 +1429,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             required
                             value={newSkillForm.content}
                             onChange={(e) => setNewSkillForm({ ...newSkillForm, content: e.target.value })}
-                            className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
+                            className="w-full px-3.5 py-2.5 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none resize-y text-content leading-relaxed transition-all"
                             placeholder={language === 'en' 
                               ? '# Skill Guide: SAP ...\n\n## 1. Standards & Rules\n- Always use table X...\n- Check field Y...\n\n## 2. Support Procedure\n- Verify steps...'
                               : '# Panduan Keahlian: SAP ...\n\n## 1. Standar & Aturan\n- Selalu gunakan tabel X...\n- Cek field Y...\n\n## 2. Prosedur Support\n- Pastikan langkah investigasi...'}
@@ -1432,18 +1439,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           </p>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-2">
+                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
                           <button
                             type="button"
                             onClick={() => setIsAddSkillOpen(false)}
-                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
                           >
                             {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             disabled={skillSaving}
-                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
+                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 disabled:opacity-50 cursor-pointer active:scale-95 transition-all"
                           >
                             {skillSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Skill' : 'Simpan Skill')}
                           </button>
@@ -1456,23 +1463,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {/* MODAL: EDIT SKILL */}
                 {editingSkill && (
                   <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
                     style={{
                       paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
                       paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
                     }}
                   >
-                    <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between">
+                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-2xl w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
+                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Edit3 className="w-4 h-4 text-indigo-500" /> {language === 'en' ? `Edit Skill '${editingSkill.name}'` : `Edit Skill '${editingSkill.name}'`}
+                          <Edit3 className="w-4 h-4 text-accent" /> {language === 'en' ? `Edit Skill '${editingSkill.name}'` : `Edit Skill '${editingSkill.name}'`}
                         </h4>
-                        <button onClick={() => setEditingSkill(null)} className="text-content-subtle hover:text-content p-1 cursor-pointer">
+                        <button onClick={() => setEditingSkill(null)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
                           <X className="w-4 h-4" />
                         </button>
                       </div>
 
-                      <form onSubmit={(e) => handleUpdateSkill(e, editingSkill?.id)} className="space-y-3 text-xs sm:text-sm">
+                      <form onSubmit={(e) => handleUpdateSkill(e, editingSkill?.id)} className="space-y-3.5 text-xs sm:text-sm">
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-2">
                             <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Skill Name *' : 'Nama Skill *'}</label>
@@ -1481,18 +1488,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               required
                               value={editSkillForm.name}
                               onChange={(e) => setEditSkillForm({ ...editSkillForm, name: e.target.value })}
-                              className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content"
+                              className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             />
                           </div>
 
                           <div>
                             <label className="block text-xs font-semibold text-content-muted mb-1">Status</label>
-                            <label className="flex items-center gap-2 px-3 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
+                            <label className="flex items-center gap-2 px-3.5 py-2 bg-surface-sunken border border-line rounded-xl cursor-pointer">
                               <input 
                                 type="checkbox"
                                 checked={editSkillForm.enabled}
                                 onChange={(e) => setEditSkillForm({ ...editSkillForm, enabled: e.target.checked })}
-                                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                className="rounded text-indigo-600 focus:ring-accent/30 cursor-pointer"
                               />
                               <span className="text-xs font-medium text-content">{editSkillForm.enabled ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Inactive' : 'Nonaktif')}</span>
                             </label>
@@ -1505,7 +1512,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             type="text"
                             value={editSkillForm.description}
                             onChange={(e) => setEditSkillForm({ ...editSkillForm, description: e.target.value })}
-                            className="w-full px-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl outline-none text-content"
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                           />
                         </div>
 
@@ -1518,25 +1525,25 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             required
                             value={editSkillForm.content}
                             onChange={(e) => setEditSkillForm({ ...editSkillForm, content: e.target.value })}
-                            className="w-full px-3 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none resize-y text-content leading-relaxed"
+                            className="w-full px-3.5 py-2.5 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none resize-y text-content leading-relaxed transition-all"
                           />
                           <p className="text-[11px] text-content-subtle mt-1">
                             {language === 'en' ? 'Specify operational standards, naming conventions, essential table references, or best practices for the AI.' : 'Tuliskan standar operasional, aturan penamaan, referensi tabel penting, atau best practice yang wajib dipatuhi AI.'}
                           </p>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-2">
+                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
                           <button
                             type="button"
                             onClick={() => setEditingSkill(null)}
-                            className="px-4 py-2 text-xs font-medium text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer"
+                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
                           >
                             {t('common.cancel')}
                           </button>
                           <button
                             type="submit"
                             disabled={skillSaving}
-                            className="px-4 py-2 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md disabled:opacity-60 cursor-pointer"
+                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 disabled:opacity-50 cursor-pointer active:scale-95 transition-all"
                           >
                             {skillSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Changes' : 'Simpan Perubahan')}
                           </button>
@@ -1551,10 +1558,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB 3: MCP CONFIGURATION */}
             {activeTab === 'mcp' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
-                      <Server className="w-5 h-5 text-indigo-500" />
+                      <Server className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'MCP Server Connections' : 'Konfigurasi Server MCP'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1566,7 +1573,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <button
                     onClick={handleSaveMcpConfig}
                     disabled={mcpSaving}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer"
+                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer active:scale-95"
                   >
                     <Save className="w-4 h-4" />
                     {mcpSaving
@@ -1577,12 +1584,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 <div className="space-y-4">
                   {/* MCP SAP Config JSON */}
-                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
-                        <Database className="w-4 h-4 text-amber-500" /> MCP SAP Config (JSON)
-                      </label>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
+                          MCP SAP Config (JSON)
+                        </label>
+                      </div>
+                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
                         SAP ERP Gateway
                       </span>
                     </div>
@@ -1590,7 +1602,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       rows="6"
                       value={mcpSapConfig}
                       onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content leading-relaxed transition-all"
                       placeholder='{"type": "http", "url": "http://192.168.1.162:8091/mcp"}'
                     />
                     <p className="text-[11px] text-content-subtle">
@@ -1599,12 +1611,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   {/* MCP RAG Config JSON */}
-                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
-                        <Database className="w-4 h-4 text-emerald-500" /> MCP RAG Config (JSON)
-                      </label>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
+                          MCP RAG Config (JSON)
+                        </label>
+                      </div>
+                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
                         RAG Knowledge Gateway
                       </span>
                     </div>
@@ -1612,7 +1629,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       rows="6"
                       value={mcpRagConfig}
                       onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/40 outline-none text-content leading-relaxed transition-all"
                       placeholder='{"type": "http", "url": "http://192.168.1.162:8090/mcp"}'
                     />
                     <p className="text-[11px] text-content-subtle">
@@ -1621,12 +1638,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   {/* MCP SQL Config JSON */}
-                  <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-2">
+                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
-                        <Database className="w-4 h-4 text-sky-500" /> MCP SQL & Tools Config (JSON)
-                      </label>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400 font-semibold">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-4 h-4" />
+                        </div>
+                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
+                          MCP SQL & Tools Config (JSON)
+                        </label>
+                      </div>
+                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
                         SQL & Utility Gateway
                       </span>
                     </div>
@@ -1634,7 +1656,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       rows="6"
                       value={mcpSqlConfig}
                       onChange={(e) => setMcpSqlConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-3 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-content leading-relaxed"
+                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500/40 outline-none text-content leading-relaxed transition-all"
                       placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8090/mcp",\n      "headers": { "Authorization": "Bearer ..." }\n    }\n  }\n}'
                     />
                     <p className="text-[11px] text-content-subtle">
@@ -1670,10 +1692,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
 
                 {/* Saklar penegakan */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border border-line bg-surface">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-line/80 bg-surface shadow-xs">
                   <div className="min-w-0">
-                    <p className="font-semibold text-content">{language === 'en' ? 'Quota Enforcement' : 'Penegakan batas'}</p>
-                    <p className="text-sm text-content-muted">
+                    <p className="font-bold text-content text-sm sm:text-base">{language === 'en' ? 'Quota Enforcement' : 'Penegakan Batas Token'}</p>
+                    <p className="text-xs sm:text-sm text-content-muted mt-0.5">
                       {kuota?.enforced
                         ? (language === 'en' ? 'Active — requests will be rejected once daily quota is exceeded.' : 'Aktif — permintaan ditolak begitu kuota harian habis.')
                         : (language === 'en' ? 'Inactive — usage is tracked without blocking requests.' : 'Nonaktif — pemakaian tetap dicatat, tetapi tidak ada yang diblokir.')}
@@ -1684,44 +1706,44 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     disabled={!kuota}
                     aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
                     aria-pressed={!!kuota?.enforced}
-                    className={`relative h-7 w-14 shrink-0 rounded-full transition-colors cursor-pointer disabled:opacity-50 ${
-                      kuota?.enforced ? 'bg-indigo-600' : 'bg-line'
+                    className={`relative h-7 w-13 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
+                      kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-sm shadow-indigo-500/30' : 'bg-line'
                     }`}
                   >
                     <span
                       className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                        kuota?.enforced ? 'left-8' : 'left-1'
+                        kuota?.enforced ? 'left-7' : 'left-1'
                       }`}
                     />
                   </button>
                 </div>
 
                 {/* Batas per peran */}
-                <div className="rounded-2xl border border-line bg-surface p-4">
-                  <p className="font-semibold text-content mb-1">{language === 'en' ? 'Limits Per Role' : 'Batas per peran'}</p>
-                  <p className="text-sm text-content-muted mb-4">
+                <div className="rounded-2xl border border-line/80 bg-surface p-5 shadow-xs">
+                  <p className="font-bold text-content text-sm sm:text-base mb-1">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
+                  <p className="text-xs text-content-muted mb-4">
                     {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
                   </p>
                   <div className="space-y-3">
                     {Object.keys(kuota?.role_limits || {}).map((peran) => (
                       <div
                         key={peran}
-                        className="flex flex-col sm:flex-row sm:items-end gap-3 p-3 rounded-xl bg-surface-raised border border-line"
+                        className="flex flex-col sm:flex-row sm:items-end gap-3.5 p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all"
                       >
                         <div className="sm:w-32 shrink-0">
-                          <p className="text-xs font-bold uppercase tracking-wider text-content-subtle">{language === 'en' ? 'Role' : 'Peran'}</p>
-                          <p className="font-mono text-sm text-content">{peran}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">{language === 'en' ? 'Role' : 'Peran'}</p>
+                          <p className="font-mono text-sm font-bold text-accent capitalize">{peran}</p>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <label className="block text-xs font-medium text-content-muted" htmlFor={`harian-${peran}`}>
+                            <label className="block text-xs font-semibold text-content-muted" htmlFor={`harian-${peran}`}>
                               {language === 'en' ? 'Daily Tokens' : 'Token per hari'}
                             </label>
                             {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit) && (
                               <span className={`text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md ${
                                 Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0
-                                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
-                                  : 'bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20'
+                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                                  : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25'
                               }`}>
                                 {Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0 ? '♾️ ' : '≈ '}
                                 {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit)}
@@ -1741,16 +1763,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               }));
                             }}
                             placeholder="0"
-                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-3 py-2 rounded-xl border border-line bg-surface text-content text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
                           />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <label className="block text-xs font-medium text-content-muted" htmlFor={`menit-${peran}`}>
+                            <label className="block text-xs font-semibold text-content-muted" htmlFor={`menit-${peran}`}>
                               {language === 'en' ? 'Requests Per Minute' : 'Permintaan per menit'}
                             </label>
                             {Number(String(batasDraft[peran]?.per_minute_limit).replace(/\D/g, '')) === 0 && (
-                              <span className="text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                              <span className="text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
                                 ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
                               </span>
                             )}
@@ -1768,15 +1790,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               }));
                             }}
                             placeholder="0"
-                            className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-content text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-3 py-2 rounded-xl border border-line bg-surface text-content text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
                           />
                         </div>
                         <button
                           onClick={() => simpanBatas(peran)}
                           aria-label={`${language === 'en' ? 'Save limits for' : 'Simpan batas'} ${peran}`}
-                          className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors cursor-pointer shrink-0"
+                          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-sm shadow-indigo-500/20 transition-all cursor-pointer shrink-0 active:scale-95"
                         >
-                          <Save className="w-4 h-4" />
+                          <Save className="w-3.5 h-3.5" />
                           {t('common.save')}
                         </button>
                       </div>
@@ -1901,10 +1923,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             )}
 
             {activeTab === 'feedback' && (
-              <div className="space-y-5 animate-fadeIn">
-                <div className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-6 animate-fadeIn">
+                <div className="flex flex-col gap-3 border-b border-line/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-content">{language === 'en' ? 'Response Evaluation' : 'Penilaian Jawaban'}</h3>
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <ThumbsUp className="w-5 h-5 text-accent" />
+                      {language === 'en' ? 'Response Evaluation' : 'Penilaian Jawaban'}
+                    </h3>
                     <p className="mt-0.5 text-xs text-content-muted">
                       {language === 'en' 
                         ? 'User-evaluated responses along with triggering prompts for quality improvements.'
@@ -1913,23 +1938,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <div className="flex rounded-xl border border-line bg-surface-sunken p-0.5">
+                    <div className="flex rounded-xl border border-line/80 bg-surface-sunken p-1 shadow-2xs">
                       {[
                         { key: 'dislike', label: language === 'en' ? 'Unhelpful' : 'Kurang sesuai', icon: ThumbsDown },
                         { key: 'like', label: language === 'en' ? 'Helpful' : 'Membantu', icon: ThumbsUp },
                       ].map((opt) => {
                         const Icon = opt.icon;
+                        const isActive = feedbackKind === opt.key;
                         return (
                           <button
                             key={opt.key}
                             onClick={() => setFeedbackKind(opt.key)}
                             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all cursor-pointer ${
-                              feedbackKind === opt.key
-                                ? 'bg-surface-raised text-content shadow-xs'
+                              isActive
+                                ? 'bg-surface-raised text-content shadow-xs border border-line/60 font-bold'
                                 : 'text-content-muted hover:text-content'
                             }`}
                           >
-                            <Icon className="h-3.5 w-3.5" />
+                            <Icon className={`h-3.5 w-3.5 ${isActive ? (opt.key === 'like' ? 'text-emerald-400' : 'text-rose-400') : ''}`} />
                             {opt.label}
                           </button>
                         );
@@ -1937,7 +1963,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </div>
                     <button
                       onClick={() => fetchFeedback(feedbackKind)}
-                      className="rounded-xl border border-line p-2 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+                      className="rounded-xl border border-line/80 bg-surface-sunken/70 p-2 text-content-muted transition-all hover:bg-surface-hover hover:text-content cursor-pointer shadow-2xs active:scale-95"
                       title={language === 'en' ? 'Refresh' : 'Muat ulang'}
                       aria-label={language === 'en' ? 'Refresh feedback list' : 'Muat ulang daftar penilaian'}
                     >
@@ -1949,13 +1975,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 {feedbackLoading && !feedbackData ? (
                   <div className="space-y-3" aria-busy="true">
                     {[0, 1, 2].map((i) => (
-                      <div key={i} className="h-28 animate-pulse rounded-2xl bg-surface-sunken" />
+                      <div key={i} className="h-28 animate-pulse rounded-2xl bg-surface-sunken/60 border border-line/40" />
                     ))}
                   </div>
                 ) : !feedbackData || feedbackData.items.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-line py-14 text-center">
-                    <MessageSquare className="mx-auto mb-2 h-7 w-7 text-content-subtle" />
-                    <p className="text-sm font-semibold text-content">{language === 'en' ? 'No feedback recorded yet' : 'Belum ada penilaian'}</p>
+                  <div className="rounded-2xl border border-dashed border-line/80 py-14 text-center bg-surface">
+                    <MessageSquare className="mx-auto mb-2 h-7 w-7 text-content-subtle opacity-40" />
+                    <p className="text-sm font-semibold text-content font-display">{language === 'en' ? 'No feedback recorded yet' : 'Belum ada penilaian'}</p>
                     <p className="mt-1 text-xs text-content-muted">
                       {feedbackKind === 'dislike'
                         ? (language === 'en' ? 'No responses marked as unhelpful.' : 'Belum ada jawaban yang ditandai kurang sesuai.')
@@ -1964,45 +1990,52 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 ) : (
                   <>
-                    <p className="text-xs text-content-muted">
-                      {language === 'en'
-                        ? `Showing ${feedbackData.items.length} of ${feedbackData.total} ratings.`
-                        : `Menampilkan ${feedbackData.items.length} dari ${feedbackData.total} penilaian.`}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-content-muted">
+                        {language === 'en'
+                          ? `Showing ${feedbackData.items.length} of ${feedbackData.total} ratings.`
+                          : `Menampilkan ${feedbackData.items.length} dari ${feedbackData.total} penilaian.`}
+                      </p>
+                      <span className="text-[11px] font-mono text-content-subtle bg-surface-sunken px-2.5 py-0.5 rounded-lg border border-line/60">
+                        {feedbackKind.toUpperCase()}
+                      </span>
+                    </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-3.5">
                       {feedbackData.items.map((item) => (
                         <div
                           key={item.message_id}
-                          className="rounded-2xl border border-line bg-surface p-4 transition-colors hover:border-indigo-400/50"
+                          className="rounded-2xl border border-line/80 bg-surface p-5 transition-all hover:border-indigo-500/40 hover:shadow-md shadow-xs space-y-3"
                         >
-                          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-content-muted">
-                            <span className="flex items-center gap-1.5 font-semibold text-content-secondary">
-                              <UserCheck className="h-3.5 w-3.5" />
-                              {item.username}
-                            </span>
-                            <span className="truncate max-w-[16rem]">{item.session_title}</span>
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-content-muted pb-2 border-b border-line/60">
+                            <div className="flex items-center gap-2">
+                              <span className="flex items-center gap-1.5 font-bold text-content px-2 py-0.5 rounded-md bg-surface-sunken border border-line/60">
+                                <UserCheck className="h-3.5 w-3.5 text-accent" />
+                                {item.username}
+                              </span>
+                              <span className="truncate max-w-[16rem] text-content-secondary font-medium">{item.session_title}</span>
+                            </div>
                             {item.created_at && (
-                              <span>{new Date(item.created_at).toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}</span>
+                              <span className="font-mono text-[10px] text-content-subtle">{new Date(item.created_at).toLocaleString(language === 'en' ? 'en-US' : 'id-ID')}</span>
                             )}
                           </div>
 
                           {item.question && (
-                            <div className="mb-2.5 rounded-xl bg-surface-sunken px-3 py-2">
-                              <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                            <div className="rounded-xl bg-surface-sunken/80 border border-line/60 px-3.5 py-2.5 space-y-1">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-accent font-display">
                                 {language === 'en' ? 'Question' : 'Pertanyaan'}
                               </p>
-                              <p className="whitespace-pre-wrap text-xs text-content-secondary">
+                              <p className="whitespace-pre-wrap text-xs text-content leading-relaxed">
                                 {item.question}
                               </p>
                             </div>
                           )}
 
-                          <div>
-                            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-content-subtle font-display">
                               {language === 'en' ? 'Assistant response' : 'Jawaban asisten'}
                             </p>
-                            <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-content">
+                            <p className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-content-secondary bg-surface-sunken/40 border border-line/50 p-3 rounded-xl select-text font-mono">
                               {item.answer}
                             </p>
                           </div>
@@ -2026,23 +2059,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <div className="relative w-full sm:w-auto">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <div className="relative w-full sm:w-auto">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                     <input 
                       type="text"
                       placeholder={language === 'en' ? 'Search user / chat title...' : 'Cari user / judul chat...'}
                       value={auditSearch}
                       onChange={(e) => setAuditSearch(e.target.value)}
-                      className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-72 text-content"
+                      className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full sm:w-72 text-content placeholder:text-content-subtle transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 min-h-0">
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 min-h-0">
                   {/* Sessions List: Hidden on mobile when a session is selected */}
                   <div className={`${
                     selectedAuditSession ? 'hidden md:block' : 'block'
-                  } border border-line rounded-xl sm:rounded-2xl overflow-y-auto max-h-[60vh] md:max-h-[65vh] divide-y divide-line bg-surface`}>
+                  } border border-line/80 rounded-2xl overflow-y-auto max-h-[60vh] md:max-h-[65vh] divide-y divide-line/60 bg-surface shadow-xs`}>
                     {filteredAuditSessions.length > 0 ? (
                       filteredAuditSessions.map((s) => (
                         <button
@@ -2051,19 +2084,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             setSelectedAuditSession(s);
                             fetchAuditMessages(s.session_id);
                           }}
-                          className={`w-full text-left p-3 sm:p-3.5 transition-colors cursor-pointer ${
+                          className={`w-full text-left p-3.5 transition-all cursor-pointer ${
                             selectedAuditSession?.session_id === s.session_id
-                              ? 'bg-indigo-50 dark:bg-indigo-950/50 border-l-4 border-indigo-600'
-                              : 'hover:bg-surface-hover'
+                              ? 'bg-accent/10 border-l-4 border-accent font-semibold'
+                              : 'hover:bg-surface-hover/70'
                           }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="font-bold text-xs text-content truncate">{s.username}</span>
-                            <span className="text-[10px] text-content-muted">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
+                            <span className="text-[10px] text-content-muted font-mono">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
                           </div>
                           <p className="text-xs text-content-muted truncate mt-1">{s.title}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] bg-surface-sunken px-1.5 py-0.5 rounded text-content-muted">
+                            <span className="text-[10px] font-mono bg-surface-sunken px-2 py-0.5 rounded-md text-content-muted border border-line/60">
                               {s.message_count} {language === 'en' ? 'messages' : 'pesan'}
                             </span>
                           </div>
@@ -2077,50 +2110,50 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   {/* Messages Viewer: Visible on mobile when a session is selected */}
                   <div className={`${
                     !selectedAuditSession ? 'hidden md:flex' : 'flex'
-                  } md:col-span-2 border border-line rounded-xl sm:rounded-2xl p-3.5 sm:p-4 overflow-y-auto max-h-[60vh] md:max-h-[65vh] bg-surface-raised flex-col`}>
+                  } md:col-span-2 border border-line/80 rounded-2xl p-4 sm:p-5 overflow-y-auto max-h-[60vh] md:max-h-[65vh] bg-surface-sunken/40 flex-col shadow-xs`}>
                     {selectedAuditSession ? (
-                      <div className="space-y-3 sm:space-y-4">
+                      <div className="space-y-3.5 sm:space-y-4">
                         {/* Mobile Back Button */}
                         <button 
                           onClick={() => setSelectedAuditSession(null)}
-                          className="md:hidden flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 py-1 cursor-pointer"
+                          className="md:hidden flex items-center gap-1.5 text-xs font-bold text-accent py-1 cursor-pointer"
                         >
                           <ArrowLeft className="w-3.5 h-3.5" /> {language === 'en' ? 'Back to session list' : 'Kembali ke daftar sesi'}
                         </button>
 
-                        <div className="pb-3 border-b border-line flex items-center justify-between">
+                        <div className="pb-3 border-b border-line/80 flex items-center justify-between">
                           <div className="min-w-0">
-                            <h4 className="font-bold text-xs sm:text-sm text-content truncate">{selectedAuditSession.title}</h4>
-                            <p className="text-[11px] sm:text-xs text-content-muted truncate">User: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{selectedAuditSession.username}</span> • ID: {selectedAuditSession.session_id}</p>
+                            <h4 className="font-bold text-xs sm:text-sm text-content truncate font-display">{selectedAuditSession.title}</h4>
+                            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">User: <span className="font-semibold text-accent">{selectedAuditSession.username}</span> • ID: <span className="font-mono">{selectedAuditSession.session_id}</span></p>
                           </div>
                         </div>
 
-                        <div className="space-y-2.5 sm:space-y-3">
+                        <div className="space-y-3">
                           {auditMessages.length > 0 ? (
                             auditMessages.map((m, i) => (
                               <div 
                                 key={i} 
-                                className={`p-3 rounded-xl text-xs leading-relaxed ${
+                                className={`p-3.5 rounded-xl text-xs leading-relaxed transition-all ${
                                   m.role === 'user' 
-                                    ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 text-indigo-950 dark:text-indigo-200' 
-                                    : 'bg-surface-sunken border border-line text-content'
+                                    ? 'bg-indigo-500/10 border border-indigo-500/25 text-content shadow-2xs' 
+                                    : 'bg-surface border border-line/80 text-content shadow-2xs'
                                 }`}
                               >
-                                <div className="flex items-center justify-between mb-1 font-semibold">
+                                <div className="flex items-center justify-between mb-1.5 font-semibold">
                                   <div className="flex items-center gap-2">
-                                    <span>{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
+                                    <span className="font-bold text-content">{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
                                     {m.role !== 'user' && (m.feedback === 'like' || m.feedback === 'up') && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                                         <ThumbsUp className="w-2.5 h-2.5" /> {language === 'en' ? 'Helpful' : 'Membantu'}
                                       </span>
                                     )}
                                     {m.role !== 'user' && (m.feedback === 'dislike' || m.feedback === 'down') && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
                                         <ThumbsDown className="w-2.5 h-2.5" /> {language === 'en' ? 'Unhelpful' : 'Kurang Sesuai'}
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-[10px] text-content-subtle">{m.created_at ? m.created_at.slice(11, 16) : ''}</span>
+                                  <span className="text-[10px] text-content-subtle font-mono">{m.created_at ? m.created_at.slice(11, 16) : ''}</span>
                                 </div>
                                 <div className="whitespace-pre-wrap font-sans select-text">{m.content}</div>
                               </div>
@@ -2132,7 +2165,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     ) : (
                       <div className="h-full flex flex-col items-center justify-center text-content-muted text-xs py-16">
-                        <MessageSquare className="w-8 h-8 mb-2 opacity-30" />
+                        <MessageSquare className="w-8 h-8 mb-2 opacity-30 text-accent" />
                         {language === 'en' ? 'Select a session on the left to view conversation messages.' : 'Pilih salah satu sesi di sebelah kiri untuk melihat pesan percakapan.'}
                       </div>
                     )}

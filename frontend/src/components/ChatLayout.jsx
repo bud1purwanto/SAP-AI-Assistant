@@ -607,6 +607,18 @@ const ChatLayout = () => {
     loadSuggestions(true);
   };
 
+  // Pintasan Keyboard Ctrl+K / Cmd+K untuk Percakapan Baru
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        createNewSession();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const promptDeleteSession = (e, session) => {
     e.stopPropagation();
     const sid = session.session_id || session.id;
@@ -1023,47 +1035,57 @@ const ChatLayout = () => {
             : `-translate-x-full ${compactLandscape ? '' : 'md:translate-x-0'}`}`}
         aria-label={language === 'en' ? 'Conversation navigation' : 'Navigasi percakapan'}
       >
-        <div className="p-3.5 sm:p-4 border-b border-line flex items-center justify-between">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md border border-blue-400/30 shrink-0 overflow-hidden">
-              <div className="flex items-center font-black text-[11px] sm:text-xs text-white tracking-tighter">
+        <div className="p-3.5 sm:p-4 border-b border-line/70 flex items-center justify-between bg-surface-raised/50 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-white/20 shrink-0 overflow-hidden ring-1 ring-white/10">
+              <div className="flex items-center font-black text-xs text-white tracking-tight">
                 <span>SAP</span>
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 bg-gradient-to-r from-sky-400 to-indigo-500 rounded-tl-md px-1 py-0.2">
+              <div className="absolute -bottom-0.5 -right-0.5 bg-gradient-to-r from-sky-400 to-indigo-500 rounded-tl-md px-1 py-0.2 shadow-xs">
                 <span className="text-[8px] font-black text-white leading-none tracking-tight">AI</span>
               </div>
             </div>
             <div>
               <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content flex items-center gap-1.5">
                 <span>SAP AI</span>
-                <span className="text-[10px] uppercase font-semibold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md">Assistant</span>
+                <span className="text-[9px] uppercase font-bold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md tracking-wider border border-accent/20">Assistant</span>
               </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
-                <span className="text-[11px] sm:text-xs text-content-muted">Online</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[11px] text-content-muted font-medium">Online</span>
               </div>
             </div>
           </div>
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover cursor-pointer"
+            className="md:hidden p-1.5 rounded-lg text-content-muted hover:bg-surface-hover hover:text-content cursor-pointer transition-colors"
             aria-label={t('nav.closeSidebar')}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-2.5 sm:p-3">
+        <div className="p-3 space-y-2.5">
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2 py-2 sm:py-2.5 px-3.5 bg-accent hover:bg-accent-hover text-accent-fg rounded-xl sm:rounded-2xl text-xs font-bold shadow-sm transition-colors active:scale-[0.98] cursor-pointer"
+            className="w-full flex items-center justify-between py-2.5 px-3.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 border border-white/15 transition-all active:scale-[0.98] cursor-pointer group"
           >
-            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
-            <span>{t('sidebar.newChat')}</span>
+            <span className="flex items-center gap-2.5">
+              <span className="p-1 rounded-lg bg-white/20 group-hover:bg-white/30 transition-colors shadow-2xs">
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              </span>
+              <span className="tracking-wide">{t('sidebar.newChat')}</span>
+            </span>
+            <kbd className="hidden sm:inline-flex items-center text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md bg-black/25 text-white/90 border border-white/20 tracking-wider">
+              Ctrl K
+            </kbd>
           </button>
 
           {!isGuest && (
-            <div className="relative mt-2">
+            <div className="relative">
               <Search
                 className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-content-subtle"
                 aria-hidden="true"
@@ -1074,14 +1096,14 @@ const ChatLayout = () => {
                 onChange={(e) => setSessionQuery(e.target.value)}
                 placeholder={t('sidebar.searchSessions')}
                 aria-label={t('sidebar.searchSessions')}
-                className="w-full rounded-xl border border-line bg-surface-sunken py-2 pr-8 text-xs text-content placeholder:text-content-subtle outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+                className="w-full rounded-xl border border-line bg-surface-sunken/80 py-1.5 sm:py-2 pr-8 text-xs text-content placeholder:text-content-subtle outline-none transition-all hover:border-line-strong focus:border-accent focus:bg-surface-sunken focus:ring-2 focus:ring-accent/20"
                 style={{ paddingLeft: '2.125rem' }}
               />
               {sessionQuery && (
                 <button
                   type="button"
                   onClick={() => setSessionQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content cursor-pointer transition-colors"
                   aria-label="Clear search"
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
@@ -1138,9 +1160,12 @@ const ChatLayout = () => {
           ) : (
             groupSessionsByDate(sessions, t).map((group) => (
               <div key={group.label} className="space-y-1">
-                <h2 className="px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-content-subtle uppercase">
-                  {group.label}
-                </h2>
+                <div className="flex items-center gap-2 px-2.5 py-1">
+                  <span className="text-[10px] font-bold tracking-wider text-content-subtle uppercase">
+                    {group.label}
+                  </span>
+                  <div className="h-px flex-1 bg-line/50" />
+                </div>
                 <div className="space-y-0.5">
                   {group.items.map((session) => {
                     const sid = session.session_id || session.id;
@@ -1151,7 +1176,7 @@ const ChatLayout = () => {
                       return (
                         <div
                           key={sid}
-                          className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-surface-raised border border-accent/50 shadow-xs"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-surface-raised border border-accent/50 shadow-xs"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <input
@@ -1191,28 +1216,28 @@ const ChatLayout = () => {
                     return (
                       <div
                         key={sid}
-                        className={`group relative flex items-center justify-between rounded-xl text-xs transition-colors ${
+                        className={`group relative flex items-center justify-between rounded-xl text-xs transition-all ${
                           isActive
-                            ? 'bg-accent-soft text-accent-soft-fg font-semibold border border-accent/30'
-                            : 'text-content-muted hover:bg-surface-hover hover:text-content'
+                            ? 'bg-accent/15 text-accent font-semibold border border-accent/30 shadow-xs shadow-accent/5'
+                            : 'text-content-muted hover:bg-surface-hover/80 hover:text-content'
                         }`}
                       >
                         <button
                           onClick={() => loadSession(sid)}
-                          className="flex items-center gap-2 truncate flex-1 text-left px-2.5 sm:px-3 py-2 sm:py-2.5 cursor-pointer"
+                          className="flex items-center gap-2.5 truncate flex-1 text-left px-2.5 sm:px-3 py-2 sm:py-2.5 cursor-pointer min-w-0"
                           aria-current={isActive ? 'page' : undefined}
                         >
                           {isThisSessionProcessing ? (
                             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label="Processing" />
                           ) : (
-                            <MessageSquare className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content-muted'}`} aria-hidden="true" />
                           )}
                           <span className="truncate">{session.title || 'SAP Chat'}</span>
                         </button>
-                        <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           <button
                             onClick={(e) => startRenameSession(e, session)}
-                            className="p-1 text-content-subtle hover:text-accent rounded-lg transition-colors cursor-pointer"
+                            className="p-1 text-content-subtle hover:text-accent rounded-md hover:bg-surface-raised transition-colors cursor-pointer"
                             title={t('sidebar.rename')}
                             aria-label={`${t('sidebar.rename')} ${session.title || ''}`}
                           >
@@ -1220,7 +1245,7 @@ const ChatLayout = () => {
                           </button>
                           <button
                             onClick={(e) => promptDeleteSession(e, session)}
-                            className="p-1 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
+                            className="p-1 text-content-subtle hover:text-danger rounded-md hover:bg-surface-raised transition-colors cursor-pointer"
                             title={t('sidebar.deleteSession')}
                             aria-label={`${t('sidebar.deleteSession')} ${session.title || ''}`}
                           >
@@ -1236,31 +1261,38 @@ const ChatLayout = () => {
           )}
         </nav>
 
-        <div className="pwa-sidebar-footer p-3 border-t border-line bg-surface-raised/90 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
+        <div className="pwa-sidebar-footer p-3 border-t border-line/70 bg-surface-raised/95 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-warning-soft border border-warning/40 text-warning hover:brightness-110 transition-all shadow-2xs cursor-pointer"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/35 text-amber-300 hover:from-amber-500/25 hover:border-amber-500/50 hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
             >
-              <span className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4" aria-hidden="true" />
-                {t('sidebar.adminPanel')}
+              <span className="flex items-center gap-2.5">
+                <span className="p-1 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform">
+                  <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                </span>
+                <span className="font-bold tracking-tight">{t('sidebar.adminPanel')}</span>
               </span>
-              <span className="text-[10px] bg-warning text-surface px-1.5 py-0.5 rounded font-bold">SUPER</span>
+              <span className="text-[9px] bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black px-1.5 py-0.5 rounded-md shadow-2xs tracking-wider uppercase">SUPER</span>
             </button>
           )}
 
-          <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/70 hover:bg-surface-sunken border border-line/80 transition-colors">
+          <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
             <div className="flex items-center gap-2.5 min-w-0 pr-2">
-              <div className="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center font-bold text-xs shrink-0 ring-1 ring-accent/30">
-                {user.username.charAt(0).toUpperCase()}
+              <div className="relative shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-sm shadow-indigo-500/25 ring-1 ring-white/20">
+                  {user.username.charAt(0).toUpperCase()}
+                </div>
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface" />
               </div>
               <div className="min-w-0">
-                <div className="text-xs sm:text-sm font-semibold truncate text-content leading-tight">
+                <div className="text-xs font-bold truncate text-content leading-tight">
                   {user.full_name || user.username}
                 </div>
-                <div className="text-[11px] text-content-muted mt-0.5 truncate capitalize">
-                  {user.role === 'superadmin' ? t('admin.roleAdmin') : user.role === 'guest' ? t('admin.roleGuest') : (user.role || t('admin.roleUser'))}
+                <div className="text-[10px] text-content-muted mt-0.5 truncate capitalize flex items-center gap-1">
+                  <span className="px-1.5 py-0.2 rounded-md bg-accent-soft text-accent text-[9px] font-semibold">
+                    {user.role === 'superadmin' ? 'Admin' : user.role === 'guest' ? t('admin.roleGuest') : (user.role || t('admin.roleUser'))}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1286,7 +1318,7 @@ const ChatLayout = () => {
               ) : (
                 <button
                   onClick={() => setConfirmLogoutOpen(true)}
-                  className="p-1.5 text-content-subtle hover:text-danger rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
+                  className="p-1.5 text-content-subtle hover:text-danger rounded-lg hover:bg-danger-soft transition-colors cursor-pointer"
                   aria-label={t('sidebar.logout')}
                   title={t('sidebar.logout')}
                 >

@@ -302,6 +302,8 @@ export const TRANSLATIONS = {
     'common.cancel': 'Cancel',
     'common.save': 'Save',
     'common.close': 'Close',
+    'common.refresh': 'Refresh',
+    'common.edit': 'Edit',
 
     // Nama khusus untuk tombol tutup. Beberapa penutup berbeda tampil
     // bersamaan (menu, pengaturan, dashboard); memberi ketiganya nama
@@ -608,6 +610,8 @@ export const TRANSLATIONS = {
     'common.cancel': 'Batal',
     'common.save': 'Simpan',
     'common.close': 'Tutup',
+    'common.refresh': 'Muat Ulang',
+    'common.edit': 'Ubah',
 
     'nav.closeSidebar': 'Tutup menu',
     'settings.closeAria': 'Tutup Pengaturan',
