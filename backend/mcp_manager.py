@@ -111,8 +111,12 @@ class StreamableHttpClient:
                 "arguments": arguments
             }
         }
-        res = await client.post(self.url, headers=headers, json=payload, timeout=45.0)
-        res.raise_for_status()
+        try:
+            res = await client.post(self.url, headers=headers, json=payload, timeout=45.0)
+            res.raise_for_status()
+        except Exception:
+            self._initialized = False
+            raise
         data = res.json()
         
         if "error" in data:
@@ -317,17 +321,42 @@ class MCPManager:
         if self._active_sap_target and str(self._active_sap_target).strip().lower() == str(target_sap).strip().lower():
             # Server sudah aktif pada sesi koneksi ini. Jangan reset koneksi agar LUW buffer SAP tidak ter-rollback!
             return True
-        try:
-            sap_client = self.get_client("sap")
-            res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
-            self._active_sap_target = target_sap
-            logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
-            return True
-        except Exception as ex:
-            # Target tidak dapat dipastikan; jangan biarkan nilai lama tersimpan.
-            self._active_sap_target = None
-            logger.warning(f"Tidak dapat menset SAP active server ke '{target_sap}': {ex}")
-            return False
+        sap_client = self.get_client("sap")
+        last_error = None
+        for attempt in range(2):
+            try:
+                res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
+                if res.is_error:
+                    err_txt = " ".join(c.text for c in res.content) if res.content else "Unknown error"
+                    logger.warning(f"MCP server gagal menset SAP active server ke '{target_sap}': {err_txt}")
+                    self._active_sap_target = None
+                    return False
+
+                if res.content and res.content[0].text:
+                    try:
+                        data = json.loads(res.content[0].text)
+                        if data.get("success") is False:
+                            err_msg = data.get("error", "Server ref not recognized")
+                            logger.warning(f"MCP server menolak target SAP '{target_sap}': {err_msg}")
+                            self._active_sap_target = None
+                            return False
+                    except Exception:
+                        pass
+
+                self._active_sap_target = target_sap
+                logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
+                return True
+            except Exception as ex:
+                last_error = ex
+                sap_client._initialized = False
+                self._active_sap_target = None
+                logger.warning(f"Percobaan {attempt + 1}/2: Tidak dapat menset SAP active server ke '{target_sap}': {type(ex).__name__} ({ex or 'timeout/network'})")
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+
+        self._active_sap_target = None
+        logger.error(f"Gagal menset SAP active server ke '{target_sap}' setelah 2 percobaan: {type(last_error).__name__} ({last_error or 'timeout'})")
+        return False
 
     async def set_active_sap_server(self, target_sap: str):
         """Set server aktif pada MCP SAP (dilindungi lock)."""

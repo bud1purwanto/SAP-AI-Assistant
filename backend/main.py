@@ -1090,6 +1090,7 @@ async def chat_stream_endpoint(
     waktu: yang dilaporkan adalah langkah keberapa dari batas iterasi agen dan
     apa yang sedang dikerjakan.
     """
+    is_guest = not user or bool(user.get("is_guest", True))
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_progress(**event):
