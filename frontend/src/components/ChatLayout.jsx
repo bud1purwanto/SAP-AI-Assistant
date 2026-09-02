@@ -414,6 +414,52 @@ const ChatLayout = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGuest, currentSessionId]);
 
+  const recoverBackgroundMessage = useCallback(async (sessionId, maxAttempts = 15) => {
+    if (!sessionId || isGuest) return false;
+    setSessionLoadingMap((prev) => ({ ...prev, [sessionId]: true }));
+    setSessionProgressMap((prev) => ({
+      ...prev,
+      [sessionId]: {
+        stage: 'reconnecting',
+        label: language === 'en' ? 'Reconnecting to fetch response…' : 'Menghubungkan kembali mengambil jawaban…',
+        step: 0,
+        max_steps: 1,
+      },
+    }));
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const data = await api.sessionMessages(sessionId);
+        if (Array.isArray(data) && data.length > 0) {
+          const lastMsg = data[data.length - 1];
+          if (lastMsg.role === 'ai' || lastMsg.role === 'assistant') {
+            const formatted = data.map((m) => ({
+              id: m.id,
+              role: m.role === 'user' ? 'user' : 'assistant',
+              content: m.content,
+              sources: parseJsonList(m.sources),
+              artifacts: parseJsonList(m.artifacts),
+              attachments: parseJsonList(m.attachments),
+              feedback: m.feedback || null,
+              created_at: m.created_at,
+            }));
+            setMessagesMap((prev) => ({ ...prev, [sessionId]: formatted }));
+            setSessionLoadingMap((prev) => ({ ...prev, [sessionId]: false }));
+            setSessionProgressMap((prev) => ({ ...prev, [sessionId]: null }));
+            setSessionErrorMap((prev) => ({ ...prev, [sessionId]: null }));
+            setSessionStreamMap((prev) => ({ ...prev, [sessionId]: '' }));
+            fetchSessions(true, true);
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('Gagal memulihkan pesan background:', e);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    return false;
+  }, [isGuest, language, fetchSessions]);
+
   useEffect(() => {
     setSessions([]);
     setCurrentSessionId(null);
@@ -487,6 +533,19 @@ const ChatLayout = () => {
       window.removeEventListener('message', handleDashboardMessage);
     };
   }, []);
+
+  // Sinkronkan kembali percakapan saat aplikasi dibuka kembali dari background/minimize di HP
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isGuest && currentSessionId) {
+        if (sessionLoadingMap[currentSessionId]) {
+          recoverBackgroundMessage(currentSessionId, 6);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isGuest, currentSessionId, sessionLoadingMap, recoverBackgroundMessage]);
 
   const createNewSession = () => {
     setError(null);
@@ -629,7 +688,22 @@ const ChatLayout = () => {
    * jawaban lama muncul kembali alih-alih tergantikan.
    */
   const handleSendMessage = async (text, attachments = [], baseMessages = null) => {
-    const targetSessionId = currentSessionId;
+    let targetSessionId = currentSessionId;
+    // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
+    if (!isGuest && !targetSessionId) {
+      try {
+        const title = text.trim().slice(0, 40) || (language === 'en' ? 'New Conversation' : 'Percakapan Baru');
+        const newSess = await api.createSession(title);
+        if (newSess?.session_id) {
+          targetSessionId = newSess.session_id;
+          setCurrentSessionId(targetSessionId);
+          fetchSessions(true, true);
+        }
+      } catch (err) {
+        console.warn('Pre-create session failed, backend will auto-create session:', err);
+      }
+    }
+
     const targetKey = targetSessionId || DRAFT_SESSION_KEY;
 
     const prevMessages = baseMessages ?? (messagesMap[targetKey] || []);
@@ -766,6 +840,14 @@ const ChatLayout = () => {
         }
         return;
       }
+
+      // Bila koneksi terputus (mis. browser HP di-minimize atau sinyal hilang),
+      // periksa apakah server tetap menyelesaikan respon di background dan simpan ke database.
+      if (!isGuest && targetSessionId) {
+        const recovered = await recoverBackgroundMessage(targetSessionId);
+        if (recovered) return;
+      }
+
       setMessagesMap((prev) => ({ ...prev, [targetKey]: outgoing }));
       setSessionErrorMap((prev) => ({
         ...prev,

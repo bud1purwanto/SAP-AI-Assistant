@@ -54,7 +54,7 @@ const SidePanel = ({ isi, onTutup }) => {
     >
       <div
         className="flex items-center justify-between gap-2 border-b border-line px-4 pb-3"
-        style={{ paddingTop: 'max(0.75rem, var(--sat))' }}
+        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.875rem)' }}
       >
         <div className="min-w-0">
           <h2 className="truncate text-sm font-bold text-content">{isi.judul}</h2>

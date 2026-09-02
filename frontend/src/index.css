@@ -230,6 +230,12 @@ body {
 .bottom-safe {
   bottom: env(safe-area-inset-bottom, 0px);
 }
+.pt-safe-offset {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 0.875rem);
+}
+.pb-safe-offset {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.875rem);
+}
 
 h1, h2, h3, .font-display {
   font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
@@ -367,7 +373,7 @@ code, pre, .font-mono {
  * terlihat, dikurangi kedua safe-area dan padding wadahnya.
  */
 .modal-panel {
-  max-height: calc(var(--app-height, 100dvh) - var(--sat) - var(--sab) - 1.5rem);
+  max-height: calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem);
 }
 
 /* Tombol hapus bawaan WebKit pada input[type=search] tampil berdampingan

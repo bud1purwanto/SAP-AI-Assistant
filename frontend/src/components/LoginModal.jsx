@@ -121,11 +121,20 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
   return (
     <div
       className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain animate-modal-backdrop"
+      style={{
+        paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-line relative my-auto max-h-[92dvh] flex flex-col animate-modal-content transition-all">
+      <div
+        className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-sm sm:max-w-md overflow-hidden border border-line relative my-auto flex flex-col animate-modal-content transition-all"
+        style={{
+          maxHeight: 'calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem)'
+        }}
+      >
 
         {onClose && (
           <button

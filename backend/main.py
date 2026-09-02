@@ -1107,9 +1107,11 @@ async def chat_stream_endpoint(
                     break
                 yield f"data: {json.dumps(event)}\n\n"
         finally:
-            # Klien menutup koneksi (mis. menekan "Hentikan"): batalkan pekerjaan
-            # agar tidak ada permintaan model yang berjalan tanpa penerima.
-            if not task.done():
+            # Jika klien menutup koneksi (mis. browser di-minimize di HP / koneksi drop):
+            # Jangan batalkan tugas jika pengguna terdaftar, agar proses agen AI
+            # tetap selesai di latar belakang server dan jawabannya tersimpan ke database.
+            # Batalkan hanya jika pengguna adalah tamu (guest) tanpa sesi tersimpan.
+            if is_guest and not task.done():
                 task.cancel()
 
     return StreamingResponse(

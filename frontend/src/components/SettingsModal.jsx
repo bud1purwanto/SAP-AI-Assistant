@@ -120,8 +120,19 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const isLoggedIn = user?.username && user?.username !== 'Guest';
 
   return (
-    <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain">
-      <div className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-line animate-in zoom-in-95 duration-200 modal-panel my-auto flex flex-col">
+    <div
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain"
+      style={{
+        paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+      }}
+    >
+      <div
+        className="bg-surface-raised rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-line animate-in zoom-in-95 duration-200 modal-panel my-auto flex flex-col"
+        style={{
+          maxHeight: 'calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem)'
+        }}
+      >
         
         {/* Header Modal */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-line">

@@ -216,12 +216,41 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const formatNumberSeparator = (val) => {
+    if (val === null || val === undefined || val === '') return '';
+    const clean = String(val).replace(/\D/g, '');
+    if (!clean) return '';
+    return Number(clean).toLocaleString(language === 'en' ? 'en-US' : 'id-ID');
+  };
+
+  const formatTokenWordHelper = (val) => {
+    if (val === null || val === undefined || val === '') return '';
+    const num = Number(String(val).replace(/\D/g, ''));
+    if (!Number.isFinite(num)) return '';
+    if (num === 0) return language === 'en' ? 'Unlimited' : 'Tanpa Batas';
+    if (num >= 1_000_000_000) {
+      const b = (num / 1_000_000_000).toLocaleString(language === 'en' ? 'en-US' : 'id-ID', { maximumFractionDigits: 2 });
+      return language === 'en' ? `${b} Billion` : `${b} Miliar`;
+    }
+    if (num >= 1_000_000) {
+      const m = (num / 1_000_000).toLocaleString(language === 'en' ? 'en-US' : 'id-ID', { maximumFractionDigits: 2 });
+      return language === 'en' ? `${m} Million` : `${m} Juta`;
+    }
+    if (num >= 1_000) {
+      const k = (num / 1_000).toLocaleString(language === 'en' ? 'en-US' : 'id-ID', { maximumFractionDigits: 1 });
+      return language === 'en' ? `${k} Thousand` : `${k} Ribu`;
+    }
+    return '';
+  };
+
   const simpanBatas = async (peran) => {
     setActionError('');
     setActionSuccess('');
     const draft = batasDraft[peran] || {};
-    const harian = Number.parseInt(draft.daily_token_limit, 10);
-    const permenit = Number.parseInt(draft.per_minute_limit, 10);
+    const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
+    const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
+    const harian = rawHarian === '' ? 0 : Number.parseInt(rawHarian, 10);
+    const permenit = rawPermenit === '' ? 0 : Number.parseInt(rawPermenit, 10);
     if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
       setActionError(language === 'en' ? 'Limits must be non-negative integers.' : 'Batas harus berupa angka bulat 0 atau lebih.');
       return;
@@ -472,7 +501,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       {/* Header Modal */}
       <div
         className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line bg-surface shrink-0"
-        style={{ paddingTop: 'max(0.875rem, var(--sat))' }}
+        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1rem)' }}
       >
         <div className="flex items-center gap-3 min-w-0 pr-4">
           <div className="p-2 rounded-xl bg-indigo-600/15 text-indigo-500 border border-indigo-500/25 flex items-center justify-center shrink-0 shadow-sm">
@@ -954,7 +983,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: ADD USER */}
                 {isAddUserOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    style={{
+                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+                    }}
+                  >
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
@@ -1049,7 +1084,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT USER */}
                 {editingUser && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    style={{
+                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+                    }}
+                  >
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-md w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
@@ -1316,7 +1357,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: TAMBAH SKILL */}
                 {isAddSkillOpen && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    style={{
+                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+                    }}
+                  >
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
@@ -1408,7 +1455,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* MODAL: EDIT SKILL */}
                 {editingSkill && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm">
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-900/60 backdrop-blur-sm"
+                    style={{
+                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+                    }}
+                  >
                     <div className="bg-surface-raised border border-line rounded-2xl p-4 sm:p-6 max-w-2xl w-full shadow-xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
                       <div className="flex items-center justify-between">
                         <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">

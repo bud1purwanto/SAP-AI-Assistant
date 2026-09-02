@@ -41,6 +41,15 @@ const INITIAL_FORM = {
   sort_order: 0,
 };
 
+const formatProviderLabel = (p) => {
+  const clean = (p || '').toLowerCase().trim();
+  if (clean === 'nine_router' || clean === '9router') return '9Router';
+  if (clean === 'openrouter') return 'OpenRouter';
+  if (clean === 'ollama') return 'Ollama';
+  if (clean === 'vllm') return 'vLLM';
+  return p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Auto';
+};
+
 export default function AdminChatModes({
   onRefreshModes,
   setActionSuccess,
@@ -632,15 +641,47 @@ export default function AdminChatModes({
                       </p>
                     )}
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-lg bg-surface-sunken border border-line text-content-secondary">
-                        <Zap className="w-3 h-3 text-amber-500" />
-                        <span>{mode.max_iterations} iters</span>
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-lg bg-surface-sunken border border-line text-content-secondary truncate max-w-[150px]">
-                        <Server className="w-3 h-3 text-indigo-500" />
-                        <span className="truncate">{mode.provider}: {mode.model || 'auto'}</span>
-                      </span>
+                    {/* Mode Specs Badges */}
+                    <div className="pt-1.5 space-y-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {/* Iterations Badge */}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          <Zap className="w-3 h-3 text-amber-500" />
+                          <span>{mode.max_iterations || 15} iters</span>
+                        </span>
+
+                        {/* Primary Provider & Model Badge */}
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium border truncate max-w-[210px] ${
+                            (mode.provider || '').toLowerCase().includes('nine') || (mode.provider || '').toLowerCase().includes('9')
+                              ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20'
+                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                          }`}
+                          title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}`}
+                        >
+                          <Server className="w-3 h-3 shrink-0" />
+                          <span className="font-bold">{formatProviderLabel(mode.provider)}</span>
+                          <span className="opacity-40">•</span>
+                          <span className="font-mono truncate">
+                            {mode.model || 'auto'}
+                          </span>
+                        </span>
+                      </div>
+
+                      {/* Fallback info if configured */}
+                      {mode.fallback_model && (
+                        <div
+                          className="flex items-center gap-1 text-[10px] text-content-subtle truncate max-w-full"
+                          title={`Fallback: ${formatProviderLabel(mode.fallback_provider)} • ${mode.fallback_model}`}
+                        >
+                          <span className="opacity-70 font-sans">↳ Fallback:</span>
+                          <span className="font-semibold text-content-secondary">{formatProviderLabel(mode.fallback_provider)}</span>
+                          <span className="opacity-40">•</span>
+                          <span className="font-mono truncate max-w-[140px]">
+                            {mode.fallback_model}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -779,8 +820,19 @@ export default function AdminChatModes({
 
       {/* Add Modal */}
       {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-surface-raised border border-line rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+          style={{
+            paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+            paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+          }}
+        >
+          <div
+            className="bg-surface-raised border border-line rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden modal-panel my-auto flex flex-col"
+            style={{
+              maxHeight: 'calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem)'
+            }}
+          >
             <div className="flex items-center justify-between px-5 py-4 border-b border-line bg-surface">
               <div className="flex items-center gap-2">
                 <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
@@ -935,8 +987,19 @@ export default function AdminChatModes({
 
       {/* Edit Modal */}
       {editingMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-surface-raised border border-line rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn overflow-y-auto"
+          style={{
+            paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+            paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+          }}
+        >
+          <div
+            className="bg-surface-raised border border-line rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden modal-panel my-auto flex flex-col"
+            style={{
+              maxHeight: 'calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem)'
+            }}
+          >
             <div className="flex items-center justify-between px-5 py-4 border-b border-line bg-surface">
               <div className="flex items-center gap-2">
                 <Edit3 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
