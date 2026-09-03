@@ -175,6 +175,60 @@ const ChatLayout = () => {
     };
   }, [isServerDropdownOpen]);
 
+  // Touch gesture listener untuk swipe buka/tutup sidebar di HP (mobile)
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+
+    const handleTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      // Jangan ganggu input/textarea atau blok kode horizontal
+      if (e.target.closest('input, textarea, pre, code, table')) {
+        startX = 0;
+        return;
+      }
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      startTime = Date.now();
+    };
+
+    const handleTouchEnd = (e) => {
+      if (!startX) return;
+      const touch = e.changedTouches[0];
+      if (!touch) return;
+
+      const deltaX = touch.clientX - startX;
+      const deltaY = touch.clientY - startY;
+      const elapsed = Date.now() - startTime;
+      startX = 0;
+
+      // Gerakan harus dominan horizontal dan cepat
+      if (Math.abs(deltaX) < 45 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.25) return;
+      if (elapsed > 650) return;
+
+      if (isSidebarOpen) {
+        // Saat sidebar terbuka: swipe ke kiri untuk menutup kembali
+        if (deltaX < -40) {
+          setIsSidebarOpen(false);
+        }
+      } else {
+        // Saat sidebar tertutup: swipe dari kiri/kanan di HP untuk memunculkan sidebar
+        if (deltaX > 45 || deltaX < -50) {
+          setIsSidebarOpen(true);
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isSidebarOpen]);
+
   const { theme, cycleTheme } = useTheme();
   // Ponsel dalam posisi landscape: lebarnya lolos breakpoint `md`, tetapi
   // tingginya tidak cukup untuk sidebar permanen — kembalikan ke mode drawer.
@@ -1332,7 +1386,7 @@ const ChatLayout = () => {
             <div className="flex items-center gap-1 shrink-0">
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors md:hidden cursor-pointer"
+                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
                 aria-label={t('nav.settings')}
                 title={t('nav.settings')}
               >
@@ -1473,7 +1527,7 @@ const ChatLayout = () => {
               {!isGuest && <QuotaChip quota={kuota} />}
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+                className="hidden sm:inline-flex p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
                 aria-label={t('nav.settings')}
                 title={t('nav.settings')}
               >
