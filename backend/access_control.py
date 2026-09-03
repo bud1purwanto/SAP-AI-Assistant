@@ -42,53 +42,126 @@ def normalize_roles(role: Union[str, List[str], None]) -> List[str]:
 _ACCESS_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[float, Dict[str, Dict[str, Any]]]] = {}
 _CACHE_TTL_SECONDS = 30.0
 
-# Pemetaan alias variasi ke kunci resource kanonikal
-SAP_ALIAS_CANONICAL = {
+# Pemetaan alias dinamis (didukung cache in-memory dan sinkronisasi otomatis dari mcp_resources / live probe)
+_SEED_SAP_ALIASES: Dict[str, str] = {
     "dev": "sap:dev-aix",
-    "dev-aix": "sap:dev-aix",
-    "development": "sap:dev-aix",
-    "development aix": "sap:dev-aix",
-    "dev-win": "sap:dev-win",
-    "dev-windows": "sap:dev-win",
-    "development windows": "sap:dev-win",
     "prod": "sap:prod-aix",
-    "prod-aix": "sap:prod-aix",
-    "production": "sap:prod-aix",
-    "production aix": "sap:prod-aix",
     "prd": "sap:prod-aix",
-    "prod-win": "sap:prod-win",
-    "prod-windows": "sap:prod-win",
-    "production windows": "sap:prod-win",
-    "prp": "sap:prod-win",
     "qa": "sap:qa",
-    "quality": "sap:qa",
-    "test": "sap:qa",
-    "qa system": "sap:qa",
     "sandbox": "sap:sandbox",
-    "sandbox-build": "sap:sandbox",
-    "build-competence": "sap:sandbox",
-    "sandbox build competence": "sap:sandbox",
-    "sandbox-new": "sap:sandbox-new",
-    "new-company": "sap:sandbox-new",
-    "sandbox new company": "sap:sandbox-new",
 }
 
-SQL_ALIAS_CANONICAL = {
-    "dev-224": "sql:dev-224",
-    "dev-223": "sql:dev-223",
-    "sql-itinv": "sql:sql-itinv",
-    "itinv": "sql:sql-itinv",
-    "70": "sql:sql-itinv",
-    "it inventory": "sql:sql-itinv",
-    "olap baru": "sql:dev-224",
-    "olap lama": "sql:dev-223",
+_DYNAMIC_SAP_MAP: Dict[str, str] = dict(_SEED_SAP_ALIASES)
+_DYNAMIC_SQL_MAP: Dict[str, str] = {}
+_DYNAMIC_GENERAL_MAP: Dict[str, str] = {
+    "rag": "service:rag",
+    "service:rag": "service:rag",
+    "email": "service:email",
+    "service:email": "service:email",
 }
+_LAST_ALIAS_MAP_SYNC: float = 0.0
+_ALIAS_CACHE_TTL = 60.0
 
 
 def clear_access_cache():
-    """Mengosongkan cache resolusi izin."""
-    global _ACCESS_CACHE
+    """Mengosongkan cache resolusi izin dan cache alias dinamis."""
+    global _ACCESS_CACHE, _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP, _LAST_ALIAS_MAP_SYNC
     _ACCESS_CACHE.clear()
+    _DYNAMIC_SAP_MAP = dict(_SEED_SAP_ALIASES)
+    _DYNAMIC_SQL_MAP.clear()
+    _LAST_ALIAS_MAP_SYNC = 0.0
+
+
+def register_mcp_aliases(can_key: str, name: str, aliases: List[str], sid: str = ""):
+    """Mendaftarkan variasi alias server yang dilaporkan oleh server MCP ke peta dinamis."""
+    global _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP
+    if not can_key:
+        return
+    prefix = can_key.split(":", 1)[0].lower()
+    target_map = _DYNAMIC_SQL_MAP if prefix == "sql" else _DYNAMIC_SAP_MAP
+
+    # 1. Kunci kanonikal
+    target_map[can_key.lower().strip()] = can_key
+    sub_key = can_key.split(":", 1)[1] if ":" in can_key else can_key
+    target_map[sub_key.lower().strip()] = can_key
+
+    # 2. Nama server
+    if name:
+        n_low = name.lower().strip()
+        target_map[n_low] = can_key
+        target_map[f"{prefix}:{n_low}"] = can_key
+        target_map[n_low.replace("-", " ")] = can_key
+        target_map[n_low.replace(" ", "-")] = can_key
+
+    # 3. Seluruh aliases dari server MCP
+    for a in (aliases or []):
+        if not a:
+            continue
+        a_low = str(a).lower().strip()
+        target_map[a_low] = can_key
+        target_map[f"{prefix}:{a_low}"] = can_key
+        target_map[a_low.replace("-", " ")] = can_key
+        target_map[a_low.replace(" ", "-")] = can_key
+
+    # 4. SID jika SAP
+    if sid and prefix == "sap":
+        sid_low = str(sid).lower().strip()
+        target_map[sid_low] = can_key
+        target_map[f"sap:{sid_low}"] = can_key
+
+
+def load_aliases_from_db(force_refresh: bool = False):
+    """Memuat alias dinamis dari ai_assistant.mcp_resources."""
+    global _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP, _LAST_ALIAS_MAP_SYNC
+    now = time.time()
+    if not force_refresh and (_DYNAMIC_SAP_MAP or _DYNAMIC_SQL_MAP) and (now - _LAST_ALIAS_MAP_SYNC < _ALIAS_CACHE_TTL):
+        return
+
+    try:
+        engine = database.get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT resource_key, kind, label, sid FROM ai_assistant.mcp_resources WHERE archived = FALSE")
+            ).fetchall()
+            for rk, kind, label, sid in rows:
+                if not rk:
+                    continue
+                rk_str = str(rk).strip()
+                rk_lower = rk_str.lower()
+                sub = rk_lower.split(":", 1)[1] if ":" in rk_lower else rk_lower
+                prefix = rk_str.split(":", 1)[0].lower()
+                target_map = _DYNAMIC_SQL_MAP if (kind == "sql" or prefix == "sql") else _DYNAMIC_SAP_MAP
+
+                target_map[rk_lower] = rk_str
+                target_map[sub] = rk_str
+
+                if label:
+                    lbl = str(label).lower().strip()
+                    target_map[lbl] = rk_str
+                    target_map[f"{prefix}:{lbl}"] = rk_str
+                    target_map[lbl.replace("-", " ")] = rk_str
+                    target_map[lbl.replace(" ", "-")] = rk_str
+                    if "(" in lbl and ")" in lbl:
+                        main_part = lbl.split("(")[0].strip()
+                        target_map[main_part] = rk_str
+                        target_map[f"{prefix}:{main_part}"] = rk_str
+                        target_map[main_part.replace(" ", "-")] = rk_str
+                        sub_parts = lbl.split("(")[1].split(")")[0].split(",")
+                        for p in sub_parts:
+                            p_str = p.strip()
+                            if p_str:
+                                target_map[p_str] = rk_str
+                                target_map[f"{prefix}:{p_str}"] = rk_str
+                                target_map[p_str.replace(" ", "-")] = rk_str
+                                target_map[p_str.replace("-", " ")] = rk_str
+                if sid and (kind == "sap" or prefix == "sap"):
+                    sid_lower = str(sid).lower().strip()
+                    target_map[sid_lower] = rk_str
+                    target_map[f"sap:{sid_lower}"] = rk_str
+    except Exception as e:
+        logger.warning(f"Gagal memuat alias dinamis dari mcp_resources: {e}")
+
+    _LAST_ALIAS_MAP_SYNC = now
 
 
 def is_access_control_enabled() -> bool:
@@ -121,33 +194,35 @@ def set_access_control_master(enabled: bool, actor: str = "system") -> bool:
 
 
 def canonical_resource_key(raw: str) -> str:
-    """Menghasilkan resource_key standar kanonikal dari target_server/alias."""
+    """Menghasilkan resource_key standar kanonikal dari target_server/alias secara dinamis."""
     if not raw:
         return "sap:sandbox-new"
     s = raw.strip().lower()
 
-    if s in ("rag", "service:rag"):
-        return "service:rag"
-    if s in ("email", "service:email"):
-        return "service:email"
-
-    if s.startswith("sap:"):
-        sub = s.split(":", 1)[1]
-        return SAP_ALIAS_CANONICAL.get(sub, f"sap:{sub}")
-    if s.startswith("sql:"):
-        sub = s.split(":", 1)[1]
-        return SQL_ALIAS_CANONICAL.get(sub, f"sql:{sub}")
-
-    # Bila tidak ada prefix
-    if s in SAP_ALIAS_CANONICAL:
-        return SAP_ALIAS_CANONICAL[s]
-    if s in SQL_ALIAS_CANONICAL:
-        return SQL_ALIAS_CANONICAL[s]
-
+    if s in _DYNAMIC_GENERAL_MAP:
+        return _DYNAMIC_GENERAL_MAP[s]
     if s in ("sql", "sql:"):
         return "sql"
     if s in ("sap", "sap:"):
         return "sap"
+
+    load_aliases_from_db()
+
+    # Jika secara eksplisit diawali sql:
+    if s.startswith("sql:"):
+        sub = s.split(":", 1)[1].strip()
+        return _DYNAMIC_SQL_MAP.get(sub, _DYNAMIC_SQL_MAP.get(f"sql:{sub}", f"sql:{sub}"))
+
+    # Jika secara eksplisit diawali sap:
+    if s.startswith("sap:"):
+        sub = s.split(":", 1)[1].strip()
+        return _DYNAMIC_SAP_MAP.get(sub, _DYNAMIC_SAP_MAP.get(f"sap:{sub}", f"sap:{sub}"))
+
+    # Bila tanpa prefix: utamakan SAP untuk nama bersama (seperti 'dev'), lalu periksa SQL
+    if s in _DYNAMIC_SAP_MAP:
+        return _DYNAMIC_SAP_MAP[s]
+    if s in _DYNAMIC_SQL_MAP:
+        return _DYNAMIC_SQL_MAP[s]
 
     return f"sap:{s}"
 
@@ -184,18 +259,37 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
     # 2. SAP Sub Servers
     sap_subs = status_dict.get("sap", {}).get("sub_servers", [])
     for srv in sap_subs:
-        alias = srv.get("alias") or (srv.get("aliases") or [""])[0] or srv.get("name", "").lower()
-        can_key = canonical_resource_key(f"sap:{alias}")
+        name = srv.get("name", "").strip()
+        aliases = [str(a).strip() for a in (srv.get("aliases") or []) if a]
+        sid = srv.get("sid", "").strip()
+
+        # Cocokkan ke resource_key yang ada di DB bila sudah pernah terdaftar
+        load_aliases_from_db()
+        can_key = None
+        if name.lower() in _DYNAMIC_SAP_MAP:
+            can_key = _DYNAMIC_SAP_MAP[name.lower()]
+        if not can_key:
+            for a in aliases:
+                if a.lower() in _DYNAMIC_SAP_MAP:
+                    can_key = _DYNAMIC_SAP_MAP[a.lower()]
+                    break
+        if not can_key:
+            slug = aliases[0].lower() if aliases else name.lower().replace(" ", "-")
+            can_key = f"sap:{slug}"
+
+        # Daftarkan seluruh alias secara dinamis
+        register_mcp_aliases(can_key, name, aliases, sid)
+
         is_prod = bool(
             srv.get("production_warning")
             or "prod" in srv.get("environment", "").lower()
-            or any(p in (srv.get("name") or "").lower() for p in ["prod", "prd", "prp"])
+            or any(p in name.lower() for p in ["prod", "prd", "prp"])
         )
         resources_to_sync.append({
             "key": can_key,
             "kind": "sap",
-            "label": srv.get("name") or can_key,
-            "sid": srv.get("sid", ""),
+            "label": name or can_key,
+            "sid": sid,
             "client": str(srv.get("client", "")),
             "is_production": is_prod,
         })
@@ -203,14 +297,18 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
     # 3. SQL Sub Servers
     sql_subs = status_dict.get("sql", {}).get("sub_servers", [])
     for srv in sql_subs:
-        name = srv.get("name") or "default"
-        can_key = f"sql:{name}"
+        name = srv.get("name", "").strip() or "default"
+        aliases = [str(a).strip() for a in (srv.get("aliases") or []) if a]
+        can_key = f"sql:{name.lower()}"
+
+        # Daftarkan seluruh alias SQL secara dinamis
+        register_mcp_aliases(can_key, name, aliases)
+
         is_prod = bool(
             srv.get("production_warning")
             or "prod" in srv.get("environment", "").lower()
-            or any(p in (srv.get("name") or "").lower() for p in ["prod", "prd", "prp"])
+            or any(p in name.lower() for p in ["prod", "prd", "prp"])
         )
-        aliases = srv.get("aliases") or []
         label = name
         if aliases:
             label = f"{name} ({', '.join(aliases[:3])})"
