@@ -1596,16 +1596,11 @@ const ChatLayout = () => {
                                   <div className="flex items-center gap-2 min-w-0 truncate">
                                     <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-zinc-500' : isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
                                     <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5">
-                                        <p className="truncate font-semibold text-xs leading-tight">{srv.name}</p>
-                                        {srv.port && (
-                                          <span className="text-[9px] font-mono text-content-muted">:{srv.port}</span>
-                                        )}
-                                      </div>
+                                      <p className="truncate font-semibold text-xs leading-tight">{srv.name}</p>
                                       <p className="text-[10px] text-content-muted truncate mt-0.5">
                                         {srv.aliases && srv.aliases.length > 0 
-                                          ? srv.aliases.slice(0, 3).join(', ') 
-                                          : srv.host}
+                                          ? srv.aliases.join(', ') 
+                                          : (srv.db_type ? srv.db_type.toUpperCase() : 'Database')}
                                         {srv.host ? ` • ${srv.host}` : ''}
                                       </p>
                                     </div>
@@ -1654,7 +1649,7 @@ const ChatLayout = () => {
                                     <div className="min-w-0">
                                       <p className="truncate font-semibold text-xs leading-tight">{srv.name}</p>
                                       <p className="text-[10px] text-content-muted truncate mt-0.5">
-                                        {srv.sid || 'ECC 6.0'} • Client {srv.client || '100'}
+                                        {srv.sid || 'ECC 6.0'} • Client {srv.client || '130'}
                                       </p>
                                     </div>
                                   </div>

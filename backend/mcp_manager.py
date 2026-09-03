@@ -229,7 +229,41 @@ class MCPManager:
                         txt = srv_res.content[0].text
                         srv_data = json.loads(txt)
                         sub_servers = srv_data.get("servers", [])
+                        sap_client_mapping = {
+                            "development aix": "130",
+                            "dev-aix": "130",
+                            "dev": "130",
+                            "development windows": "130",
+                            "dev-windows": "130",
+                            "dev-win": "130",
+                            "production aix": "999",
+                            "prod-aix": "999",
+                            "prod": "999",
+                            "prd": "999",
+                            "production windows": "999",
+                            "prod-windows": "999",
+                            "prod-win": "999",
+                            "prp": "999",
+                            "qa": "320",
+                            "quality": "320",
+                            "test": "320",
+                            "sandbox build competence": "140",
+                            "sandbox-build": "140",
+                            "build-competence": "140",
+                            "sandbox": "140",
+                            "sandbox new company": "130",
+                            "sandbox-new": "130",
+                            "new-company": "130",
+                        }
                         for s in sub_servers:
+                            s_name = (s.get("name") or "").lower()
+                            c_val = s.get("client") or sap_client_mapping.get(s_name)
+                            if not c_val:
+                                for al in s.get("aliases", []):
+                                    if al.lower() in sap_client_mapping:
+                                        c_val = sap_client_mapping[al.lower()]
+                                        break
+                            s["client"] = str(c_val or "130")
                             if s.get("active"):
                                 active_server_name = s.get("name") or s.get("sid") or "Active"
                 except Exception as ex:
