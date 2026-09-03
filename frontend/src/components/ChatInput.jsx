@@ -311,7 +311,7 @@ const ChatInput = ({
           </p>
         )}
 
-        <div className="flex flex-col sm:flex-row sm:items-end gap-1.5 sm:gap-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-1">
           <input
             ref={fileInputRef}
             type="file"
@@ -341,7 +341,7 @@ const ChatInput = ({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="h-8 w-8 sm:h-9 sm:w-9 sm:mb-1 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover flex items-center justify-center transition-colors shrink-0 cursor-pointer"
                 aria-label={t('input.attach')}
                 title={t('input.attach')}
               >
@@ -351,7 +351,7 @@ const ChatInput = ({
               <button
                 type="button"
                 onClick={tekanMikrofon}
-                className={`h-8 w-8 sm:h-9 sm:w-9 sm:mb-1 rounded-xl sm:rounded-2xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
+                className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
                   suara.mendengar
                     ? 'bg-danger/15 text-danger'
                     : 'text-content-muted hover:text-accent hover:bg-surface-hover'
@@ -367,7 +367,7 @@ const ChatInput = ({
               </button>
 
               {modes && modes.length > 0 && (
-                <div className="sm:mb-1 shrink-0 flex items-center">
+                <div className="shrink-0 flex items-center">
                   <ModeSelector
                     modes={modes}
                     selectedMode={selectedMode}
@@ -397,7 +397,7 @@ const ChatInput = ({
           </div>
 
           {/* Tombol Send khusus Desktop (Order 3) */}
-          <div className="order-3 hidden sm:flex items-center gap-1 sm:gap-1.5 sm:mb-1">
+          <div className="order-3 hidden sm:flex items-center gap-1 sm:gap-1.5">
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
@@ -414,7 +414,7 @@ const ChatInput = ({
           </div>
         </div>
 
-        <div className="composer-hint px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
+        <div className="composer-hint text-center px-2 sm:px-3 pt-0.5 sm:pt-1 text-[10px] sm:text-xs text-content-subtle hidden sm:block">
           <span>
             {t('input.shiftEnterHint')}
           </span>
