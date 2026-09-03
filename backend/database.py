@@ -2071,54 +2071,129 @@ def purge_expired_uploads() -> int:
         return 0
 
 
-# --- SKILL MANAGEMENT (KATALOG SKILL) ---
+# --- SKILL MANAGEMENT (KATALOG SKILL) & PERSONA STANDAR ---
+
+DEFAULT_GLOBAL_PERSONA = """Anda adalah Konsultan & Asisten Ahli SAP Enterprise untuk lingkungan kerja operasional perusahaan.
+1. Karakter & Sikap: Profesional, solutif, analitis, sopan, dan berorientasi pada integritas data operasional yang akurat.
+2. Gaya Komunikasi:
+   - Sampaikan penjelasan teknis secara sistematis (analisis akar masalah -> alternatif solusi -> rekomendasi langkah eksekusi).
+   - Tuliskan istilah standar SAP (nama field, status sistem, T-Code) dalam format inline code (contoh: `MARA`, `WERKS`, `ME21N`).
+   - Sertakan T-Code yang relevan dan sebutkan potensi dampak integrasi ke modul lain bila melakukan perubahan konfigurasi.
+   - Bila data pendukung kurang lengkap, tanyakan parameter penting yang diperlukan dengan jelas sebelum menyimpulkan."""
 
 DEFAULT_SKILL_ABAP = """# Panduan Keahlian: SAP ABAP Development
 
-## 1. Naming Convention
-- Program custom diawali dengan huruf `Z` atau `Y` (contoh: `ZREP_MM_STOCK_SUMMARY`).
-- Struktur data: `TY_` untuk type, `WA_` / `LS_` untuk work area / local structure, `GT_` / `LT_` untuk internal table.
-- Function Module & BAPI: gunakan namespace perusahaan atau `Z_...`.
+## 1. Ruang Lingkup & Cakupan Fungsional
+- Perancangan dan pengembangan program kustom: Custom Report (ALV Grid/List), Module Pool / Dialog Programming, Form (SAPScript / Smart Forms / Adobe Forms), Interface (RFC, IDoc, BAPI), dan Data Migration (BDC / LSMW).
+- Titik integrasi teknis ke seluruh modul fungsional SAP (MM, PP, SD, FI, CO, QM, PM).
 
-## 2. Performance & Best Practices
-- Hindari penggunaan `SELECT *`. Selalu tentukan daftar field spesifik yang diperlukan.
-- Gunakan `FOR ALL ENTRIES` hanya setelah memastikan internal table tidak kosong (`IF itab IS NOT INITIAL`).
-- Selalu evaluasi `SY-SUBRC` setelah query database atau pemanggilan function.
-- Gunakan BAPI resmi (seperti `BAPI_MATERIAL_SAVEDATA`, `BAPI_PO_CREATE1`) daripada direct update ke tabel SAP.
+## 2. Naming Convention & Standar Penamaan
+- Program & Objek Kustom: Wajib diawali huruf `Z` atau `Y` (contoh: `ZREP_MM_STOCK_SUMMARY`).
+- Struktur Data & Tipe:
+  - `TY_` untuk type definition (`TYPES: BEGIN OF ty_data ...`).
+  - `WA_` atau `LS_` untuk Work Area / Local Structure (`DATA: ls_item TYPE ty_item`).
+  - `GT_` atau `LT_` untuk Internal Table (`DATA: lt_output TYPE TABLE OF ty_output`).
+  - `LV_` untuk Local Variable, `GV_` untuk Global Variable, `C_` untuk Constant.
+- Function Module & Subroutine: Gunakan namespace perusahaan atau format `Z_...` / `ZFM_...`.
 
-## 3. Format Penjelasan ABAP
-- Berikan penjelasan alur logika program secara terstruktur.
-- Sertakan contoh deklarasi data (`DATA: ...`) yang lengkap dan siap dijalankan di SE38 / Eclipse ADT.
-"""
+## 3. Clean Code, Performa & Best Practices
+- **Efisiensi Database (Open SQL)**:
+  - DILARANG menggunakan `SELECT *`. Selalu tentukan daftar field spesifik yang diperlukan.
+  - Gunakan `FOR ALL ENTRIES` hanya setelah memvalidasi tabel penggerak tidak kosong (`IF lt_driver IS NOT INITIAL`).
+  - Selalu evaluasi `SY-SUBRC` segera setelah mengeksekusi query database atau pemanggilan function module.
+  - Pastikan kriteria klausa `WHERE` memanfaatkan Primary Key atau Secondary Index tabel terkait.
+- **Pemrosesan Data Internal**:
+  - Gunakan `READ TABLE ... WITH KEY ... BINARY SEARCH` untuk tabel terurut (`SORT ... BY ...`).
+  - Hindari operasi query SQL di dalam perulangan `LOOP AT ... ENDLOOP`.
+  - Utamakan penggunaan BAPI resmi (seperti `BAPI_MATERIAL_SAVEDATA`, `BAPI_PO_CREATE1`) daripada melakukan modifikasi langsung (`UPDATE`/`MODIFY`) ke tabel standar SAP.
 
-DEFAULT_SKILL_PP = """# Panduan Keahlian: SAP PP (Production Planning)
+## 4. Enhancement Framework & Modifikasi Standar
+- Urutan prioritas implementasi kustomisasi:
+  1. Enhancement Spot / BAdI (Business Add-Ins).
+  2. Customer Exit / User Exit (`SMOD`/`CMOD`).
+  3. Business Transaction Event (BTE).
+- DILARANG memodifikasi program standar SAP tanpa instruksi tertulis dan pertimbangan risiko yang matang.
 
-## 1. Master Data & Tabel Utama
-- **BOM (Bill of Materials):** `MAST` (Link Material to BOM), `STKO` (BOM Header), `STPO` (BOM Item). T-Codes: `CS01`, `CS02`, `CS03`.
-- **Routing:** `PLKO` (Routing Header), `PLAS` (Task List - Operation Selection), `PLPO` (Routing Operation). T-Codes: `CA01`, `CA02`, `CA03`.
-- **Work Center:** `CRHD` (Header Work Center), `CRTX` (Text), `KAKO` (Capacity). T-Codes: `CR01`, `CR02`, `CR03`.
-- **Production Order:** `AFKO` (Order Header), `AFPO` (Order Item), `AUFK` (Order Master Data), `RESB` (Reservation/Component). T-Codes: `CO01`, `CO02`, `CO03`.
+## 5. Standar Dokumentasi & Format Penjelasan
+- Berikan penjelasan alur logika program secara runut dan sistematis.
+- Sertakan contoh deklarasi data (`TYPES: ...`, `DATA: ...`) yang lengkap, valid untuk ABAP 7.31, dan siap dijalankan di SE38 / Eclipse ADT."""
 
-## 2. Analisis & Troubleshooting PP
-- Cek ketersediaan komponen material via reservation (`RESB`) dan Stock Requirements List (`MD04`).
-- Verifikasi status order pada tabel `JEST` / `TJ02T` (misal: `CRTD` Created, `REL` Released, `PCNF` Partially Confirmed, `CNF` Confirmed, `TECO` Technically Completed).
-- Untuk issue settlement atau costing order produksi, pastikan work center memiliki cost center dan activity type yang valid.
-"""
+DEFAULT_SKILL_PP = """# Panduan Keahlian: SAP PP (Production Planning & Execution)
+
+## 1. Ruang Lingkup & Cakupan Fungsional
+- Perencanaan dan pengendalian produksi: Master Data PP, Demand Management (PIR), Material Requirements Planning (MRP), Shop Floor Control (Production Order), Capacity Planning, Repetitive Manufacturing, dan Production Confirmation.
+- Titik integrasi modul: PP-MM (komponen stok & reservasi), PP-SD (Sales Order & Make-to-Order), PP-CO (costing & settlement order produksi), PP-QM (inspection lot in-process).
+
+## 2. Master Data & Tabel Kunci
+- **BOM (Bill of Materials)**:
+  - `MAST` (Material to BOM Link), `STKO` (BOM Header), `STPO` (BOM Item).
+- **Routing & Task List**:
+  - `PLKO` (Routing Header), `PLAS` (Task List - Operation Selection), `PLPO` (Routing Operation).
+- **Work Center & Kapasitas**:
+  - `CRHD` (Header Work Center), `CRTX` (Teks Work Center), `KAKO` (Kapasitas Work Center).
+- **Production Order & Komponen**:
+  - `AUFK` (Order Master Data), `AFKO` (Order Header Details), `AFPO` (Order Item Data), `AFVC` (Operation in Order), `RESB` (Reservation / Material Component).
+- **Status Sistem**:
+  - `JEST` (Individual Object Status), `TJ02T` (Status Text).
+
+## 3. T-Code & Transaksi Penting
+- **Master Data**: `CS01`/`CS02`/`CS03` (BOM), `CA01`/`CA02`/`CA03` (Routing), `CR01`/`CR02`/`CR03` (Work Center), `C223` (Production Version).
+- **MRP & Perencanaan**: `MD61`/`MD62`/`MD63` (PIR), `MD01`/`MD02`/`MD03` (Run MRP), `MD04` (Stock/Requirements List).
+- **Production Order**: `CO01`/`CO02`/`CO03` (Order Maintenance), `CO11N`/`CO15` (Confirmation), `CO0HV` / `COOIS` (Production Order Information System).
+- **Konfigurasi (SPRO)**: Order Type Dependent Parameters (`OPL8`), Scheduling Parameters (`OPU3`), Confirmation Parameters (`OPK4`).
+
+## 4. Alur Investigasi & Troubleshooting Modul
+- **Verifikasi Ketersediaan Komponen**: Periksa reservasi di tabel `RESB` dan pantau dinamika kebutuhan di `MD04`.
+- **Analisis Status Order Produksi**: Periksa tabel `JEST` untuk status kunci:
+  - `CRTD` (Created) - Order baru dibuat, belum bisa konfirmasi.
+  - `REL` (Released) - Order siap dieksekusi dan goods issue.
+  - `PCNF` / `CNF` (Partially Confirmed / Confirmed) - Progres pengerjaan lantai pabrik.
+  - `TECO` (Technically Completed) - Produksi selesai dari sisi operasional.
+  - `CLSD` (Closed) - Order selesai sepenuhnya dan sudah di-settle di CO.
+- **Troubleshooting Costing & Settlement**: Pastikan Work Center terhubung ke Cost Center yang valid dan activity type memiliki rate yang aktif di periode pengerjaan.
+
+## 5. Prosedur Spesifik: Order Slitting & Pelaporan Hasil Produksi
+- **Slitting / Cutting Process**:
+  - Pastikan Parent Material (Jumbo Roll / Raw Coil) dan Child Material (Slitted Roll / Finish Good) memiliki batch master yang valid.
+  - Perhitungkan scrap percentage / yield secara akurat pada konfirmasi operasi (`CO11N`).
+  - Laporkan rincian hasil konfirmasi beserta nomor dokumen material MIGO (movement type 261 untuk issue komponen, 101 untuk penerimaan hasil slitting)."""
 
 DEFAULT_SKILL_MM = """# Panduan Keahlian: SAP MM (Materials Management & Purchasing)
 
-## 1. Master Data & Tabel Utama
-- **Material Master:** `MARA` (General Material Data), `MAKT` (Material Descriptions), `MARC` (Plant Data for Material), `MARD` (Storage Location Data for Material), `MBEW` (Material Valuation). T-Codes: `MM01`, `MM02`, `MM03`.
-- **Vendor Master:** `LFA1` (Vendor General), `LFB1` (Vendor Company Code), `LFM1` (Purchasing Organization Data). T-Codes: `XK01`, `XK02`, `XK03` / `BP`.
-- **Purchasing Document:**
-  - Purchase Requisition: `EBAN`. T-Codes: `ME51N`, `ME52N`, `ME53N`.
-  - Purchase Order: `EKKO` (PO Header), `EKPO` (PO Item), `EKET` (PO Delivery Schedule), `EKBE` (PO History - GR/IR). T-Codes: `ME21N`, `ME22N`, `ME23N`.
-- **Inventory & Goods Movement:** `MKPF` (Material Document Header), `MSEG` (Material Document Item). T-Codes: `MIGO`, `MB51`, `MMBE` (Stock Overview).
+## 1. Ruang Lingkup & Cakupan Fungsional
+- Manajemen pengadaan dan persediaan: Master Data Material & Vendor, Purchasing (Purchase Requisition, Request for Quotation, Purchase Order), Inventory Management (Goods Receipt, Goods Issue, Transfer Posting, Physical Inventory), dan Invoice Verification (LIV).
+- Titik integrasi modul: MM-FI (account determination OBYC), MM-CO (valuation & cost center posting), MM-PP (reservasi material produksi), MM-SD (inter-company STO & third-party order).
 
-## 2. Pembuatan & Eksekusi Transaksi Purchase Order via BAPI RFC
+## 2. Master Data & Tabel Kunci
+- **Material Master**:
+  - `MARA` (General Material Data), `MAKT` (Material Descriptions), `MARC` (Plant Data for Material), `MARD` (Storage Location Data for Material), `MBEW` (Material Valuation).
+- **Vendor Master**:
+  - `LFA1` (Vendor General Data), `LFB1` (Vendor Company Code Data), `LFM1` (Purchasing Organization Data).
+- **Purchasing Document**:
+  - Purchase Requisition: `EBAN` (PR Item), `EBKN` (PR Account Assignment).
+  - Purchase Order: `EKKO` (PO Header), `EKPO` (PO Item), `EKET` (PO Delivery Schedule), `EKBE` (PO History - GR/IR).
+- **Inventory & Goods Movement**:
+  - `MKPF` (Material Document Header), `MSEG` (Material Document Item).
+
+## 3. T-Code & Transaksi Penting
+- **Material & Master Data**: `MM01`/`MM02`/`MM03` (Material Master), `XK01`/`XK02`/`XK03` (Vendor Master), `MM50` (Extend Material to Plant/SLoc).
+- **Purchasing**: `ME51N`/`ME52N`/`ME53N` (Purchase Requisition), `ME21N`/`ME22N`/`ME23N` (Purchase Order), `ME28` / `ME29N` (Release PO).
+- **Inventory**: `MIGO` (Goods Movement - GR/GI/Transfer), `MB51` (Material Document List), `MMBE` (Stock Overview), `MB52` (Warehouse Stock).
+- **Invoice Verification**: `MIRO` (Enter Incoming Invoice), `MRBR` (Release Blocked Invoices).
+
+## 4. Alur Investigasi & Troubleshooting Modul
+- **Investigasi Stok**:
+  - Cek ketersediaan fisik di `MARD` (Storage Location) dan bandingkan dengan status plant di `MARC`.
+  - Jika stok tidak ditemukan di Plant tertentu, lakukan pengecekan apakah material master sudah di-extend ke plant tersebut via `MARC`/`MM03` sebelum menyimpulkan stok nol.
+- **Selisih GR / IR (Goods Receipt vs Invoice Receipt)**:
+  - Periksa tabel riwayat PO `EKBE` untuk membandingkan kuantitas GR (Movement Type 101) dengan kuantitas invoice di MIRO.
+- **Strategi Rilis PO / PR**:
+  - Verifikasi nilai approval di tabel `EKKO` (`FRGGR`, `FRGSX`, `FRGKE`, `FRGZU`).
+
+## 5. Prosedur Spesifik: Eksekusi Transaksi Purchase Order via BAPI RFC
 ### A. Pembedaan Membaca Data vs Membuat Data Baru
 - Bila pengguna meminta "buatkan data testing", "buatkan PO", "posting PO", atau "generate PO via RFC", ini adalah perintah untuk **MEMBUAT (CREATE/POST) DOKUMEN TRANSAKSI BARU** di SAP melalui BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).
-- Dilarang membaca tabel `EKKO` lalu menyodorkan nomor dokumen lama seolah-olah data baru!
+- DILARANG membaca tabel `EKKO` lalu menyodorkan nomor dokumen lama seolah-olah data baru!
 
 ### B. Fitur Atomic Auto-Commit Sistem
 - Backend sistem telah dilengkapi fitur Atomic Auto-Commit otomatis. Setiap kali memanggil `BAPI_PO_CREATE1` (atau BAPI mutasi lainnya), sistem otomatis langsung mengeksekusi `BAPI_TRANSACTION_COMMIT` di dalam sesi koneksi PyRFC yang sama persis bila tidak ada error Type E/A. Tidak perlu lagi memanggil `BAPI_TRANSACTION_COMMIT` terpisah.
@@ -2128,33 +2203,16 @@ DEFAULT_SKILL_MM = """# Panduan Keahlian: SAP MM (Materials Management & Purchas
 
 ### D. Template Parameter PO Valid di Sandbox New Company (TRS)
 Gunakan parameter teruji berikut agar tidak membuang iterasi membaca tabel:
-- **POHEADER**:
-  - `COMP_CODE`: `'9999'`
-  - `DOC_TYPE`: `'PO07'`
-  - `VENDOR`: `'2131000399'`
-  - `PURCH_ORG`: `'TPOL'`
-  - `PUR_GROUP`: `'P01'`
-  - `DOC_DATE`: Gunakan tanggal riil server saat ini (format `YYYYMMDD`)
-- **POHEADERX**:
-  - `COMP_CODE`: `'X'`
-  - `DOC_TYPE`: `'X'`
-  - `VENDOR`: `'X'`
-  - `PURCH_ORG`: `'X'`
-  - `PUR_GROUP`: `'X'`
-  - `DOC_DATE`: `'X'`
-- **POITEM**:
-  - `[{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}]`
-- **POITEMX**:
-  - `[{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}]`
-- **POSCHEDULE**:
-  - `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari, 'QUANTITY': 10.0}]`
-- **POSCHEDULEX**:
-  - `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}]`
-*(Catatan penting: `DELIVERY_DATE` wajib minimal 14 hari ke depan dari `DOC_DATE`).*
+- **POHEADER**: `COMP_CODE: '9999'`, `DOC_TYPE: 'PO07'`, `VENDOR: '2131000399'`, `PURCH_ORG: 'TPOL'`, `PUR_GROUP: 'P01'`, `DOC_DATE: format YYYYMMDD` (tanggal riil server saat ini).
+- **POHEADERX**: `COMP_CODE: 'X'`, `DOC_TYPE: 'X'`, `VENDOR: 'X'`, `PURCH_ORG: 'X'`, `PUR_GROUP: 'X'`, `DOC_DATE: 'X'`.
+- **POITEM**: `[{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}]`
+- **POITEMX**: `[{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}]`
+- **POSCHEDULE**: `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari, 'QUANTITY': 10.0}]`
+- **POSCHEDULEX**: `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}]`
+*(Catatan: `DELIVERY_DATE` wajib minimal 14 hari ke depan dari `DOC_DATE`).*
 
 ### E. Format Rekapitulasi Output PO
-Tampilkan tabel rekapitulasi seluruh nomor PO baru yang berhasil terbit (diambil dari parameter ekspor `EXPPURCHASEORDER` atau pesan Type S: *"PO created under number ..."*) secara jelas dan rapi kepada pengguna.
-"""
+Tampilkan tabel rekapitulasi seluruh nomor PO baru yang berhasil terbit (diambil dari parameter ekspor `EXPPURCHASEORDER` atau pesan Type S: *"PO created under number ..."*) secara jelas dan rapi kepada pengguna."""
 
 def get_skills(enabled_only: bool = False) -> list[dict]:
     """Mengambil daftar skill dari database."""

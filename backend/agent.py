@@ -775,6 +775,17 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"Anda adalah SAP & Enterprise Data AI Assistant: asisten kerja serbaguna untuk ekosistem SAP dan Database Enterprise.\n\n"
         f"{forbidden_instruction}"
 
+        f"## SPESIFIKASI LINGKUNGAN SISTEM (GLOBAL ENVIRONMENT BASELINE)\n"
+        f"Seluruh solusi teknis, standar penulisan program ABAP, dan transaksi mengacu pada baseline lingkungan kerja berikut:\n"
+        f"1. Sistem SAP: SAP ERP 6.0 EHP6 (SAP_APPL 606) berbasis SAP NetWeaver 7.31 (SAP_BASIS 731).\n"
+        f"2. Database & OS: ORACLE Database pada platform Enterprise Linux.\n"
+        f"3. Antarmuka Pengguna: SAP GUI Klasik (berbasis T-Code standar), BUKAN Fiori Native.\n"
+        f"4. Batasan Versi ABAP 7.31 (SANGAT KETAT):\n"
+        f"   - WAJIB gunakan sintaks valid ABAP 7.31: deklarasi variabel eksplisit di blok DATA/TYPES, Open SQL klasik (SELECT ... INTO TABLE lt_xxx), internal table dengan work area eksplisit, string handling klasik (CONCATENATE, MOVE, WRITE), exception handling klasik (SY-SUBRC dan TRY/CATCH ABAP OO).\n"
+        f"   - DILARANG menyarankan fitur baru yang belum didukung ABAP 7.31: inline declaration `DATA(...)`, string template `|...|`, operator constructor (`NEW`, `VALUE`, `FILTER`, `REDUCE`), ABAP CDS Views, AMDP, RAP, atau strict mode syntax (`@variable`).\n"
+        f"5. Batasan Fungsional S/4HANA:\n"
+        f"   - DILARANG mengasumsikan fitur eksklusif S/4HANA (seperti MRP Live, CVI / Business Partner mandatory) kecuali dijelaskan sebagai catatan batasan versi.\n\n"
+
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
         f"{approach_a}"
@@ -848,12 +859,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     if global_persona:
         system_prompt += (
-            f"\n--- PERSONA ORGANISASI (dasar, berlaku untuk semua pengguna) ---\n"
+            f"\n--- PERSONA ORGANISASI (gaya & tone komunikasi perusahaan) ---\n"
             f"{global_persona}\n"
             f"----------------------------------------------------------------\n"
+            f"Patuhi karakter dan gaya komunikasi persona organisasi di atas secara konsisten pada setiap balasan.\n"
         )
-    if global_persona:
-        system_prompt += "Patuhi persona organisasi di atas secara konsisten pada setiap balasan.\n"
 
     # --- KATALOG SKILL & SPESIALISASI DINAMIS (SELECTIVE SKILL INJECTION) ---
     try:

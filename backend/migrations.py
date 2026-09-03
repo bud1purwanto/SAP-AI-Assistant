@@ -479,6 +479,39 @@ def _m0011_skill_tags(conn):
     """))
 
 
+def _m0012_standardize_persona_and_skills(conn):
+    """Standarisasi global assistant persona dan bersihkan duplikasi environment di skill default."""
+    from database import (
+        DEFAULT_GLOBAL_PERSONA,
+        DEFAULT_SKILL_ABAP,
+        DEFAULT_SKILL_PP,
+        DEFAULT_SKILL_MM,
+    )
+    conn.execute(text("""
+        INSERT INTO ai_assistant.system_config (key, value)
+        VALUES ('global_assistant_persona', :persona)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+    """), {"persona": DEFAULT_GLOBAL_PERSONA})
+
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET content = :abap_content
+        WHERE name = 'SAP ABAP';
+    """), {"abap_content": DEFAULT_SKILL_ABAP})
+
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET content = :pp_content
+        WHERE name = 'SAP PP';
+    """), {"pp_content": DEFAULT_SKILL_PP})
+
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET content = :mm_content
+        WHERE name = 'SAP MM';
+    """), {"mm_content": DEFAULT_SKILL_MM})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -491,6 +524,7 @@ MIGRATIONS = [
     ("0009_multi_role_pengguna", _m0009_multi_role_pengguna),
     ("0010_seed_skill_sap_mm", _m0010_seed_skill_sap_mm),
     ("0011_skill_tags", _m0011_skill_tags),
+    ("0012_standardize_persona_and_skills", _m0012_standardize_persona_and_skills),
 ]
 
 
