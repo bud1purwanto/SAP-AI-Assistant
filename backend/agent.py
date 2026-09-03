@@ -524,6 +524,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
     sap_server_name = "Sandbox New Company"
     sap_sid = "TRS"
+    sql_server_name = "SQL Database"
     
     if target_srv.startswith("sap:"):
         sap_alias = target_srv.split(":", 1)[1].lower()
@@ -531,58 +532,79 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
             sap_server_name, sap_sid = sub_servers_meta[sap_alias]
         else:
             sap_server_name = sap_alias.upper()
+    elif target_srv.startswith("sql:"):
+        sql_alias = target_srv.split(":", 1)[1]
+        sql_server_name = sql_alias
+    elif target_system == "sql" and sap_target:
+        sql_server_name = sap_target
 
     # ------------------------------------------------------------------
     # SYSTEM PROMPT
-    #
-    # Prompt lama mewajibkan setiap balasan memanggil tool SAP dan diawali
-    # header "📦 MM Server: ...". Akibatnya pertanyaan umum ("buatkan tabel
-    # perbandingan", "ringkas ini", "jelaskan konsep") tetap dipaksa menjadi
-    # laporan investigasi SAP. Prompt di bawah memisahkan dua hal: SAP tetap
-    # keahlian utama dan tetap diprioritaskan untuk pertanyaan data, tetapi
-    # asisten boleh menjawab langsung untuk hal di luar itu.
     # ------------------------------------------------------------------
     tool_inventory = []
-    if has_sap:
-        tool_inventory.append(f"data live SAP pada server **{sap_server_name} (SID: {sap_sid})**")
-    if has_rag:
-        tool_inventory.append("basis pengetahuan dokumen (RAG)")
-    if has_sql:
-        tool_inventory.append(f"layanan MCP SQL Database (target aktif: **{sap_server_name} / {sap_sid}**)")
+    if target_system == "sql":
+        if has_sql:
+            tool_inventory.append(f"layanan MCP SQL Database (target server: **{sql_server_name}**)")
+        if has_rag:
+            tool_inventory.append("basis pengetahuan dokumen (RAG)")
+    else:
+        if has_sap:
+            tool_inventory.append(f"data live SAP pada server **{sap_server_name} (SID: {sap_sid})**")
+        if has_rag:
+            tool_inventory.append("basis pengetahuan dokumen (RAG)")
+        if has_sql:
+            tool_inventory.append("layanan MCP SQL Database")
     if has_email:
         tool_inventory.append("layanan MCP Email")
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
 
     # SUSUNAN PROMPT DAN CACHING
-    #
-    # Bagian yang IDENTIK untuk semua pengguna ditulis lebih dulu, dan yang
-    # berubah per permintaan ditulis paling belakang. Cache prompt milik
-    # provider bekerja atas AWALAN yang sama persis: bila nama server SAP atau
-    # role pengguna berada di baris pertama, setiap kombinasi user/server
-    # menjadi prompt yang berbeda sejak karakter pertama dan tidak ada satu pun
-    # yang dapat dipakai ulang — padahal bagian stabilnya belasan ribu token.
-    #
-    # Susunan sekarang: identitas -> aturan -> format -> artefak -> skill ->
-    # persona organisasi, baru kemudian KONTEKS PERMINTAAN INI.
     if tool_ditolak:
         logger.info(
             f"Peran '{user_role}' tidak berhak mengubah program; "
             f"{len(tool_ditolak)} tool disembunyikan: {', '.join(tool_ditolak[:6])}"
         )
 
+    if target_system == "sql":
+        approach_a = (
+            f"**A. Permintaan data / investigasi SQL Database** (cek database, tabel, kolom, view, record, atau query SQL pada server **{sql_server_name}**)\n"
+            f"   -> WAJIB panggil tool MCP SQL (`sql__sql_list_databases`, `sql__sql_list_tables`, `sql__sql_describe_table`, `sql__sql_run_query`, dsb.) untuk mengambil data LIVE dari database SQL.\n"
+            f"   -> Server SQL aktif yang dipilih pengguna adalah **{sql_server_name}**. Jalankan inspeksi dan query langsung ke server SQL tersebut.\n"
+            f"   -> JANGAN mencari ke SAP atau menyebut sistem SAP, karena pengguna secara spesifik memilih koneksi ke SQL Database ({sql_server_name}).\n\n"
+        )
+        format_source_rule = (
+            f"2. Jika jawaban mengambil data live dari SQL Database, sertakan indikator sumber data "
+            f"berformat: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
+            f"   Gunakan tool SQL untuk memeriksa dan membaca tabel/data pada server {sql_server_name}. "
+            f"   DILARANG mengarahkan jawaban ke sistem SAP atau menulis 'Data langsung dari sistem SAP' "
+            f"   karena pengguna secara tegas memilih target koneksi SQL Database ({sql_server_name}).\n"
+        )
+    else:
+        approach_a = (
+            f"**A. Permintaan data SAP nyata** (stock material, plant, PO/SO, vendor, isi tabel "
+            f"MARA/MARC/MARD/T001W/EKKO/VBAK, kode ABAP, status dokumen, dsb.)\n"
+            f"   -> WAJIB panggil tool MCP SAP untuk mengambil data LIVE. Jangan mengarang angka.\n"
+            f"   -> Contoh: cek plant material 'SRRPAI' -> `sap__read_table` dengan `table: 'MARC'`, "
+            f"`where: [\"MATNR = 'SRRPAI'\"]`, atau `sap__sap_read_table` dengan `table_name: 'MARC'`, "
+            f"`options: [\"MATNR = 'SRRPAI'\"]`.\n"
+            f"   -> Server SAP aktif SUDAH dipilih pengguna lewat antarmuka. Jangan bertanya ulang "
+            f"soal pilihan server dan jangan menolak permintaan data.\n\n"
+        )
+        format_source_rule = (
+            f"2. Jika jawaban mengambil data live dari SAP, sertakan indikator sumber data "
+            f"berformat: 📦 **Data langsung dari sistem {sap_server_name}** — nama sistem SAP aktif "
+            f"yang disebutkan pada bagian KONTEKS PERMINTAAN INI di bagian bawah prompt ini.\n"
+            f"   Tulis dalam bahasa kerja sehari-hari; hindari istilah internal seperti SID, MCP, RAG, "
+            f"atau nama tool kepada pengguna. Untuk jawaban yang TIDAK mengambil data SAP, JANGAN "
+            f"tampilkan baris tersebut.\n"
+        )
+
     system_prompt = (
-        f"Anda adalah SAP AI Assistant: asisten kerja serbaguna dengan keahlian utama SAP.\n\n"
+        f"Anda adalah SAP & Enterprise Data AI Assistant: asisten kerja serbaguna untuk ekosistem SAP dan Database Enterprise.\n\n"
 
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
-        f"**A. Permintaan data SAP nyata** (stock material, plant, PO/SO, vendor, isi tabel "
-        f"MARA/MARC/MARD/T001W/EKKO/VBAK, kode ABAP, status dokumen, dsb.)\n"
-        f"   -> WAJIB panggil tool MCP SAP untuk mengambil data LIVE. Jangan mengarang angka.\n"
-        f"   -> Contoh: cek plant material 'SRRPAI' -> `sap__read_table` dengan `table: 'MARC'`, "
-        f"`where: [\"MATNR = 'SRRPAI'\"]`, atau `sap__sap_read_table` dengan `table_name: 'MARC'`, "
-        f"`options: [\"MATNR = 'SRRPAI'\"]`.\n"
-        f"   -> Server SAP aktif SUDAH dipilih pengguna lewat antarmuka. Jangan bertanya ulang "
-        f"soal pilihan server dan jangan menolak permintaan data.\n\n"
+        f"{approach_a}"
         f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal**\n"
         f"   -> Gunakan `rag__search` bila jawabannya kemungkinan ada di dokumen internal "
         f"(blueprint, SOP, manual). Bila tidak ditemukan, jawab dari pengetahuan Anda dan "
@@ -591,14 +613,14 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         f"   -> Isi berkas sudah disediakan untuk Anda dalam blok LAMPIRAN DARI PENGGUNA. "
         f"Baca dan gunakan isinya; jangan meminta pengguna menempelkan ulang isinya.\n"
         f"   -> Sebutkan nama berkas ketika jawaban Anda bersumber dari lampiran tersebut.\n"
-        f"   -> Bila lampiran bertentangan dengan data SAP, sampaikan perbedaannya, jangan "
+        f"   -> Bila lampiran bertentangan dengan data sistem, sampaikan perbedaannya, jangan "
         f"memilih diam-diam salah satunya.\n\n"
-        f"**D. Permintaan umum di luar data SAP** — menulis, meringkas, menerjemahkan, "
+        f"**D. Permintaan umum di luar data sistem** — menulis, meringkas, menerjemahkan, "
         f"menghitung, menyusun tabel/laporan, membuat berkas Excel/CSV, menjelaskan konsep, "
         f"membantu kode, brainstorming, atau sekadar menyapa.\n"
-        f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool SAP/RAG "
-        f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi SAP.\n\n"
-        f"Bila sebuah permintaan menggabungkan beberapa jenis (misalnya: ambil data SAP lalu "
+        f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool sistem "
+        f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi yang tidak diminta.\n\n"
+        f"Bila sebuah permintaan menggabungkan beberapa jenis (misalnya: ambil data lalu "
         f"rapikan jadi Excel), kerjakan berurutan: ambil datanya dulu, baru olah hasilnya.\n\n"
         f"**ATURAN PEMANGGILAN TOOL (PENTING):**\n"
         f"Ketika Anda memutuskan untuk memanggil tool (SAP, RAG, SQL, dsb.), panggil tool tersebut "
@@ -614,13 +636,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
         f"## FORMAT JAWABAN\n"
         f"1. Responlah secara alami dalam bahasa yang digunakan oleh pengguna (English sebagai default utama, atau Bahasa Indonesia jika pengguna bertanya dalam Bahasa Indonesia). Pastikan struktur jawaban jelas, profesional, dan rapi.\n"
-        f"2. Jika jawaban mengambil data live dari SAP, sertakan indikator sumber data "
-        f"berformat: 📦 **Data langsung dari sistem NAMA_SERVER** — ganti NAMA_SERVER "
-        f"dengan nama sistem SAP aktif yang disebutkan pada bagian KONTEKS PERMINTAAN INI "
-        f"di bagian bawah prompt ini.\n"
-        f"   Tulis dalam bahasa kerja sehari-hari; hindari istilah internal seperti SID, MCP, RAG, "
-        f"atau nama tool kepada pengguna. Untuk jawaban yang TIDAK mengambil data SAP, JANGAN "
-        f"tampilkan baris tersebut.\n"
+        f"{format_source_rule}"
         f"3. Sajikan data tabular sebagai tabel markdown yang rapi. Gunakan bullet ringkas untuk penjelasan.\n"
         f"4. Tulis nama tabel/field/tcode secara inline (contoh: `VBAP` & `VBAK`, `MARA` & `MARC`), "
         f"bukan sebagai blok kode terpisah per baris.\n"
@@ -731,8 +747,17 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         ),
         f"- Sumber data yang tersedia: {inventory_line}\n",
     ]
-    if has_sap:
+    if target_system == "sql":
         konteks.append(
+            f"- Target Sistem Aktif yang Dipilih Pengguna: **SQL DATABASE**\n"
+            f"- Server SQL Target Aktif: **{sql_server_name}**\n"
+            f"- INSTRUKSI TEGAS: Pengguna secara tegas memilih target koneksi ke **SQL Database ({sql_server_name})**.\n"
+            f"  Segala permintaan data, pengecekan tabel/skema/view/kolom, atau query WAJIB dijalankan ke server SQL {sql_server_name} menggunakan tool SQL (`sql__*`).\n"
+            f"  DILARANG berasumsi ke sistem SAP, DILARANG memanggil tool SAP, dan DILARANG menyebut 'Data langsung dari sistem SAP'!\n"
+        )
+    elif has_sap:
+        konteks.append(
+            f"- Target Sistem Aktif yang Dipilih Pengguna: **SAP ERP**\n"
             f"- Sistem SAP aktif: **{sap_server_name}** (SID: {sap_sid}). "
             f"Inilah NAMA_SERVER yang dipakai pada baris status di aturan FORMAT JAWABAN.\n"
         )

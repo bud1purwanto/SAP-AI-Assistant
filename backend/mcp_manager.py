@@ -389,8 +389,23 @@ class MCPManager:
 
     async def get_all_tools(self, server_filter: str = "all") -> list[dict]:
         tools = []
-        is_sap = True  # SAP selalu aktif
-        is_rag = True  # RAG selalu aktif - kedua server wajib terhubung
+        is_sql_mode = server_filter.startswith("sql:") or server_filter == "sql"
+        is_sap_mode = server_filter.startswith("sap:") or server_filter == "sap"
+
+        # Bila pengguna secara eksplisit memilih SQL, aktifkan SQL + RAG dan nonaktifkan SAP
+        # agar model tidak keliru memanggil tool SAP.
+        if is_sql_mode:
+            is_sap = False
+            is_sql = True
+            is_rag = True
+        elif is_sap_mode:
+            is_sap = True
+            is_sql = False
+            is_rag = True
+        else:
+            is_sap = True
+            is_sql = True
+            is_rag = True
 
         async with httpx.AsyncClient() as http_client:
             # SAP Tools
@@ -415,14 +430,15 @@ class MCPManager:
                     logger.error(f"Error fetching RAG tools: {e}")
 
             # SQL Tools
-            try:
-                sql_client = self.get_client("sql")
-                sql_tools = await sql_client.list_tools(http_client)
-                for t in sql_tools:
-                    if t.name.startswith("sql_"):
-                        tools.append({"server": "sql", "tool": t})
-            except Exception as e:
-                logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
+            if is_sql:
+                try:
+                    sql_client = self.get_client("sql")
+                    sql_tools = await sql_client.list_tools(http_client)
+                    for t in sql_tools:
+                        if t.name.startswith("sql_"):
+                            tools.append({"server": "sql", "tool": t})
+                except Exception as e:
+                    logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
 
         return tools
 
@@ -470,8 +486,10 @@ class MCPManager:
             if server_name == "sql" and sap_target:
                 try:
                     await client.call_tool(http_client, "sql_set_active_server", {"server_ref": sap_target})
-                except Exception:
-                    pass
+                except Exception as ex:
+                    logger.warning(f"Gagal mengatur active SQL server '{sap_target}': {ex}")
+                if isinstance(final_args, dict) and "server" not in final_args:
+                    final_args["server"] = sap_target
             return await client.call_tool(http_client, tool_name, final_args)
 
     @staticmethod
