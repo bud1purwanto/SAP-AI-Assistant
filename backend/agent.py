@@ -385,15 +385,21 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         rincian = data.get("input_token_details") or {}
         pemakaian["cached"] += int(rincian.get("cache_read") or 0)
 
+    streamed_to_client = False
+
     async def emit_token(text: str):
+        nonlocal streamed_to_client
         try:
+            streamed_to_client = True
             await on_token(text=text)
         except Exception as e:
             logger.warning(f"Gagal mengirim token: {e}")
 
     async def reset_stream():
-        if streaming:
+        nonlocal streamed_to_client
+        if streaming and streamed_to_client:
             try:
+                streamed_to_client = False
                 await on_token(reset=True)
             except Exception as e:
                 logger.warning(f"Gagal mereset aliran token: {e}")
@@ -419,6 +425,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         terkumpul = ""
         terkirim = ""
         is_tool_call = False
+        flushed_initial = False
+        STREAM_BUFFER_THRESHOLD = 200
 
         try:
             async for chunk in model.astream(msgs):
@@ -427,12 +435,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 # Deteksi awal apakah model sedang memanggil tool
                 if getattr(chunk, "tool_call_chunks", None) or getattr(chunk, "tool_calls", None):
                     is_tool_call = True
-                    if terkirim:
-                        await reset_stream()
-                        terkirim = ""
-                    continue
-
-                if is_tool_call:
                     continue
 
                 potongan = _chunk_text(chunk.content)
@@ -440,34 +442,58 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     continue
                 terkumpul += potongan
 
-                # Jalur cepat: selama tidak ada penanda penalaran yang perlu dibersihkan,
-                # potongan diteruskan apa adanya agar jawaban mengalir bertahap secara alami.
-                if not _PERLU_BERSIH.search(terkumpul):
-                    terkirim += potongan
-                    await emit_token(potongan)
-                    continue
-
-                # Tahan selama blok penalaran belum ditutup.
+                # Jangan bocorkan blok penalaran / thinking tags ke layar
                 if _THINK_OPEN.search(terkumpul) and not _THINK_CLOSE.search(terkumpul):
                     continue
 
                 tampil = _clean_thinking_process(terkumpul)
-                if tampil == terkirim:
+                if not tampil:
                     continue
-                if tampil.startswith(terkirim):
-                    await emit_token(tampil[len(terkirim):])
-                else:
-                    # Pembersihan membuang bagian yang sudah tampil di layar
-                    # (mis. blok penalaran baru saja ditutup): mulai dari awal
-                    # daripada meninggalkan teks yang keliru.
-                    await reset_stream()
-                    if tampil:
+
+                # Buffer teks awal sampai cukup panjang untuk memastikan ini bukan narasi pendek pra-tool
+                if not flushed_initial:
+                    if len(tampil) >= STREAM_BUFFER_THRESHOLD:
+                        flushed_initial = True
+                        terkirim = tampil
                         await emit_token(tampil)
-                terkirim = tampil
+                else:
+                    if tampil.startswith(terkirim):
+                        diff = tampil[len(terkirim):]
+                        if diff:
+                            terkirim = tampil
+                            await emit_token(diff)
+                    elif tampil != terkirim:
+                        await reset_stream()
+                        terkirim = tampil
+                        if tampil:
+                            await emit_token(tampil)
         except Exception:
-            # Sebagian teks mungkin sudah terkirim sebelum gagal.
-            await reset_stream()
+            if terkirim:
+                await reset_stream()
             raise
+
+        # Selesai perulangan stream: verifikasi apakah giliran ini memanggil tool atau menyajikan jawaban
+        has_tools = False
+        if merged:
+            if getattr(merged, "tool_calls", None) or getattr(merged, "tool_call_chunks", None):
+                has_tools = True
+
+        if has_tools or is_tool_call:
+            # Bila ini panggilan tool, pastikan narasi apa pun yang sempat terkirim segera dibersihkan
+            if terkirim:
+                await reset_stream()
+                terkirim = ""
+        else:
+            # Bila ini jawaban akhir, alirkan sisa teks di buffer yang belum sempat terkirim
+            tampil = _clean_thinking_process(terkumpul)
+            if tampil:
+                if not terkirim:
+                    terkirim = tampil
+                    await emit_token(tampil)
+                elif len(tampil) > len(terkirim) and tampil.startswith(terkirim):
+                    diff = tampil[len(terkirim):]
+                    terkirim = tampil
+                    await emit_token(diff)
 
         if merged is None:
             # Provider menutup aliran tanpa mengirim apa pun.
@@ -476,20 +502,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             return hasil
 
         catat_pemakaian(merged)
-
-        # Bila putaran ini memanggil tool, pastikan stream bersih (teks pengantar tidak tampil di bubble chat)
-        if getattr(merged, "tool_calls", None):
-            if terkirim:
-                await reset_stream()
-            return merged
-
-        # Bila ini adalah jawaban akhir (tanpa tool) dan belum terkirim karena berada di bawah batas buffer:
-        tampil_akhir = _clean_thinking_process(terkumpul)
-        if tampil_akhir and not terkirim:
-            await emit_token(tampil_akhir)
-        elif tampil_akhir and len(tampil_akhir) > len(terkirim) and tampil_akhir.startswith(terkirim):
-            await emit_token(tampil_akhir[len(terkirim):])
-
         return merged
 
     await report("connecting", "Menyiapkan permintaan…")
@@ -1033,6 +1045,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     max_iterations = MAX_ITERATIONS
     iteration = 0
     rag_call_count = 0
+    executed_tool_signatures = set()
+    table_query_counts = {}
     
     while iteration < max_iterations:
         iteration += 1
@@ -1208,6 +1222,21 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             tool_id = tool_call["id"]
             
             logger.info(f"Agent memanggil tool: {tool_name} dengan argumen {tool_args}")
+
+            # Deteksi & cegah panggilan tool duplikat yang persis sama
+            try:
+                tool_sig = f"{tool_name}:{json.dumps(tool_args or {}, sort_keys=True)}"
+            except Exception:
+                tool_sig = f"{tool_name}:{str(tool_args)}"
+
+            if tool_sig in executed_tool_signatures:
+                logger.info(f"Panggilan tool duplikat diabaikan: {tool_sig}")
+                messages.append(ToolMessage(
+                    content="SISTEM: Panggilan tool dengan parameter ini sudah pernah dijalankan pada langkah sebelumnya. Gunakan data yang sudah diperoleh di atas untuk segera menuliskan jawaban akhir yang lengkap untuk pengguna.",
+                    tool_call_id=tool_id
+                ))
+                continue
+            executed_tool_signatures.add(tool_sig)
             
             if tool_name not in tool_map:
                 error_msg = f"Error: Tool {tool_name} tidak ditemukan."
@@ -1217,6 +1246,20 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             mapping = tool_map[tool_name]
             server_name = mapping["server"]
             mcp_name = mapping["mcp_name"]
+
+            # Batasi query berulang ke tabel SAP yang sama (maksimal 2 kali per tabel dalam satu percakapan)
+            if server_name == "sap" and mcp_name in ("read_table", "sap_read_table"):
+                table_target = str(tool_args.get("table") or tool_args.get("table_name") or "").upper().strip()
+                if table_target:
+                    table_count = table_query_counts.get(table_target, 0) + 1
+                    table_query_counts[table_target] = table_count
+                    if table_count > 2:
+                        logger.info(f"Membatasi query berulang ke tabel {table_target} (sudah {table_count-1} kali). Mendorong model untuk merangkum.")
+                        messages.append(ToolMessage(
+                            content=f"SISTEM: Tabel {table_target} sudah diperiksa sebanyak {table_count-1} kali pada langkah sebelumnya dan seluruh data yang ada sudah diberikan di atas. DILARANG melakukan query ulang ke tabel {table_target}. Segera tuliskan kesimpulan dan jawaban akhir yang lengkap untuk pengguna sekarang.",
+                            tool_call_id=tool_id
+                        ))
+                        continue
 
             # Runtime Access Control Enforcement
             if access_control.is_access_control_enabled():
