@@ -177,6 +177,16 @@ def is_email_tool(tool_name: str) -> bool:
     return any(kw in name for kw in ("email", "mail", "calendar", "inbox", "archive"))
 
 
+# Tool internal/administratif gateway RAG yang tidak relevan untuk user chat atau duplikat
+RAG_INTERNAL_EXCLUDED_TOOLS = {
+    "draft_action",
+    "confirm_action",
+    "system_health",
+    "document_sources",
+    "document_get",  # Duplikat fungsional dari rag_get_document
+}
+
+
 class MCPManager:
     def __init__(self):
         self.clients: dict[str, StreamableHttpClient] = {}
@@ -517,7 +527,11 @@ class MCPManager:
                         else:
                             if not is_rag:
                                 continue  # RAG connector dilarang untuk peran ini
-                            if not is_sap and t.name.startswith("sap_"):
+                            # Pangkas tool pseudo-SAP di server RAG (seluruh fungsi SAP ditangani dedicated server SAP)
+                            if t.name.startswith("sap_"):
+                                continue
+                            # Pangkas tool internal administratif dan duplikat
+                            if t.name in RAG_INTERNAL_EXCLUDED_TOOLS:
                                 continue
                             tools.append({"server": "rag", "tool": t})
                 except Exception as e:
@@ -530,6 +544,8 @@ class MCPManager:
                     sql_tools = await sql_client.list_tools(http_client)
                     for t in sql_tools:
                         if t.name.startswith("sql_"):
+                            if t.name == "sql_reload_config":
+                                continue
                             tools.append({"server": "sql", "tool": t})
                 except Exception as e:
                     logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
