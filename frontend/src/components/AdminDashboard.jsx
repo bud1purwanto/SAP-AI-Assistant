@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, CheckCircle, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
@@ -8,6 +8,7 @@ import AdminChatModes from './AdminChatModes';
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers, onRefreshModes }) {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'persona' | 'mcp' | 'audit'
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [globalPersona, setGlobalPersona] = useState('');
   const [personaSaving, setPersonaSaving] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
@@ -519,6 +520,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     },
   ];
 
+  const allTabs = tabCategories.flatMap(g => g.tabs.map(tab => ({ ...tab, groupName: g.groupName })));
+  const currentTab = allTabs.find(tab => tab.id === activeTab) || allTabs[0];
+  const CurrentTabIcon = currentTab?.icon || Activity;
+
   return (
     <>
       <div
@@ -603,11 +608,86 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       {/* Main Content Area: Horizontal tabs on mobile, Vertical categorized sidebar on desktop */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         
-        {/* Categorized Navigation Tabs */}
-        <div className="w-full md:w-64 border-b md:border-b-0 md:border-r border-line/80 bg-surface p-2.5 sm:p-3.5 flex flex-row md:flex-col gap-2 md:gap-3 overflow-x-auto md:overflow-x-visible shrink-0 overscroll-contain">
+        {/* Mobile Navigation: Compact 1-Line Docked Dropdown (md:hidden) */}
+        <div className="md:hidden w-full border-b border-line/70 bg-surface/90 backdrop-blur-md px-3 py-2 shrink-0 relative z-30">
+          <button
+            type="button"
+            onClick={() => setIsMobileNavOpen(prev => !prev)}
+            className="w-full h-9 flex items-center justify-between gap-2 px-3 bg-surface-raised hover:bg-surface-hover border border-line/80 rounded-xl text-xs font-semibold text-content transition-all active:scale-[0.99] cursor-pointer shadow-2xs"
+            aria-expanded={isMobileNavOpen}
+            aria-haspopup="listbox"
+          >
+            <div className="flex items-center gap-2 min-w-0 truncate">
+              <CurrentTabIcon className="w-4 h-4 text-accent shrink-0" />
+              <span className="text-xs font-bold text-content truncate">
+                {currentTab?.label}
+              </span>
+              <span className="text-[10px] text-content-subtle font-medium truncate hidden xs:inline">
+                • {currentTab?.groupName}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-accent pl-1.5 shrink-0 text-[11px] font-semibold">
+              <span>{language === 'en' ? 'Switch' : 'Pilih'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileNavOpen ? 'rotate-180' : ''}`} />
+            </div>
+          </button>
+
+          {/* Dropdown Popup Menu */}
+          {isMobileNavOpen && (
+            <>
+              <div 
+                className="fixed inset-0 z-30 bg-black/40 backdrop-blur-xs" 
+                onClick={() => setIsMobileNavOpen(false)} 
+              />
+              <div className="absolute left-2.5 right-2.5 top-[calc(100%+6px)] z-40 bg-surface-raised border border-line rounded-2xl shadow-xl p-2 max-h-[60vh] overflow-y-auto space-y-2 animate-fadeIn">
+                {tabCategories.map((group) => (
+                  <div key={group.groupName} className="space-y-1">
+                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] font-extrabold tracking-wider text-content-subtle uppercase flex items-center gap-2">
+                      <span>{group.groupName}</span>
+                      <div className="h-px flex-1 bg-line/60" />
+                    </div>
+                    <div className="grid grid-cols-1 gap-1">
+                      {group.tabs.map((tab) => {
+                        const Icon = tab.icon;
+                        const isActive = activeTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setActiveTab(tab.id);
+                              if (tab.id !== 'audit') setSelectedAuditSession(null);
+                              setIsMobileNavOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                              isActive
+                                ? 'bg-accent/15 text-accent font-bold border border-accent/30'
+                                : 'text-content hover:bg-surface-hover active:bg-surface-sunken'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-accent' : 'text-content-subtle'}`} />
+                              <span className="truncate">{tab.label}</span>
+                            </div>
+                            {isActive && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Desktop Categorized Navigation Sidebar (hidden md:flex) */}
+        <div className="hidden md:flex w-64 border-r border-line/80 bg-surface p-3.5 flex-col gap-3 overflow-y-auto shrink-0">
           {tabCategories.map((group) => (
-            <div key={group.groupName} className="flex flex-row md:flex-col gap-1 shrink-0 md:shrink">
-              <div className="hidden md:flex items-center gap-2 px-3 pt-2 pb-1">
+            <div key={group.groupName} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2 px-3 pt-2 pb-1">
                 <span className="text-[10px] font-bold tracking-wider text-content-subtle uppercase">
                   {group.groupName}
                 </span>
@@ -623,7 +703,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       setActiveTab(tab.id);
                       if (tab.id !== 'audit') setSelectedAuditSession(null);
                     }}
-                    className={`flex items-center gap-2.5 px-3 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all shrink-0 md:shrink cursor-pointer group ${
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer group ${
                       isActive
                         ? 'bg-accent/15 text-accent font-bold border border-accent/35 shadow-xs shadow-accent/10'
                         : 'text-content-muted hover:bg-surface-hover hover:text-content border border-transparent'

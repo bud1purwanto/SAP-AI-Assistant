@@ -328,7 +328,6 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
         terkumpul = ""
         terkirim = ""
         is_tool_call = False
-        BUFFER_THRESHOLD = 80  # Tahan ~80 karakter awal untuk memastikan model tidak memanggil tool
 
         try:
             async for chunk in model.astream(msgs):
@@ -350,9 +349,11 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
                     continue
                 terkumpul += potongan
 
-                # Jangan langsung kirim ke antarmuka bila teks masih di bawah batas buffer,
-                # agar kalimat pengantar sebelum pemanggilan tool tidak membocorkan bubble chat terpotong.
-                if len(terkumpul) < BUFFER_THRESHOLD:
+                # Jalur cepat: selama tidak ada penanda penalaran yang perlu dibersihkan,
+                # potongan diteruskan apa adanya agar jawaban mengalir bertahap secara alami.
+                if not _PERLU_BERSIH.search(terkumpul):
+                    terkirim += potongan
+                    await emit_token(potongan)
                     continue
 
                 # Tahan selama blok penalaran belum ditutup.
@@ -1404,7 +1405,12 @@ async def generate_chat_suggestions(
         or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
         or DEFAULT_SUGGESTIONS["id"]["default"]
     )
-    fallback_list = random.sample(pool, min(len(pool), 3)) if len(pool) >= 3 else pool
+    if pool and len(pool) >= 3:
+        first = pool[0]
+        rest = pool[1:]
+        fallback_list = [first] + random.sample(rest, 2)
+    else:
+        fallback_list = pool
 
     try:
         from database import get_system_config

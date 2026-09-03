@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Check, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -154,6 +154,26 @@ const ChatLayout = () => {
     title: '',
     isLoading: false,
   });
+
+  // State dan ref untuk custom server selector dropdown
+  const [isServerDropdownOpen, setIsServerDropdownOpen] = useState(false);
+  const serverDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (serverDropdownRef.current && !serverDropdownRef.current.contains(event.target)) {
+        setIsServerDropdownOpen(false);
+      }
+    };
+    if (isServerDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [isServerDropdownOpen]);
 
   const { theme, cycleTheme } = useTheme();
   // Ponsel dalam posisi landscape: lebarnya lolos breakpoint `md`, tetapi
@@ -1345,8 +1365,8 @@ const ChatLayout = () => {
       {/* ================= AREA CHAT UTAMA ================= */}
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
-        <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-10 shrink-0 max-w-full">
-          <div className="app-header-row h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full overflow-hidden">
+        <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-20 shrink-0 max-w-full">
+          <div className="app-header-row h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
@@ -1360,25 +1380,90 @@ const ChatLayout = () => {
                 {t('nav.sapSystem')}
               </label>
               {sapSubServers.length > 0 ? (
-                <select
-                  id="sap-target"
-                  value={activeServer}
-                  onChange={(e) => handleServerChange(e.target.value)}
-                  className={`bg-surface-sunken text-xs sm:text-sm font-medium py-1.5 sm:py-2 px-2.5 sm:px-3 rounded-xl border cursor-pointer max-w-[13rem] sm:max-w-[17rem] truncate transition-colors ${
-                    isProductionTarget ? 'border-danger text-danger font-semibold' : 'border-line text-content'
-                  }`}
-                  aria-label={t('nav.serverSelectAria')}
-                >
-                  {sapSubServers.map((srv) => (
-                    <option
-                      key={srv.number ?? aliasOf(srv)}
-                      value={`sap:${aliasOf(srv)}`}
-                      className="bg-surface-raised text-content py-1"
-                    >
-                      {srv.name}{srv.production_warning ? ` — ${t('nav.productionWarning')}` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative min-w-0 max-w-[10rem] xs:max-w-[12.5rem] sm:max-w-[17rem]" ref={serverDropdownRef}>
+                  <button
+                    id="sap-target"
+                    type="button"
+                    onClick={() => setIsServerDropdownOpen((prev) => !prev)}
+                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
+                      isProductionTarget
+                        ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                        : 'border-line text-content hover:border-line/80'
+                    }`}
+                    aria-label={t('nav.serverSelectAria')}
+                    aria-expanded={isServerDropdownOpen}
+                    aria-haspopup="listbox"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                      <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                    </div>
+                    {isProductionTarget && (
+                      <span className="hidden xs:inline-block px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 shrink-0 leading-tight">
+                        PRD
+                      </span>
+                    )}
+                    <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                  </button>
+
+                  {/* Custom Dropdown Menu */}
+                  {isServerDropdownOpen && (
+                    <div className="absolute left-0 top-[calc(100%+6px)] w-64 sm:w-72 bg-surface-raised border border-line rounded-2xl shadow-2xl p-1.5 z-50 animate-fadeIn backdrop-blur-xl">
+                      <div className="px-2.5 py-1.5 border-b border-line/60 mb-1 flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                          {t('nav.sapSystem')}
+                        </span>
+                        <span className="text-[10px] font-mono text-content-muted">
+                          {sapSubServers.length} Server
+                        </span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto space-y-0.5 overscroll-contain">
+                        {sapSubServers.map((srv) => {
+                          const srvKey = `sap:${aliasOf(srv)}`;
+                          const isSelected = activeServer === srvKey;
+                          const isPrd = Boolean(
+                            srv.production_warning ||
+                            srv.name?.toLowerCase()?.includes('prod') ||
+                            srv.sid?.toLowerCase()?.includes('prt') ||
+                            srv.sid?.toLowerCase()?.includes('trp')
+                          );
+                          return (
+                            <button
+                              key={srv.number ?? aliasOf(srv)}
+                              type="button"
+                              onClick={() => {
+                                handleServerChange(srvKey);
+                                setIsServerDropdownOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all text-left cursor-pointer ${
+                                isSelected
+                                  ? isPrd
+                                    ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                    : 'bg-accent/15 text-accent font-bold border border-accent/30'
+                                  : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 truncate">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
+                                <span className="truncate">{srv.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {isPrd && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                    {t('nav.productionWarning')}
+                                  </span>
+                                )}
+                                {isSelected && (
+                                  <Check className={`w-4 h-4 shrink-0 ${isPrd ? 'text-danger' : 'text-accent'}`} />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <span className="text-xs sm:text-sm text-content-subtle">{t('nav.connecting')}</span>
               )}
