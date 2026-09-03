@@ -673,100 +673,98 @@ export default function AdminAccessControl({
         <div className="space-y-4">
           {/* VIEW A: MATRIKS TABEL (GRID VIEW) */}
           {roleViewMode === 'grid' && (
-            <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[850px]">
-                  <thead>
-                    <tr className="border-b border-line bg-surface-sunken/80 backdrop-blur-md">
-                      <th className="py-4 px-4 w-[340px] min-w-[320px] text-xs font-bold uppercase tracking-wider text-content-subtle">
-                        {t('access.resource')}
-                      </th>
-                      {ALL_ROLES.map((r) => {
-                        const Icon = r.icon;
-                        const isSuper = r.role === 'superadmin';
-                        return (
-                          <th key={r.role} className="py-3 px-3 text-center border-l border-line/40">
-                            <div className="flex flex-col items-center">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass}`}>
-                                <Icon className="w-3.5 h-3.5" />
-                                <span>{r.label}</span>
-                              </span>
-                              <span className="text-[10px] text-content-subtle font-normal mt-1 max-w-[130px] truncate">
-                                {r.desc}
-                              </span>
+            <div className="relative overflow-auto max-h-[calc(100vh-270px)] min-h-[420px] rounded-2xl border border-line bg-surface shadow-sm select-none">
+              <table className="w-full text-left border-separate border-spacing-0 min-w-[1100px]">
+                <thead className="sticky top-0 z-20 shadow-xs">
+                  <tr>
+                    <th className="sticky top-0 left-0 z-30 py-4 px-4 w-[340px] min-w-[320px] text-xs font-bold uppercase tracking-wider text-content bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
+                      {t('access.resource')}
+                    </th>
+                    {ALL_ROLES.map((r) => {
+                      const Icon = r.icon;
+                      const isSuper = r.role === 'superadmin';
+                      return (
+                        <th key={r.role} className="sticky top-0 z-20 py-3 px-3 text-center border-l border-b border-line/40 bg-surface-sunken">
+                          <div className="flex flex-col items-center">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass}`}>
+                              <Icon className="w-3.5 h-3.5" />
+                              <span>{r.label}</span>
+                            </span>
+                            <span className="text-[10px] text-content-subtle font-normal mt-1 max-w-[130px] truncate">
+                              {r.desc}
+                            </span>
 
-                              {/* Quick Action buttons */}
-                              {!isSuper && (
-                                <div className="flex items-center gap-1.5 mt-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleQuickGrantAllRead(r.role)}
-                                    className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all cursor-pointer"
-                                    title={`Beri hak baca ke semua server untuk ${r.label}`}
-                                  >
-                                    All Read
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleQuickResetRole(r.role)}
-                                    className="px-2 py-0.5 rounded text-[9px] font-bold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line transition-all cursor-pointer"
-                                    title={`Reset perizinan ${r.label}`}
-                                  >
-                                    Reset
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line/60 text-xs">
-                    {/* SECTION: SAP ERP */}
-                    <tr className="bg-surface-sunken/60">
-                      <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-y border-line/60">
-                        <div className="flex items-center gap-2 font-bold text-accent text-xs">
-                          <Server className="w-4 h-4 text-accent" />
-                          <span>SAP ERP Systems</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-accent/15 text-accent border border-accent/30">
-                            {sapResources.length} Server
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                    {sapResources.map((res) => renderModernRoleRow(res))}
+                            {/* Quick Action buttons */}
+                            {!isSuper && (
+                              <div className="flex items-center gap-1.5 mt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickGrantAllRead(r.role)}
+                                  className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all cursor-pointer"
+                                  title={`Beri hak baca ke semua server untuk ${r.label}`}
+                                >
+                                  All Read
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickResetRole(r.role)}
+                                  className="px-2 py-0.5 rounded text-[9px] font-bold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line transition-all cursor-pointer"
+                                  title={`Reset perizinan ${r.label}`}
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody className="text-xs">
+                  {/* SECTION: SAP ERP */}
+                  <tr className="bg-surface-sunken/90">
+                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                      <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-accent text-xs">
+                        <Server className="w-4 h-4 text-accent" />
+                        <span>SAP ERP Systems</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-accent/15 text-accent border border-accent/30">
+                          {sapResources.length} Server
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {sapResources.map((res) => renderModernRoleRow(res))}
 
-                    {/* SECTION: SQL DATABASE */}
-                    <tr className="bg-surface-sunken/60">
-                      <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-y border-line/60">
-                        <div className="flex items-center gap-2 font-bold text-blue-400 text-xs">
-                          <Database className="w-4 h-4 text-blue-400" />
-                          <span>SQL Database Instances</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                            {sqlResources.length} Database
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                    {sqlResources.map((res) => renderModernRoleRow(res))}
+                  {/* SECTION: SQL DATABASE */}
+                  <tr className="bg-surface-sunken/90">
+                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                      <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-blue-400 text-xs">
+                        <Database className="w-4 h-4 text-blue-400" />
+                        <span>SQL Database Instances</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                          {sqlResources.length} Database
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {sqlResources.map((res) => renderModernRoleRow(res))}
 
-                    {/* SECTION: COMPANION SERVICES */}
-                    <tr className="bg-surface-sunken/60">
-                      <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-y border-line/60">
-                        <div className="flex items-center gap-2 font-bold text-amber-400 text-xs">
-                          <Layers className="w-4 h-4 text-amber-400" />
-                          <span>Companion Integrations</span>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                            {serviceResources.length} Layanan
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                    {serviceResources.map((res) => renderModernRoleRow(res))}
-                  </tbody>
-                </table>
-              </div>
+                  {/* SECTION: COMPANION SERVICES */}
+                  <tr className="bg-surface-sunken/90">
+                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                      <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-amber-400 text-xs">
+                        <Layers className="w-4 h-4 text-amber-400" />
+                        <span>Companion Integrations</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                          {serviceResources.length} Layanan
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                  {serviceResources.map((res) => renderModernRoleRow(res))}
+                </tbody>
+              </table>
             </div>
           )}
 
@@ -1011,33 +1009,32 @@ export default function AdminAccessControl({
                 </div>
 
                 {/* Matrix Table */}
-                <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-line bg-surface-sunken/80 text-content-subtle text-[11px] font-bold uppercase tracking-wider">
-                          <th className="py-3 px-4 w-[280px] min-w-[260px]">Sumber Daya</th>
-                          <th className="py-3 px-3">Status Izin (Tri-State)</th>
-                          <th className="py-3 px-3 text-center">Hak Tulis (Write)</th>
-                          <th className="py-3 px-3">Berlaku Hingga</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line/60">
-                        {userResources.map((res) => {
-                          const isProd = res.is_production;
-                          return (
-                            <tr key={res.resource_key} className="hover:bg-surface-hover/50 transition-colors">
-                              <td className="py-3 px-4 w-[280px] min-w-[260px]">
-                                <div className="font-semibold text-content flex items-center gap-2">
-                                  <span>{res.label || res.resource_key}</span>
-                                  {isProd && (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                      PRD
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[10px] text-content-subtle font-mono">{res.resource_key}</span>
-                              </td>
+                <div className="relative overflow-auto max-h-[calc(100vh-320px)] min-h-[350px] rounded-2xl border border-line bg-surface shadow-xs">
+                  <table className="w-full text-left border-separate border-spacing-0 text-xs min-w-[700px]">
+                    <thead className="sticky top-0 z-20 shadow-xs">
+                      <tr className="bg-surface-sunken text-content-subtle text-[11px] font-bold uppercase tracking-wider">
+                        <th className="sticky top-0 left-0 z-30 py-3 px-4 w-[280px] min-w-[260px] bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">Sumber Daya</th>
+                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">Status Izin (Tri-State)</th>
+                        <th className="sticky top-0 py-3 px-3 text-center bg-surface-sunken border-b border-line">Hak Tulis (Write)</th>
+                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">Berlaku Hingga</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line/60">
+                      {userResources.map((res) => {
+                        const isProd = res.is_production;
+                        return (
+                          <tr key={res.resource_key} className="hover:bg-surface-hover/50 transition-colors group">
+                            <td className="sticky left-0 z-10 py-3 px-4 w-[280px] min-w-[260px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
+                              <div className="font-semibold text-content flex items-center gap-2">
+                                <span>{res.label || res.resource_key}</span>
+                                {isProd && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                    PRD
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-content-subtle font-mono">{res.resource_key}</span>
+                            </td>
 
                               {/* Tri-state buttons */}
                               <td className="py-3 px-3">
@@ -1112,7 +1109,6 @@ export default function AdminAccessControl({
                     </table>
                   </div>
                 </div>
-              </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-16 text-center rounded-2xl border border-line bg-surface-sunken/40">
                 <div className="p-3 rounded-2xl bg-surface border border-line text-content-subtle mb-3">
@@ -1407,8 +1403,8 @@ export default function AdminAccessControl({
   function renderModernRoleRow(res) {
     const isProd = res.is_production;
     return (
-      <tr key={res.resource_key} className="hover:bg-surface-hover/60 transition-colors">
-        <td className="py-3 px-4 w-[340px] min-w-[320px]">
+      <tr key={res.resource_key} className="hover:bg-surface-hover/60 transition-colors group">
+        <td className="sticky left-0 z-10 py-3 px-4 w-[340px] min-w-[320px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
           <div className="flex items-center gap-2">
             <span className="font-bold text-xs text-content whitespace-nowrap">{res.label || res.resource_key}</span>
             {isProd && (
@@ -1438,7 +1434,7 @@ export default function AdminAccessControl({
 
           if (isSuper) {
             return (
-              <td key={r.role} className="py-3 px-3 text-center border-l border-line/40 bg-purple-500/5">
+              <td key={r.role} className="py-3 px-3 text-center border-l border-b border-line/40 bg-purple-500/5">
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-purple-300 bg-purple-500/15 border border-purple-500/30">
                   <ShieldCheck className="w-3 h-3" /> Full Bypass
                 </span>
@@ -1450,7 +1446,6 @@ export default function AdminAccessControl({
           const isWrite = Boolean(current.can_write);
 
           return (
-            <td key={r.role} className="py-3 px-2 text-center border-l border-line/40">
               <div className="flex items-center justify-center gap-1.5">
                 {/* Read Button */}
                 <button
