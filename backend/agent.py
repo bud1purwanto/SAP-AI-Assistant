@@ -456,10 +456,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     tool_map = {} # map dari openai_tool_name ke (server_name, mcp_tool_name)
     
     can_write_res = True
+    can_write_email = True
+    can_write_rag = True
+    u_perms = {}
     if access_control.is_access_control_enabled():
         can_key = access_control.canonical_resource_key(target_srv)
         u_perms = access_control.resolve_access(username, roles_list)
         can_write_res = bool(u_perms.get(can_key, {}).get("can_write"))
+        can_write_email = bool(u_perms.get("service:email", {}).get("can_write"))
+        can_write_rag = bool(u_perms.get("service:rag", {}).get("can_write"))
 
     boleh_ubah = (roles_str_primary in PERAN_BOLEH_UBAH_PROGRAM) and can_write_res
     tool_ditolak = []
@@ -468,6 +473,30 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         server = item["server"]
         t = item["tool"]
         tool_name = f"{server}__{t.name}".replace("-", "_")
+
+        # Cek otorisasi konektor & hak tulis
+        if access_control.is_access_control_enabled():
+            if server == "email" and "email" not in allowed_conn:
+                tool_ditolak.append(t.name)
+                continue
+            if server in ("sql", "database") and "sql" not in allowed_conn:
+                tool_ditolak.append(t.name)
+                continue
+            if server == "rag" and "rag" not in allowed_conn:
+                tool_ditolak.append(t.name)
+                continue
+            if server == "sap" and "sap" not in allowed_conn:
+                tool_ditolak.append(t.name)
+                continue
+
+            # Tool mutasi/tulis email
+            if server == "email" and not can_write_email and t.name in ("send_email", "restore_email_to_inbox"):
+                tool_ditolak.append(t.name)
+                continue
+            # Tool mutasi RAG
+            if server == "rag" and not can_write_rag and t.name in ("draft_action", "confirm_action"):
+                tool_ditolak.append(t.name)
+                continue
 
         # Tool pengubah program tidak sekadar disembunyikan dari prompt: ia
         # tidak dibuatkan definisinya sama sekali, sehingga model tidak punya
@@ -620,8 +649,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"tampilkan baris tersebut.\n"
         )
 
+    forbidden_services = []
+    if access_control.is_access_control_enabled():
+        if "email" not in allowed_conn:
+            forbidden_services.append("Layanan Email & Mail Archive")
+        if "sql" not in allowed_conn:
+            forbidden_services.append("Layanan SQL Database")
+        if "rag" not in allowed_conn:
+            forbidden_services.append("Layanan Dokumen RAG")
+        if "sap" not in allowed_conn:
+            forbidden_services.append("Layanan SAP ERP")
+
+    forbidden_instruction = ""
+    if forbidden_services:
+        forbidden_instruction = (
+            f"## KEBIJAKAN AKSES PERAN PENGGUNA (SANGAT KETAT / WAJIB DIPATUHI):\n"
+            f"Peran pengguna saat ini ({username}, peran: {', '.join(roles_list)}) **TIDAK MEMILIKI HAK AKSES** ke: **{', '.join(forbidden_services)}**.\n"
+            f"- Jika pengguna meminta informasi, membaca, mencari, atau melakukan tindakan apa pun terkait layanan yang dilarang di atas "
+            f"(misalnya: meminta membaca/mencari email ketika Layanan Email dilarang, atau meminta data SQL/SAP ketika layanan tersebut dilarang), Anda **WAJIB MENOLAK SECARA TEGAS DAN SOPAN**.\n"
+            f"- Sampaikan dengan jelas bahwa peran akun pengguna saat ini ({', '.join(roles_list)}) tidak memiliki izin akses ke layanan tersebut sesuai kebijakan kontrol akses sistem perusahaan.\n"
+            f"- DILARANG KERAS berhalusinasi, mengarang isi pesan/email/data palsu, atau berpura-pura mengeceknya dari sumber lain.\n\n"
+        )
+
     system_prompt = (
         f"Anda adalah SAP & Enterprise Data AI Assistant: asisten kerja serbaguna untuk ekosistem SAP dan Database Enterprise.\n\n"
+        f"{forbidden_instruction}"
 
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
@@ -965,6 +1017,24 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
+                    if access_control.is_access_control_enabled():
+                        if server_name == "email" and "email" not in allowed_conn:
+                            access_control.log_audit(username, "service", "service:email", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (email dilarang)")
+                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP Email / Mail Archive. Jangan memanggil tool ini lagi."))
+                            continue
+                        if server_name in ("sql", "database") and "sql" not in allowed_conn:
+                            access_control.log_audit(username, "sql", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SQL dilarang)")
+                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP SQL Database. Jangan memanggil tool ini lagi."))
+                            continue
+                        if server_name == "rag" and "rag" not in allowed_conn:
+                            access_control.log_audit(username, "service", "service:rag", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (RAG dilarang)")
+                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG. Jangan memanggil tool ini lagi."))
+                            continue
+                        if server_name == "sap" and "sap" not in allowed_conn:
+                            access_control.log_audit(username, "sap", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SAP dilarang)")
+                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP. Jangan memanggil tool ini lagi."))
+                            continue
+
                     # Yang mengalir tadi adalah panggilan tool berbentuk teks,
                     # bukan jawaban untuk pengguna.
                     await reset_stream()
@@ -1043,6 +1113,93 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             mapping = tool_map[tool_name]
             server_name = mapping["server"]
             mcp_name = mapping["mcp_name"]
+
+            # Runtime Access Control Enforcement
+            if access_control.is_access_control_enabled():
+                if server_name == "email" and "email" not in allowed_conn:
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="service",
+                        target_id="service:email",
+                        action="DENY_TOOL_CALL",
+                        detail=f"Percobaan memanggil tool {mcp_name} tanpa izin email",
+                    )
+                    messages.append(ToolMessage(
+                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP Email / Mail Archive.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                if server_name in ("sql", "database") and "sql" not in allowed_conn:
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="sql",
+                        target_id=target_srv,
+                        action="DENY_TOOL_CALL",
+                        detail=f"Percobaan memanggil tool SQL {mcp_name} tanpa izin SQL",
+                    )
+                    messages.append(ToolMessage(
+                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP SQL Database.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                if server_name == "rag" and "rag" not in allowed_conn:
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="service",
+                        target_id="service:rag",
+                        action="DENY_TOOL_CALL",
+                        detail=f"Percobaan memanggil tool RAG {mcp_name} tanpa izin RAG",
+                    )
+                    messages.append(ToolMessage(
+                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                if server_name == "sap" and "sap" not in allowed_conn:
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="sap",
+                        target_id=target_srv,
+                        action="DENY_TOOL_CALL",
+                        detail=f"Percobaan memanggil tool SAP {mcp_name} tanpa izin SAP",
+                    )
+                    messages.append(ToolMessage(
+                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                # Pemeriksaan Write Izin
+                if server_name == "email" and not can_write_email and mcp_name in ("send_email", "restore_email_to_inbox"):
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="service",
+                        target_id="service:email",
+                        action="DENY_WRITE_TOOL",
+                        detail=f"Percobaan memanggil tool tulis email {mcp_name} pada mode read-only",
+                    )
+                    messages.append(ToolMessage(
+                        content="Akses Ditolak: Anda hanya memiliki izin baca (read-only) untuk layanan Email. Mengirim atau memodifikasi email tidak diizinkan.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                if server_name == "sap" and not can_write_res and (tool_mengubah_program(mcp_name) or mcp_manager.MCPManager._is_mutation_bapi(tool_args.get("function_name", ""))):
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="sap",
+                        target_id=target_srv,
+                        action="DENY_WRITE_TOOL",
+                        detail=f"Percobaan memanggil tool modifikasi SAP {mcp_name} pada mode read-only",
+                    )
+                    messages.append(ToolMessage(
+                        content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
             
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)

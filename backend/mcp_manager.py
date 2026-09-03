@@ -141,6 +141,28 @@ class StreamableHttpClient:
         return MCPCallResult(content=content_items, is_error=is_error)
 
 
+EMAIL_TOOL_NAMES = {
+    "search_emails",
+    "read_email",
+    "get_calendar",
+    "get_email_image",
+    "send_email",
+    "search_archive",
+    "read_archived_email",
+    "restore_email_to_inbox",
+}
+
+
+def is_email_tool(tool_name: str) -> bool:
+    """Mendeteksi apakah tool MCP termasuk dalam kapabilitas email/mail archive/exchange."""
+    if not tool_name:
+        return False
+    name = str(tool_name).lower()
+    if name in EMAIL_TOOL_NAMES:
+        return True
+    return any(kw in name for kw in ("email", "mail", "calendar", "inbox", "archive"))
+
+
 class MCPManager:
     def __init__(self):
         self.clients: dict[str, StreamableHttpClient] = {}
@@ -465,20 +487,27 @@ class MCPManager:
                 except Exception as e:
                     logger.error(f"Error fetching SAP tools: {e}")
 
-            # RAG Tools
-            if is_rag:
+            # RAG & Email Tools
+            if is_rag or is_email:
                 try:
                     rag_client = self.get_client("rag")
                     rag_tools = await rag_client.list_tools(http_client)
                     for t in rag_tools:
                         if t.name.startswith("sql_"):
                             continue
-                        # Filter email tools bila konektor email dilarang
-                        if not is_email and any(kw in t.name for kw in ("email", "send_email", "read_email", "search_email")):
-                            continue
-                        tools.append({"server": "rag", "tool": t})
+                        tool_is_email = is_email_tool(t.name)
+                        if tool_is_email:
+                            if not is_email:
+                                continue  # Email connector dilarang untuk peran ini
+                            tools.append({"server": "email", "tool": t})
+                        else:
+                            if not is_rag:
+                                continue  # RAG connector dilarang untuk peran ini
+                            if not is_sap and t.name.startswith("sap_"):
+                                continue
+                            tools.append({"server": "rag", "tool": t})
                 except Exception as e:
-                    logger.error(f"Error fetching RAG tools: {e}")
+                    logger.error(f"Error fetching RAG/Email tools: {e}")
 
             # SQL Tools
             if is_sql:
@@ -531,7 +560,8 @@ class MCPManager:
                     return await self._handle_sap_call(http_client, client, tool_name, final_args)
 
         async with httpx.AsyncClient() as http_client:
-            client = self.get_client(server_name)
+            client_target = "rag" if server_name == "email" else server_name
+            client = self.get_client(client_target)
             if server_name == "sap":
                 return await self._handle_sap_call(http_client, client, tool_name, final_args)
             if server_name == "sql" and sap_target:

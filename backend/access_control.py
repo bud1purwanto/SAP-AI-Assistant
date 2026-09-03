@@ -73,6 +73,17 @@ SAP_ALIAS_CANONICAL = {
     "sandbox new company": "sap:sandbox-new",
 }
 
+SQL_ALIAS_CANONICAL = {
+    "dev-224": "sql:dev-224",
+    "dev-223": "sql:dev-223",
+    "sql-itinv": "sql:sql-itinv",
+    "itinv": "sql:sql-itinv",
+    "70": "sql:sql-itinv",
+    "it inventory": "sql:sql-itinv",
+    "olap baru": "sql:dev-224",
+    "olap lama": "sql:dev-223",
+}
+
 
 def clear_access_cache():
     """Mengosongkan cache resolusi izin."""
@@ -125,11 +136,18 @@ def canonical_resource_key(raw: str) -> str:
         return SAP_ALIAS_CANONICAL.get(sub, f"sap:{sub}")
     if s.startswith("sql:"):
         sub = s.split(":", 1)[1]
-        return f"sql:{sub}"
+        return SQL_ALIAS_CANONICAL.get(sub, f"sql:{sub}")
 
     # Bila tidak ada prefix
     if s in SAP_ALIAS_CANONICAL:
         return SAP_ALIAS_CANONICAL[s]
+    if s in SQL_ALIAS_CANONICAL:
+        return SQL_ALIAS_CANONICAL[s]
+
+    if s in ("sql", "sql:"):
+        return "sql"
+    if s in ("sap", "sap:"):
+        return "sap"
 
     return f"sap:{s}"
 
@@ -382,8 +400,29 @@ def assert_can_use(username: str, role: Union[str, List[str], None], active_serv
     if "superadmin" in roles:
         return  # Superadmin selalu berhak
 
-    can_key = canonical_resource_key(active_server)
     user_access = resolve_access(username, roles)
+
+    # Bila active_server adalah kategori umum ("sap" atau "sql")
+    raw_lower = (active_server or "").strip().lower()
+    if raw_lower in ("sap", "sap:"):
+        has_any_sap = any(rk.startswith("sap:") and perm.get("allowed") for rk, perm in user_access.items())
+        if not has_any_sap:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Akses ditolak: Peran akun Anda tidak memiliki izin untuk mengakses server SAP apa pun.",
+            )
+        return
+
+    if raw_lower in ("sql", "sql:"):
+        has_any_sql = any(rk.startswith("sql:") and perm.get("allowed") for rk, perm in user_access.items())
+        if not has_any_sql:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Akses ditolak: Peran akun Anda tidak memiliki izin untuk mengakses server SQL apa pun.",
+            )
+        return
+
+    can_key = canonical_resource_key(active_server)
 
     perm = user_access.get(can_key)
     if not perm or not perm.get("allowed"):

@@ -115,25 +115,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   // AI & MCP Config State
   const [nineRouterEnabled, setNineRouterEnabled] = useState(true);
-  const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('http://192.168.88.83:20128/v1');
-  const [nineRouterModel, setNineRouterModel] = useState('ag/gemini-3.7-flash-medium');
+  const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('');
+  const [nineRouterModel, setNineRouterModel] = useState('');
   const [nineRouterApiKey, setNineRouterApiKey] = useState('');
 
   const [openrouterEnabled, setOpenrouterEnabled] = useState(false);
-  const [openrouterModel, setOpenrouterModel] = useState('openrouter/auto');
-  const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('openrouter/free');
+  const [openrouterModel, setOpenrouterModel] = useState('');
+  const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('');
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
 
   const [mcpSapConfig, setMcpSapConfig] = useState('');
   const [mcpRagConfig, setMcpRagConfig] = useState('');
   const [mcpSqlConfig, setMcpSqlConfig] = useState('');
   const [mcpSaving, setMcpSaving] = useState(false);
+  const [configLoading, setConfigLoading] = useState(false);
+
+  // Stats State
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  // Users State
+  const [usersLoading, setUsersLoading] = useState(false);
+
+  // Skills Loading State
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   // Audit Logs State
   const [auditSessions, setAuditSessions] = useState([]);
   const [selectedAuditSession, setSelectedAuditSession] = useState(null);
   const [auditMessages, setAuditMessages] = useState([]);
   const [auditSearch, setAuditSearch] = useState('');
+  const [auditSessionsLoading, setAuditSessionsLoading] = useState(false);
+  const [auditMessagesLoading, setAuditMessagesLoading] = useState(false);
 
   // Kuota Token State
   const [kuota, setKuota] = useState(null);
@@ -142,10 +154,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
   const fetchStats = async () => {
+    setStatsLoading(true);
     try {
       setStats(await api.adminStats());
     } catch (err) {
       console.error("Gagal load stats:", err);
+    } finally {
+      setStatsLoading(false);
     }
   };
 
@@ -162,56 +177,69 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   };
 
   const fetchUsers = async () => {
+    setUsersLoading(true);
     try {
       setUsersList(await api.adminUsers());
     } catch (err) {
       console.error("Gagal load users:", err);
+    } finally {
+      setUsersLoading(false);
     }
   };
 
   const fetchConfig = async () => {
+    setConfigLoading(true);
     try {
       const data = await api.getConfig();
-      {
-        setGlobalPersona(data.global_assistant_persona || '');
-        setMcpSapConfig(data.mcp_sap_config_json || '');
-        setMcpRagConfig(data.mcp_rag_config_json || '');
-        setMcpSqlConfig(data.mcp_sql_config_json || data.mcp_email_config_json || '');
-        setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
-        setNineRouterBaseUrl(data.nine_router_base_url || 'http://192.168.88.83:20128/v1');
-        setNineRouterModel(data.nine_router_model || 'ag/gemini-3.7-flash-medium');
-        setNineRouterApiKey(data.nine_router_api_key || '');
-        setOpenrouterEnabled(data.openrouter_enabled !== undefined ? data.openrouter_enabled : false);
-        setOpenrouterModel(data.openrouter_model || 'openrouter/auto');
-        setOpenrouterFallbackModel(data.openrouter_fallback_model || 'openrouter/free');
-        setOpenrouterApiKey(data.openrouter_api_key || '');
-      }
+      setGlobalPersona(data.global_assistant_persona || '');
+      setMcpSapConfig(data.mcp_sap_config_json || '');
+      setMcpRagConfig(data.mcp_rag_config_json || '');
+      setMcpSqlConfig(data.mcp_sql_config_json || data.mcp_email_config_json || '');
+      setNineRouterEnabled(data.nine_router_enabled !== undefined ? data.nine_router_enabled : true);
+      setNineRouterBaseUrl(data.nine_router_base_url || '');
+      setNineRouterModel(data.nine_router_model || '');
+      setNineRouterApiKey(data.nine_router_api_key || '');
+      setOpenrouterEnabled(data.openrouter_enabled !== undefined ? data.openrouter_enabled : false);
+      setOpenrouterModel(data.openrouter_model || '');
+      setOpenrouterFallbackModel(data.openrouter_fallback_model || '');
+      setOpenrouterApiKey(data.openrouter_api_key || '');
     } catch (err) {
       console.error("Gagal load config:", err);
+    } finally {
+      setConfigLoading(false);
     }
   };
 
   const fetchSkills = async () => {
+    setSkillsLoading(true);
     try {
       setSkillsList(await api.adminSkills());
     } catch (err) {
       console.error("Gagal load skills:", err);
+    } finally {
+      setSkillsLoading(false);
     }
   };
 
   const fetchAuditSessions = async () => {
+    setAuditSessionsLoading(true);
     try {
       setAuditSessions(await api.adminSessions(100));
     } catch (err) {
       console.error("Gagal load audit sessions:", err);
+    } finally {
+      setAuditSessionsLoading(false);
     }
   };
 
   const fetchAuditMessages = async (sessionId) => {
+    setAuditMessagesLoading(true);
     try {
       setAuditMessages(await api.adminSessionMessages(sessionId));
     } catch (err) {
       console.error("Gagal load audit messages:", err);
+    } finally {
+      setAuditMessagesLoading(false);
     }
   };
 
@@ -599,6 +627,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const currentTab = allTabs.find(tab => tab.id === activeTab) || allTabs[0];
   const CurrentTabIcon = currentTab?.icon || Activity;
 
+  const isCurrentTabLoading =
+    (activeTab === 'overview' && statsLoading) ||
+    (activeTab === 'users' && usersLoading) ||
+    (activeTab === 'audit' && auditSessionsLoading) ||
+    (activeTab === 'feedback' && feedbackLoading) ||
+    (activeTab === 'kuota' && kuotaLoading) ||
+    (activeTab === 'skills' && skillsLoading) ||
+    (activeTab === 'persona' && configLoading) ||
+    (activeTab === 'mcp' && configLoading);
+
   return (
     <>
       <div
@@ -778,6 +816,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
         {/* Tab Content Panel */}
         <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-surface-raised pb-[max(2rem,env(safe-area-inset-bottom))]">
+          {/* Top Loading Progress Bar for Large Data */}
+          {isCurrentTabLoading && (
+            <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-1 mb-4 shadow-xs">
+              <div className="progress-bar-indeterminate rounded-full" />
+            </div>
+          )}
             
             {/* TAB 1: OVERVIEW & STATS */}
             {activeTab === 'overview' && (
@@ -810,7 +854,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     </div>
                     <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
-                      {stats?.total_users ?? '-'}
+                      {statsLoading && !stats ? (
+                        <span className="inline-block w-12 h-6 bg-surface-sunken rounded animate-pulse" />
+                      ) : (
+                        stats?.total_users ?? 0
+                      )}
                     </p>
                     <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
@@ -827,7 +875,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     </div>
                     <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
-                      {stats?.total_sessions ?? '-'}
+                      {statsLoading && !stats ? (
+                        <span className="inline-block w-12 h-6 bg-surface-sunken rounded animate-pulse" />
+                      ) : (
+                        stats?.total_sessions ?? 0
+                      )}
                     </p>
                     <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
@@ -844,7 +896,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     </div>
                     <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
-                      {stats?.total_messages ?? '-'}
+                      {statsLoading && !stats ? (
+                        <span className="inline-block w-12 h-6 bg-surface-sunken rounded animate-pulse" />
+                      ) : (
+                        stats?.total_messages ?? 0
+                      )}
                     </p>
                     <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -1003,7 +1059,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      {language === 'en' ? `User Management (${usersList.length})` : `Manajemen Pengguna (${usersList.length})`}
+                      {language === 'en' ? `User Management (${usersLoading && usersList.length === 0 ? '…' : usersList.length})` : `Manajemen Pengguna (${usersLoading && usersList.length === 0 ? '…' : usersList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
                       {language === 'en' ? 'Add new accounts, manage superadmin/user roles, reset passwords, or set individual personas.' : 'Tambah akun baru, kelola role superadmin/user, reset password, atau atur persona pribadi.'}
@@ -1044,7 +1100,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line/60 text-content-secondary">
-                        {filteredUsers.length > 0 ? (
+                        {usersLoading && usersList.length === 0 ? (
+                          [...Array(6)].map((_, i) => (
+                            <tr key={i} className="animate-pulse">
+                              <td className="px-4 py-3.5"><div className="h-4 w-28 bg-surface-sunken rounded-md" /></td>
+                              <td className="px-4 py-3.5"><div className="h-4 w-36 bg-surface-sunken/80 rounded-md" /></td>
+                              <td className="px-4 py-3.5"><div className="h-5 w-20 bg-surface-sunken/60 rounded-md" /></td>
+                              <td className="px-4 py-3.5"><div className="h-4 w-40 bg-surface-sunken/60 rounded-md" /></td>
+                              <td className="px-4 py-3.5 text-right"><div className="h-6 w-16 bg-surface-sunken/50 rounded-md ml-auto" /></td>
+                            </tr>
+                          ))
+                        ) : filteredUsers.length > 0 ? (
                           filteredUsers.map((u) => (
                             <tr key={u.username} className="hover:bg-surface-hover/70 transition-colors">
                               <td className="px-4 py-3 font-semibold text-content whitespace-nowrap">
@@ -1476,7 +1542,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <div>
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
                       <BookOpen className="w-5 h-5 text-accent" />
-                      {language === 'en' ? `Assistant Skill Catalog (${skillsList.length})` : `Katalog Skill Asisten (${skillsList.length})`}
+                      {language === 'en' ? `Assistant Skill Catalog (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})` : `Katalog Skill Asisten (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
                       {language === 'en' ? 'Manage domain skill modules and SOPs (e.g. SAP ABAP, SAP PP, etc.) that the AI references during assistance.' : 'Kelola modul keahlian dan SOP khusus (misal: SAP ABAP, SAP PP, dsb.) yang wajib dibaca & dipatuhi AI saat melayani support.'}
@@ -1505,7 +1571,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* Skills Grid Cards */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {filteredSkills.length > 0 ? (
+                  {skillsLoading && skillsList.length === 0 ? (
+                    [...Array(4)].map((_, i) => (
+                      <div key={i} className="p-5 rounded-2xl border border-line bg-surface space-y-3 animate-pulse">
+                        <div className="flex justify-between items-center">
+                          <div className="h-5 w-32 bg-surface-sunken rounded" />
+                          <div className="h-4 w-14 bg-surface-sunken rounded-full" />
+                        </div>
+                        <div className="h-3 w-48 bg-surface-sunken/70 rounded" />
+                        <div className="h-24 bg-surface-sunken/40 rounded-xl" />
+                      </div>
+                    ))
+                  ) : filteredSkills.length > 0 ? (
                     filteredSkills.map((sk) => (
                       <div key={sk.id} className="p-5 rounded-2xl border border-line/80 bg-surface flex flex-col justify-between space-y-4 hover:border-indigo-500/40 hover:shadow-md transition-all shadow-xs">
                         <div className="space-y-3">
@@ -1912,7 +1989,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </button>
                 </div>
 
-                {/* Saklar penegakan */}
+                {kuotaLoading && !kuota ? (
+                  <div className="space-y-4 animate-pulse">
+                    <div className="h-20 rounded-2xl bg-surface border border-line p-5" />
+                    <div className="h-64 rounded-2xl bg-surface border border-line p-5" />
+                    <div className="h-48 rounded-2xl bg-surface border border-line p-5" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Saklar penegakan */}
                 <div className="flex items-center justify-between gap-3 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-line/80 bg-surface shadow-xs">
                   <div className="min-w-0">
                     <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Quota Enforcement' : 'Penegakan Batas Token'}</p>
@@ -2142,6 +2227,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     })()
                   )}
                 </div>
+              </>
+            )}
               </div>
             )}
 
@@ -2299,7 +2386,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <div className={`${
                     selectedAuditSession ? 'hidden md:block' : 'block'
                   } border border-line/80 rounded-2xl overflow-y-auto max-h-[60vh] md:max-h-[65vh] divide-y divide-line/60 bg-surface shadow-xs`}>
-                    {filteredAuditSessions.length > 0 ? (
+                    {auditSessionsLoading && auditSessions.length === 0 ? (
+                      <div className="p-3 space-y-2.5 animate-pulse">
+                        {[...Array(6)].map((_, i) => (
+                          <div key={i} className="p-3 rounded-xl bg-surface-sunken/60 space-y-2">
+                            <div className="flex justify-between">
+                              <div className="h-3.5 w-24 bg-surface-sunken rounded" />
+                              <div className="h-3 w-16 bg-surface-sunken rounded" />
+                            </div>
+                            <div className="h-3 w-40 bg-surface-sunken/80 rounded" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : filteredAuditSessions.length > 0 ? (
                       filteredAuditSessions.map((s) => (
                         <button
                           key={s.session_id}
@@ -2335,6 +2434,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     !selectedAuditSession ? 'hidden md:flex' : 'flex'
                   } md:col-span-2 border border-line/80 rounded-2xl p-4 sm:p-5 overflow-y-auto max-h-[60vh] md:max-h-[65vh] bg-surface-sunken/40 flex-col shadow-xs`}>
                     {selectedAuditSession ? (
+                      auditMessagesLoading ? (
+                        <div className="space-y-4 p-3 animate-pulse">
+                          <div className="flex justify-end"><div className="h-12 w-2/3 bg-accent/20 rounded-2xl" /></div>
+                          <div className="flex justify-start"><div className="h-20 w-3/4 bg-surface-sunken rounded-2xl" /></div>
+                          <div className="flex justify-end"><div className="h-10 w-1/2 bg-accent/20 rounded-2xl" /></div>
+                          <div className="flex justify-start"><div className="h-24 w-4/5 bg-surface-sunken rounded-2xl" /></div>
+                        </div>
+                      ) : (
                       <div className="space-y-3.5 sm:space-y-4">
                         {/* Mobile Back Button */}
                         <button 
@@ -2386,6 +2493,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           )}
                         </div>
                       </div>
+                      )
                     ) : (
                       <div className="h-full flex flex-col items-center justify-center text-content-muted text-xs py-16">
                         <MessageSquare className="w-8 h-8 mb-2 opacity-30 text-accent" />
