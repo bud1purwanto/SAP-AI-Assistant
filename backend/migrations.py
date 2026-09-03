@@ -445,6 +445,18 @@ def _m0009_multi_role_pengguna(conn):
     """))
 
 
+def _m0010_seed_skill_sap_mm(conn):
+    """Seed modul keahlian SOP SAP MM ke katalog skills."""
+    from database import DEFAULT_SKILL_MM
+    conn.execute(text("""
+        INSERT INTO ai_assistant.skills (name, description, content, enabled)
+        VALUES ('SAP MM', 'Panduan modul Materials Management (MM), Purchasing, Vendor, Master Material, dan pembuatan PO via BAPI RFC (BAPI_PO_CREATE1)', :mm_content, true)
+        ON CONFLICT (name) DO UPDATE SET
+            description = EXCLUDED.description,
+            content = EXCLUDED.content;
+    """), {"mm_content": DEFAULT_SKILL_MM})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -455,6 +467,7 @@ MIGRATIONS = [
     ("0007_akses_mcp_per_user", _m0007_akses_mcp_per_user),
     ("0008_peran_ekstra_backend_frontend_basis_data", _m0008_peran_ekstra_backend_frontend_basis_data),
     ("0009_multi_role_pengguna", _m0009_multi_role_pengguna),
+    ("0010_seed_skill_sap_mm", _m0010_seed_skill_sap_mm),
 ]
 
 

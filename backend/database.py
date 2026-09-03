@@ -353,19 +353,19 @@ def init_db():
                     VALUES ('openrouter_api_key', :val)
                 """), {"val": settings.openrouter_api_key or ""})
 
-            # Seed default skills (SAP ABAP & SAP PP) jika tabel skills masih kosong
-            skill_cnt = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.skills")).scalar()
-            if skill_cnt == 0:
-                conn.execute(text("""
-                    INSERT INTO ai_assistant.skills (name, description, content, enabled)
-                    VALUES 
-                    ('SAP ABAP', 'Standar penulisan kode ABAP, function module, BAPI, dan best practice clean code', :abap_content, true),
-                    ('SAP PP', 'Panduan modul Production Planning, Bill of Materials (BOM), Routing, dan Work Center', :pp_content, true)
-                """), {
-                    "abap_content": DEFAULT_SKILL_ABAP,
-                    "pp_content": DEFAULT_SKILL_PP
-                })
-                logger.info("Default skills (SAP ABAP, SAP PP) berhasil di-seed.")
+            # Seed default skills (SAP ABAP, SAP PP, SAP MM)
+            conn.execute(text("""
+                INSERT INTO ai_assistant.skills (name, description, content, enabled)
+                VALUES 
+                ('SAP ABAP', 'Standar penulisan kode ABAP, function module, BAPI, dan best practice clean code', :abap_content, true),
+                ('SAP PP', 'Panduan modul Production Planning, Bill of Materials (BOM), Routing, dan Work Center', :pp_content, true),
+                ('SAP MM', 'Panduan modul Materials Management (MM), Purchasing, Vendor, Master Material, dan pembuatan PO via BAPI RFC (BAPI_PO_CREATE1)', :mm_content, true)
+                ON CONFLICT (name) DO NOTHING
+            """), {
+                "abap_content": DEFAULT_SKILL_ABAP,
+                "pp_content": DEFAULT_SKILL_PP,
+                "mm_content": DEFAULT_SKILL_MM,
+            })
 
             # Perubahan skema yang mengubah data dijalankan lewat ledger migrasi,
             # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
@@ -2103,6 +2103,57 @@ DEFAULT_SKILL_PP = """# Panduan Keahlian: SAP PP (Production Planning)
 - Cek ketersediaan komponen material via reservation (`RESB`) dan Stock Requirements List (`MD04`).
 - Verifikasi status order pada tabel `JEST` / `TJ02T` (misal: `CRTD` Created, `REL` Released, `PCNF` Partially Confirmed, `CNF` Confirmed, `TECO` Technically Completed).
 - Untuk issue settlement atau costing order produksi, pastikan work center memiliki cost center dan activity type yang valid.
+"""
+
+DEFAULT_SKILL_MM = """# Panduan Keahlian: SAP MM (Materials Management & Purchasing)
+
+## 1. Master Data & Tabel Utama
+- **Material Master:** `MARA` (General Material Data), `MAKT` (Material Descriptions), `MARC` (Plant Data for Material), `MARD` (Storage Location Data for Material), `MBEW` (Material Valuation). T-Codes: `MM01`, `MM02`, `MM03`.
+- **Vendor Master:** `LFA1` (Vendor General), `LFB1` (Vendor Company Code), `LFM1` (Purchasing Organization Data). T-Codes: `XK01`, `XK02`, `XK03` / `BP`.
+- **Purchasing Document:**
+  - Purchase Requisition: `EBAN`. T-Codes: `ME51N`, `ME52N`, `ME53N`.
+  - Purchase Order: `EKKO` (PO Header), `EKPO` (PO Item), `EKET` (PO Delivery Schedule), `EKBE` (PO History - GR/IR). T-Codes: `ME21N`, `ME22N`, `ME23N`.
+- **Inventory & Goods Movement:** `MKPF` (Material Document Header), `MSEG` (Material Document Item). T-Codes: `MIGO`, `MB51`, `MMBE` (Stock Overview).
+
+## 2. Pembuatan & Eksekusi Transaksi Purchase Order via BAPI RFC
+### A. Pembedaan Membaca Data vs Membuat Data Baru
+- Bila pengguna meminta "buatkan data testing", "buatkan PO", "posting PO", atau "generate PO via RFC", ini adalah perintah untuk **MEMBUAT (CREATE/POST) DOKUMEN TRANSAKSI BARU** di SAP melalui BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).
+- Dilarang membaca tabel `EKKO` lalu menyodorkan nomor dokumen lama seolah-olah data baru!
+
+### B. Fitur Atomic Auto-Commit Sistem
+- Backend sistem telah dilengkapi fitur Atomic Auto-Commit otomatis. Setiap kali memanggil `BAPI_PO_CREATE1` (atau BAPI mutasi lainnya), sistem otomatis langsung mengeksekusi `BAPI_TRANSACTION_COMMIT` di dalam sesi koneksi PyRFC yang sama persis bila tidak ada error Type E/A. Tidak perlu lagi memanggil `BAPI_TRANSACTION_COMMIT` terpisah.
+
+### C. Pembuatan Batch Data PO
+- Jika pengguna meminta batch data (misal 5 atau 10 PO), panggil tool `call_function` untuk `BAPI_PO_CREATE1` beberapa kali secara berurutan/paralel dengan variasi kuantitas atau delivery date.
+
+### D. Template Parameter PO Valid di Sandbox New Company (TRS)
+Gunakan parameter teruji berikut agar tidak membuang iterasi membaca tabel:
+- **POHEADER**:
+  - `COMP_CODE`: `'9999'`
+  - `DOC_TYPE`: `'PO07'`
+  - `VENDOR`: `'2131000399'`
+  - `PURCH_ORG`: `'TPOL'`
+  - `PUR_GROUP`: `'P01'`
+  - `DOC_DATE`: Gunakan tanggal riil server saat ini (format `YYYYMMDD`)
+- **POHEADERX**:
+  - `COMP_CODE`: `'X'`
+  - `DOC_TYPE`: `'X'`
+  - `VENDOR`: `'X'`
+  - `PURCH_ORG`: `'X'`
+  - `PUR_GROUP`: `'X'`
+  - `DOC_DATE`: `'X'`
+- **POITEM**:
+  - `[{'PO_ITEM': '00010', 'MATERIAL': '000000001100000267', 'PLANT': '2000', 'STGE_LOC': '2002', 'QUANTITY': 10.0, 'PO_UNIT': 'KG', 'NET_PRICE': 425.0}]`
+- **POITEMX**:
+  - `[{'PO_ITEM': '00010', 'PO_ITEMX': 'X', 'MATERIAL': 'X', 'PLANT': 'X', 'STGE_LOC': 'X', 'QUANTITY': 'X', 'PO_UNIT': 'X', 'NET_PRICE': 'X'}]`
+- **POSCHEDULE**:
+  - `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'DELIVERY_DATE': tanggal server + 14 hari, 'QUANTITY': 10.0}]`
+- **POSCHEDULEX**:
+  - `[{'PO_ITEM': '00010', 'SCHED_LINE': '0001', 'PO_ITEMX': 'X', 'DELIVERY_DATE': 'X', 'QUANTITY': 'X'}]`
+*(Catatan penting: `DELIVERY_DATE` wajib minimal 14 hari ke depan dari `DOC_DATE`).*
+
+### E. Format Rekapitulasi Output PO
+Tampilkan tabel rekapitulasi seluruh nomor PO baru yang berhasil terbit (diambil dari parameter ekspor `EXPPURCHASEORDER` atau pesan Type S: *"PO created under number ..."*) secara jelas dan rapi kepada pengguna.
 """
 
 def get_skills(enabled_only: bool = False) -> list[dict]:
