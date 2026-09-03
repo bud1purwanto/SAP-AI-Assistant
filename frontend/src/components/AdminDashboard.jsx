@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
@@ -532,40 +532,40 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       >
       {/* Header Modal */}
       <div
-        className="flex items-center justify-between px-5 sm:px-8 pb-3.5 border-b border-line/80 bg-surface/90 backdrop-blur-xl shrink-0"
+        className="relative flex items-center justify-between px-4 sm:px-8 pb-3.5 border-b border-line/80 bg-surface/90 backdrop-blur-xl shrink-0 z-40"
         style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1rem)' }}
       >
-        <div className="flex items-center gap-3.5 min-w-0 pr-4">
-          <div className="relative p-2.5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-500/10">
-            <ShieldCheck className="w-5 h-5" />
+        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 pr-2 sm:pr-4">
+          <div className="relative p-2 sm:p-2.5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-500/10">
+            <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm sm:text-base font-extrabold tracking-tight text-content truncate font-display leading-tight">
-                {t('admin.title')}
-              </h2>
-              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
-                SUPER
-              </span>
-            </div>
-            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5 flex items-center gap-1.5">
-              <span>{language === 'en' ? 'Administration Console' : 'Konsol Administrasi'}</span>
-              <span className="text-content-subtle">/</span>
-              <span className="text-accent font-semibold">
-                {activeTab === 'overview' ? t('admin.tabOverview') :
-                 activeTab === 'users' ? t('admin.tabUsers') :
-                 activeTab === 'chat_modes' ? t('admin.tabChatModes') :
-                 activeTab === 'persona' ? t('admin.tabPersona') :
-                 activeTab === 'skills' ? t('admin.tabSkills') :
-                 activeTab === 'mcp' ? t('admin.tabMcp') :
-                 activeTab === 'kuota' ? t('admin.tabTokenQuota') :
-                 activeTab === 'feedback' ? t('admin.tabFeedback') : t('admin.tabAudit')}
-              </span>
-            </p>
+            <h2 className="text-sm sm:text-base font-extrabold tracking-tight text-content truncate font-display leading-tight">
+              {t('admin.title')}
+            </h2>
+
+            {/* Desktop View: active tab label */}
+            <span className="hidden md:block text-xs text-accent font-semibold truncate mt-0.5">
+              {currentTab?.label}
+            </span>
+
+            {/* Mobile View: Clickable dropdown trigger */}
+            <button
+              type="button"
+              onClick={() => setIsMobileNavOpen((prev) => !prev)}
+              className="md:hidden inline-flex items-center gap-1.5 text-accent font-bold px-2 py-0.5 mt-0.5 rounded-lg bg-accent-soft border border-accent/30 hover:bg-accent/20 active:scale-95 transition-all cursor-pointer shadow-2xs text-xs"
+              aria-expanded={isMobileNavOpen}
+              aria-haspopup="listbox"
+              title="Pilih Menu"
+            >
+              <CurrentTabIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate max-w-[160px] sm:max-w-[220px]">{currentTab?.label}</span>
+              <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isMobileNavOpen ? 'rotate-180' : ''}`} />
+            </button>
           </div>
         </div>
         
@@ -582,6 +582,64 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Dropdown Popup Menu on Mobile */}
+        {isMobileNavOpen && (
+          <>
+            <div 
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs" 
+              onClick={() => setIsMobileNavOpen(false)} 
+            />
+            <div className="md:hidden absolute left-3 right-3 top-[calc(100%+6px)] z-50 bg-surface-raised border border-line rounded-2xl shadow-2xl p-2 max-h-[65vh] overflow-y-auto space-y-2 animate-fadeIn backdrop-blur-xl">
+              <div className="px-2.5 py-1.5 border-b border-line/60 mb-1 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                  {language === 'en' ? 'Administration Menu' : 'Pilih Menu Admin'}
+                </span>
+                <span className="text-[10px] font-mono text-content-muted">
+                  9 Menu
+                </span>
+              </div>
+              {tabCategories.map((group) => (
+                <div key={group.groupName} className="space-y-1">
+                  <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] font-extrabold tracking-wider text-content-subtle uppercase flex items-center gap-2">
+                    <span>{group.groupName}</span>
+                    <div className="h-px flex-1 bg-line/60" />
+                  </div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {group.tabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = activeTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveTab(tab.id);
+                            if (tab.id !== 'audit') setSelectedAuditSession(null);
+                            setIsMobileNavOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                            isActive
+                              ? 'bg-accent/15 text-accent font-bold border border-accent/30'
+                              : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-accent' : 'text-content-subtle'}`} />
+                            <span className="truncate">{tab.label}</span>
+                          </div>
+                          {isActive && (
+                            <Check className="w-4 h-4 text-accent shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Global Notifications Alert */}
@@ -608,81 +666,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       {/* Main Content Area: Horizontal tabs on mobile, Vertical categorized sidebar on desktop */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
         
-        {/* Mobile Navigation: Compact 1-Line Docked Dropdown (md:hidden) */}
-        <div className="md:hidden w-full border-b border-line/70 bg-surface/90 backdrop-blur-md px-3 py-2 shrink-0 relative z-30">
-          <button
-            type="button"
-            onClick={() => setIsMobileNavOpen(prev => !prev)}
-            className="w-full h-9 flex items-center justify-between gap-2 px-3 bg-surface-raised hover:bg-surface-hover border border-line/80 rounded-xl text-xs font-semibold text-content transition-all active:scale-[0.99] cursor-pointer shadow-2xs"
-            aria-expanded={isMobileNavOpen}
-            aria-haspopup="listbox"
-          >
-            <div className="flex items-center gap-2 min-w-0 truncate">
-              <CurrentTabIcon className="w-4 h-4 text-accent shrink-0" />
-              <span className="text-xs font-bold text-content truncate">
-                {currentTab?.label}
-              </span>
-              <span className="text-[10px] text-content-subtle font-medium truncate hidden xs:inline">
-                • {currentTab?.groupName}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-accent pl-1.5 shrink-0 text-[11px] font-semibold">
-              <span>{language === 'en' ? 'Switch' : 'Pilih'}</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMobileNavOpen ? 'rotate-180' : ''}`} />
-            </div>
-          </button>
-
-          {/* Dropdown Popup Menu */}
-          {isMobileNavOpen && (
-            <>
-              <div 
-                className="fixed inset-0 z-30 bg-black/40 backdrop-blur-xs" 
-                onClick={() => setIsMobileNavOpen(false)} 
-              />
-              <div className="absolute left-2.5 right-2.5 top-[calc(100%+6px)] z-40 bg-surface-raised border border-line rounded-2xl shadow-xl p-2 max-h-[60vh] overflow-y-auto space-y-2 animate-fadeIn">
-                {tabCategories.map((group) => (
-                  <div key={group.groupName} className="space-y-1">
-                    <div className="px-2.5 pt-1.5 pb-0.5 text-[10px] font-extrabold tracking-wider text-content-subtle uppercase flex items-center gap-2">
-                      <span>{group.groupName}</span>
-                      <div className="h-px flex-1 bg-line/60" />
-                    </div>
-                    <div className="grid grid-cols-1 gap-1">
-                      {group.tabs.map((tab) => {
-                        const Icon = tab.icon;
-                        const isActive = activeTab === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => {
-                              setActiveTab(tab.id);
-                              if (tab.id !== 'audit') setSelectedAuditSession(null);
-                              setIsMobileNavOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                              isActive
-                                ? 'bg-accent/15 text-accent font-bold border border-accent/30'
-                                : 'text-content hover:bg-surface-hover active:bg-surface-sunken'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-accent' : 'text-content-subtle'}`} />
-                              <span className="truncate">{tab.label}</span>
-                            </div>
-                            {isActive && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
         {/* Desktop Categorized Navigation Sidebar (hidden md:flex) */}
         <div className="hidden md:flex w-64 border-r border-line/80 bg-surface p-3.5 flex-col gap-3 overflow-y-auto shrink-0">
           {tabCategories.map((group) => (
@@ -719,195 +702,193 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         </div>
 
         {/* Tab Content Panel */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-surface-raised pb-[max(2rem,env(safe-area-inset-bottom))]">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-surface-raised pb-[max(2rem,env(safe-area-inset-bottom))]">
             
             {/* TAB 1: OVERVIEW & STATS */}
             {activeTab === 'overview' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
-                  <div>
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+              <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
+                <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-bold text-content font-display tracking-tight truncate">
                       {language === 'en' ? 'System Overview & Metrics' : 'Ringkasan & Metrik Sistem'}
                     </h3>
-                    <p className="text-xs text-content-muted mt-0.5">
+                    <p className="text-[11px] sm:text-xs text-content-muted mt-0.5 truncate hidden xs:block">
                       {language === 'en' ? 'Chat activity statistics, user satisfaction, and live MCP server status.' : 'Statistik aktivitas percakapan, kepuasan pengguna, dan status live server MCP.'}
                     </p>
                   </div>
                   <button 
                     onClick={fetchStats}
-                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer w-fit"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer shrink-0"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> {language === 'en' ? 'Refresh Status' : 'Refresh Status'}
+                    <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Refresh'}</span>
                   </button>
                 </div>
 
-                {/* Metrics Cards Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                {/* Metrics Cards Grid: 3 cards in 1 row on mobile */}
+                <div className="grid grid-cols-3 gap-2 sm:gap-4">
                   {/* Total Users */}
-                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-indigo-500/40 hover:shadow-md transition-all group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                  <div className="relative overflow-hidden p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-indigo-500/40 transition-all group">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Users' : 'Total Pengguna'}</span>
-                      <div className="w-9 h-9 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center shadow-xs">
-                        <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-[9px] xs:text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Users' : 'Pengguna'}</span>
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center shadow-xs shrink-0">
+                        <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
+                    <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
                       {stats?.total_users ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
-                      {language === 'en' ? 'Active registered accounts' : 'Akun aktif terdaftar di sistem'}
+                    <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                      <span className="truncate">{language === 'en' ? 'Accounts' : 'Akun'}</span>
                     </p>
                   </div>
 
                   {/* Total Chat Sessions */}
-                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-violet-500/40 hover:shadow-md transition-all group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                  <div className="relative overflow-hidden p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-violet-500/40 transition-all group">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Sessions' : 'Total Sesi Chat'}</span>
-                      <div className="w-9 h-9 rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/25 flex items-center justify-center shadow-xs">
-                        <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-[9px] xs:text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Sessions' : 'Sesi'}</span>
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-violet-500/15 text-violet-400 border border-violet-500/25 flex items-center justify-center shadow-xs shrink-0">
+                        <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
+                    <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
                       {stats?.total_sessions ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-                      {language === 'en' ? 'Conversations stored in database' : 'Percakapan tersimpan di sistem'}
+                    <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                      <span className="truncate">{language === 'en' ? 'Stored' : 'Tersimpan'}</span>
                     </p>
                   </div>
 
                   {/* Total Messages */}
-                  <div className="relative overflow-hidden p-4 sm:p-5 rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-emerald-500/40 hover:shadow-md transition-all group">
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform" />
+                  <div className="relative overflow-hidden p-2.5 sm:p-4 rounded-xl sm:rounded-2xl bg-surface border border-line/80 shadow-xs hover:border-emerald-500/40 transition-all group">
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Total Messages' : 'Total Pesan'}</span>
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center shadow-xs">
-                        <Database className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span className="text-[9px] xs:text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Messages' : 'Pesan'}</span>
+                      <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center shadow-xs shrink-0">
+                        <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                       </div>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono tracking-tight">
+                    <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono tracking-tight">
                       {stats?.total_messages ?? '-'}
                     </p>
-                    <p className="text-[11px] text-content-muted mt-1 flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      {language === 'en' ? 'Queries & AI responses' : 'Query pengguna & respon AI'}
+                    <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      <span className="truncate">{language === 'en' ? 'Queries' : 'Query & Res'}</span>
                     </p>
                   </div>
                 </div>
 
                 {/* User Satisfaction & Feedback Card */}
-                <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                    <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
-                      <ThumbsUp className="w-4 h-4 text-emerald-500" /> {language === 'en' ? 'AI Response Satisfaction Metrics' : 'Metrik Kepuasan Respon AI'}
+                <div className="p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-line/80 bg-surface shadow-xs">
+                  <div className="flex items-center justify-between gap-2 mb-2.5 sm:mb-4">
+                    <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content flex items-center gap-1.5 font-display truncate">
+                      <ThumbsUp className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="truncate">{language === 'en' ? 'Satisfaction Metrics' : 'Metrik Kepuasan'}</span>
                     </h4>
-                    <span className="text-xs font-medium text-content-muted bg-surface-sunken px-2.5 py-1 rounded-lg border border-line/60">
-                      {language === 'en' ? `Total ${stats?.total_feedback ?? 0} User Ratings` : `Total ${stats?.total_feedback ?? 0} Rating Pengguna`}
+                    <span className="text-[10px] sm:text-xs font-medium text-content-muted bg-surface-sunken px-2 py-0.5 rounded-md border border-line/60 shrink-0">
+                      {language === 'en' ? `${stats?.total_feedback ?? 0} Ratings` : `${stats?.total_feedback ?? 0} Rating`}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4">
                     {/* Satisfaction Rate */}
-                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 flex flex-col justify-between">
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 flex flex-col justify-between">
                       <div className="flex items-center justify-between text-amber-500">
-                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Satisfaction Rate' : 'Tingkat Kepuasan'}</span>
-                        <Star className="w-4 h-4 fill-amber-500" />
+                        <span className="text-[9px] xs:text-[10px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Rate' : 'Tingkat'}</span>
+                        <Star className="w-3.5 h-3.5 fill-amber-500 shrink-0" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-black mt-2 text-content font-mono">
+                      <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-content font-mono">
                         {stats?.satisfaction_rate !== null && stats?.satisfaction_rate !== undefined ? `${stats.satisfaction_rate}%` : '100%'}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Ratio of responses rated helpful' : 'Rasio respon yang dinilai membantu'}</p>
+                      <p className="text-[9px] xs:text-[10px] text-content-muted mt-0.5 hidden xs:block truncate">{language === 'en' ? 'Helpful ratio' : 'Rasio suka'}</p>
                     </div>
 
                     {/* Likes count */}
-                    <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col justify-between">
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col justify-between">
                       <div className="flex items-center justify-between text-emerald-500">
-                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Helpful (Like)' : 'Membantu (Like)'}</span>
-                        <ThumbsUp className="w-4 h-4" />
+                        <span className="text-[9px] xs:text-[10px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Likes' : 'Suka'}</span>
+                        <ThumbsUp className="w-3.5 h-3.5 shrink-0" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-black mt-2 text-emerald-500 font-mono">
+                      <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-emerald-500 font-mono">
                         {stats?.likes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Responses satisfying user requirements' : 'Jawaban yang memuaskan pengguna'}</p>
+                      <p className="text-[9px] xs:text-[10px] text-content-muted mt-0.5 hidden xs:block truncate">{language === 'en' ? 'Helpful' : 'Membantu'}</p>
                     </div>
 
                     {/* Dislikes count */}
-                    <div className="p-4 rounded-xl bg-rose-500/5 border border-rose-500/20 flex flex-col justify-between">
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-rose-500/5 border border-rose-500/20 flex flex-col justify-between">
                       <div className="flex items-center justify-between text-rose-500">
-                        <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-content-muted">{language === 'en' ? 'Unhelpful (Dislike)' : 'Kurang Sesuai (Dislike)'}</span>
-                        <ThumbsDown className="w-4 h-4" />
+                        <span className="text-[9px] xs:text-[10px] sm:text-xs font-bold uppercase tracking-wider text-content-muted truncate">{language === 'en' ? 'Dislikes' : 'Tidak Suka'}</span>
+                        <ThumbsDown className="w-3.5 h-3.5 shrink-0" />
                       </div>
-                      <p className="text-2xl sm:text-3xl font-black mt-2 text-rose-500 font-mono">
+                      <p className="text-base xs:text-xl sm:text-2xl font-black mt-1 text-rose-500 font-mono">
                         {stats?.dislikes_count ?? 0}
                       </p>
-                      <p className="text-[11px] text-content-muted mt-1.5">{language === 'en' ? 'Responses needing accuracy improvement' : 'Jawaban yang perlu perbaikan/akurasi'}</p>
+                      <p className="text-[9px] xs:text-[10px] text-content-muted mt-0.5 hidden xs:block truncate">{language === 'en' ? 'Need improvement' : 'Perlu dicek'}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* MCP Live Status Card */}
-                <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
-                  <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-3.5 flex items-center gap-2 font-display">
-                    <Server className="w-4 h-4 text-accent" /> {language === 'en' ? 'Live MCP Servers Status' : 'Status Live MCP Servers'}
+                <div className="p-3 sm:p-5 rounded-xl sm:rounded-2xl border border-line/80 bg-surface shadow-xs">
+                  <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-2.5 sm:mb-3.5 flex items-center gap-1.5 font-display">
+                    <Server className="w-3.5 h-3.5 text-accent" /> {language === 'en' ? 'Live MCP Servers' : 'Status Server MCP'}
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
                     {/* MCP SAP Card */}
-                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs sm:text-sm text-content">MCP SAP Gateway</span>
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-xs sm:text-sm text-content truncate">SAP Gateway</span>
                         {(stats?.mcp_status?.sap?.status === 'online' || stats?.mcp_status?.sap?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.sap?.error || ''}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sap?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-content-muted mt-2">
-                        {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} {language === 'en' ? 'Tools available' : 'Tools tersedia'} • Active Server: {stats?.mcp_status?.sap?.active_server || 'Default'}
+                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
+                        {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} tools • {stats?.mcp_status?.sap?.active_server || 'Default'}
                       </p>
                     </div>
 
                     {/* MCP RAG Card */}
-                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs sm:text-sm text-content">MCP RAG Knowledge</span>
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-xs sm:text-sm text-content truncate">RAG Knowledge</span>
                         {(stats?.mcp_status?.rag?.status === 'online' || stats?.mcp_status?.rag?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.rag?.error || ''}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.rag?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-content-muted mt-2">
-                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} {language === 'en' ? 'Vector Search & Document Tools' : 'Vector Search & Document Tools'}
+                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
+                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} tools • Vector & Doc
                       </p>
                     </div>
 
                     {/* MCP SQL Card */}
-                    <div className="p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs sm:text-sm text-content">MCP SQL Server</span>
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-xs sm:text-sm text-content truncate">SQL Database</span>
                         {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true || stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-content-muted mt-2">
-                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} {language === 'en' ? 'SQL & Database Tools' : 'Alat SQL & Database'}
+                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
+                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} tools • DB & Email
                       </p>
                     </div>
                   </div>
@@ -1751,34 +1732,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB: PENILAIAN JAWABAN — jawaban mana yang dinilai pengguna.
                 Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
             {activeTab === 'kuota' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
-                  <div>
-                    <h3 className="text-lg font-bold text-content">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
-                    <p className="text-sm text-content-muted">
+              <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
+                <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-bold text-content truncate">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
+                    <p className="text-[11px] sm:text-xs text-content-muted truncate">
                       {language === 'en' 
-                        ? `Usage calculated for ${kuota?.usage_date || '—'} (resets at midnight WIB).`
-                        : `Pemakaian dihitung untuk tanggal ${kuota?.usage_date || '—'} (reset tengah malam WIB).`}
+                        ? `Usage calculated for ${kuota?.usage_date || '—'} (midnight WIB reset).`
+                        : `Pemakaian tanggal ${kuota?.usage_date || '—'} (reset tengah malam WIB).`}
                     </p>
                   </div>
                   <button
                     onClick={fetchKuota}
                     disabled={kuotaLoading}
-                    className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer disabled:opacity-60"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer disabled:opacity-60 shrink-0"
                   >
-                    <RefreshCw className={`w-4 h-4 ${kuotaLoading ? 'animate-spin' : ''}`} />
-                    {language === 'en' ? 'Refresh' : 'Muat ulang'}
+                    <RefreshCw className={`w-3.5 h-3.5 ${kuotaLoading ? 'animate-spin' : ''}`} />
+                    <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
                   </button>
                 </div>
 
                 {/* Saklar penegakan */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl border border-line/80 bg-surface shadow-xs">
+                <div className="flex items-center justify-between gap-3 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-line/80 bg-surface shadow-xs">
                   <div className="min-w-0">
-                    <p className="font-bold text-content text-sm sm:text-base">{language === 'en' ? 'Quota Enforcement' : 'Penegakan Batas Token'}</p>
-                    <p className="text-xs sm:text-sm text-content-muted mt-0.5">
+                    <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Quota Enforcement' : 'Penegakan Batas Token'}</p>
+                    <p className="text-[11px] sm:text-xs text-content-muted mt-0.5">
                       {kuota?.enforced
-                        ? (language === 'en' ? 'Active — requests will be rejected once daily quota is exceeded.' : 'Aktif — permintaan ditolak begitu kuota harian habis.')
-                        : (language === 'en' ? 'Inactive — usage is tracked without blocking requests.' : 'Nonaktif — pemakaian tetap dicatat, tetapi tidak ada yang diblokir.')}
+                        ? (language === 'en' ? 'Active — requests rejected when quota exceeded.' : 'Aktif — permintaan ditolak saat kuota habis.')
+                        : (language === 'en' ? 'Inactive — usage is tracked without blocking.' : 'Nonaktif — pemakaian dicatat tanpa blokir.')}
                     </p>
                   </div>
                   <button
@@ -1786,97 +1767,99 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     disabled={!kuota}
                     aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
                     aria-pressed={!!kuota?.enforced}
-                    className={`relative h-7 w-13 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
+                    className={`relative h-6 w-11 sm:h-7 sm:w-13 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
                       kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-sm shadow-indigo-500/30' : 'bg-line'
                     }`}
                   >
                     <span
-                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                        kuota?.enforced ? 'left-7' : 'left-1'
+                      className={`absolute top-0.5 sm:top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                        kuota?.enforced ? 'left-5 sm:left-7' : 'left-0.5 sm:left-1'
                       }`}
                     />
                   </button>
                 </div>
 
                 {/* Batas per peran */}
-                <div className="rounded-2xl border border-line/80 bg-surface p-5 shadow-xs">
-                  <p className="font-bold text-content text-sm sm:text-base mb-1">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
-                  <p className="text-xs text-content-muted mb-4">
+                <div className="rounded-xl sm:rounded-2xl border border-line/80 bg-surface p-3.5 sm:p-5 shadow-xs">
+                  <p className="font-bold text-content text-xs sm:text-sm mb-0.5">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
+                  <p className="text-[11px] sm:text-xs text-content-muted mb-3 sm:mb-4">
                     {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
                   </p>
-                  <div className="space-y-3">
+                  <div className="space-y-2.5 sm:space-y-3">
                     {Object.keys(kuota?.role_limits || {}).map((peran) => (
                       <div
                         key={peran}
-                        className="flex flex-col sm:flex-row sm:items-end gap-3.5 p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all"
+                        className="flex flex-col sm:flex-row sm:items-end gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all"
                       >
-                        <div className="sm:w-32 shrink-0">
+                        <div className="sm:w-28 shrink-0 flex items-center justify-between sm:block">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">{language === 'en' ? 'Role' : 'Peran'}</p>
-                          <p className="font-mono text-sm font-bold text-accent capitalize">{peran}</p>
+                          <p className="font-mono text-xs sm:text-sm font-bold text-accent capitalize">{peran}</p>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <label className="block text-xs font-semibold text-content-muted" htmlFor={`harian-${peran}`}>
-                              {language === 'en' ? 'Daily Tokens' : 'Token per hari'}
-                            </label>
-                            {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit) && (
-                              <span className={`text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md ${
-                                Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0
-                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-                                  : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25'
-                              }`}>
-                                {Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0 ? '♾️ ' : '≈ '}
-                                {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit)}
-                              </span>
-                            )}
+                        <div className="grid grid-cols-2 sm:flex sm:flex-1 gap-2 sm:gap-3.5 min-w-0">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <label className="block text-[10px] sm:text-xs font-semibold text-content-muted truncate" htmlFor={`harian-${peran}`}>
+                                {language === 'en' ? 'Daily Tokens' : 'Token / hari'}
+                              </label>
+                              {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit) && (
+                                <span className={`text-[10px] font-semibold font-mono px-1 py-0.5 rounded ${
+                                  Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0
+                                    ? 'bg-emerald-500/15 text-emerald-400'
+                                    : 'bg-indigo-500/15 text-indigo-400'
+                                }`}>
+                                  {Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0 ? '♾️' : '≈ '}
+                                  {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit)}
+                                </span>
+                              )}
+                            </div>
+                            <input
+                              id={`harian-${peran}`}
+                              type="text"
+                              inputMode="numeric"
+                              value={formatNumberSeparator(batasDraft[peran]?.daily_token_limit)}
+                              onChange={(e) => {
+                                const cleanDigits = e.target.value.replace(/\D/g, '');
+                                setBatasDraft((d) => ({
+                                  ...d,
+                                  [peran]: { ...d[peran], daily_token_limit: cleanDigits },
+                                }));
+                              }}
+                              placeholder="0"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
+                            />
                           </div>
-                          <input
-                            id={`harian-${peran}`}
-                            type="text"
-                            inputMode="numeric"
-                            value={formatNumberSeparator(batasDraft[peran]?.daily_token_limit)}
-                            onChange={(e) => {
-                              const cleanDigits = e.target.value.replace(/\D/g, '');
-                              setBatasDraft((d) => ({
-                                ...d,
-                                [peran]: { ...d[peran], daily_token_limit: cleanDigits },
-                              }));
-                            }}
-                            placeholder="0"
-                            className="w-full px-3 py-2 rounded-xl border border-line bg-surface text-content text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <label className="block text-xs font-semibold text-content-muted" htmlFor={`menit-${peran}`}>
-                              {language === 'en' ? 'Requests Per Minute' : 'Permintaan per menit'}
-                            </label>
-                            {Number(String(batasDraft[peran]?.per_minute_limit).replace(/\D/g, '')) === 0 && (
-                              <span className="text-[11px] font-semibold font-mono px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                                ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
-                              </span>
-                            )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <label className="block text-[10px] sm:text-xs font-semibold text-content-muted truncate" htmlFor={`menit-${peran}`}>
+                                {language === 'en' ? 'Per Minute' : 'Per menit'}
+                              </label>
+                              {Number(String(batasDraft[peran]?.per_minute_limit).replace(/\D/g, '')) === 0 && (
+                                <span className="text-[10px] font-semibold font-mono px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                                  ♾️
+                                </span>
+                              )}
+                            </div>
+                            <input
+                              id={`menit-${peran}`}
+                              type="text"
+                              inputMode="numeric"
+                              value={formatNumberSeparator(batasDraft[peran]?.per_minute_limit)}
+                              onChange={(e) => {
+                                const cleanDigits = e.target.value.replace(/\D/g, '');
+                                setBatasDraft((d) => ({
+                                  ...d,
+                                  [peran]: { ...d[peran], per_minute_limit: cleanDigits },
+                                }));
+                              }}
+                              placeholder="0"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
+                            />
                           </div>
-                          <input
-                            id={`menit-${peran}`}
-                            type="text"
-                            inputMode="numeric"
-                            value={formatNumberSeparator(batasDraft[peran]?.per_minute_limit)}
-                            onChange={(e) => {
-                              const cleanDigits = e.target.value.replace(/\D/g, '');
-                              setBatasDraft((d) => ({
-                                ...d,
-                                [peran]: { ...d[peran], per_minute_limit: cleanDigits },
-                              }));
-                            }}
-                            placeholder="0"
-                            className="w-full px-3 py-2 rounded-xl border border-line bg-surface text-content text-xs sm:text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
-                          />
                         </div>
                         <button
                           onClick={() => simpanBatas(peran)}
                           aria-label={`${language === 'en' ? 'Save limits for' : 'Simpan batas'} ${peran}`}
-                          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-sm shadow-indigo-500/20 transition-all cursor-pointer shrink-0 active:scale-95"
+                          className="flex items-center justify-center gap-1.5 w-full sm:w-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95"
                         >
                           <Save className="w-3.5 h-3.5" />
                           {t('common.save')}
@@ -1884,7 +1867,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </div>
                     ))}
                     {!kuotaLoading && !Object.keys(kuota?.role_limits || {}).length && (
-                      <p className="text-sm text-content-muted">{language === 'en' ? 'Role limits unavailable.' : 'Batas peran belum tersedia.'}</p>
+                      <p className="text-xs text-content-muted">{language === 'en' ? 'Role limits unavailable.' : 'Batas peran belum tersedia.'}</p>
                     )}
                   </div>
                 </div>
