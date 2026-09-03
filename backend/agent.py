@@ -679,9 +679,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
         f"{approach_a}"
         f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal**\n"
-        f"   -> Gunakan `rag__search` bila jawabannya kemungkinan ada di dokumen internal "
-        f"(blueprint, SOP, manual). Bila tidak ditemukan, jawab dari pengetahuan Anda dan "
-        f"katakan bahwa itu bukan dari dokumen internal.\n\n"
+        f"   -> Gunakan `rag__rag_answer` atau `rag__rag_search` bila jawabannya kemungkinan ada di dokumen internal (blueprint, SOP, manual).\n"
+        f"   -> ATURAN EFISIENSI RAG (PENTING):\n"
+        f"      - Tool `rag_answer` sudah merangkum jawaban dokumen beserta kutipan halamannya secara komprehensif. Setelah mendapatkan hasil yang relevan, SEGERA tuliskan jawaban akhir lengkap untuk pengguna.\n"
+        f"      - DILARANG memanggil tool RAG berulang-ulang secara berantai (misal memanggil `rag_get_page_context` berkali-kali untuk setiap halaman berurutan). Maksimal pemanggilan konteks lanjutan hanya 1 kali bila benar-benar krusial.\n"
+        f"      - Bila dokumen tidak ditemukan, segera jelaskan dengan sopan dari pengetahuan umum Anda tanpa mencoba pencarian RAG berulang-ulang.\n\n"
         f"**C. Permintaan yang menyertakan lampiran** (pengguna mengirim gambar atau dokumen)\n"
         f"   -> Isi berkas sudah disediakan untuk Anda dalam blok LAMPIRAN DARI PENGGUNA. "
         f"Baca dan gunakan isinya; jangan meminta pengguna menempelkan ulang isinya.\n"
@@ -919,6 +921,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     sources = []
     max_iterations = MAX_ITERATIONS
     iteration = 0
+    rag_call_count = 0
     
     while iteration < max_iterations:
         iteration += 1
@@ -1011,10 +1014,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                             access_control.log_audit(username, "sql", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SQL dilarang)")
                             messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP SQL Database. Jangan memanggil tool ini lagi."))
                             continue
-                        if server_name == "rag" and "rag" not in allowed_conn:
-                            access_control.log_audit(username, "service", "service:rag", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (RAG dilarang)")
-                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG. Jangan memanggil tool ini lagi."))
-                            continue
+                        if server_name == "rag":
+                            if "rag" not in allowed_conn:
+                                access_control.log_audit(username, "service", "service:rag", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (RAG dilarang)")
+                                messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG. Jangan memanggil tool ini lagi."))
+                                continue
+                            if rag_call_count >= 2:
+                                messages.append(HumanMessage(content="SISTEM: Batas siklus penelusuran RAG tercapai. Dokumen yang terkumpul sudah memadai. Segera tuliskan jawaban akhir lengkap untuk pengguna sekarang."))
+                                continue
+                            rag_call_count += 1
                         if server_name == "sap" and "sap" not in allowed_conn:
                             access_control.log_audit(username, "sap", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SAP dilarang)")
                             messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP. Jangan memanggil tool ini lagi."))
@@ -1143,6 +1151,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     ))
                     continue
 
+                # Pembatasan siklus RAG berulang (maksimal 2 pemanggilan RAG per respons)
+                if server_name == "rag" and rag_call_count >= 2:
+                    logger.info(f"Membatasi siklus RAG berulang (sudah {rag_call_count} kali panggilan RAG). Meminta model langsung merangkum jawaban akhir.")
+                    messages.append(ToolMessage(
+                        content="Batas siklus penelusuran RAG tercapai. Dokumen dan konteks yang diperoleh sudah memadai. Segera tuliskan rangkuman dan jawaban akhir yang lengkap untuk pengguna dalam Bahasa Indonesia sekarang.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
                 if server_name == "sap" and "sap" not in allowed_conn:
                     access_control.log_audit(
                         actor=username,
@@ -1202,6 +1219,14 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     texts.append(f"Execution Error: {result}")
                             
                 content_str = "\n".join(texts)
+                if server_name == "rag":
+                    rag_call_count += 1
+                    if rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str)):
+                        content_str += (
+                            "\n\n[SISTEM]: Informasi dari dokumen SOP / basis pengetahuan RAG sudah memadai. "
+                            "Segera susun jawaban akhir yang lengkap dan rapi dalam Bahasa Indonesia untuk pengguna sekarang "
+                            "tanpa memanggil tool RAG tambahan."
+                        )
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
                 source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else "MCP"
