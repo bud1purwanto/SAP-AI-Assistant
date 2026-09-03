@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+import time
 from typing import Optional, Set
 import httpx
 from config import settings
@@ -37,6 +38,8 @@ class StreamableHttpClient:
         self.headers.setdefault("Accept", "application/json, text/event-stream")
         self.session_id = None
         self._initialized = False
+        self._tools_cache: list[MCPTool] = None
+        self._tools_cache_time: float = 0.0
 
     async def initialize(self, client: httpx.AsyncClient):
         if self._initialized:
@@ -71,7 +74,11 @@ class StreamableHttpClient:
 
         # Initial handshake selesai
 
-    async def list_tools(self, client: httpx.AsyncClient) -> list[MCPTool]:
+    async def list_tools(self, client: httpx.AsyncClient, force_refresh: bool = False) -> list[MCPTool]:
+        now = time.time()
+        if not force_refresh and self._tools_cache is not None and (now - self._tools_cache_time < 60.0):
+            return self._tools_cache
+
         await self.initialize(client)
         headers = dict(self.headers)
         if self.session_id:
@@ -95,7 +102,14 @@ class StreamableHttpClient:
                 description=item.get("description", ""),
                 input_schema=item.get("inputSchema", {})
             ))
+        self._tools_cache = tools_list
+        self._tools_cache_time = now
         return tools_list
+
+    def clear_tools_cache(self):
+        """Mengosongkan cache daftar tool untuk memicu refresh saat konfigurasi diubah."""
+        self._tools_cache = None
+        self._tools_cache_time = 0.0
 
     async def call_tool(self, client: httpx.AsyncClient, tool_name: str, arguments: dict) -> MCPCallResult:
         await self.initialize(client)
