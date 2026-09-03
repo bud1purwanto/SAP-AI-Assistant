@@ -127,6 +127,7 @@ export default function AdminAccessControl({
   const [roleViewMode, setRoleViewMode] = useState('grid'); // 'grid' | 'cards'
   const [selectedRoleCard, setSelectedRoleCard] = useState('abaper');
 
+  const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [masterEnabled, setMasterEnabled] = useState(false);
@@ -178,6 +179,7 @@ export default function AdminAccessControl({
       if (setActionError) setActionError(err.message || 'Gagal memuat matriks peran');
     } finally {
       setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -509,8 +511,63 @@ export default function AdminAccessControl({
     );
   });
 
+  if (initialLoading) {
+    return (
+      <div className="space-y-6 animate-fadeIn">
+        {/* Top Loading Progress Bar */}
+        <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full shadow-xs">
+          <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+
+        {/* Skeleton Master Switch Hero Banner */}
+        <div className="rounded-2xl border border-line p-5 sm:p-6 bg-surface animate-pulse">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+            <div className="flex items-start gap-4">
+              <div className="w-13 h-13 rounded-2xl bg-surface-sunken shrink-0" />
+              <div className="space-y-2.5">
+                <div className="w-52 h-6 rounded-lg bg-surface-sunken" />
+                <div className="w-80 sm:w-96 h-3.5 rounded-lg bg-surface-sunken/70" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-36 h-9 rounded-xl bg-surface-sunken" />
+              <div className="w-36 h-9 rounded-xl bg-surface-sunken" />
+            </div>
+          </div>
+        </div>
+
+        {/* Skeleton Subtabs Navigation */}
+        <div className="flex items-center justify-between gap-4 border-b border-line pb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-28 h-9 rounded-xl bg-surface-sunken animate-pulse" />
+            <div className="w-32 h-9 rounded-xl bg-surface-sunken animate-pulse" />
+            <div className="w-24 h-9 rounded-xl bg-surface-sunken animate-pulse" />
+          </div>
+          <div className="w-40 h-8 rounded-lg bg-surface-sunken animate-pulse" />
+        </div>
+
+        {/* Skeleton Role Matrix Table */}
+        <div className="rounded-2xl border border-line bg-surface p-4 space-y-3 animate-pulse">
+          <div className="w-full h-12 rounded-xl bg-surface-sunken" />
+          <div className="w-full h-10 rounded-xl bg-surface-sunken/50" />
+          <div className="w-full h-10 rounded-xl bg-surface-sunken/50" />
+          <div className="w-full h-10 rounded-xl bg-surface-sunken/50" />
+          <div className="w-full h-10 rounded-xl bg-surface-sunken/50" />
+          <div className="w-full h-10 rounded-xl bg-surface-sunken/50" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      {/* Top Loading Progress Bar */}
+      {(loading || saving || auditLoading) && (
+        <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-2 -mb-3 shadow-xs">
+          <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+      )}
+
       {/* 1. MASTER SWITCH BANNER - HERO STYLE */}
       <div
         className={`relative overflow-hidden rounded-2xl border p-5 sm:p-6 transition-all shadow-md ${
@@ -697,6 +754,13 @@ export default function AdminAccessControl({
           </div>
         )}
       </div>
+
+      {/* Loading Progress Bar below Sub-navigation */}
+      {(loading || saving || auditLoading) && (
+        <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-2 mb-1 shadow-xs">
+          <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+      )}
 
       {/* 3. SUBTAB CONTENT: ROLES MATRIX (TABEL GRID / ROLE CARDS) */}
       {activeSubTab === 'roles' && (

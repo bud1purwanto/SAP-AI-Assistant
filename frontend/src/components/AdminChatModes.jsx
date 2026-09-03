@@ -74,16 +74,18 @@ export default function AdminChatModes({
   const [editingMode, setEditingMode] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const [initialLoading, setInitialLoading] = useState(true);
+
   // AI Providers Gateway Config State
   const [nineRouterEnabled, setNineRouterEnabled] = useState(true);
-  const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('http://192.168.88.83:20128/v1');
-  const [nineRouterModel, setNineRouterModel] = useState('ag/gemini-3.7-flash-medium');
+  const [nineRouterBaseUrl, setNineRouterBaseUrl] = useState('');
+  const [nineRouterModel, setNineRouterModel] = useState('');
   const [nineRouterApiKey, setNineRouterApiKey] = useState('');
 
   const [openrouterEnabled, setOpenrouterEnabled] = useState(false);
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
-  const [openrouterModel, setOpenrouterModel] = useState('openrouter/auto');
-  const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('openrouter/free');
+  const [openrouterModel, setOpenrouterModel] = useState('');
+  const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('');
   const [savingProviders, setSavingProviders] = useState(false);
 
   const [newForm, setNewForm] = useState(INITIAL_FORM);
@@ -119,6 +121,7 @@ export default function AdminChatModes({
       if (setActionError) setActionError(err.message || 'Failed to load chat modes');
     } finally {
       setLoading(false);
+      setInitialLoading(false);
     }
   };
 
@@ -341,6 +344,45 @@ export default function AdminChatModes({
     }
   };
 
+  if (initialLoading) {
+    return (
+      <div className="space-y-6 animate-fadeIn">
+        {/* Loading Progress Bar */}
+        <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full shadow-xs">
+          <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+
+        {/* Skeleton Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line animate-pulse">
+          <div className="space-y-2">
+            <div className="w-56 h-6 rounded-lg bg-surface-sunken" />
+            <div className="w-80 sm:w-96 h-3.5 rounded-lg bg-surface-sunken/70" />
+          </div>
+          <div className="flex gap-2">
+            <div className="w-24 h-8 rounded-xl bg-surface-sunken" />
+            <div className="w-28 h-8 rounded-xl bg-surface-sunken" />
+          </div>
+        </div>
+
+        {/* Skeleton Provider Gateway Cards */}
+        <div className="p-5 sm:p-6 rounded-2xl border border-line bg-surface space-y-4 animate-pulse">
+          <div className="w-48 h-5 rounded-lg bg-surface-sunken" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="h-44 rounded-xl bg-surface-sunken/50" />
+            <div className="h-44 rounded-xl bg-surface-sunken/50" />
+          </div>
+        </div>
+
+        {/* Skeleton Mode Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-pulse">
+          <div className="h-40 rounded-2xl bg-surface border border-line" />
+          <div className="h-40 rounded-2xl bg-surface border border-line" />
+          <div className="h-40 rounded-2xl bg-surface border border-line" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header */}
@@ -378,6 +420,13 @@ export default function AdminChatModes({
           </button>
         </div>
       </div>
+
+      {/* Loading Progress Bar */}
+      {loading && (
+        <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-2 -mb-1 shadow-xs">
+          <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+      )}
 
       {/* AI Provider Gateway Settings (9Router & OpenRouter) */}
       <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-4">
