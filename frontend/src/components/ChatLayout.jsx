@@ -1653,27 +1653,48 @@ const ChatLayout = () => {
             {currentMessages.length === 0 && !isCurrentLoading && (
               <div className="pt-4 sm:pt-8 pb-3 sm:pb-4">
                 <div className="text-center mb-4 sm:mb-6">
-                  <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-3">
+                  <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-2.5">
                     <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
                   </div>
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display">{t('suggestions.heroTitle')}</h3>
-                    {dynamicSuggestions && (
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 border border-indigo-500/25 flex items-center gap-1">
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {t('suggestions.personalized')}
-                      </span>
+
+                  {/* Judul 100% Presisi di Tengah Tanpa Beban Elemen Kiri/Kanan */}
+                  <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight text-center">
+                    {t('suggestions.heroTitle')}
+                  </h3>
+
+                  {/* Badge & Tombol Refresh Terpusat Simetris di Bawah Judul */}
+                  <div className="flex items-center justify-center mt-2 mb-1.5">
+                    {dynamicSuggestions ? (
+                      <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20 text-[10px] sm:text-[11px] font-semibold shadow-2xs">
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
+                          {t('suggestions.personalized')}
+                        </span>
+                        <span className="w-px h-2.5 bg-indigo-500/25" />
+                        <button
+                          onClick={() => loadSuggestions(true)}
+                          disabled={isSuggestionsLoading}
+                          title={t('suggestions.refresh')}
+                          aria-label={t('suggestions.refresh')}
+                          className="p-0.5 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors cursor-pointer disabled:opacity-50 flex items-center"
+                        >
+                          <RefreshCw className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => loadSuggestions(true)}
+                        disabled={isSuggestionsLoading}
+                        title={t('suggestions.refresh')}
+                        aria-label={t('suggestions.refresh')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-raised border border-line text-[10px] sm:text-[11px] font-medium text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
+                      >
+                        <RefreshCw className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
+                        <span>{t('suggestions.refresh')}</span>
+                      </button>
                     )}
-                    <button
-                      onClick={() => loadSuggestions(true)}
-                      disabled={isSuggestionsLoading}
-                      title={t('suggestions.refresh')}
-                      aria-label={t('suggestions.refresh')}
-                      className="p-1 text-content-muted hover:text-content hover:bg-surface-hover rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
-                    </button>
                   </div>
+
                   <p className="text-xs sm:text-sm text-content-muted mt-1 max-w-lg mx-auto">
                     {t('suggestions.heroSubtitle')}
                   </p>
