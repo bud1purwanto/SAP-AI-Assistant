@@ -1446,6 +1446,7 @@ export default function AdminAccessControl({
           const isWrite = Boolean(current.can_write);
 
           return (
+            <td key={r.role} className="py-3 px-2 text-center border-l border-b border-line/40">
               <div className="flex items-center justify-center gap-1.5">
                 {/* Read Button */}
                 <button
