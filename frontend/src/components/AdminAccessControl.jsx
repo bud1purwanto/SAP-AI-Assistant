@@ -592,48 +592,78 @@ export default function AdminAccessControl({
 
       {/* 2. SUB-NAVIGATION BAR & VIEW CONTROLS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3">
-        <div className="flex items-center gap-1.5 p-1 bg-surface-sunken rounded-xl border border-line/60 self-start">
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('roles')}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === 'roles'
-                ? 'bg-accent text-white shadow-xs'
-                : 'text-content-muted hover:text-content'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>{t('access.tabRoles')}</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5 p-1 bg-surface-sunken rounded-xl border border-line/60 self-start">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('roles')}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeSubTab === 'roles'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>{t('access.tabRoles')}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveSubTab('users')}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === 'users'
-                ? 'bg-accent text-white shadow-xs'
-                : 'text-content-muted hover:text-content'
-            }`}
-          >
-            <UserCheck className="w-4 h-4" />
-            <span>{t('access.tabUsers')}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('users')}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeSubTab === 'users'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>{t('access.tabUsers')}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveSubTab('audit');
-              loadAuditLogs();
-            }}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeSubTab === 'audit'
-                ? 'bg-accent text-white shadow-xs'
-                : 'text-content-muted hover:text-content'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>{t('access.tabAudit')}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveSubTab('audit');
+                loadAuditLogs();
+              }}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeSubTab === 'audit'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              <span>{t('access.tabAudit')}</span>
+            </button>
+          </div>
+
+          {/* Action Bar for Unsaved Role Changes: Ditaruh di samping tombol Role Matrix */}
+          {activeSubTab === 'roles' && modifiedRoles.size > 0 && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-accent/10 border border-accent/30 text-xs animate-fadeIn">
+              <span className="flex items-center gap-1.5 text-accent font-bold text-xs">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span>{modifiedRoles.size} peran diubah</span>
+              </span>
+              <div className="h-3.5 w-px bg-accent/25" />
+              <button
+                type="button"
+                onClick={loadRoleMatrix}
+                disabled={saving}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAllModifiedRoles}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-accent text-white hover:bg-accent/90 shadow-xs cursor-pointer transition-all active:scale-95"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>{saving ? 'Menyimpan…' : 'Simpan Semua'}</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* View Switcher for Roles tab */}
@@ -863,45 +893,6 @@ export default function AdminAccessControl({
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* FLOATING ACTION BAR FOR UNSAVED CHANGES */}
-          {modifiedRoles.size > 0 && (
-            <div className="sticky bottom-4 z-40 flex items-center justify-between p-4 rounded-2xl bg-surface-raised/95 backdrop-blur-xl border border-accent/40 shadow-2xl animate-in slide-in-from-bottom-2">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-accent/20 text-accent animate-pulse">
-                  <Info className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-content">
-                    Ada perubahan pada {modifiedRoles.size} peran yang belum disimpan
-                  </h4>
-                  <p className="text-[11px] text-content-muted">
-                    Peran: {[...modifiedRoles].join(', ')}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={loadRoleMatrix}
-                  disabled={saving}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content border border-line cursor-pointer transition-all"
-                >
-                  Batal
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveAllModifiedRoles}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-xs font-bold bg-accent text-white hover:bg-accent/90 shadow-md cursor-pointer transition-all active:scale-[0.98]"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>{saving ? 'Menyimpan…' : 'Simpan Semua Perubahan'}</span>
-                </button>
               </div>
             </div>
           )}

@@ -1106,6 +1106,11 @@ async def sync_admin_access_resources_endpoint(admin: dict = Depends(require_sup
 @app.get("/api/admin/access/roles")
 async def get_admin_access_roles_endpoint(admin: dict = Depends(require_superadmin)):
     """Mengambil matriks izin Role x Resource."""
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+    except Exception as e:
+        logger.warning(f"Auto-sync on get_admin_access_roles gagal: {e}")
     return access_control.get_all_roles_matrix()
 
 
@@ -1122,6 +1127,11 @@ async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, a
 @app.get("/api/admin/access/users/{username}")
 async def get_admin_access_user_endpoint(username: str, admin: dict = Depends(require_superadmin)):
     """Mengambil izin spesifik pengguna beserta resolusi warisan rolenya."""
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+    except Exception as e:
+        logger.warning(f"Auto-sync on get_admin_access_user gagal: {e}")
     return access_control.get_user_matrix(username)
 
 
