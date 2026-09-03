@@ -738,6 +738,7 @@ class AdminCreateSkillRequest(BaseModel):
     name: str
     description: str = ""
     content: str
+    tags: str = ""
     enabled: bool = True
 
 
@@ -745,7 +746,23 @@ class AdminUpdateSkillRequest(BaseModel):
     name: str = None
     description: str = None
     content: str = None
+    tags: str = None
     enabled: bool = None
+
+
+@app.get("/api/skills")
+async def get_public_active_skills_endpoint(user: dict = Depends(get_current_user)):
+    """Mengambil daftar ringkas skill aktif beserta tags untuk bantuan chat / autocomplete."""
+    skills = get_skills(enabled_only=True)
+    return [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "description": s["description"],
+            "tags": s.get("tags", "") or "",
+        }
+        for s in skills
+    ]
 
 
 @app.get("/api/admin/skills")
@@ -770,6 +787,7 @@ async def create_skill_endpoint(
             name=req.name.strip(),
             description=req.description.strip(),
             content=req.content.strip(),
+            tags=req.tags.strip() if req.tags else "",
             enabled=req.enabled,
         )
         return new_skill
@@ -790,6 +808,7 @@ async def update_skill_endpoint(
             name=req.name,
             description=req.description,
             content=req.content,
+            tags=req.tags,
             enabled=req.enabled,
         )
         if not updated:

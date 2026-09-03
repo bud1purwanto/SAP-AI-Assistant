@@ -54,6 +54,61 @@ def _clean_thinking_process(text: str) -> str:
     return text.strip()
 
 
+def select_relevant_skills(
+    query: str,
+    history: list,
+    skills: list[dict],
+    explicit_skill: str = None
+) -> tuple[list[dict], list[dict]]:
+    """Pemuatan Selektif Dinamis Skill SOP berdasarkan kata kunci prompt, riwayat, atau perintah eksplisit."""
+    if not skills:
+        return [], []
+
+    q = (query or "").lower()
+    if history:
+        recent_texts = []
+        for h in history[-2:]:
+            c = h.get("content") if isinstance(h, dict) else getattr(h, "content", "")
+            if c and isinstance(c, str):
+                recent_texts.append(c.lower())
+        if recent_texts:
+            q = q + " " + " ".join(recent_texts)
+
+    matched = []
+    available_summaries = []
+
+    for sk in skills:
+        name = sk.get("name", "").lower()
+        raw_tags = sk.get("tags") or ""
+        tags = [t.strip().lower() for t in raw_tags.split(",") if t.strip()]
+
+        is_match = False
+        if explicit_skill:
+            exp = explicit_skill.lower()
+            if exp in name or any(exp == t or exp in t for t in tags):
+                is_match = True
+        else:
+            if name in q:
+                is_match = True
+            else:
+                for t in tags:
+                    if len(t) <= 3:
+                        if re.search(r'\b' + re.escape(t) + r'\b', q):
+                            is_match = True
+                            break
+                    else:
+                        if t in q:
+                            is_match = True
+                            break
+
+        if is_match:
+            matched.append(sk)
+        else:
+            available_summaries.append(sk)
+
+    return matched, available_summaries
+
+
 def _chunk_text(content) -> str:
     """Teks mentah dari satu potongan aliran, tanpa pembersihan apa pun.
 
@@ -216,6 +271,39 @@ async def _noop_progress(**kwargs):
 
 async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] = "user", user_persona: str = "",
                        username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
+    # 0.0 Penanganan Cepat Perintah Slash /skills
+    raw_message = (chat_req.message or "").strip()
+    if raw_message.lower() in ("/skills", "/skill", "/help skills"):
+        from database import get_skills
+        active_skills = get_skills(enabled_only=True)
+        rows_md = []
+        for sk in active_skills:
+            tags_disp = f"`{sk.get('tags')}`" if sk.get("tags") else "*-*"
+            rows_md.append(f"| **{sk['name']}** | {tags_disp} | {sk.get('description') or '-'} |")
+        table_str = "\n".join(rows_md) if rows_md else "| Belum ada skill aktif | - | - |"
+
+        reply_md = (
+            "### 📚 Modul Panduan Keahlian & SOP Aktif (*Skills Catalog*)\n\n"
+            "Berikut adalah modul keahlian & SOP teknis yang terdaftar di sistem:\n\n"
+            "| Modul Keahlian | Kata Kunci / Tags | Deskripsi Ringkas |\n"
+            "| :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 **Cara Menggunakan Skill:**\n"
+            "1. **Otomatis (*Smart Matching*)**: Ajukan pertanyaan langsung (misal: *'cara cancel slit roll'*, *'buatkan program zrep'*). Sistem otomatis mendeteksi kata kunci dari tag di atas dan memuat panduan SOP terkait secara selektif.\n"
+            "2. **Eksplisit**: Awali pesan Anda dengan `/skill <nama_modul> <pertanyaan>` (contoh: `/skill pp bagaimana prosedur pembatalan order slitting?` atau `/skill mm tolong rekap format po valid`)."
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            await on_progress("done", "Selesai", 1)
+        return ChatResponse(reply=reply_md, sources=[])
+
+    explicit_skill_keyword = None
+    m_exp = re.match(r'^/skill\s+(\w+)\s+(.*)$', raw_message, re.IGNORECASE | re.DOTALL)
+    if m_exp:
+        explicit_skill_keyword = m_exp.group(1).strip()
+        chat_req.message = m_exp.group(2).strip()
+
     # 0. Resolusi Mode Chat & Batas Iterasi
     from database import (
         get_system_config,
@@ -755,7 +843,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if global_persona:
         system_prompt += "Patuhi persona organisasi di atas secara konsisten pada setiap balasan.\n"
 
-    # --- KATALOG SKILL & SPESIALISASI ---
+    # --- KATALOG SKILL & SPESIALISASI DINAMIS (SELECTIVE SKILL INJECTION) ---
     try:
         from database import get_skills
         active_skills = get_skills(enabled_only=True)
@@ -764,23 +852,46 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         active_skills = []
 
     if active_skills:
+        matched_skills, other_skills = select_relevant_skills(
+            query=chat_req.message,
+            history=chat_req.history,
+            skills=active_skills,
+            explicit_skill=explicit_skill_keyword
+        )
+
         system_prompt += (
             "\n\n## PANDUAN KEAHLIAN / SKILL KHUSUS (STANDAR OPERASIONAL PROSEDUR)\n"
-            "Berikut adalah panduan keahlian dan SOP teknis modul spesialisasi yang telah didefinisikan organisasi.\n"
+            "Berikut adalah panduan keahlian dan SOP teknis modul spesialisasi organisasi.\n"
             "HIRARKI PRIORITAS ATURAN:\n"
             "1. **SKILL (SOP Teknis Modul)**: Memiliki prioritas TERTINGGI untuk urusan teknis SAP, standar coding/penamaan, referensi tabel/T-code, dan alur investigasi modul.\n"
-            "2. **PERSONA ORGANISASI**: Mengatur identitas dasar peran asisten (misal SAP Leader), kepatuhan data, dan tone perusahaan.\n"
+            "2. **PERSONA ORGANISASI**: Mengatur identitas dasar peran asisten, kepatuhan data, dan tone perusahaan.\n"
             "3. **PREFERENSI PRIBADI PENGGUNA**: Mengatur penyesuaian gaya penyampaian user, tanpa boleh melanggar SOP Teknis Skill maupun Persona Organisasi.\n\n"
-            "Bila permintaan atau topik pengguna berkaitan dengan salah satu skill di bawah ini, "
-            "Anda WAJIB membaca, memprioritaskan, dan mematuhi panduan/aturan teknis di dalam skill tersebut terlebih dahulu:\n"
         )
-        for sk in active_skills:
+
+        if matched_skills:
             system_prompt += (
-                f"\n### [SKILL] {sk['name']}\n"
-                f"**Deskripsi:** {sk['description']}\n"
-                f"**Pedoman & SOP:**\n"
-                f"{sk['content']}\n"
+                "Berdasarkan topik permintaan pengguna saat ini, modul panduan berikut ini AKTIF dan WAJIB dipatuhi secara ketat:\n"
             )
+            for sk in matched_skills:
+                system_prompt += (
+                    f"\n### [SKILL AKTIF] {sk['name']}\n"
+                    f"**Deskripsi:** {sk['description']}\n"
+                    f"**Pedoman & SOP:**\n"
+                    f"{sk['content']}\n"
+                )
+        else:
+            system_prompt += (
+                "Tidak ada modul spesialisasi teknis khusus yang relevan langsung untuk permintaan saat ini. Jawablah sesuai konteks obrolan secara efisien.\n"
+            )
+
+        if other_skills:
+            system_prompt += (
+                "\n*Modul spesialisasi lain yang terdaftar di sistem (dapat dipicu otomatis dengan kata kunci atau `/skill <nama>`):*\n"
+            )
+            for sk in other_skills:
+                tag_str = f" [Tags: {sk.get('tags')}]" if sk.get('tags') else ""
+                system_prompt += f"- **{sk['name']}**{tag_str}: {sk['description']}\n"
+
         system_prompt += "\n----------------------------------------------------------------\n"
 
     # ------------------------------------------------------------------

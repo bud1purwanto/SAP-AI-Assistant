@@ -457,6 +457,28 @@ def _m0010_seed_skill_sap_mm(conn):
     """), {"mm_content": DEFAULT_SKILL_MM})
 
 
+def _m0011_skill_tags(conn):
+    """Tambahkan kolom tags pada tabel skills dan seed tags bawaan untuk modul default."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.skills ADD COLUMN IF NOT EXISTS tags text DEFAULT '';
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET tags = 'abap, program, coding, se38, se80, bapi, syntax, zprogram, function module, include'
+        WHERE name = 'SAP ABAP' AND (tags IS NULL OR tags = '');
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET tags = 'pp, produksi, production, slit roll, slitting, bom, routing, work center, afko, co01, zpp001, mrp'
+        WHERE name = 'SAP PP' AND (tags IS NULL OR tags = '');
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.skills
+        SET tags = 'mm, purchasing, po, purchase order, material, vendor, bapi_po_create1, mara, ekko, migo, pr'
+        WHERE name = 'SAP MM' AND (tags IS NULL OR tags = '');
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -468,6 +490,7 @@ MIGRATIONS = [
     ("0008_peran_ekstra_backend_frontend_basis_data", _m0008_peran_ekstra_backend_frontend_basis_data),
     ("0009_multi_role_pengguna", _m0009_multi_role_pengguna),
     ("0010_seed_skill_sap_mm", _m0010_seed_skill_sap_mm),
+    ("0011_skill_tags", _m0011_skill_tags),
 ]
 
 

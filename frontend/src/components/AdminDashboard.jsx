@@ -109,8 +109,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [skillSearch, setSkillSearch] = useState('');
   const [isAddSkillOpen, setIsAddSkillOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState(null);
-  const [newSkillForm, setNewSkillForm] = useState({ name: '', description: '', content: '', enabled: true });
-  const [editSkillForm, setEditSkillForm] = useState({ name: '', description: '', content: '', enabled: true });
+  const [newSkillForm, setNewSkillForm] = useState({ name: '', description: '', content: '', tags: '', enabled: true });
+  const [editSkillForm, setEditSkillForm] = useState({ name: '', description: '', content: '', tags: '', enabled: true });
   const [skillSaving, setSkillSaving] = useState(false);
 
   // AI & MCP Config State
@@ -488,7 +488,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     try {
       await api.adminCreateSkill(newSkillForm);
       setActionSuccess(language === 'en' ? `Skill '${newSkillForm.name}' added!` : `Skill '${newSkillForm.name}' berhasil ditambahkan!`);
-      setNewSkillForm({ name: '', description: '', content: '', enabled: true });
+      setNewSkillForm({ name: '', description: '', content: '', tags: '', enabled: true });
       setIsAddSkillOpen(false);
       fetchSkills();
     } catch (err) {
@@ -1598,6 +1598,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 <p className="text-[11px] text-content-muted line-clamp-1">
                                   {sk.description || (language === 'en' ? 'No brief description' : 'Tidak ada deskripsi singkat')}
                                 </p>
+                                {sk.tags && (
+                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                    {sk.tags.split(',').map((tag, idx) => {
+                                      const tClean = tag.trim();
+                                      if (!tClean) return null;
+                                      return (
+                                        <span key={idx} className="px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[10px] font-mono">
+                                          #{tClean}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1633,6 +1646,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   name: sk.name,
                                   description: sk.description,
                                   content: sk.content,
+                                  tags: sk.tags || '',
                                   enabled: sk.enabled
                                 });
                               }}
@@ -1716,6 +1730,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder={language === 'en' ? 'Scope overview of this skill module' : 'Ringkasan ruang lingkup skill ini (misal: Standar penulisan program ABAP dan best practice)'}
                           />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {language === 'en' ? 'Tags / Trigger Keywords (comma separated)' : 'Tags / Kata Kunci Pemicu (pisahkan dengan koma)'}
+                          </label>
+                          <input
+                            type="text"
+                            value={newSkillForm.tags}
+                            onChange={(e) => setNewSkillForm({ ...newSkillForm, tags: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                            placeholder="e.g. pp, produksi, slit roll, slitting, bom, routing, order"
+                          />
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en' ? 'Keywords that automatically trigger selective injection of this SOP during chat.' : 'Kata kunci yang akan memicu pemuatan otomatis panduan ini ke memori AI saat percakapan relevan.'}
+                          </p>
                         </div>
 
                         <div>
@@ -1812,6 +1842,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             onChange={(e) => setEditSkillForm({ ...editSkillForm, description: e.target.value })}
                             className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                           />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {language === 'en' ? 'Tags / Trigger Keywords (comma separated)' : 'Tags / Kata Kunci Pemicu (pisahkan dengan koma)'}
+                          </label>
+                          <input
+                            type="text"
+                            value={editSkillForm.tags}
+                            onChange={(e) => setEditSkillForm({ ...editSkillForm, tags: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs font-mono bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                            placeholder="e.g. pp, produksi, slit roll, slitting, bom, routing, order"
+                          />
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en' ? 'Keywords that automatically trigger selective injection of this SOP during chat.' : 'Kata kunci yang akan memicu pemuatan otomatis panduan ini ke memori AI saat percakapan relevan.'}
+                          </p>
                         </div>
 
                         <div>

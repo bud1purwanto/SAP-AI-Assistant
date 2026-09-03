@@ -31,6 +31,7 @@ const formatSize = (bytes) => (bytes < 1024 * 1024
 
 const ROTATING_PLACEHOLDERS_ID = [
   'Tanyakan sesuatu tentang SAP…',
+  'Coba ketik /skills untuk melihat daftar modul SOP keahlian…',
   'Coba: Berapa stok material di Plant 1000 saat ini?',
   'Coba: Cek status Purchase Order terbaru…',
   'Coba: Jelaskan alur rilis PR menjadi PO…',
@@ -40,6 +41,7 @@ const ROTATING_PLACEHOLDERS_ID = [
 
 const ROTATING_PLACEHOLDERS_EN = [
   'Ask something about SAP…',
+  'Try typing /skills to view domain SOP skill catalog…',
   'Try: What is the current stock level in plant 1000?',
   'Try: Check latest Purchase Order delivery status…',
   'Try: Explain the release strategy flow for PO…',

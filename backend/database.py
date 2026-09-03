@@ -2163,14 +2163,14 @@ def get_skills(enabled_only: bool = False) -> list[dict]:
         with engine.connect() as conn:
             if enabled_only:
                 stmt = text("""
-                    SELECT id, name, description, content, enabled, created_at, updated_at
+                    SELECT id, name, description, content, tags, enabled, created_at, updated_at
                     FROM ai_assistant.skills
                     WHERE enabled = true
                     ORDER BY name ASC
                 """)
             else:
                 stmt = text("""
-                    SELECT id, name, description, content, enabled, created_at, updated_at
+                    SELECT id, name, description, content, tags, enabled, created_at, updated_at
                     FROM ai_assistant.skills
                     ORDER BY id ASC
                 """)
@@ -2181,6 +2181,7 @@ def get_skills(enabled_only: bool = False) -> list[dict]:
                     "name": r.name,
                     "description": r.description or "",
                     "content": r.content or "",
+                    "tags": getattr(r, "tags", "") or "",
                     "enabled": bool(r.enabled),
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -2198,7 +2199,7 @@ def get_skill_by_id(skill_id: int) -> dict | None:
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                SELECT id, name, description, content, enabled, created_at, updated_at
+                SELECT id, name, description, content, tags, enabled, created_at, updated_at
                 FROM ai_assistant.skills
                 WHERE id = :id
             """), {"id": skill_id}).fetchone()
@@ -2209,6 +2210,7 @@ def get_skill_by_id(skill_id: int) -> dict | None:
                 "name": r.name,
                 "description": r.description or "",
                 "content": r.content or "",
+                "tags": getattr(r, "tags", "") or "",
                 "enabled": bool(r.enabled),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -2218,19 +2220,20 @@ def get_skill_by_id(skill_id: int) -> dict | None:
         return None
 
 
-def create_skill(name: str, description: str = "", content: str = "", enabled: bool = True) -> dict:
+def create_skill(name: str, description: str = "", content: str = "", tags: str = "", enabled: bool = True) -> dict:
     """Membuat skill baru di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                INSERT INTO ai_assistant.skills (name, description, content, enabled, updated_at)
-                VALUES (:name, :description, :content, :enabled, CURRENT_TIMESTAMP)
-                RETURNING id, name, description, content, enabled, created_at, updated_at
+                INSERT INTO ai_assistant.skills (name, description, content, tags, enabled, updated_at)
+                VALUES (:name, :description, :content, :tags, :enabled, CURRENT_TIMESTAMP)
+                RETURNING id, name, description, content, tags, enabled, created_at, updated_at
             """), {
                 "name": name.strip(),
                 "description": (description or "").strip(),
                 "content": (content or "").strip(),
+                "tags": (tags or "").strip(),
                 "enabled": bool(enabled)
             }).fetchone()
             conn.commit()
@@ -2239,6 +2242,7 @@ def create_skill(name: str, description: str = "", content: str = "", enabled: b
                 "name": r.name,
                 "description": r.description or "",
                 "content": r.content or "",
+                "tags": getattr(r, "tags", "") or "",
                 "enabled": bool(r.enabled),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -2253,6 +2257,7 @@ def update_skill(
     name: str = None,
     description: str = None,
     content: str = None,
+    tags: str = None,
     enabled: bool = None
 ) -> dict | None:
     """Memperbarui skill yang ada."""
@@ -2264,20 +2269,22 @@ def update_skill(
         new_name = name.strip() if name is not None else current["name"]
         new_desc = description.strip() if description is not None else current["description"]
         new_content = content if content is not None else current["content"]
+        new_tags = tags.strip() if tags is not None else current["tags"]
         new_enabled = enabled if enabled is not None else current["enabled"]
 
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
                 UPDATE ai_assistant.skills
-                SET name = :name, description = :description, content = :content, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                SET name = :name, description = :description, content = :content, tags = :tags, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id
-                RETURNING id, name, description, content, enabled, created_at, updated_at
+                RETURNING id, name, description, content, tags, enabled, created_at, updated_at
             """), {
                 "id": skill_id,
                 "name": new_name,
                 "description": new_desc,
                 "content": new_content,
+                "tags": new_tags,
                 "enabled": new_enabled
             }).fetchone()
             conn.commit()
@@ -2286,6 +2293,7 @@ def update_skill(
                 "name": r.name,
                 "description": r.description or "",
                 "content": r.content or "",
+                "tags": getattr(r, "tags", "") or "",
                 "enabled": bool(r.enabled),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
