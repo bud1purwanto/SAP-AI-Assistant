@@ -51,11 +51,13 @@ def is_bcrypt_hash(value: str) -> bool:
 
 # --- JWT ---
 
-def create_access_token(username: str, role: str) -> str:
+def create_access_token(username: str, role: str, roles: Optional[list] = None) -> str:
     now = datetime.now(timezone.utc)
+    roles_list = roles if roles else [role]
     payload = {
         "sub": username,
         "role": role,
+        "roles": roles_list,
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
     }
@@ -89,17 +91,20 @@ def get_current_user_optional(
     Dipakai endpoint yang memang boleh diakses tamu (mis. chat dengan kuota).
     """
     if creds is None or not creds.credentials:
-        return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "is_guest": True}
+        return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "roles": [GUEST_ROLE], "is_guest": True}
 
     payload = decode_access_token(creds.credentials)
     if not payload or not payload.get("sub"):
         # Token kedaluwarsa / rusak: perlakukan sebagai tamu daripada menolak,
         # agar sesi lama tidak menutup akses mode tamu.
-        return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "is_guest": True}
+        return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "roles": [GUEST_ROLE], "is_guest": True}
 
+    user_role = payload.get("role", "user")
+    user_roles = payload.get("roles") or [user_role]
     return {
         "username": payload["sub"],
-        "role": payload.get("role", "user"),
+        "role": user_role,
+        "roles": user_roles,
         "is_guest": False,
     }
 
@@ -115,9 +120,12 @@ def get_current_user(
     if not payload or not payload.get("sub"):
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
+    user_role = payload.get("role", "user")
+    user_roles = payload.get("roles") or [user_role]
     return {
         "username": payload["sub"],
-        "role": payload.get("role", "user"),
+        "role": user_role,
+        "roles": user_roles,
         "is_guest": False,
     }
 
@@ -127,7 +135,8 @@ def require_superadmin(user: dict = Depends(get_current_user)) -> dict:
 
     Role diambil dari token yang ditandatangani server, bukan dari input klien.
     """
-    if user.get("role") != "superadmin":
+    user_roles = [r.lower() for r in user.get("roles", [user.get("role", "")])]
+    if "superadmin" not in user_roles and user.get("role") != "superadmin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Akses ditolak. Fitur ini hanya untuk Super Admin.",

@@ -422,10 +422,17 @@ def authenticate_user(username: str, password: str):
                     logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
 
             if authenticated:
+                role_rows = conn.execute(text("""
+                    SELECT role FROM ai_assistant.user_roles
+                    WHERE LOWER(username) = LOWER(:u)
+                    ORDER BY created_at ASC
+                """), {"u": uname_clean}).fetchall()
+                roles = [r.role for r in role_rows if r.role] if role_rows else ([row.role] if row.role else ["user"])
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
                     "role": row.role,
+                    "roles": roles,
                     "assistant_persona": row.assistant_persona or ""
                 }
     except Exception as e:
@@ -470,6 +477,77 @@ def change_user_password(username: str, old_password: str, new_password: str):
         return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
 
 
+def get_user_roles(username: str) -> list:
+    """Mengambil seluruh role yang dimiliki oleh user dari ai_assistant.user_roles."""
+    uname_clean = (username or "").strip()
+    if not uname_clean:
+        return ["user"]
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT role FROM ai_assistant.user_roles
+                WHERE LOWER(username) = LOWER(:u)
+                ORDER BY created_at ASC
+            """), {"u": uname_clean}).fetchall()
+            if rows:
+                return [r.role for r in rows if r.role]
+            # Fallback ke kolom role pada tabel users jika belum ada baris di user_roles
+            single = conn.execute(text("""
+                SELECT role FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)
+            """), {"u": uname_clean}).scalar()
+            return [single] if single else ["user"]
+    except Exception as e:
+        logger.error(f"Error get_user_roles for '{username}': {e}")
+        return ["user"]
+
+
+def set_user_roles(username: str, roles: list, conn=None):
+    """Menyimpan daftar role baru milik user dan menyelaraskan primary role."""
+    uname_clean = (username or "").strip()
+    if not uname_clean:
+        return False
+
+    clean_roles = []
+    for r in (roles or []):
+        r_str = (r or "").strip().lower()
+        if r_str and r_str not in clean_roles:
+            clean_roles.append(r_str)
+    if not clean_roles:
+        clean_roles = ["user"]
+
+    primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
+
+    def _execute(connection):
+        connection.execute(text("""
+            DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)
+        """), {"u": uname_clean})
+        for r in clean_roles:
+            connection.execute(text("""
+                INSERT INTO ai_assistant.user_roles (username, role)
+                VALUES (:u, :r)
+                ON CONFLICT (username, role) DO NOTHING
+            """), {"u": uname_clean, "r": r})
+        connection.execute(text("""
+            UPDATE ai_assistant.users
+            SET role = :pr
+            WHERE LOWER(username) = LOWER(:u)
+        """), {"pr": primary_role, "u": uname_clean})
+
+    try:
+        if conn is not None:
+            _execute(conn)
+        else:
+            engine = get_engine()
+            with engine.connect() as new_conn:
+                _execute(new_conn)
+                new_conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Error set_user_roles for '{username}': {e}")
+        return False
+
+
 def get_user_by_username(username: str):
     """Ambil detail user berdasarkan username."""
     uname_clean = (username or "").strip()
@@ -482,10 +560,17 @@ def get_user_by_username(username: str):
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
             if row:
+                role_rows = conn.execute(text("""
+                    SELECT role FROM ai_assistant.user_roles
+                    WHERE LOWER(username) = LOWER(:u)
+                    ORDER BY created_at ASC
+                """), {"u": uname_clean}).fetchall()
+                roles = [r.role for r in role_rows if r.role] if role_rows else ([row.role] if row.role else ["user"])
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
                     "role": row.role,
+                    "roles": roles,
                     "assistant_persona": row.assistant_persona or ""
                 }
     except Exception as e:
@@ -585,6 +670,7 @@ def get_system_config():
     token_limit_enabled = bool(settings.token_limit_enabled)
     chat_modes_enabled = True
     ai_suggestions_enabled = True
+    mcp_access_control_enabled = False
 
     try:
         engine = get_engine()
@@ -603,6 +689,8 @@ def get_system_config():
                     chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'ai_suggestions_enabled' and r.value is not None:
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'mcp_access_control_enabled' and r.value is not None:
+                    mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -644,6 +732,7 @@ def get_system_config():
         "token_limit_enabled": token_limit_enabled,
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
+        "mcp_access_control_enabled": mcp_access_control_enabled,
     }
 
 def update_system_config(
@@ -663,6 +752,7 @@ def update_system_config(
     token_limit_enabled: bool = None,
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
+    mcp_access_control_enabled: bool = None,
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
@@ -688,6 +778,13 @@ def update_system_config(
                     VALUES ('ai_suggestions_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if ai_suggestions_enabled else "false"})
+
+            if mcp_access_control_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('mcp_access_control_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if mcp_access_control_enabled else "false"})
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
@@ -1449,11 +1546,26 @@ def list_all_users():
                 FROM ai_assistant.users
                 ORDER BY role DESC, username ASC
             """)).fetchall()
+
+            role_rows = conn.execute(text("""
+                SELECT username, role
+                FROM ai_assistant.user_roles
+                ORDER BY created_at ASC
+            """)).fetchall()
+
+            roles_by_user = {}
+            for rr in role_rows:
+                u_key = rr.username.lower()
+                if u_key not in roles_by_user:
+                    roles_by_user[u_key] = []
+                roles_by_user[u_key].append(rr.role)
+
             return [
                 {
                     "username": r.username,
                     "full_name": r.full_name or "",
                     "role": r.role,
+                    "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
                     "assistant_persona": r.assistant_persona or ""
                 }
                 for r in rows
@@ -1462,20 +1574,37 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = ""):
-    """Buat user baru di database."""
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None):
+    """Buat user baru di database dengan dukungan banyak peran."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(text("SELECT username FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if existing:
                 return {"success": False, "message": f"User '{username}' sudah ada."}
-            
+
+            clean_roles = []
+            for r in (roles or ([role] if role else ["user"])):
+                r_str = (r or "").strip().lower()
+                if r_str and r_str not in clean_roles:
+                    clean_roles.append(r_str)
+            if not clean_roles:
+                clean_roles = ["user"]
+            primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
+
             conn.execute(text("""
                 INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona)
                 VALUES (:u, :p, :fn, :r, :persona)
             """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
-                   "r": role, "persona": persona})
+                   "r": primary_role, "persona": persona})
+
+            for r in clean_roles:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.user_roles (username, role)
+                    VALUES (:u, :r)
+                    ON CONFLICT (username, role) DO NOTHING
+                """), {"u": username.strip(), "r": r})
+
             conn.commit()
             return {"success": True, "message": f"User '{username}' berhasil dibuat."}
     except Exception as e:
@@ -1483,8 +1612,8 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
         return {"success": False, "message": str(e)}
 
 def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
-                         full_name: str = None):
-    """Admin mengupdate data user (role, persona, dan optional reset password)."""
+                         full_name: str = None, roles: list = None):
+    """Admin mengupdate data user (role, roles, persona, dan optional reset password)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -1495,9 +1624,37 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
             updates = []
             params = {"u": username.strip()}
 
-            if role is not None:
+            if roles is not None:
+                clean_roles = []
+                for r in roles:
+                    r_str = (r or "").strip().lower()
+                    if r_str and r_str not in clean_roles:
+                        clean_roles.append(r_str)
+                if not clean_roles:
+                    clean_roles = ["user"]
+                primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
+                updates.append("role = :r")
+                params["r"] = primary_role
+
+                # Update tabel user_roles
+                conn.execute(text("DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+                for r in clean_roles:
+                    conn.execute(text("""
+                        INSERT INTO ai_assistant.user_roles (username, role)
+                        VALUES (:u, :r)
+                        ON CONFLICT (username, role) DO NOTHING
+                    """), {"u": username.strip(), "r": r})
+            elif role is not None:
                 updates.append("role = :r")
                 params["r"] = role
+                # Selaraskan juga user_roles
+                conn.execute(text("DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.user_roles (username, role)
+                    VALUES (:u, :r)
+                    ON CONFLICT (username, role) DO NOTHING
+                """), {"u": username.strip(), "r": role.strip().lower()})
+
             if persona is not None:
                 updates.append("assistant_persona = :p")
                 params["p"] = persona

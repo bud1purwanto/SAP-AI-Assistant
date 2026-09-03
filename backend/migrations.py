@@ -281,6 +281,170 @@ def _m0006_mode_chat(conn):
     """))
 
 
+
+def _m0007_akses_mcp_per_user(conn):
+    """Katalog resource MCP dan kontrol otorisasi akses per peran serta per pengguna."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.mcp_resources (
+            resource_key   VARCHAR(80) PRIMARY KEY,
+            kind           VARCHAR(20) NOT NULL,
+            label          VARCHAR(120) NOT NULL,
+            sid            VARCHAR(20) NOT NULL DEFAULT '',
+            client         VARCHAR(10) NOT NULL DEFAULT '',
+            is_production  BOOLEAN NOT NULL DEFAULT FALSE,
+            first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            archived       BOOLEAN NOT NULL DEFAULT FALSE
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.role_resource_access (
+            role          VARCHAR(40) NOT NULL,
+            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
+            allowed       BOOLEAN NOT NULL DEFAULT FALSE,
+            can_write     BOOLEAN NOT NULL DEFAULT FALSE,
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (role, resource_key)
+        )
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_resource_access (
+            username      VARCHAR(80) NOT NULL,
+            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
+            allowed       BOOLEAN NOT NULL DEFAULT FALSE,
+            can_write     BOOLEAN NOT NULL DEFAULT FALSE,
+            valid_until   TIMESTAMPTZ,
+            granted_by    VARCHAR(80),
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, resource_key)
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_res_access_user
+        ON ai_assistant.user_resource_access (LOWER(username));
+    """))
+
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.access_audit (
+            id            BIGSERIAL PRIMARY KEY,
+            actor         VARCHAR(80) NOT NULL,
+            target_type   VARCHAR(20) NOT NULL,
+            target_id     VARCHAR(80) NOT NULL,
+            resource_key  VARCHAR(80),
+            action        VARCHAR(50) NOT NULL,
+            detail        TEXT NOT NULL DEFAULT '',
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_access_audit_created
+        ON ai_assistant.access_audit (created_at DESC);
+    """))
+
+    # Seed Master Switch: default 'false' (OFF) agar transisi aman
+    conn.execute(text("""
+        INSERT INTO ai_assistant.system_config (key, value)
+        VALUES ('mcp_access_control_enabled', 'false')
+        ON CONFLICT (key) DO NOTHING
+    """))
+
+    # Seed Sumber Daya MCP Standar yang dikenal
+    default_resources = [
+        # (key, kind, label, sid, client, is_production)
+        ("service:rag", "service", "Manufacturing RAG Knowledge Base", "", "", False),
+        ("service:email", "service", "MCP Email Service", "", "", False),
+        ("sap:sandbox-new", "sap", "Sandbox New Company", "TRS", "130", False),
+        ("sap:sandbox", "sap", "Sandbox Build Competence", "TRD", "140", False),
+        ("sap:dev-aix", "sap", "Development AIX", "TRD", "130", False),
+        ("sap:dev-win", "sap", "Development Windows", "TRD", "130", False),
+        ("sap:qa", "sap", "QA System", "TRQ", "320", False),
+        ("sap:prod-aix", "sap", "Production AIX", "PRT", "999", True),
+        ("sap:prod-win", "sap", "Production Windows", "TRP", "999", True),
+    ]
+
+    for r_key, r_kind, r_label, r_sid, r_client, r_prod in default_resources:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.mcp_resources
+                (resource_key, kind, label, sid, client, is_production)
+            VALUES
+                (:k, :kind, :label, :sid, :cli, :prod)
+            ON CONFLICT (resource_key) DO UPDATE SET
+                label = EXCLUDED.label,
+                sid = EXCLUDED.sid,
+                client = EXCLUDED.client,
+                is_production = EXCLUDED.is_production,
+                last_seen_at = CURRENT_TIMESTAMP
+        """), {
+            "k": r_key, "kind": r_kind, "label": r_label,
+            "sid": r_sid, "cli": r_client, "prod": r_prod
+        })
+
+
+def _m0008_peran_ekstra_backend_frontend_basis_data(conn):
+    """Mendaftarkan default kuota token dan izin mode chat untuk role baru."""
+    # 1. Kuota token default
+    for peran, harian, per_menit in (
+        ("backend", 1_000_000, 10),
+        ("frontend", 500_000, 10),
+        ("basis", 1_000_000, 10),
+        ("data_analyst", 800_000, 10),
+    ):
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            VALUES (:r, :h, :m)
+            ON CONFLICT (role) DO NOTHING
+        """), {"r": peran, "h": harian, "m": per_menit})
+
+    # 2. Izin mode chat
+    role_permissions = [
+        ("backend", "fast", True),
+        ("backend", "medium", True),
+        ("backend", "expert", True),
+        ("frontend", "fast", True),
+        ("frontend", "medium", True),
+        ("frontend", "expert", False),
+        ("basis", "fast", True),
+        ("basis", "medium", True),
+        ("basis", "expert", True),
+        ("data_analyst", "fast", True),
+        ("data_analyst", "medium", True),
+        ("data_analyst", "expert", True),
+    ]
+    for role, code, enabled in role_permissions:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+            VALUES (:r, :c, :en)
+            ON CONFLICT (role, mode_code) DO NOTHING
+        """), {"r": role, "c": code, "en": enabled})
+
+
+def _m0009_multi_role_pengguna(conn):
+    """Tabel relasi peran ganda pengguna (user_roles) dan migrasi data non-destruktif."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_roles (
+            username   VARCHAR(50) NOT NULL REFERENCES ai_assistant.users(username) ON UPDATE CASCADE ON DELETE CASCADE,
+            role       VARCHAR(40) NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, role)
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_roles_username
+        ON ai_assistant.user_roles(username);
+    """))
+
+    # Migrasi data awal dari tabel users ke user_roles
+    conn.execute(text("""
+        INSERT INTO ai_assistant.user_roles (username, role)
+        SELECT username, role
+        FROM ai_assistant.users
+        WHERE role IS NOT NULL AND role != ''
+        ON CONFLICT (username, role) DO NOTHING;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -288,6 +452,9 @@ MIGRATIONS = [
     ("0004_peran_abaper_dan_functional", _m0004_peran_abaper_dan_functional),
     ("0005_kuota_token", _m0005_kuota_token),
     ("0006_mode_chat", _m0006_mode_chat),
+    ("0007_akses_mcp_per_user", _m0007_akses_mcp_per_user),
+    ("0008_peran_ekstra_backend_frontend_basis_data", _m0008_peran_ekstra_backend_frontend_basis_data),
+    ("0009_multi_role_pengguna", _m0009_multi_role_pengguna),
 ]
 
 

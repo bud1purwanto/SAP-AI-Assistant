@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+from typing import Optional, Set
 import httpx
 from config import settings
 
@@ -421,7 +422,7 @@ class MCPManager:
             async with httpx.AsyncClient() as http_client:
                 await self._set_active_sap_server_unlocked(http_client, target_sap)
 
-    async def get_all_tools(self, server_filter: str = "all") -> list[dict]:
+    async def get_all_tools(self, server_filter: str = "all", allowed_connectors: Optional[set] = None) -> list[dict]:
         tools = []
         is_sql_mode = server_filter.startswith("sql:") or server_filter == "sql"
         is_sap_mode = server_filter.startswith("sap:") or server_filter == "sap"
@@ -440,6 +441,15 @@ class MCPManager:
             is_sap = True
             is_sql = True
             is_rag = True
+
+        # Terapkan pembatasan konektor dari access control bila ada
+        if allowed_connectors is not None:
+            if "sap" not in allowed_connectors:
+                is_sap = False
+            if "sql" not in allowed_connectors:
+                is_sql = False
+            if "rag" not in allowed_connectors:
+                is_rag = False
 
         async with httpx.AsyncClient() as http_client:
             # SAP Tools

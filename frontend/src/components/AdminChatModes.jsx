@@ -25,6 +25,10 @@ const ALL_ROLES = [
   { role: 'superadmin', label: 'Super Admin', desc: 'Full System & Configuration Access' },
   { role: 'abaper', label: 'ABAPer', desc: 'Technical & ABAP Development' },
   { role: 'functional', label: 'Functional', desc: 'Business Consultant Modules' },
+  { role: 'backend', label: 'Backend', desc: 'Backend & Database Systems' },
+  { role: 'frontend', label: 'Frontend', desc: 'Frontend & UI Engineering' },
+  { role: 'basis', label: 'Basis', desc: 'SAP Basis & Infrastructure' },
+  { role: 'data_analyst', label: 'Data Analyst', desc: 'BI & Analytical Reporting' },
   { role: 'user', label: 'Standard User', desc: 'General End-User Access' },
   { role: 'guest', label: 'Guest', desc: 'Public / Unregistered User' },
 ];

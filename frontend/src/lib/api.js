@@ -163,7 +163,7 @@ export const api = {
   deleteSession: (id) => apiFetch(`/api/sessions/${id}`, { method: 'DELETE' }),
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 
-  mcpServers: () => apiFetch('/api/mcp/servers', { auth: false }),
+  mcpServers: () => apiFetch('/api/mcp/servers', { auth: true }),
 
   chat: (payload, signal) =>
     apiFetch('/api/chat', { method: 'POST', body: payload, auth: true, signal }),
@@ -218,6 +218,23 @@ export const api = {
   adminRoleModes: () => apiFetch('/api/admin/modes/roles'),
   adminUpdateRoleMode: (payload) =>
     apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
+
+  // Access Control MCP
+  adminAccessResources: () => apiFetch('/api/admin/access/resources'),
+  adminSyncAccessResources: () => apiFetch('/api/admin/access/resources/sync', { method: 'POST' }),
+  adminAccessRoles: () => apiFetch('/api/admin/access/roles'),
+  adminUpdateAccessRoles: (payload) =>
+    apiFetch('/api/admin/access/roles', { method: 'PUT', body: payload }),
+  adminUserAccess: (username) =>
+    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`),
+  adminUpdateUserAccess: (username, payload) =>
+    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
+  adminBulkUserAccess: (payload) =>
+    apiFetch('/api/admin/access/bulk', { method: 'POST', body: payload }),
+  adminAccessAudit: (limit = 100, offset = 0) =>
+    apiFetch(`/api/admin/access/audit?limit=${limit}&offset=${offset}`),
+  adminToggleAccessMaster: (enabled) =>
+    apiFetch('/api/admin/access/enabled', { method: 'POST', body: { enabled } }),
 };
 
 /**

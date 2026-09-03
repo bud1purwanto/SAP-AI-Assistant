@@ -403,7 +403,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
     await report("connecting", "Menyiapkan permintaan…")
 
-    # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
+    # 1. Ambil tools dari MCP (berdasarkan server yang dipilih dan otorisasi pengguna)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
@@ -417,13 +417,21 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     if sap_target:
         logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
 
-    all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
+    # Validasi otorisasi target_srv terhadap pengguna (bila master switch aktif)
+    import access_control
+    access_control.assert_can_use(username=username, role=user_role, active_server=target_srv)
+
+    allowed_conn = access_control.allowed_connectors(username=username, role=user_role)
+    try:
+        all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv, allowed_connectors=allowed_conn)
+    except TypeError:
+        all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     
     if not all_mcp_tools:
         return ChatResponse(
             reply=(
-                "⚠️ **Koneksi ke sistem SAP terputus**\n\n"
-                "Saya belum bisa mengambil data dari sistem SAP maupun basis dokumen internal "
+                "⚠️ **Koneksi ke sistem target terputus atau tidak diizinkan**\n\n"
+                "Saya belum bisa mengambil data dari sistem maupun basis dokumen internal "
                 "saat ini. Silakan coba beberapa saat lagi, atau hubungi administrator bila "
                 "berlanjut.\n\n"
                 "Anda tetap bisa bertanya hal umum atau melampirkan berkas untuk saya bantu olah."
@@ -440,7 +448,13 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     openai_tools = []
     tool_map = {} # map dari openai_tool_name ke (server_name, mcp_tool_name)
     
-    boleh_ubah = (user_role or "").lower() in PERAN_BOLEH_UBAH_PROGRAM
+    can_write_res = True
+    if access_control.is_access_control_enabled():
+        can_key = access_control.canonical_resource_key(target_srv)
+        u_perms = access_control.resolve_access(username, user_role)
+        can_write_res = bool(u_perms.get(can_key, {}).get("can_write"))
+
+    boleh_ubah = ((user_role or "").lower() in PERAN_BOLEH_UBAH_PROGRAM) and can_write_res
     tool_ditolak = []
 
     for item in all_mcp_tools:

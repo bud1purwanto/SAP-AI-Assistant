@@ -82,6 +82,7 @@ from database import (
     get_modes_for_role,
 )
 from mcp_manager import mcp_manager
+import access_control
 from models import ChatRequest, ChatResponse, UsageStats
 
 logger = logging.getLogger(__name__)
@@ -223,7 +224,8 @@ async def login(req: LoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="Username atau password salah")
 
     clear_login_failures(attempt_key)
-    token = create_access_token(user["username"], user["role"])
+    user_roles = user.get("roles") or [user["role"]]
+    token = create_access_token(user["username"], user["role"], roles=user_roles)
     return {
         "status": "success",
         "access_token": token,
@@ -232,6 +234,7 @@ async def login(req: LoginRequest, request: Request):
         "username": user["username"],
         "full_name": user.get("full_name", ""),
         "role": user["role"],
+        "roles": user_roles,
         "assistant_persona": user["assistant_persona"],
     }
 
@@ -461,9 +464,19 @@ async def get_session_messages_endpoint(
 
 
 @app.get("/api/mcp/servers")
-async def get_mcp_servers():
-    """Daftar & status live server MCP yang terkonfigurasi."""
-    return await mcp_manager.check_servers_status()
+async def get_mcp_servers(user: dict = Depends(get_current_user_optional)):
+    """Daftar & status live server MCP yang terkonfigurasi.
+    
+    Bila kontrol akses aktif, sub-servers disaring khusus untuk server yang diizinkan bagi pengguna saat ini.
+    """
+    raw = await mcp_manager.check_servers_status()
+    try:
+        access_control.sync_resources_from_mcp(raw)
+    except Exception as e:
+        logger.warning(f"Auto-sync resources gagal: {e}")
+    username = user.get("username", "guest") if user else "guest"
+    user_roles = user.get("roles", [user.get("role", "guest")]) if user else ["guest"]
+    return access_control.filter_servers_for_user(raw, username=username, role=user_roles)
 
 
 # --- SUPER ADMIN ENDPOINTS ---
@@ -472,7 +485,12 @@ async def get_mcp_servers():
 async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
     """Mengambil metrik statistik sistem & status live MCP servers."""
     stats = get_admin_system_stats()
-    stats["mcp_status"] = await mcp_manager.check_servers_status()
+    mcp_st = await mcp_manager.check_servers_status()
+    try:
+        access_control.sync_resources_from_mcp(mcp_st)
+    except Exception as e:
+        logger.warning(f"Auto-sync resources gagal: {e}")
+    stats["mcp_status"] = mcp_st
     return stats
 
 
@@ -481,7 +499,17 @@ async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
 # 'user' lama berisi para pengembang ABAP, jadi seluruhnya dipindahkan ke
 # 'abaper' oleh migrasi 0004. 'functional' dan 'user' adalah peran baru yang
 # TIDAK berhak mengubah program.
-ROLE_TERSEDIA = ("superadmin", "abaper", "functional", "user")
+ROLE_TERSEDIA = (
+    "superadmin",
+    "abaper",
+    "functional",
+    "backend",
+    "frontend",
+    "basis",
+    "data_analyst",
+    "user",
+    "guest",
+)
 
 
 # --- KUOTA TOKEN ---
@@ -502,7 +530,8 @@ async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
     profil = get_user_by_username(user["username"])
     if not profil:
         raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-    return status_kuota(profil["username"], profil["role"])
+    user_roles = profil.get("roles") or [profil["role"]]
+    return status_kuota(profil["username"], user_roles)
 
 
 @app.get("/api/admin/quota")
@@ -589,6 +618,7 @@ class AdminCreateUserRequest(BaseModel):
     password: str
     full_name: str = ""
     role: str = "user"
+    roles: Optional[List[str]] = None
     assistant_persona: str = ""
 
 
@@ -602,15 +632,20 @@ async def create_user_endpoint(
         raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
-    if req.role not in ROLE_TERSEDIA:
-        raise HTTPException(status_code=400, detail="Role tidak dikenal.")
+
+    clean_roles = req.roles if req.roles else ([req.role] if req.role else ["user"])
+    for r in clean_roles:
+        if r.lower() not in ROLE_TERSEDIA:
+            raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal.")
+    primary_role = "superadmin" if "superadmin" in [r.lower() for r in clean_roles] else clean_roles[0]
 
     res = create_new_user(
         username=req.username.strip(),
         password=req.password,
-        role=req.role,
+        role=primary_role,
         persona=req.assistant_persona,
         full_name=req.full_name,
+        roles=clean_roles,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -618,10 +653,11 @@ async def create_user_endpoint(
 
 
 class AdminUpdateUserRequest(BaseModel):
-    role: str = None
-    assistant_persona: str = None
-    password: str = None
-    full_name: str = None
+    role: Optional[str] = None
+    roles: Optional[List[str]] = None
+    assistant_persona: Optional[str] = None
+    password: Optional[str] = None
+    full_name: Optional[str] = None
 
 
 @app.put("/api/admin/users/{username}")
@@ -631,13 +667,26 @@ async def update_user_endpoint(
     admin: dict = Depends(require_superadmin),
 ):
     """Memperbarui user (role, persona, atau reset password)."""
-    if admin["username"].lower() == username.lower() and req.role and req.role != "superadmin":
-        raise HTTPException(
-            status_code=400,
-            detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
-        )
-    if req.role and req.role not in ROLE_TERSEDIA:
-        raise HTTPException(status_code=400, detail="Role tidak dikenal.")
+    clean_roles = None
+    if req.roles is not None:
+        clean_roles = req.roles
+        for r in clean_roles:
+            if r.lower() not in ROLE_TERSEDIA:
+                raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal.")
+        if admin["username"].lower() == username.lower() and "superadmin" not in [r.lower() for r in clean_roles]:
+            raise HTTPException(
+                status_code=400,
+                detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
+            )
+    elif req.role:
+        if req.role.lower() not in ROLE_TERSEDIA:
+            raise HTTPException(status_code=400, detail="Role tidak dikenal.")
+        if admin["username"].lower() == username.lower() and req.role != "superadmin":
+            raise HTTPException(
+                status_code=400,
+                detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
+            )
+
     if req.password and len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
 
@@ -647,6 +696,7 @@ async def update_user_endpoint(
         role=req.role,
         persona=req.assistant_persona,
         full_name=req.full_name,
+        roles=clean_roles,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -810,11 +860,22 @@ class AdminUpdateRoleModeRequest(BaseModel):
 
 @app.get("/api/modes")
 async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_user_optional)):
-    """Mengambil daftar mode chat yang tersedia untuk role user saat ini."""
-    user_role = "guest"
+    """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role)."""
+    user_roles = ["guest"]
     if user and not user.get("is_guest"):
-        user_role = user.get("role", "user")
-    modes = get_modes_for_role(user_role)
+        user_roles = user.get("roles") or [user.get("role", "user")]
+
+    # Union seluruh mode yang diizinkan untuk setiap peran pengguna
+    modes_by_code = {}
+    for r in user_roles:
+        r_modes = get_modes_for_role(r)
+        for m in r_modes:
+            if m["code"] not in modes_by_code:
+                modes_by_code[m["code"]] = m
+
+    modes = list(modes_by_code.values())
+    modes.sort(key=lambda x: x.get("sort_order", 0))
+
     cfg = get_system_config()
     return {
         "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
@@ -1000,15 +1061,146 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
 
 
+# --- MCP ACCESS CONTROL ADMIN ENDPOINTS ---
+
+class AdminUpdateRoleAccessRequest(BaseModel):
+    role: str
+    items: List[dict]
+
+
+class AdminUpdateUserAccessRequest(BaseModel):
+    items: List[dict]
+
+
+class AdminBulkUserAccessRequest(BaseModel):
+    usernames: List[str]
+    resource_key: str
+    state: str = "inherit"  # "inherit", "allow", "deny"
+    can_write: bool = False
+    valid_until: Optional[str] = None
+
+
+class AdminToggleAccessMasterRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/admin/access/resources")
+async def get_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil katalog lengkap sumber daya MCP."""
+    return {"resources": access_control.get_all_resources(include_archived=False)}
+
+
+@app.post("/api/admin/access/resources/sync")
+async def sync_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
+    """Sinkronisasi live penemuan resource dari MCP gateway."""
+    st = await mcp_manager.check_servers_status()
+    synced = access_control.sync_resources_from_mcp(st)
+    return {
+        "status": "success",
+        "synced_count": len(synced),
+        "synced_keys": synced,
+        "resources": access_control.get_all_resources(include_archived=False),
+    }
+
+
+@app.get("/api/admin/access/roles")
+async def get_admin_access_roles_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil matriks izin Role x Resource."""
+    return access_control.get_all_roles_matrix()
+
+
+@app.put("/api/admin/access/roles")
+async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, admin: dict = Depends(require_superadmin)):
+    """Memperbarui set izin resource untuk role tertentu."""
+    actor = admin.get("username", "admin")
+    ok = access_control.update_role_access(req.role, req.items, actor=actor)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
+    return {"status": "success", "role": req.role}
+
+
+@app.get("/api/admin/access/users/{username}")
+async def get_admin_access_user_endpoint(username: str, admin: dict = Depends(require_superadmin)):
+    """Mengambil izin spesifik pengguna beserta resolusi warisan rolenya."""
+    return access_control.get_user_matrix(username)
+
+
+@app.put("/api/admin/access/users/{username}")
+async def update_admin_access_user_endpoint(username: str, req: AdminUpdateUserAccessRequest, admin: dict = Depends(require_superadmin)):
+    """Menyimpan override izin resource untuk pengguna tertentu."""
+    actor = admin.get("username", "admin")
+    ok = access_control.update_user_access(username, req.items, actor=actor)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal memperbarui izin pengguna.")
+    return {"status": "success", "username": username}
+
+
+@app.post("/api/admin/access/bulk")
+async def bulk_update_admin_access_user_endpoint(req: AdminBulkUserAccessRequest, admin: dict = Depends(require_superadmin)):
+    """Memperbarui izin satu resource secara massal (bulk) untuk banyak pengguna."""
+    actor = admin.get("username", "admin")
+    count = access_control.bulk_update_user_access(
+        usernames=req.usernames,
+        resource_key=req.resource_key,
+        state=req.state,
+        can_write=req.can_write,
+        valid_until=req.valid_until,
+        actor=actor,
+    )
+    return {"status": "success", "updated_count": count}
+
+
+@app.get("/api/admin/access/audit")
+async def get_admin_access_audit_endpoint(limit: int = 100, offset: int = 0, admin: dict = Depends(require_superadmin)):
+    """Mengambil log audit perubahan hak akses MCP."""
+    return {"logs": access_control.get_audit_logs(limit=limit, offset=offset)}
+
+
+@app.post("/api/admin/access/enabled")
+async def toggle_admin_access_master_endpoint(req: AdminToggleAccessMasterRequest, admin: dict = Depends(require_superadmin)):
+    """Mengaktifkan atau menonaktifkan master switch kontrol akses MCP."""
+    actor = admin.get("username", "admin")
+    ok = access_control.set_access_control_master(req.enabled, actor=actor)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal mengubah status master switch akses MCP.")
+    return {"status": "success", "mcp_access_control_enabled": req.enabled}
+
+
 # --- CHAT ---
 
-def _batas_peran(role: str) -> dict:
-    """Batas yang berlaku untuk sebuah peran. 0 = tanpa batas."""
-    batas = get_role_limits().get((role or "").lower())
-    return batas or {"daily_token_limit": 0, "per_minute_limit": 0}
+def _batas_peran(role: Union[str, list, None]) -> dict:
+    """Batas yang berlaku untuk peran pengguna (mendukung multi-role). 0 = tanpa batas."""
+    roles = access_control.normalize_roles(role)
+    if "superadmin" in roles:
+        return {"daily_token_limit": 0, "per_minute_limit": 0}
+
+    all_limits = get_role_limits()
+    daily_limits = []
+    minute_limits = []
+
+    for r in roles:
+        b = all_limits.get(r.lower(), {"daily_token_limit": 0, "per_minute_limit": 0})
+        daily_limits.append(b.get("daily_token_limit", 0))
+        minute_limits.append(b.get("per_minute_limit", 0))
+
+    # Resolusi harian: bila ada peran yang 0 (unlimited), maka unlimited (0).
+    # Bila seluruh peran memiliki batas tertentu (>0), ambil batas tertinggi (paling permisif).
+    if any(d <= 0 for d in daily_limits):
+        effective_daily = 0
+    else:
+        effective_daily = max(daily_limits)
+
+    # Resolusi per-menit: bila ada peran yang 0 (unlimited), maka unlimited (0).
+    # Bila seluruh peran memiliki batas tertentu (>0), ambil batas tertinggi.
+    if any(m <= 0 for m in minute_limits):
+        effective_minute = 0
+    else:
+        effective_minute = max(minute_limits)
+
+    return {"daily_token_limit": effective_daily, "per_minute_limit": effective_minute}
 
 
-def status_kuota(username: str, role: str) -> dict:
+def status_kuota(username: str, role: Union[str, list, None]) -> dict:
     """Ringkasan kuota seorang pengguna untuk ditampilkan maupun ditegakkan."""
     cfg = get_system_config()
     aktif = bool(cfg.get("token_limit_enabled"))
@@ -1019,6 +1211,8 @@ def status_kuota(username: str, role: str) -> dict:
     terpakai = pakai["total_tokens"]
     sisa = None if harian <= 0 else max(0, harian - terpakai)
     persen = None if harian <= 0 else min(100, round(terpakai * 100 / harian))
+
+    primary_role = role[0] if isinstance(role, list) and role else (role or "user")
 
     return {
         "enforced": aktif,
@@ -1031,11 +1225,12 @@ def status_kuota(username: str, role: str) -> dict:
         "requests_today": pakai["requests"],
         "estimated": pakai["estimated"],
         "usage_date": pakai["usage_date"],
-        "role": role,
+        "role": primary_role,
+        "roles": access_control.normalize_roles(role),
     }
 
 
-def _tegakkan_kuota(username: str, role: str) -> None:
+def _tegakkan_kuota(username: str, role: Union[str, list, None]) -> None:
     """Tolak permintaan bila kuota habis atau terlalu cepat beruntun.
 
     Pemeriksaan memakai pemakaian yang SUDAH tercatat: jumlah token permintaan
@@ -1222,12 +1417,13 @@ async def _run_chat(
         profile = get_user_by_username(user["username"])
         if not profile:
             raise HTTPException(status_code=401, detail="User tidak ditemukan.")
+        user_roles = profile.get("roles") or [profile["role"]]
         user_role = profile["role"]
         user_persona = profile["assistant_persona"]
 
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
-        _tegakkan_kuota(profile["username"], user_role)
+        _tegakkan_kuota(profile["username"], user_roles)
         catat_permintaan(profile["username"])
 
         user_message_id = None
@@ -1294,7 +1490,7 @@ async def _run_chat(
 
     response = await process_chat(
         chat_req,
-        user_role,
+        user_roles if not is_guest else user_role,
         user_persona,
         username=user["username"],
         on_progress=on_progress,
@@ -1336,7 +1532,7 @@ async def _run_chat(
             response.usage.total_tokens = masuk + keluar
             response.usage.estimated = True
 
-        response.quota = status_kuota(user["username"], user_role)
+        response.quota = status_kuota(user["username"], user_roles)
 
     response.session_id = active_session_id
     response.user_message_id = user_message_id

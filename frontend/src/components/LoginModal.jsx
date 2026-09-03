@@ -102,6 +102,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         username: data.username,
         full_name: data.full_name || '',
         role: data.role,
+        roles: data.roles || [data.role],
         assistant_persona: data.assistant_persona,
       });
     } catch (err) {

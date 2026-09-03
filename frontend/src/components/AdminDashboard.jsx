@@ -4,6 +4,68 @@ import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
+import AdminAccessControl from './AdminAccessControl';
+
+const formatRoleLabel = (role) => {
+  const r = (role || '').toLowerCase().trim();
+  switch (r) {
+    case 'superadmin':
+      return 'Super Admin';
+    case 'abaper':
+      return 'ABAPer';
+    case 'functional':
+      return 'Functional';
+    case 'backend':
+      return 'Backend';
+    case 'frontend':
+      return 'Frontend';
+    case 'basis':
+      return 'Basis';
+    case 'data_analyst':
+      return 'Data Analyst';
+    case 'user':
+      return 'Standard User';
+    case 'guest':
+      return 'Guest';
+    default:
+      return r.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  }
+};
+
+const getRoleBadgeStyle = (role) => {
+  const r = (role || '').toLowerCase().trim();
+  switch (r) {
+    case 'superadmin':
+      return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+    case 'abaper':
+      return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+    case 'functional':
+      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    case 'backend':
+      return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+    case 'frontend':
+      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
+    case 'basis':
+      return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    case 'data_analyst':
+      return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
+    case 'user':
+      return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+    default:
+      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
+  }
+};
+
+const AVAILABLE_ROLES_OPTIONS = [
+  { value: 'abaper', label: 'ABAPer' },
+  { value: 'functional', label: 'Functional' },
+  { value: 'backend', label: 'Backend' },
+  { value: 'frontend', label: 'Frontend' },
+  { value: 'basis', label: 'Basis' },
+  { value: 'data_analyst', label: 'Data Analyst' },
+  { value: 'user', label: 'Standard User' },
+  { value: 'superadmin', label: 'Super Admin' },
+];
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers, onRefreshModes }) {
   const { t, language } = useLanguage();
@@ -39,8 +101,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'abaper', assistant_persona: '' });
-  const [editUserForm, setEditUserForm] = useState({ role: 'user', assistant_persona: '', password: '', full_name: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'abaper', roles: ['abaper'], assistant_persona: '' });
+  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
 
   // Skills State
   const [skillsList, setSkillsList] = useState([]);
@@ -303,10 +365,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      await api.adminCreateUser(newUserForm);
+      const selectedRoles = (newUserForm.roles && newUserForm.roles.length > 0) ? newUserForm.roles : [newUserForm.role || 'user'];
+      const payload = {
+        ...newUserForm,
+        roles: selectedRoles,
+        role: selectedRoles[0] || 'user',
+      };
+      await api.adminCreateUser(payload);
       
       setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'abaper', assistant_persona: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'abaper', roles: ['abaper'], assistant_persona: '' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -322,7 +390,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setActionError('');
     setActionSuccess('');
     try {
-      await api.adminUpdateUser(targetUsername, editUserForm);
+      const selectedRoles = (editUserForm.roles && editUserForm.roles.length > 0) ? editUserForm.roles : [editUserForm.role || 'user'];
+      const payload = {
+        ...editUserForm,
+        roles: selectedRoles,
+        role: selectedRoles[0] || 'user',
+      };
+      await api.adminUpdateUser(targetUsername, payload);
       setActionSuccess(language === 'en' ? `User '${targetUsername}' updated successfully!` : `User '${targetUsername}' berhasil diupdate!`);
       setEditingUser(null);
       fetchUsers();
@@ -506,6 +580,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       groupName: language === 'en' ? 'Users & Quotas' : 'Pengguna & Kuota',
       tabs: [
         { id: 'users', icon: Users, label: t('admin.tabUsers') },
+        { id: 'access', icon: ShieldCheck, label: t('admin.tabAccess') },
         { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
       ],
     },
@@ -987,17 +1062,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 {u.full_name || <span className="italic text-content-subtle">—</span>}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border ${
-                                  u.role === 'superadmin' 
-                                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' 
-                                    : u.role === 'abaper'
-                                    ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
-                                    : u.role === 'functional'
-                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                    : 'bg-sky-500/15 text-sky-400 border-sky-500/30'
-                                }`}>
-                                  {u.role}
-                                </span>
+                                <div className="flex flex-wrap items-center gap-1 max-w-xs">
+                                  {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map((r) => (
+                                    <span
+                                      key={r}
+                                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border whitespace-nowrap ${getRoleBadgeStyle(r)}`}
+                                    >
+                                      {formatRoleLabel(r)}
+                                    </span>
+                                  ))}
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
                                 {u.assistant_persona || <span className="italic text-content-subtle text-[11px]">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
@@ -1005,14 +1079,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                                 <button
                                   onClick={() => {
+                                    const userRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role];
                                     setEditingUser(u);
-                                    setEditUserForm({ role: u.role, full_name: u.full_name || '', assistant_persona: u.assistant_persona || '', password: '' });
+                                    setEditUserForm({
+                                      role: u.role,
+                                      roles: userRoles,
+                                      full_name: u.full_name || '',
+                                      assistant_persona: u.assistant_persona || '',
+                                      password: '',
+                                    });
                                   }}
                                   className="p-1.5 text-content-subtle hover:text-accent hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
                                   title={language === 'en' ? 'Edit user' : 'Edit user'}
                                   aria-label={`Edit user ${u.username}`}
                                 >
                                   <Edit3 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => setActiveTab('access')}
+                                  className="p-1.5 text-content-subtle hover:text-emerald-400 hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
+                                  title={language === 'en' ? 'Manage MCP access' : 'Kelola hak akses MCP'}
+                                  aria-label={`Akses MCP ${u.username}`}
+                                >
+                                  <ShieldCheck className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteUser(u.username)}
@@ -1099,17 +1188,48 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Role</label>
-                          <select
-                            value={newUserForm.role}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content cursor-pointer transition-all"
-                          >
-                            <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
-                            <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
-                            <option value="user">{language === 'en' ? 'Standard User' : 'User Biasa'}</option>
-                            <option value="superadmin">Super Admin</option>
-                          </select>
+                          <label className="block text-xs font-semibold text-content-muted mb-1.5">
+                            {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
+                          </label>
+                          <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
+                            {AVAILABLE_ROLES_OPTIONS.map((opt) => {
+                              const currentRoles = newUserForm.roles || [newUserForm.role];
+                              const isSelected = currentRoles.includes(opt.value);
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => {
+                                    let updated;
+                                    if (isSelected) {
+                                      updated = currentRoles.filter((r) => r !== opt.value);
+                                      if (updated.length === 0) updated = ['user'];
+                                    } else {
+                                      updated = [...currentRoles, opt.value];
+                                    }
+                                    setNewUserForm({
+                                      ...newUserForm,
+                                      roles: updated,
+                                      role: updated[0] || 'user',
+                                    });
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                                    isSelected
+                                      ? getRoleBadgeStyle(opt.value) + ' shadow-xs ring-1 ring-accent/30'
+                                      : 'bg-surface border-line text-content-muted hover:border-line-hover hover:text-content'
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Users inherit combined permissions from all assigned roles.'
+                              : 'Pengguna mewarisi izin gabungan paling permisif dari seluruh peran terpilih.'}
+                          </p>
                         </div>
 
                         <div>
@@ -1175,17 +1295,48 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Role</label>
-                          <select
-                            value={editUserForm.role}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content cursor-pointer transition-all"
-                          >
-                            <option value="abaper">{language === 'en' ? 'ABAPer (can modify programs)' : 'ABAPer (boleh ubah program)'}</option>
-                            <option value="functional">{language === 'en' ? 'Functional (read-only)' : 'Functional (baca saja)'}</option>
-                            <option value="user">{language === 'en' ? 'Standard User' : 'User Biasa'}</option>
-                            <option value="superadmin">Super Admin</option>
-                          </select>
+                          <label className="block text-xs font-semibold text-content-muted mb-1.5">
+                            {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
+                          </label>
+                          <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
+                            {AVAILABLE_ROLES_OPTIONS.map((opt) => {
+                              const currentRoles = editUserForm.roles || [editUserForm.role];
+                              const isSelected = currentRoles.includes(opt.value);
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  onClick={() => {
+                                    let updated;
+                                    if (isSelected) {
+                                      updated = currentRoles.filter((r) => r !== opt.value);
+                                      if (updated.length === 0) updated = ['user'];
+                                    } else {
+                                      updated = [...currentRoles, opt.value];
+                                    }
+                                    setEditUserForm({
+                                      ...editUserForm,
+                                      roles: updated,
+                                      role: updated[0] || 'user',
+                                    });
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
+                                    isSelected
+                                      ? getRoleBadgeStyle(opt.value) + ' shadow-xs ring-1 ring-accent/30'
+                                      : 'bg-surface border-line text-content-muted hover:border-line-hover hover:text-content'
+                                  }`}
+                                >
+                                  {isSelected && <Check className="w-3 h-3 shrink-0" />}
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Users inherit combined permissions from all assigned roles.'
+                              : 'Pengguna mewarisi izin gabungan paling permisif dari seluruh peran terpilih.'}
+                          </p>
                         </div>
 
                         <div>
@@ -1233,6 +1384,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 )}
               </div>
+            )}
+
+            {/* TAB: ACCESS CONTROL MCP */}
+            {activeTab === 'access' && (
+              <AdminAccessControl
+                setActionSuccess={setActionSuccess}
+                setActionError={setActionError}
+                setConfirmModal={setConfirmModal}
+              />
             )}
 
             {/* TAB: CHAT MODES */}
