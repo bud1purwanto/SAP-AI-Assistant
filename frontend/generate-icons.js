@@ -35,18 +35,17 @@ function createSapAiSvg({ isMaskable = false, isAppleTouch = false } = {}) {
 
   <!-- Main Content centered within Safe Zone (circle radius ~200px) -->
   <g transform="translate(256, 256)">
-    <!-- SAP Main Text -->
+    <!-- E Main Text positioned on the left side -->
     <text
-      x="-18"
-      y="18"
+      x="-65"
+      y="12"
       fill="#FFFFFF"
       font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
       font-weight="900"
-      font-size="160"
-      letter-spacing="-7"
+      font-size="210"
       text-anchor="middle"
       dominant-baseline="central"
-    >SAP</text>
+    >E</text>
 
     <!-- AI Badge in Bottom Right of Safe Area -->
     <g transform="translate(68, 52)">
@@ -102,18 +101,17 @@ function createSapAiSvg({ isMaskable = false, isAppleTouch = false } = {}) {
     <!-- Base Icon Background -->
     <rect width="512" height="512" rx="${rx}" fill="url(#bgGrad)"/>
 
-    <!-- Main "SAP" Typography -->
+    <!-- Main "E" Typography on the left side so it is not covered by the AI badge -->
     <text
-      x="234"
+      x="170"
       y="248"
       fill="#FFFFFF"
       font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
       font-weight="900"
-      font-size="188"
-      letter-spacing="-8"
+      font-size="250"
       text-anchor="middle"
       dominant-baseline="central"
-    >SAP</text>
+    >E</text>
 
     <!-- Bottom-Right "AI" Badge -->
     <!-- Positioned at the bottom-right corner with rounded-top-left -->

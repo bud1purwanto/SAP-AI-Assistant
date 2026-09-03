@@ -1054,17 +1054,17 @@ const ChatLayout = () => {
       >
         <div className="p-3.5 sm:p-4 border-b border-line/70 flex items-center justify-between bg-surface-raised/50 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex items-center justify-center shadow-lg shadow-indigo-500/20 border border-white/20 shrink-0 overflow-hidden ring-1 ring-white/10">
-              <div className="flex items-center font-black text-xs text-white tracking-tight">
-                <span>SAP</span>
-              </div>
+            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex items-center justify-start pl-2 shadow-lg shadow-indigo-500/20 border border-white/20 shrink-0 overflow-hidden ring-1 ring-white/10">
+              <span className="font-black text-[15px] text-white tracking-tight">
+                E
+              </span>
               <div className="absolute -bottom-0.5 -right-0.5 bg-gradient-to-r from-sky-400 to-indigo-500 rounded-tl-md px-1 py-0.2 shadow-xs">
                 <span className="text-[8px] font-black text-white leading-none tracking-tight">AI</span>
               </div>
             </div>
             <div>
               <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content flex items-center gap-1.5">
-                <span>SAP AI</span>
+                <span>Enterprise AI</span>
                 <span className="text-[9px] uppercase font-bold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md tracking-wider border border-accent/20">Assistant</span>
               </h1>
               <div className="flex items-center gap-1.5 mt-0.5">
@@ -1088,17 +1088,12 @@ const ChatLayout = () => {
         <div className="p-3 space-y-2.5">
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-between py-2.5 px-3.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 border border-white/15 transition-all active:scale-[0.98] cursor-pointer group"
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 px-3.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 border border-white/15 transition-all active:scale-[0.98] cursor-pointer group"
           >
-            <span className="flex items-center gap-2.5">
-              <span className="p-1 rounded-lg bg-white/20 group-hover:bg-white/30 transition-colors shadow-2xs">
-                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-              </span>
-              <span className="tracking-wide">{t('sidebar.newChat')}</span>
+            <span className="p-1 rounded-lg bg-white/20 group-hover:bg-white/30 transition-colors shadow-2xs">
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             </span>
-            <kbd className="hidden sm:inline-flex items-center text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md bg-black/25 text-white/90 border border-white/20 tracking-wider">
-              Ctrl K
-            </kbd>
+            <span className="tracking-wide">{t('sidebar.newChat')}</span>
           </button>
 
           {!isGuest && (

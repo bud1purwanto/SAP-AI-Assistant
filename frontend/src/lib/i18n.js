@@ -26,7 +26,7 @@ export const TRANSLATIONS = {
     'nav.settings': 'Open settings',
     'nav.theme': 'Switch theme',
     'nav.productionWarning': 'PRODUCTION',
-    'nav.appTitle': 'SAP AI Assistant',
+    'nav.appTitle': 'Enterprise AI Assistant',
     'nav.serverSelectAria': 'Select active SAP server',
 
     // Sidebar & Sessions
@@ -49,7 +49,7 @@ export const TRANSLATIONS = {
     'sidebar.loginPrompt': 'Sign In',
     'sidebar.logout': 'Sign Out',
     'sidebar.logoutConfirmTitle': 'Sign Out Confirmation',
-    'sidebar.logoutConfirmMsg': 'Are you sure you want to sign out from SAP AI Assistant?',
+    'sidebar.logoutConfirmMsg': 'Are you sure you want to sign out from Enterprise AI Assistant?',
     'sidebar.adminPanel': 'Admin Dashboard',
 
     // Suggestions on Empty Screen
@@ -206,7 +206,7 @@ export const TRANSLATIONS = {
     'security.tooShort': 'New password must be at least 4 characters.',
 
     // Login Modal
-    'login.title': 'SAP AI Assistant Login',
+    'login.title': 'Enterprise AI Assistant Login',
     'login.subtitle': 'Sign in to access Enterprise SAP services & knowledge base without prompt limits.',
     'login.guestLimitReached': 'Daily free prompt limit for guest has been reached. Please sign in to continue.',
     'login.sessionExpired': 'Your session has expired. Please sign in again.',
@@ -230,7 +230,7 @@ export const TRANSLATIONS = {
     'confirm.processing': 'Processing…',
 
     // PWA Prompt
-    'pwa.title': 'Install SAP AI Assistant',
+    'pwa.title': 'Install Enterprise AI Assistant',
     'pwa.subtitle': 'Instant native-like access on Mobile & Desktop',
     'pwa.iosHint': 'Tap the Share icon then select "Add to Home Screen".',
     'pwa.installNow': 'Install Now',
@@ -336,7 +336,7 @@ export const TRANSLATIONS = {
     'nav.settings': 'Buka pengaturan',
     'nav.theme': 'Ganti tema',
     'nav.productionWarning': 'PRODUKSI',
-    'nav.appTitle': 'Asisten SAP AI',
+    'nav.appTitle': 'Enterprise AI Assistant',
     'nav.serverSelectAria': 'Pilih server SAP aktif',
 
     // Sidebar & Sessions
@@ -359,7 +359,7 @@ export const TRANSLATIONS = {
     'sidebar.loginPrompt': 'Masuk Akun',
     'sidebar.logout': 'Keluar Akun',
     'sidebar.logoutConfirmTitle': 'Konfirmasi Keluar Akun',
-    'sidebar.logoutConfirmMsg': 'Apakah Anda yakin ingin keluar dari aplikasi Asisten SAP AI?',
+    'sidebar.logoutConfirmMsg': 'Apakah Anda yakin ingin keluar dari aplikasi Enterprise AI Assistant?',
     'sidebar.adminPanel': 'Dashboard Admin',
 
     // Suggestions on Empty Screen
@@ -516,7 +516,7 @@ export const TRANSLATIONS = {
     'security.tooShort': 'Password baru minimal 4 karakter.',
 
     // Login Modal
-    'login.title': 'Masuk SAP AI Assistant',
+    'login.title': 'Masuk Enterprise AI Assistant',
     'login.subtitle': 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen tanpa batas prompt.',
     'login.guestLimitReached': 'Batas prompt gratis per hari untuk tamu sudah tercapai. Silakan login untuk melanjutkan.',
     'login.sessionExpired': 'Sesi Anda telah berakhir. Silakan login kembali.',
@@ -540,7 +540,7 @@ export const TRANSLATIONS = {
     'confirm.processing': 'Memproses…',
 
     // PWA Prompt
-    'pwa.title': 'Pasang Aplikasi SAP AI',
+    'pwa.title': 'Pasang Aplikasi Enterprise AI',
     'pwa.subtitle': 'Akses instan seperti aplikasi asli di HP & Desktop',
     'pwa.iosHint': 'Ketuk ikon Bagikan (Share) lalu pilih "Tambah ke Layar Utama" (Add to Home Screen).',
     'pwa.installNow': 'Pasang Sekarang',

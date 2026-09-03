@@ -28,9 +28,9 @@ export default defineConfig(({ mode }) => {
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
-        name: 'SAP AI Assistant',
-        short_name: 'SAP AI',
-        description: 'Enterprise AI Assistant untuk SAP ERP',
+        name: 'Enterprise AI Assistant',
+        short_name: 'Enterprise AI',
+        description: 'Enterprise AI Assistant',
         theme_color: '#0F172A',
         background_color: '#0F172A',
         display: 'standalone',
