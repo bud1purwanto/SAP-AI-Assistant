@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, BookOpen, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -123,6 +123,7 @@ const ChatLayout = () => {
       return 'sap:sandbox-new';
     }
   });
+  const [mcpStatus, setMcpStatus] = useState(null);
   const [sapSubServers, setSapSubServers] = useState([]);
   const [modesList, setModesList] = useState([]);
   const [chatModesEnabled, setChatModesEnabled] = useState(true);
@@ -284,11 +285,12 @@ const ChatLayout = () => {
   const fetchServers = useCallback(async () => {
     try {
       const data = await api.mcpServers();
+      setMcpStatus(data);
       const subs = data?.sap?.sub_servers;
       if (Array.isArray(subs) && subs.length > 0) {
         setSapSubServers(subs);
         const savedServer = localStorage.getItem(SAP_SERVER_STORAGE_KEY);
-        const exists = savedServer && subs.some((s) => `sap:${aliasOf(s)}` === savedServer);
+        const exists = savedServer && subs.some((s) => `sap:${aliasOf(s)}` === savedServer || `sql:${aliasOf(s)}` === savedServer);
         if (!exists) {
           const activeOne = subs.find((s) => s.active) || subs[0];
           if (activeOne) {
@@ -1093,8 +1095,10 @@ const ChatLayout = () => {
     setSessionErrorMap({});
   };
 
-  // Peringatan bila target yang dipilih adalah sistem SAP produksi.
-  const selectedServer = sapSubServers.find((s) => `sap:${aliasOf(s)}` === activeServer) || sapSubServers[0];
+  // Target sistem (sap / sql) dan target server aktif
+  const activeSystem = activeServer.startsWith('sql:') ? 'sql' : 'sap';
+  const activeInstanceAlias = activeServer.includes(':') ? activeServer.split(':')[1] : activeServer;
+  const selectedServer = sapSubServers.find((s) => aliasOf(s) === activeInstanceAlias) || sapSubServers[0];
   const isProductionTarget = Boolean(
     selectedServer?.production_warning ||
     selectedServer?.name?.toLowerCase()?.includes('prod') ||
@@ -1385,6 +1389,14 @@ const ChatLayout = () => {
 
             <div className="flex items-center gap-1 shrink-0">
               <button
+                onClick={cycleTheme}
+                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
+                aria-label={t('nav.theme')}
+                title={t('nav.theme')}
+              >
+                <ThemeIcon className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+              <button
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
                 aria-label={t('nav.settings')}
@@ -1434,7 +1446,7 @@ const ChatLayout = () => {
                 {t('nav.sapSystem')}
               </label>
               {sapSubServers.length > 0 ? (
-                <div className="relative min-w-0 max-w-[10rem] xs:max-w-[12.5rem] sm:max-w-[17rem]" ref={serverDropdownRef}>
+                <div className="relative min-w-0 max-w-[13rem] xs:max-w-[15.5rem] sm:max-w-[18.5rem]" ref={serverDropdownRef}>
                   <button
                     id="sap-target"
                     type="button"
@@ -1450,71 +1462,181 @@ const ChatLayout = () => {
                   >
                     <div className="flex items-center gap-1.5 min-w-0 truncate">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                        activeSystem === 'sql'
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                      }`}>
+                        {activeSystem.toUpperCase()}
+                      </span>
                       <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
                     </div>
-                    {isProductionTarget && (
-                      <span className="hidden xs:inline-block px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 shrink-0 leading-tight">
-                        PRD
-                      </span>
-                    )}
-                    <ChevronDown className={`w-3.5 h-3.5 shrink-0 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isProductionTarget && (
+                        <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
+                          PRD
+                        </span>
+                      )}
+                      <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                    </div>
                   </button>
 
-                  {/* Custom Dropdown Menu */}
+                  {/* Custom Connected Systems Hub Dropdown Menu */}
                   {isServerDropdownOpen && (
-                    <div className="absolute left-0 top-[calc(100%+6px)] w-64 sm:w-72 bg-surface-raised border border-line rounded-2xl shadow-2xl p-1.5 z-50 animate-fadeIn backdrop-blur-xl">
-                      <div className="px-2.5 py-1.5 border-b border-line/60 mb-1 flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">
-                          {t('nav.sapSystem')}
-                        </span>
-                        <span className="text-[10px] font-mono text-content-muted">
-                          {sapSubServers.length} Server
+                    <div className="absolute left-0 top-[calc(100%+6px)] w-72 sm:w-84 bg-surface-raised/95 border border-line rounded-2xl shadow-2xl p-2.5 z-50 animate-fadeIn backdrop-blur-xl">
+                      
+                      {/* Header Dropdown */}
+                      <div className="px-2 py-1 border-b border-line/60 mb-2.5 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-accent" />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-content font-display">
+                            {language === 'en' ? 'Target System & Server' : 'Sistem & Server Target'}
+                          </span>
+                        </div>
+                        <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Active Hub
                         </span>
                       </div>
-                      <div className="max-h-64 overflow-y-auto space-y-0.5 overscroll-contain">
-                        {sapSubServers.map((srv) => {
-                          const srvKey = `sap:${aliasOf(srv)}`;
-                          const isSelected = activeServer === srvKey;
-                          const isPrd = Boolean(
-                            srv.production_warning ||
-                            srv.name?.toLowerCase()?.includes('prod') ||
-                            srv.sid?.toLowerCase()?.includes('prt') ||
-                            srv.sid?.toLowerCase()?.includes('trp')
-                          );
-                          return (
-                            <button
-                              key={srv.number ?? aliasOf(srv)}
-                              type="button"
-                              onClick={() => {
-                                handleServerChange(srvKey);
-                                setIsServerDropdownOpen(false);
-                              }}
-                              className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all text-left cursor-pointer ${
-                                isSelected
-                                  ? isPrd
-                                    ? 'bg-danger/15 text-danger font-bold border border-danger/30'
-                                    : 'bg-accent/15 text-accent font-bold border border-accent/30'
-                                  : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2 min-w-0 truncate">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
-                                <span className="truncate">{srv.name}</span>
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {isPrd && (
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                    {t('nav.productionWarning')}
-                                  </span>
-                                )}
-                                {isSelected && (
-                                  <Check className={`w-4 h-4 shrink-0 ${isPrd ? 'text-danger' : 'text-accent'}`} />
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
+
+                      {/* EQUAL SYSTEM SELECTOR: SAP ERP vs SQL DATABASE */}
+                      <div className="grid grid-cols-2 gap-1.5 p-1 bg-surface-sunken rounded-xl mb-2.5 border border-line/50">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentAlias = activeServer.includes(':') ? activeServer.split(':')[1] : aliasOf(selectedServer);
+                            handleServerChange(`sap:${currentAlias}`);
+                          }}
+                          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            activeSystem === 'sap'
+                              ? 'bg-surface text-accent shadow-xs border border-accent/30'
+                              : 'text-content-muted hover:text-content'
+                          }`}
+                        >
+                          <Server className="w-3.5 h-3.5" />
+                          <span>SAP ERP</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const currentAlias = activeServer.includes(':') ? activeServer.split(':')[1] : aliasOf(selectedServer);
+                            handleServerChange(`sql:${currentAlias}`);
+                          }}
+                          className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            activeSystem === 'sql'
+                              ? 'bg-surface text-blue-400 shadow-xs border border-blue-500/30'
+                              : 'text-content-muted hover:text-content'
+                          }`}
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          <span>SQL Database</span>
+                        </button>
                       </div>
+
+                      {/* SERVER LIST SECTION (Same 7 servers available for SAP & SQL) */}
+                      <div className="mb-2">
+                        <div className="px-1.5 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                          <span className="flex items-center gap-1">
+                            {activeSystem === 'sql' ? (
+                              <Database className="w-3 h-3 text-blue-400" />
+                            ) : (
+                              <Server className="w-3 h-3 text-indigo-400" />
+                            )}
+                            {language === 'en'
+                              ? `Select ${activeSystem.toUpperCase()} Server`
+                              : `Pilih Server ${activeSystem.toUpperCase()}`}
+                          </span>
+                          <span className="text-[9px] font-mono text-content-muted">
+                            {sapSubServers.length} Server
+                          </span>
+                        </div>
+                        
+                        <div className="max-h-48 overflow-y-auto space-y-1 overscroll-contain pr-0.5">
+                          {sapSubServers.map((srv) => {
+                            const srvAlias = aliasOf(srv);
+                            const isSelected = activeInstanceAlias === srvAlias;
+                            const isPrd = Boolean(
+                              srv.production_warning ||
+                              srv.name?.toLowerCase()?.includes('prod') ||
+                              srv.sid?.toLowerCase()?.includes('prt') ||
+                              srv.sid?.toLowerCase()?.includes('trp')
+                            );
+                            return (
+                              <button
+                                key={srv.number ?? srvAlias}
+                                type="button"
+                                onClick={() => {
+                                  handleServerChange(`${activeSystem}:${srvAlias}`);
+                                  setIsServerDropdownOpen(false);
+                                }}
+                                className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
+                                  isSelected
+                                    ? isPrd
+                                      ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                      : activeSystem === 'sql'
+                                        ? 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
+                                        : 'bg-accent/15 text-accent font-bold border border-accent/30'
+                                    : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 min-w-0 truncate">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
+                                  <div className="min-w-0">
+                                    <p className="truncate font-semibold text-xs leading-tight">{srv.name}</p>
+                                    <p className="text-[10px] text-content-muted truncate mt-0.5">
+                                      {activeSystem === 'sql'
+                                        ? `DB Host ${srv.host || '192.168.x.x'} • ${srv.sid || 'Instance'}`
+                                        : `${srv.sid || 'ECC 6.0'} • Client ${srv.client || '100'}`}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {isPrd && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                      {t('nav.productionWarning')}
+                                    </span>
+                                  )}
+                                  {isSelected && (
+                                    <Check className={`w-3.5 h-3.5 shrink-0 ${
+                                      isPrd ? 'text-danger' : activeSystem === 'sql' ? 'text-blue-400' : 'text-accent'
+                                    }`} />
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* COMPANION KNOWLEDGE & SERVICES (RAG & Email) */}
+                      <div className="pt-2 border-t border-line/60">
+                        <p className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle mb-1">
+                          {language === 'en' ? 'Companion Integrations' : 'Integrasi Pendukung'}
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {/* RAG Knowledge Base */}
+                          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-surface-sunken/60 border border-line/60 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <BookOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span className="font-semibold text-[11px] text-content truncate">RAG SOP</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Active' : 'Aktif'}
+                            </span>
+                          </div>
+
+                          {/* Email Service */}
+                          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-surface-sunken/60 border border-line/60 text-xs">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <span className="font-semibold text-[11px] text-content truncate">Email</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Ready' : 'Siap'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   )}
                 </div>
@@ -1535,7 +1657,7 @@ const ChatLayout = () => {
               </button>
               <button
                 onClick={cycleTheme}
-                className="p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+                className="hidden sm:inline-flex p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
                 aria-label={t('nav.theme')}
                 title={t('nav.theme')}
               >

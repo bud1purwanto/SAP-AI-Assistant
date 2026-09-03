@@ -285,6 +285,7 @@ class MCPManager:
                 }
 
             # SQL Server status
+            # SQL Server status (menangkap active_server dan list sub_servers dari SAP)
             try:
                 sql_client = self.get_client("sql")
                 sql_tools = await sql_client.list_tools(http_client)
@@ -295,7 +296,9 @@ class MCPManager:
                     "online": True,
                     "status": "online",
                     "tool_count": len(sql_tools),
-                    "tools_count": len(sql_tools)
+                    "tools_count": len(sql_tools),
+                    "active_server": active_server_name,
+                    "sub_servers": sub_servers
                 }
                 status["sql"] = sql_info
                 status["email"] = {**sql_info, "id": "email"}
@@ -309,6 +312,8 @@ class MCPManager:
                     "status": "offline",
                     "tool_count": 0,
                     "tools_count": 0,
+                    "active_server": active_server_name,
+                    "sub_servers": sub_servers,
                     "error": str(e)
                 }
                 status["sql"] = sql_err
@@ -444,6 +449,11 @@ class MCPManager:
             client = self.get_client(server_name)
             if server_name == "sap":
                 return await self._handle_sap_call(http_client, client, tool_name, final_args)
+            if server_name == "sql" and sap_target:
+                try:
+                    await client.call_tool(http_client, "set_active_server", {"server_ref": sap_target})
+                except Exception:
+                    pass
             return await client.call_tool(http_client, tool_name, final_args)
 
     @staticmethod

@@ -405,12 +405,17 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
 
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
-    # Target SAP dibawa per-request dan diterapkan ulang di setiap pemanggilan
+    # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
-    sap_target = target_srv.split(":", 1)[1] if target_srv.startswith("sap:") else None
+    target_system = "sql" if target_srv.startswith("sql:") else "sap"
+    sap_target = (
+        target_srv.split(":", 1)[1]
+        if ":" in target_srv
+        else (target_srv if target_srv not in ("sap", "sql") else None)
+    )
     if sap_target:
-        logger.info(f"Target SAP server untuk request ini: {sap_target}")
+        logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
 
     all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     
@@ -543,7 +548,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     if has_rag:
         tool_inventory.append("basis pengetahuan dokumen (RAG)")
     if has_sql:
-        tool_inventory.append("layanan MCP SQL Database")
+        tool_inventory.append(f"layanan MCP SQL Database (target aktif: **{sap_server_name} / {sap_sid}**)")
     if has_email:
         tool_inventory.append("layanan MCP Email")
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
