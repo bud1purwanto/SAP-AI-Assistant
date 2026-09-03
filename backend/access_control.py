@@ -320,13 +320,17 @@ def resolve_access(username: str, role: Union[str, List[str], None] = "user") ->
     try:
         with engine.connect() as conn:
             # 2. Ambil izin level Role untuk seluruh peran yang dimiliki (Union / Paling Permisif)
+            # SQLAlchemy secara otomatis akan melakukan ekspansi parameter untuk list bila menggunakan tuple() 
+            # bersama statement IN (misal IN :roles tidak selalu aman di DB tertentu tanpa bindparam, tapi kita pakai list comprehension / tuple).
+            # Pendekatan psycopg3 yang paling portabel untuk IN clause manual:
+            roles_tuple = tuple(roles)
             r_rows = conn.execute(
                 text("""
                 SELECT resource_key, allowed, can_write
                 FROM ai_assistant.role_resource_access
                 WHERE LOWER(role) = ANY(:roles)
             """),
-                {"roles": roles, "role": roles[0] if roles else "user"},
+                {"roles": list(roles_tuple), "role": roles_tuple[0] if roles_tuple else "user"},
             ).fetchall()
 
             for rk, allowed, can_write in r_rows:

@@ -4,6 +4,7 @@ import logging
 import time
 import re
 from datetime import datetime
+from typing import Union
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 from mcp_manager import mcp_manager
@@ -213,7 +214,7 @@ async def _noop_progress(**kwargs):
     """Penerima progres bawaan untuk pemanggil yang tidak memerlukannya."""
 
 
-async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_persona: str = "",
+async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] = "user", user_persona: str = "",
                        username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
     # 0. Resolusi Mode Chat & Batas Iterasi
     from database import (
@@ -229,7 +230,9 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     if chat_modes_enabled and chat_req.mode:
         target = get_chat_mode_by_code(chat_req.mode)
         if target and target.get("enabled"):
-            user_modes = get_modes_for_role(user_role)
+            user_modes = get_modes_for_role(
+                user_role[0] if isinstance(user_role, list) else (user_role or "user")
+            )
             if any(m["code"] == target["code"] and m.get("available") for m in user_modes):
                 active_mode = target
 
@@ -417,11 +420,15 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     if sap_target:
         logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
 
-    # Validasi otorisasi target_srv terhadap pengguna (bila master switch aktif)
+    # Normalisasi user_role ke list roles untuk access control
     import access_control
-    access_control.assert_can_use(username=username, role=user_role, active_server=target_srv)
+    roles_list = access_control.normalize_roles(user_role)
+    roles_str_primary = roles_list[0] if roles_list else "user"
 
-    allowed_conn = access_control.allowed_connectors(username=username, role=user_role)
+    # Validasi otorisasi target_srv terhadap pengguna (bila master switch aktif)
+    access_control.assert_can_use(username=username, role=roles_list, active_server=target_srv)
+
+    allowed_conn = access_control.allowed_connectors(username=username, role=roles_list)
     try:
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv, allowed_connectors=allowed_conn)
     except TypeError:
@@ -451,10 +458,10 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     can_write_res = True
     if access_control.is_access_control_enabled():
         can_key = access_control.canonical_resource_key(target_srv)
-        u_perms = access_control.resolve_access(username, user_role)
+        u_perms = access_control.resolve_access(username, roles_list)
         can_write_res = bool(u_perms.get(can_key, {}).get("can_write"))
 
-    boleh_ubah = ((user_role or "").lower() in PERAN_BOLEH_UBAH_PROGRAM) and can_write_res
+    boleh_ubah = (roles_str_primary in PERAN_BOLEH_UBAH_PROGRAM) and can_write_res
     tool_ditolak = []
 
     for item in all_mcp_tools:
@@ -575,7 +582,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     # SUSUNAN PROMPT DAN CACHING
     if tool_ditolak:
         logger.info(
-            f"Peran '{user_role}' tidak berhak mengubah program; "
+            f"Peran '{roles_str_primary}' tidak berhak mengubah program; "
             f"{len(tool_ditolak)} tool disembunyikan: {', '.join(tool_ditolak[:6])}"
         )
 
@@ -748,7 +755,7 @@ async def process_chat(chat_req: ChatRequest, user_role: str = "user", user_pers
     now_real = datetime.now()
     konteks = [
         "\n\n## KONTEKS PERMINTAAN INI\n",
-        f"- Role pengguna: {user_role}\n",
+        f"- Role pengguna: {', '.join(roles_list)}\n",
         f"- Tanggal sistem saat ini (real-world): {now_real.strftime('%d.%m.%Y')} (format SAP: {now_real.strftime('%Y%m%d')}). Gunakan tanggal riil ini bila membuat dokumen atau transaksi. HINDARI menggunakan tahun masa depan (seperti 2028) bila tool get_server_date membaca tanggal anomali dari tabel USR02 testing.\n",
         (
             "- Hak ubah program: DIIZINKAN. Anda boleh membantu membuat dan mengubah "

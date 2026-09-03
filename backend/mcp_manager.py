@@ -443,6 +443,7 @@ class MCPManager:
             is_rag = True
 
         # Terapkan pembatasan konektor dari access control bila ada
+        is_email = True
         if allowed_connectors is not None:
             if "sap" not in allowed_connectors:
                 is_sap = False
@@ -450,6 +451,8 @@ class MCPManager:
                 is_sql = False
             if "rag" not in allowed_connectors:
                 is_rag = False
+            if "email" not in allowed_connectors:
+                is_email = False
 
         async with httpx.AsyncClient() as http_client:
             # SAP Tools
@@ -468,8 +471,12 @@ class MCPManager:
                     rag_client = self.get_client("rag")
                     rag_tools = await rag_client.list_tools(http_client)
                     for t in rag_tools:
-                        if not t.name.startswith("sql_"):
-                            tools.append({"server": "rag", "tool": t})
+                        if t.name.startswith("sql_"):
+                            continue
+                        # Filter email tools bila konektor email dilarang
+                        if not is_email and any(kw in t.name for kw in ("email", "send_email", "read_email", "search_email")):
+                            continue
+                        tools.append({"server": "rag", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching RAG tools: {e}")
 
