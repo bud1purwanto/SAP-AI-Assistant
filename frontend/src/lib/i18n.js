@@ -17,8 +17,7 @@ export const LANGUAGE_STORAGE_KEY = 'sap_assistant_lang';
 export const TRANSLATIONS = {
   en: {
     // Navigation & Header
-    'nav.sapSystem': 'SAP System',
-    'nav.openSidebarMenu': 'Open conversation menu',
+    'nav.sapSystem': 'System',
     'nav.connecting': 'Connecting…',
     'nav.unlimited': 'Unlimited',
     'nav.quotaRemaining': 'Left',
@@ -327,9 +326,8 @@ export const TRANSLATIONS = {
 
   id: {
     // Navigasi & Header
-    'nav.sapSystem': 'Sistem SAP',
+    'nav.sapSystem': 'Sistem',
     'nav.openSidebarMenu': 'Buka menu percakapan',
-    'nav.connecting': 'Menghubungkan…',
     'nav.unlimited': 'Tanpa batas',
     'nav.quotaRemaining': 'Sisa',
     'nav.quotaUnlimitedTooltip': 'Peran Anda tidak dibatasi kuota token harian (Unlimited)',

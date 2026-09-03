@@ -193,14 +193,17 @@ class MCPManager:
                 or getattr(settings, "mcp_email_config_json", "")
             )
             if not config_json_str:
-                return "http://192.168.1.162:8093/mcp", {"Authorization": "Bearer Trias123"}
+                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
             try:
                 config = json.loads(config_json_str)
                 mcp_servers = config.get("mcpServers", {})
                 sql_config = mcp_servers.get("sql-mcp", mcp_servers.get("email-mcp", list(mcp_servers.values())[0] if mcp_servers else {}))
-                return sql_config.get("url", "http://192.168.1.162:8093/mcp"), sql_config.get("headers", {"Authorization": "Bearer Trias123"})
+                url = sql_config.get("url", "http://192.168.1.162:8090/mcp")
+                if "8093" in url:
+                    url = url.replace("8093", "8090")
+                return url, sql_config.get("headers", {"Authorization": "Bearer Trias123"})
             except Exception:
-                return "http://192.168.1.162:8093/mcp", {"Authorization": "Bearer Trias123"}
+                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
         else:
             raise ValueError(f"Unknown MCP server name: {name}")
 
@@ -284,21 +287,34 @@ class MCPManager:
                     "error": str(e)
                 }
 
-            # SQL Server status
-            # SQL Server status (menangkap active_server dan list sub_servers dari SAP)
+            # SQL Server status (mengambil daftar 8 database server SQL live via sql_list_servers)
             try:
                 sql_client = self.get_client("sql")
                 sql_tools = await sql_client.list_tools(http_client)
+                sql_sub_servers = []
+                active_sql_name = "Default"
+                try:
+                    srv_res = await sql_client.call_tool(http_client, "sql_list_servers", {})
+                    if srv_res and not srv_res.isError and srv_res.content:
+                        txt = srv_res.content[0].text
+                        srv_data = json.loads(txt)
+                        sql_sub_servers = srv_data.get("servers", [])
+                        for s in sql_sub_servers:
+                            if s.get("active"):
+                                active_sql_name = s.get("name") or s.get("host") or "Active"
+                except Exception as ex:
+                    logger.warning(f"Gagal mengambil daftar server SQL: {ex}")
+
                 sql_info = {
                     "id": "sql",
                     "name": "MCP SQL Server",
                     "description": "Direct SQL Query & Database Gateway",
                     "online": True,
                     "status": "online",
-                    "tool_count": len(sql_tools),
-                    "tools_count": len(sql_tools),
-                    "active_server": active_server_name,
-                    "sub_servers": sub_servers
+                    "tool_count": len([t for t in sql_tools if t.name.startswith("sql_")]),
+                    "tools_count": len([t for t in sql_tools if t.name.startswith("sql_")]),
+                    "active_server": active_sql_name,
+                    "sub_servers": sql_sub_servers
                 }
                 status["sql"] = sql_info
                 status["email"] = {**sql_info, "id": "email"}
@@ -312,8 +328,8 @@ class MCPManager:
                     "status": "offline",
                     "tool_count": 0,
                     "tools_count": 0,
-                    "active_server": active_server_name,
-                    "sub_servers": sub_servers,
+                    "active_server": "-",
+                    "sub_servers": [],
                     "error": str(e)
                 }
                 status["sql"] = sql_err
@@ -393,7 +409,8 @@ class MCPManager:
                     rag_client = self.get_client("rag")
                     rag_tools = await rag_client.list_tools(http_client)
                     for t in rag_tools:
-                        tools.append({"server": "rag", "tool": t})
+                        if not t.name.startswith("sql_"):
+                            tools.append({"server": "rag", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching RAG tools: {e}")
 
@@ -402,7 +419,8 @@ class MCPManager:
                 sql_client = self.get_client("sql")
                 sql_tools = await sql_client.list_tools(http_client)
                 for t in sql_tools:
-                    tools.append({"server": "sql", "tool": t})
+                    if t.name.startswith("sql_"):
+                        tools.append({"server": "sql", "tool": t})
             except Exception as e:
                 logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
 
@@ -417,7 +435,7 @@ class MCPManager:
     ) -> MCPCallResult:
         """Panggil satu tool MCP.
 
-        Untuk server SAP, `sap_target` menyatakan sistem SAP mana yang dituju.
+        Untuk server SAP/SQL, `sap_target` menyatakan sistem server mana yang dituju.
         Penetapan target dan pemanggilan tool dilakukan di bawah satu lock agar
         request user lain tidak dapat menyisip di antaranya dan mengalihkan
         query ke sistem yang salah.
@@ -451,7 +469,7 @@ class MCPManager:
                 return await self._handle_sap_call(http_client, client, tool_name, final_args)
             if server_name == "sql" and sap_target:
                 try:
-                    await client.call_tool(http_client, "set_active_server", {"server_ref": sap_target})
+                    await client.call_tool(http_client, "sql_set_active_server", {"server_ref": sap_target})
                 except Exception:
                     pass
             return await client.call_tool(http_client, tool_name, final_args)

@@ -554,7 +554,7 @@ DEFAULT_MCP_SQL_JSON = '''{
   "mcpServers": {
     "sql-mcp": {
       "type": "http",
-      "url": "http://192.168.1.162:8093/mcp",
+      "url": "http://192.168.1.162:8090/mcp",
       "headers": {
         "Authorization": "Bearer Trias123"
       }
