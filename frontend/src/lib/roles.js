@@ -201,12 +201,30 @@ export function getRoleIconLabel(icon, isEn = false) {
   return ROLE_ICON_LABELS[icon]?.[isEn ? 'en' : 'id'] || icon;
 }
 
+export const DEFAULT_ROLE_COLORS = {
+  superadmin: 'purple',
+  admin: 'purple',
+  abaper: 'indigo',
+  functional: 'emerald',
+  backend: 'amber',
+  frontend: 'cyan',
+  basis: 'rose',
+  data_analyst: 'teal',
+  user: 'zinc',
+  guest: 'zinc',
+};
+
 /**
- * Mengambil class badge Tailwind yang aman untuk suatu warna.
+ * Mengambil class badge Tailwind yang aman untuk suatu warna atau kode peran.
  */
-export function getRoleBadgeStyle(colorName) {
-  const c = (colorName || 'zinc').toLowerCase();
-  return ROLE_COLOR_MAP[c]?.badge || ROLE_COLOR_MAP.zinc.badge;
+export function getRoleBadgeStyle(colorOrRole) {
+  const raw = Array.isArray(colorOrRole) ? colorOrRole[0] : colorOrRole;
+  const key = (raw || 'zinc').toLowerCase();
+  if (ROLE_COLOR_MAP[key]) {
+    return ROLE_COLOR_MAP[key].badge;
+  }
+  const mappedColor = DEFAULT_ROLE_COLORS[key] || 'zinc';
+  return ROLE_COLOR_MAP[mappedColor]?.badge || ROLE_COLOR_MAP.zinc.badge;
 }
 
 /**
@@ -226,5 +244,20 @@ export function formatRoleLabel(code) {
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+/**
+ * Mengambil inisial pengguna untuk tampilan avatar.
+ * Mengutamakan 2 huruf dari kata pertama & kedua dari full_name,
+ * atau 2 huruf pertama dari username jika full_name tidak ada.
+ */
+export function getUserInitials(user) {
+  const name = (user?.full_name || user?.username || '').trim();
+  if (!name) return 'U';
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 }
 

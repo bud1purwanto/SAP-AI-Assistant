@@ -18,8 +18,18 @@ import { useLanguage } from '../hooks/useLanguage';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
+import { formatRoleLabel, getRoleBadgeStyle, getUserInitials } from '../lib/roles';
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
+
+const getUserRoleLabel = (role, t) => {
+  const roleCode = Array.isArray(role) ? role[0] : role;
+  if (!roleCode || roleCode === 'user') return t('admin.roleUser');
+  if (roleCode === 'superadmin') return 'Admin';
+  if (roleCode === 'guest') return t('admin.roleGuest');
+  if (roleCode === 'abaper') return t('admin.roleAbaper');
+  return formatRoleLabel(roleCode);
+};
 
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
 
@@ -1400,29 +1410,38 @@ const ChatLayout = () => {
           )}
 
           <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
-            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            <div className="flex items-center gap-2.5 min-w-0 pr-1">
               <div className="relative shrink-0">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-sm shadow-indigo-500/25 ring-1 ring-white/20">
-                  {user.username.charAt(0).toUpperCase()}
+                <div
+                  className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-1 ring-white/20 select-none"
+                  title={user.full_name || user.username}
+                >
+                  {getUserInitials(user)}
                 </div>
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface" />
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
+                  title="Online"
+                />
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold truncate text-content leading-tight">
+                <div
+                  className="text-xs font-semibold truncate text-content leading-tight"
+                  title={user.full_name ? `${user.full_name} (@${user.username})` : user.username}
+                >
                   {user.full_name || user.username}
                 </div>
-                <div className="text-[10px] text-content-muted mt-0.5 truncate capitalize flex items-center gap-1">
-                  <span className="px-1.5 py-0.2 rounded-md bg-accent-soft text-accent text-[9px] font-semibold">
-                    {user.role === 'superadmin' ? 'Admin' : user.role === 'guest' ? t('admin.roleGuest') : (user.role || t('admin.roleUser'))}
+                <div className="mt-1 flex items-center">
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
+                    {getUserRoleLabel(user.role, t)}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 onClick={cycleTheme}
-                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
+                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-hover/80 transition-colors cursor-pointer"
                 aria-label={t('nav.theme')}
                 title={t('nav.theme')}
               >
@@ -1430,7 +1449,7 @@ const ChatLayout = () => {
               </button>
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-raised transition-colors cursor-pointer"
+                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-hover/80 transition-colors cursor-pointer"
                 aria-label={t('nav.settings')}
                 title={t('nav.settings')}
               >
