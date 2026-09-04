@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any, Dict, List, Optional, Union
@@ -30,9 +31,14 @@ from database import (
     consume_guest_quota,
     create_chat_session,
     create_new_user,
+    create_role,
     delete_chat_session,
+    delete_role,
     delete_user_by_admin,
     get_admin_system_stats,
+    get_role_codes,
+    get_role_by_code,
+    get_roles,
     get_top_active_users,
     get_all_sessions_for_audit,
     get_chat_messages,
@@ -62,6 +68,7 @@ from database import (
     session_belongs_to,
     truncate_chat_messages_from,
     update_message_feedback,
+    update_role,
     update_system_config,
     update_user_by_admin,
     update_user_full_name,
@@ -527,6 +534,15 @@ ROLE_TERSEDIA = (
 )
 
 
+def get_available_roles(enabled_only: bool = True) -> list[str]:
+    """Mengambil daftar peran aktif dari database dengan fallback ke ROLE_TERSEDIA."""
+    try:
+        return get_role_codes(enabled_only=enabled_only)
+    except Exception as e:
+        logger.warning(f"Gagal mengambil kode peran dari database: {e}")
+        return list(ROLE_TERSEDIA)
+
+
 # --- KUOTA TOKEN ---
 
 class BatasPeranRequest(BaseModel):
@@ -585,10 +601,11 @@ async def atur_batas_peran_endpoint(
     admin: dict = Depends(require_superadmin),
 ):
     """Ubah batas harian dan batas per menit untuk satu peran atau batch banyak peran."""
+    valid_roles = get_available_roles(enabled_only=False)
     if req.limits:
         for r, vals in req.limits.items():
             clean_r = str(r).strip().lower()
-            if clean_r not in ROLE_TERSEDIA:
+            if clean_r not in valid_roles:
                 raise HTTPException(status_code=400, detail=f"Peran '{r}' tidak dikenal.")
             daily = vals.get("daily_token_limit", 0) if isinstance(vals, dict) else 0
             minute = vals.get("per_minute_limit", 0) if isinstance(vals, dict) else 0
@@ -602,7 +619,7 @@ async def atur_batas_peran_endpoint(
         raise HTTPException(status_code=400, detail="Peran atau daftar batas harus disertakan.")
 
     clean_role = req.role.strip().lower()
-    if clean_role not in ROLE_TERSEDIA:
+    if clean_role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Peran '{req.role}' tidak dikenal.")
     daily = req.daily_token_limit if req.daily_token_limit is not None else 0
     minute = req.per_minute_limit if req.per_minute_limit is not None else 0
@@ -669,9 +686,10 @@ async def create_user_endpoint(
         raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
 
     clean_roles = req.roles if req.roles else ([req.role] if req.role else ["user"])
+    available_roles = get_available_roles(enabled_only=True)
     for r in clean_roles:
-        if r.lower() not in ROLE_TERSEDIA:
-            raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal.")
+        if r.lower() not in available_roles:
+            raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal atau tidak aktif.")
     primary_role = "superadmin" if "superadmin" in [r.lower() for r in clean_roles] else clean_roles[0]
 
     res = create_new_user(
@@ -702,20 +720,21 @@ async def update_user_endpoint(
     admin: dict = Depends(require_superadmin),
 ):
     """Memperbarui user (role, persona, atau reset password)."""
+    available_roles = get_available_roles(enabled_only=True)
     clean_roles = None
     if req.roles is not None:
         clean_roles = req.roles
         for r in clean_roles:
-            if r.lower() not in ROLE_TERSEDIA:
-                raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal.")
+            if r.lower() not in available_roles:
+                raise HTTPException(status_code=400, detail=f"Role '{r}' tidak dikenal atau tidak aktif.")
         if admin["username"].lower() == username.lower() and "superadmin" not in [r.lower() for r in clean_roles]:
             raise HTTPException(
                 status_code=400,
                 detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
             )
     elif req.role:
-        if req.role.lower() not in ROLE_TERSEDIA:
-            raise HTTPException(status_code=400, detail="Role tidak dikenal.")
+        if req.role.lower() not in available_roles:
+            raise HTTPException(status_code=400, detail="Role tidak dikenal atau tidak aktif.")
         if admin["username"].lower() == username.lower() and req.role != "superadmin":
             raise HTTPException(
                 status_code=400,
@@ -748,6 +767,128 @@ async def delete_user_endpoint(username: str, admin: dict = Depends(require_supe
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     return res
+
+
+# --- MASTER DATA ROLES (DINAMISASI PERAN) ---
+
+class AdminCreateRoleRequest(BaseModel):
+    code: str
+    label: str
+    description: Optional[str] = ""
+    color: Optional[str] = "zinc"
+    icon: Optional[str] = "users"
+    can_modify_program: Optional[bool] = False
+    enabled: Optional[bool] = True
+    sort_order: Optional[int] = 100
+    daily_token_limit: Optional[int] = 100000
+    per_minute_limit: Optional[int] = None
+    requests_per_minute: Optional[int] = None
+
+
+class AdminUpdateRoleRequest(BaseModel):
+    label: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    can_modify_program: Optional[bool] = None
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+@app.get("/api/admin/roles")
+async def get_admin_roles_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mendapatkan daftar seluruh peran master beserta jumlah pengguna terdaftar."""
+    return get_roles(enabled_only=False)
+
+
+@app.post("/api/admin/roles")
+async def create_admin_role_endpoint(
+    req: AdminCreateRoleRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Membuat peran kustom baru dengan inisialisasi kuota dan perizinan default-deny."""
+    c_clean = req.code.strip().lower()
+    if not re.match(r'^[a-z0-9_]{2,40}$', c_clean):
+        raise HTTPException(
+            status_code=400,
+            detail="Kode peran hanya boleh terdiri dari huruf kecil, angka, garis bawah (_), dan panjang 2-40 karakter.",
+        )
+    if not req.label or not req.label.strip():
+        raise HTTPException(status_code=400, detail="Label peran tidak boleh kosong.")
+
+    pml = 5
+    if req.per_minute_limit is not None:
+        pml = req.per_minute_limit
+    elif req.requests_per_minute is not None:
+        pml = req.requests_per_minute
+
+    try:
+        new_role = create_role(
+            code=c_clean,
+            label=req.label.strip(),
+            description=(req.description or "").strip(),
+            color=(req.color or "zinc").strip().lower(),
+            icon=(req.icon or "users").strip().lower(),
+            can_modify_program=bool(req.can_modify_program),
+            enabled=bool(req.enabled),
+            sort_order=int(req.sort_order if req.sort_order is not None else 100),
+            daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
+            per_minute_limit=int(pml),
+        )
+        return {"status": "success", "role": new_role}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error create_admin_role_endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Gagal membuat peran baru.")
+
+
+@app.put("/api/admin/roles/{code}")
+async def update_admin_role_endpoint(
+    code: str,
+    req: AdminUpdateRoleRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Memperbarui informasi peran master."""
+    c_clean = code.strip().lower()
+    existing = get_role_by_code(c_clean)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Peran '{c_clean}' tidak ditemukan.")
+
+    try:
+        updated = update_role(
+            code=c_clean,
+            label=req.label.strip() if req.label is not None else None,
+            description=req.description.strip() if req.description is not None else None,
+            color=req.color.strip().lower() if req.color is not None else None,
+            icon=req.icon.strip().lower() if req.icon is not None else None,
+            can_modify_program=req.can_modify_program,
+            enabled=req.enabled,
+            sort_order=req.sort_order,
+        )
+        return {"status": "success", "role": updated}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error update_admin_role_endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Gagal memperbarui peran.")
+
+
+@app.delete("/api/admin/roles/{code}")
+async def delete_admin_role_endpoint(
+    code: str,
+    admin: dict = Depends(require_superadmin),
+):
+    """Menghapus peran kustom jika tidak ada pengguna yang menggunakannya dan bukan peran sistem."""
+    c_clean = code.strip().lower()
+    try:
+        delete_role(c_clean)
+        return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error delete_admin_role_endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Gagal menghapus peran.")
 
 
 @app.get("/api/admin/sessions")
@@ -994,6 +1135,7 @@ async def get_role_modes_endpoint(admin: dict = Depends(require_superadmin)):
     return {
         "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
         "matrix": matrix,
+        "roles": get_roles(enabled_only=False),
     }
 
 

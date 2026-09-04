@@ -69,6 +69,7 @@ export default function AdminChatModes({
   const [masterEnabled, setMasterEnabled] = useState(true);
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const [roleMatrix, setRoleMatrix] = useState([]);
+  const [rolesList, setRolesList] = useState([]);
   const [search, setSearch] = useState('');
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingMode, setEditingMode] = useState(null);
@@ -102,6 +103,7 @@ export default function AdminChatModes({
       setModesList(modesRes?.modes || []);
       setMasterEnabled(Boolean(modesRes?.chat_modes_enabled));
       setRoleMatrix(rolesRes?.matrix || []);
+      setRolesList(rolesRes?.roles || []);
 
       if (configRes) {
         setNineRouterEnabled(configRes.nine_router_enabled !== undefined ? configRes.nine_router_enabled : true);
@@ -382,6 +384,11 @@ export default function AdminChatModes({
       </div>
     );
   }
+
+  const activeRoles =
+    rolesList && rolesList.length > 0
+      ? rolesList.map((r) => ({ role: r.code, label: r.label, desc: r.description }))
+      : ALL_ROLES;
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -956,7 +963,7 @@ export default function AdminChatModes({
             </p>
           </div>
           <span className="text-[11px] font-mono text-content-muted bg-surface-sunken px-2.5 py-1 rounded-lg border border-line/60">
-            {modesList.length} Modes × {ALL_ROLES.length} Roles
+            {modesList.length} Modes × {activeRoles.length} Roles
           </span>
         </div>
 
@@ -965,23 +972,23 @@ export default function AdminChatModes({
             <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted uppercase text-[10px] tracking-wider font-bold">
               <tr>
                 <th className="py-3 px-4 min-w-[140px] sticky left-0 bg-surface-sunken z-10">Role</th>
-                {modesList.map((m) => (
-                  <th key={m.code} className="py-3 px-3 text-center min-w-[110px]">
-                    <div className="flex items-center justify-center gap-1.5">
-                      <span>{renderModeIcon(m.icon, 'w-3.5 h-3.5')}</span>
-                      <span className="truncate max-w-[90px]">{m.name}</span>
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line/60">
-              {ALL_ROLES.map(({ role, label }) => (
-                <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
-                  <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
-                    <span className="font-semibold text-content block text-xs">{label}</span>
-                    <span className="text-[10px] text-content-subtle font-mono block">{role}</span>
-                  </td>
+                    {modesList.map((m) => (
+                      <th key={m.code} className="py-3 px-3 text-center min-w-[110px]">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>{renderModeIcon(m.icon, 'w-3.5 h-3.5')}</span>
+                          <span className="truncate max-w-[90px]">{m.name}</span>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line/60">
+                  {activeRoles.map(({ role, label }) => (
+                    <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
+                      <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
+                        <span className="font-semibold text-content block text-xs">{label}</span>
+                        <span className="text-[10px] text-content-subtle font-mono block">{role}</span>
+                      </td>
                   {modesList.map((mode) => {
                     const match = roleMatrix.find(
                       (rm) => rm.role === role && rm.mode_code === mode.code

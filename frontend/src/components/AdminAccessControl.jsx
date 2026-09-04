@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { getRoleBadgeStyle, getRoleIconComponent } from '../lib/roles';
 
 const ALL_ROLES = [
   {
@@ -143,6 +144,7 @@ export default function AdminAccessControl({
 
   // Role Matrix State
   const [roleMatrix, setRoleMatrix] = useState({});
+  const [rolesMeta, setRolesMeta] = useState([]);
   const [modifiedRoles, setModifiedRoles] = useState(new Set());
 
   // User Access State
@@ -184,6 +186,7 @@ export default function AdminAccessControl({
       setMasterEnabled(Boolean(res.master_enabled));
       setResources(res.resources || []);
       setRoleMatrix(res.matrix || {});
+      setRolesMeta(res.role_meta || []);
       setModifiedRoles(new Set());
     } catch (err) {
       console.error(err);
@@ -622,6 +625,20 @@ export default function AdminAccessControl({
     );
   }
 
+  const activeRoles =
+    rolesMeta && rolesMeta.length > 0
+      ? rolesMeta.map((r) => ({
+          role: r.code,
+          label: r.label,
+          desc: r.description,
+          color: r.color,
+          badgeClass: getRoleBadgeStyle(r.color),
+          icon: getRoleIconComponent(r.icon),
+          is_system: r.is_system,
+          enabled: r.enabled,
+        }))
+      : ALL_ROLES;
+
   return (
     <div className="space-y-6">
       {/* Top Loading Progress Bar */}
@@ -865,7 +882,7 @@ export default function AdminAccessControl({
                     <th className="sticky top-0 left-0 z-30 py-4 px-4 w-[340px] min-w-[320px] text-xs font-bold uppercase tracking-wider text-content bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
                       {t('access.resource')}
                     </th>
-                    {ALL_ROLES.map((r) => {
+                    {activeRoles.map((r) => {
                       const Icon = r.icon;
                       const isSuper = r.role === 'superadmin';
                       return (
@@ -909,7 +926,7 @@ export default function AdminAccessControl({
                 <tbody className="text-xs">
                   {/* SECTION: SAP ERP */}
                   <tr className="bg-surface-sunken/90">
-                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                    <td colSpan={1 + activeRoles.length} className="py-2.5 px-4 border-b border-line/60">
                       <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-accent text-xs">
                         <Server className="w-4 h-4 text-accent" />
                         <span>SAP ERP Systems</span>
@@ -923,7 +940,7 @@ export default function AdminAccessControl({
 
                   {/* SECTION: SQL DATABASE */}
                   <tr className="bg-surface-sunken/90">
-                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                    <td colSpan={1 + activeRoles.length} className="py-2.5 px-4 border-b border-line/60">
                       <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-blue-400 text-xs">
                         <Database className="w-4 h-4 text-blue-400" />
                         <span>SQL Database Instances</span>
@@ -937,7 +954,7 @@ export default function AdminAccessControl({
 
                   {/* SECTION: COMPANION SERVICES */}
                   <tr className="bg-surface-sunken/90">
-                    <td colSpan={1 + ALL_ROLES.length} className="py-2.5 px-4 border-b border-line/60">
+                    <td colSpan={1 + activeRoles.length} className="py-2.5 px-4 border-b border-line/60">
                       <div className="sticky left-4 inline-flex items-center gap-2 font-bold text-amber-400 text-xs">
                         <Layers className="w-4 h-4 text-amber-400" />
                         <span>Companion Integrations</span>
@@ -958,7 +975,7 @@ export default function AdminAccessControl({
             <div className="space-y-5">
               {/* Role Picker Pills */}
               <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-surface border border-line">
-                {ALL_ROLES.map((r) => {
+                {activeRoles.map((r) => {
                   const isSel = selectedRoleCard === r.role;
                   const Icon = r.icon;
                   const isMod = modifiedRoles.has(r.role);
@@ -988,11 +1005,11 @@ export default function AdminAccessControl({
                     <h3 className="text-base font-bold text-content flex items-center gap-2">
                       <span>Perizinan Khusus untuk</span>
                       <span className="text-accent underline decoration-accent/40 underline-offset-4">
-                        {ALL_ROLES.find((r) => r.role === selectedRoleCard)?.label}
+                        {activeRoles.find((r) => r.role === selectedRoleCard)?.label}
                       </span>
                     </h3>
                     <p className="text-xs text-content-muted mt-1">
-                      {ALL_ROLES.find((r) => r.role === selectedRoleCard)?.desc}
+                      {activeRoles.find((r) => r.role === selectedRoleCard)?.desc}
                     </p>
                   </div>
 
@@ -1677,7 +1694,7 @@ export default function AdminAccessControl({
           </div>
         </td>
 
-        {ALL_ROLES.map((r) => {
+        {activeRoles.map((r) => {
           const roleMap = roleMatrix[r.role] || {};
           const current = roleMap[res.resource_key] || { allowed: false, can_write: false };
           const isSuper = r.role === 'superadmin';

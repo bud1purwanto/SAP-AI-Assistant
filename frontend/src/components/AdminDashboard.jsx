@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, Users, X, XCircle } from 'lucide-react';
+import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
 import AdminAccessControl from './AdminAccessControl';
+import AdminRoles from './AdminRoles';
 
 const formatRoleLabel = (role) => {
   const r = (role || '').toLowerCase().trim();
@@ -106,6 +107,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [editingUser, setEditingUser] = useState(null);
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'abaper', roles: ['abaper'], assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
+  const [masterRoles, setMasterRoles] = useState([]);
 
   // Skills State
   const [skillsList, setSkillsList] = useState([]);
@@ -264,6 +266,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const fetchMasterRoles = async () => {
+    try {
+      const data = await api.adminRoles();
+      if (Array.isArray(data) && data.length > 0) {
+        setMasterRoles(data);
+      }
+    } catch (err) {
+      console.warn("Gagal memuat master roles:", err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin') {
       setActionSuccess('');
@@ -273,6 +286,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchSkills();
       fetchConfig();
       fetchAuditSessions();
+      fetchMasterRoles();
     }
   }, [isOpen, user?.role]);
 
@@ -639,6 +653,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       groupName: language === 'en' ? 'Users & Quotas' : 'Pengguna & Kuota',
       tabs: [
         { id: 'users', icon: Users, label: t('admin.tabUsers') },
+        { id: 'roles', icon: UserCog, label: language === 'en' ? 'Roles' : 'Peran' },
         { id: 'access', icon: ShieldCheck, label: t('admin.tabAccess') },
         { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
       ],
@@ -657,6 +672,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const allTabs = tabCategories.flatMap(g => g.tabs.map(tab => ({ ...tab, groupName: g.groupName })));
   const currentTab = allTabs.find(tab => tab.id === activeTab) || allTabs[0];
   const CurrentTabIcon = currentTab?.icon || Activity;
+
+  const activeRoleOptions = masterRoles.length > 0
+    ? masterRoles.filter(r => r.enabled).map(r => ({ value: r.code, label: r.label }))
+    : AVAILABLE_ROLES_OPTIONS;
 
   const isCurrentTabLoading =
     (activeTab === 'overview' && statsLoading) ||
@@ -746,7 +765,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   {language === 'en' ? 'Administration Menu' : 'Pilih Menu Admin'}
                 </span>
                 <span className="text-[10px] font-mono text-content-muted">
-                  9 Menu
+                  {allTabs.length} Menu
                 </span>
               </div>
               {tabCategories.map((group) => (
@@ -1356,7 +1375,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
                           </label>
                           <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
-                            {AVAILABLE_ROLES_OPTIONS.map((opt) => {
+                            {activeRoleOptions.map((opt) => {
                               const currentRoles = newUserForm.roles || [newUserForm.role];
                               const isSelected = currentRoles.includes(opt.value);
                               return (
@@ -1463,7 +1482,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
                           </label>
                           <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
-                            {AVAILABLE_ROLES_OPTIONS.map((opt) => {
+                            {activeRoleOptions.map((opt) => {
                               const currentRoles = editUserForm.roles || [editUserForm.role];
                               const isSelected = currentRoles.includes(opt.value);
                               return (
@@ -1548,6 +1567,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 )}
               </div>
+            )}
+
+            {/* TAB: MASTER ROLES */}
+            {activeTab === 'roles' && (
+              <AdminRoles onRefreshRoles={fetchMasterRoles} />
             )}
 
             {/* TAB: ACCESS CONTROL MCP */}

@@ -198,6 +198,12 @@ export const api = {
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
   adminDeleteUser: (username) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+  adminRoles: () => apiFetch('/api/admin/roles'),
+  adminCreateRole: (payload) => apiFetch('/api/admin/roles', { method: 'POST', body: payload }),
+  adminUpdateRole: (code, payload) =>
+    apiFetch(`/api/admin/roles/${encodeURIComponent(code)}`, { method: 'PUT', body: payload }),
+  adminDeleteRole: (code) =>
+    apiFetch(`/api/admin/roles/${encodeURIComponent(code)}`, { method: 'DELETE' }),
   adminSessions: (limit = 50) => apiFetch(`/api/admin/sessions?limit=${limit}`),
   adminSessionMessages: (id) => apiFetch(`/api/admin/sessions/${id}/messages`),
 

@@ -563,7 +563,14 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         can_write_email = bool(u_perms.get("service:email", {}).get("can_write"))
         can_write_rag = bool(u_perms.get("service:rag", {}).get("can_write"))
 
-    boleh_ubah = (roles_str_primary in PERAN_BOLEH_UBAH_PROGRAM) and can_write_res
+    try:
+        from database import get_roles_can_modify_program
+        allowed_modify_roles = get_roles_can_modify_program()
+    except Exception:
+        allowed_modify_roles = set(PERAN_BOLEH_UBAH_PROGRAM)
+
+    has_modify_role = any(r.lower() in allowed_modify_roles for r in roles_list)
+    boleh_ubah = has_modify_role and can_write_res
     tool_ditolak = []
 
     for item in all_mcp_tools:

@@ -705,17 +705,27 @@ def get_all_roles_matrix() -> Dict[str, Any]:
     """Mengambil matriks izin Role x Resource lengkap."""
     resources = get_all_resources(include_archived=False)
     engine = database.get_engine()
-    known_roles = [
-        "superadmin",
-        "abaper",
-        "functional",
-        "backend",
-        "frontend",
-        "basis",
-        "data_analyst",
-        "user",
-        "guest",
-    ]
+    
+    role_meta = []
+    try:
+        role_meta = database.get_roles(enabled_only=False)
+        known_roles = [r["code"] for r in role_meta] if role_meta else []
+    except Exception as e:
+        logger.warning(f"Fallback get_roles in get_all_roles_matrix: {e}")
+        known_roles = []
+
+    if not known_roles:
+        known_roles = [
+            "superadmin",
+            "abaper",
+            "functional",
+            "backend",
+            "frontend",
+            "basis",
+            "data_analyst",
+            "user",
+            "guest",
+        ]
 
     matrix: Dict[str, Dict[str, Dict[str, bool]]] = {
         r: {
@@ -744,6 +754,8 @@ def get_all_roles_matrix() -> Dict[str, Any]:
                         res["resource_key"]: {"allowed": False, "can_write": False}
                         for res in resources
                     }
+                    if role_l not in known_roles:
+                        known_roles.append(role_l)
                 if rk in matrix[role_l]:
                     matrix[role_l][rk]["allowed"] = bool(allowed)
                     matrix[role_l][rk]["can_write"] = bool(can_write)
@@ -753,6 +765,7 @@ def get_all_roles_matrix() -> Dict[str, Any]:
     return {
         "resources": resources,
         "roles": known_roles,
+        "role_meta": role_meta,
         "matrix": matrix,
         "master_enabled": is_access_control_enabled(),
     }

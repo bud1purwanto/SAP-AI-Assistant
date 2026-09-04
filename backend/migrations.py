@@ -512,6 +512,124 @@ def _m0012_standardize_persona_and_skills(conn):
     """), {"mm_content": DEFAULT_SKILL_MM})
 
 
+def _m0013_master_data_roles(conn):
+    """Normalisasi lebar kolom peran, master tabel roles, seed 9 peran, backfill defensif, dan foreign key."""
+    # 1. Normalisasi lebar kolom VARCHAR(40)
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.users ALTER COLUMN role TYPE VARCHAR(40);
+        ALTER TABLE ai_assistant.role_limits ALTER COLUMN role TYPE VARCHAR(40);
+    """))
+
+    # 2. Tabel master ai_assistant.roles
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.roles (
+            code               VARCHAR(40)  PRIMARY KEY,
+            label              VARCHAR(80)  NOT NULL,
+            description        VARCHAR(255) NOT NULL DEFAULT '',
+            color              VARCHAR(20)  NOT NULL DEFAULT 'zinc',
+            icon               VARCHAR(40)  NOT NULL DEFAULT 'users',
+            is_system          BOOLEAN      NOT NULL DEFAULT FALSE,
+            can_modify_program BOOLEAN      NOT NULL DEFAULT FALSE,
+            enabled            BOOLEAN      NOT NULL DEFAULT TRUE,
+            sort_order         INTEGER      NOT NULL DEFAULT 100,
+            created_at         TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at         TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    """))
+
+    # 3. Seed 9 peran bawaan
+    default_roles = [
+        ("superadmin", "Super Admin", "Akses penuh seluruh sistem, konfigurasi & audit", "purple", "shield-check", True, True, True, 10),
+        ("abaper", "ABAPer", "Pengembang teknis ABAP & modul SAP", "indigo", "code-2", False, True, True, 20),
+        ("functional", "Functional", "Konsultan bisnis modul fungsional SAP", "emerald", "terminal", False, False, True, 30),
+        ("backend", "Backend", "Pengembang arsitektur backend & database", "amber", "database", False, False, True, 40),
+        ("frontend", "Frontend", "Pengembang tampilan antarmuka & UI/UX", "cyan", "globe", False, False, True, 50),
+        ("basis", "Basis", "Administrator infrastruktur & server SAP", "rose", "cpu", False, False, True, 60),
+        ("data_analyst", "Data Analyst", "Analis data dan pelaporan analitik", "teal", "layers", False, False, True, 70),
+        ("user", "Standard User", "Pengguna standar aplikasi", "sky", "user", True, False, True, 80),
+        ("guest", "Guest", "Pengguna tamu tanpa akun terdaftar", "zinc", "globe", True, False, True, 90),
+    ]
+
+    for code, label, desc, color, icon, is_sys, can_mod, enabled, sort_ord in default_roles:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+            VALUES (:c, :l, :d, :col, :ico, :sys, :mod, :en, :so)
+            ON CONFLICT (code) DO UPDATE SET
+                label = EXCLUDED.label,
+                description = EXCLUDED.description,
+                color = EXCLUDED.color,
+                icon = EXCLUDED.icon,
+                is_system = EXCLUDED.is_system,
+                can_modify_program = EXCLUDED.can_modify_program,
+                sort_order = EXCLUDED.sort_order;
+        """), {
+            "c": code, "l": label, "d": desc, "col": color, "ico": icon,
+            "sys": is_sys, "mod": can_mod, "en": enabled, "so": sort_ord
+        })
+
+    # 4. Backfill defensif: daftarkan peran yang ada di tabel-tabel anak tapi belum ada di roles
+    conn.execute(text("""
+        INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+        SELECT DISTINCT LOWER(TRIM(r.role)), INITCAP(REPLACE(TRIM(r.role), '_', ' ')), 'Peran kustom sistem', 'zinc', 'users', FALSE, FALSE, TRUE, 100
+        FROM (
+            SELECT role FROM ai_assistant.users WHERE role IS NOT NULL AND TRIM(role) != ''
+            UNION
+            SELECT role FROM ai_assistant.user_roles WHERE role IS NOT NULL AND TRIM(role) != ''
+            UNION
+            SELECT role FROM ai_assistant.role_limits WHERE role IS NOT NULL AND TRIM(role) != ''
+            UNION
+            SELECT role FROM ai_assistant.role_modes WHERE role IS NOT NULL AND TRIM(role) != ''
+            UNION
+            SELECT role FROM ai_assistant.role_resource_access WHERE role IS NOT NULL AND TRIM(role) != ''
+        ) r
+        WHERE LOWER(TRIM(r.role)) NOT IN (SELECT code FROM ai_assistant.roles)
+        ON CONFLICT (code) DO NOTHING;
+    """))
+
+    # 5. Pasang Foreign Keys (Idempoten)
+    fks = [
+        ("user_roles", "fk_user_roles_role", "role", "RESTRICT"),
+        ("role_limits", "fk_role_limits_role", "role", "CASCADE"),
+        ("role_modes", "fk_role_modes_role", "role", "CASCADE"),
+        ("role_resource_access", "fk_role_res_access_role", "role", "CASCADE"),
+    ]
+    for table, fk_name, col, on_delete in fks:
+        conn.execute(text(f"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints 
+                    WHERE table_schema = 'ai_assistant' AND constraint_name = '{fk_name}'
+                ) THEN
+                    ALTER TABLE ai_assistant.{table}
+                    ADD CONSTRAINT {fk_name}
+                    FOREIGN KEY ({col}) REFERENCES ai_assistant.roles(code)
+                    ON UPDATE CASCADE ON DELETE {on_delete};
+                END IF;
+            END $$;
+        """))
+
+    # 6. Tutup celah LLM Mode: isi role_modes yang belum ada untuk seluruh peran master
+    modes = conn.execute(text("SELECT code, is_default FROM ai_assistant.chat_modes")).fetchall()
+    roles = conn.execute(text("SELECT code FROM ai_assistant.roles")).fetchall()
+    for r in roles:
+        r_code = r.code
+        for m in modes:
+            m_code = m.code
+            is_def = bool(m.is_default)
+            if r_code in ("superadmin", "abaper"):
+                is_en = True
+            elif r_code in ("functional", "backend", "frontend", "basis", "data_analyst", "user"):
+                is_en = is_def
+            else:
+                is_en = False
+            conn.execute(text("""
+                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                VALUES (:r, :m, :en)
+                ON CONFLICT (role, mode_code) DO NOTHING;
+            """), {"r": r_code, "m": m_code, "en": is_en})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -525,6 +643,7 @@ MIGRATIONS = [
     ("0010_seed_skill_sap_mm", _m0010_seed_skill_sap_mm),
     ("0011_skill_tags", _m0011_skill_tags),
     ("0012_standardize_persona_and_skills", _m0012_standardize_persona_and_skills),
+    ("0013_master_data_roles", _m0013_master_data_roles),
 ]
 
 

@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from typing import Any, Dict, List, Optional, Union
 
@@ -81,14 +82,31 @@ def init_db():
             # 1. Buat Schema ai_assistant (jika didukung seperti PostgreSQL)
             conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
             
-            # 2. Buat Tabel ai_assistant.users
+            # 2. Buat Tabel ai_assistant.roles jika belum ada
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.roles (
+                    code VARCHAR(40) PRIMARY KEY,
+                    label VARCHAR(80) NOT NULL,
+                    description VARCHAR(255) NOT NULL DEFAULT '',
+                    color VARCHAR(20) NOT NULL DEFAULT 'zinc',
+                    icon VARCHAR(40) NOT NULL DEFAULT 'users',
+                    is_system BOOLEAN NOT NULL DEFAULT FALSE,
+                    can_modify_program BOOLEAN NOT NULL DEFAULT FALSE,
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    sort_order INTEGER NOT NULL DEFAULT 100,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+
+            # 2b. Buat Tabel ai_assistant.users
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_assistant.users (
                     username VARCHAR(50) PRIMARY KEY,
                     password VARCHAR(100),
                     password_hash VARCHAR(255),
                     full_name VARCHAR(120),
-                    role VARCHAR(20) NOT NULL,
+                    role VARCHAR(40) NOT NULL,
                     assistant_persona TEXT
                 );
             """))
@@ -2507,15 +2525,16 @@ def create_chat_mode(
                 "mi": max_iterations, "en": enabled, "def": is_default, "ord": sort_order
             }).fetchone()
 
-            # Daftarkan hak akses awal untuk semua role standar
-            roles = ["superadmin", "abaper", "functional", "user", "guest"]
-            for role in roles:
-                role_en = True if role in ("superadmin", "abaper") else False
+            # Daftarkan hak akses awal untuk semua role yang ada di master roles
+            role_rows = conn.execute(text("SELECT code FROM ai_assistant.roles")).fetchall()
+            for r in role_rows:
+                r_code = r.code
+                role_en = True if r_code in ("superadmin", "abaper") else False
                 conn.execute(text("""
                     INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
                     VALUES (:r, :c, :en)
                     ON CONFLICT (role, mode_code) DO NOTHING
-                """), {"r": role, "c": code, "en": role_en})
+                """), {"r": r_code, "c": code, "en": role_en})
 
             conn.commit()
             return dict(row._mapping) if row else {}
@@ -2708,7 +2727,7 @@ def get_modes_for_role(role: str) -> list[dict]:
                 mode_dict = dict(m._mapping)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
-                is_role_allowed = role_map.get(mode_dict["code"], True)
+                is_role_allowed = role_map.get(mode_dict["code"], True if role == "superadmin" else False)
 
                 # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
                 # dan mode diaktifkan di level sistem, serta role memiliki izin.
@@ -2724,5 +2743,303 @@ def get_modes_for_role(role: str) -> list[dict]:
     except Exception as e:
         logger.error(f"Error get_modes_for_role: {e}")
         return []
+
+
+# ---------------------------------------------------------------------------
+# Master Data Roles (Dinamisasi Peran)
+# ---------------------------------------------------------------------------
+
+_ROLE_CODES_CACHE: list[str] = []
+_ROLE_CODES_CACHE_TIME: float = 0.0
+_ROLE_CACHE_TTL = 30.0  # seconds
+
+def invalidate_role_codes_cache():
+    global _ROLE_CODES_CACHE_TIME, _ROLE_CODES_CACHE
+    _ROLE_CODES_CACHE = []
+    _ROLE_CODES_CACHE_TIME = 0.0
+
+
+def get_role_codes(enabled_only: bool = True) -> list[str]:
+    """Mengambil daftar kode peran (roles) dari database dengan caching ringan."""
+    global _ROLE_CODES_CACHE, _ROLE_CODES_CACHE_TIME
+    now = time.time()
+    if enabled_only and _ROLE_CODES_CACHE and (now - _ROLE_CODES_CACHE_TIME < _ROLE_CACHE_TTL):
+        return list(_ROLE_CODES_CACHE)
+
+    default_fallback = [
+        "superadmin", "abaper", "functional", "backend",
+        "frontend", "basis", "data_analyst", "user", "guest"
+    ]
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            query = "SELECT code FROM ai_assistant.roles"
+            if enabled_only:
+                query += " WHERE enabled = TRUE"
+            query += " ORDER BY sort_order ASC, code ASC"
+            rows = conn.execute(text(query)).fetchall()
+            codes = [r.code for r in rows if r.code]
+            if not codes:
+                return default_fallback
+            if enabled_only:
+                _ROLE_CODES_CACHE = list(codes)
+                _ROLE_CODES_CACHE_TIME = now
+            return codes
+    except Exception as e:
+        logger.warning(f"Fallback get_role_codes triggered: {e}")
+        return default_fallback
+
+
+def get_roles_can_modify_program() -> set[str]:
+    """Mengambil himpunan kode peran yang diizinkan mengubah program (can_modify_program = TRUE)."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT code FROM ai_assistant.roles WHERE can_modify_program = TRUE AND enabled = TRUE")
+            ).fetchall()
+            if rows:
+                return {r.code.lower() for r in rows}
+    except Exception as e:
+        logger.warning(f"Fallback get_roles_can_modify_program: {e}")
+    return {"superadmin", "abaper"}
+
+
+def get_roles(enabled_only: bool = False) -> list[dict]:
+    """Mengambil master peran beserta jumlah user yang menggunakannya."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            query = """
+                SELECT r.code, r.label, r.description, r.color, r.icon,
+                       r.is_system, r.can_modify_program, r.enabled, r.sort_order,
+                       r.created_at, r.updated_at,
+                       COALESCE(u_counts.cnt, 0) AS user_count
+                FROM ai_assistant.roles r
+                LEFT JOIN (
+                    SELECT role, COUNT(DISTINCT username) AS cnt
+                    FROM (
+                        SELECT username, role FROM ai_assistant.user_roles
+                        UNION
+                        SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
+                    ) all_ur
+                    GROUP BY role
+                ) u_counts ON u_counts.role = r.code
+            """
+            if enabled_only:
+                query += " WHERE r.enabled = TRUE"
+            query += " ORDER BY r.sort_order ASC, r.code ASC"
+            rows = conn.execute(text(query)).fetchall()
+            return [dict(r._mapping) for r in rows]
+    except Exception as e:
+        logger.error(f"Error get_roles: {e}")
+        return []
+
+
+def get_role_by_code(code: str) -> dict | None:
+    """Mengambil detail satu peran berdasarkan kode."""
+    c_clean = (code or "").strip().lower()
+    if not c_clean:
+        return None
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT r.code, r.label, r.description, r.color, r.icon,
+                       r.is_system, r.can_modify_program, r.enabled, r.sort_order,
+                       r.created_at, r.updated_at,
+                       COALESCE(u_counts.cnt, 0) AS user_count
+                FROM ai_assistant.roles r
+                LEFT JOIN (
+                    SELECT role, COUNT(DISTINCT username) AS cnt
+                    FROM (
+                        SELECT username, role FROM ai_assistant.user_roles
+                        UNION
+                        SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
+                    ) all_ur
+                    GROUP BY role
+                ) u_counts ON u_counts.role = r.code
+                WHERE r.code = :c
+            """), {"c": c_clean}).fetchone()
+            return dict(row._mapping) if row else None
+    except Exception as e:
+        logger.error(f"Error get_role_by_code '{code}': {e}")
+        return None
+
+
+def create_role(
+    code: str,
+    label: str,
+    description: str = "",
+    color: str = "zinc",
+    icon: str = "users",
+    can_modify_program: bool = False,
+    enabled: bool = True,
+    sort_order: int = 100,
+    daily_token_limit: int = 100000,
+    per_minute_limit: int = 5,
+) -> dict:
+    """
+    Membuat peran baru di ai_assistant.roles.
+    Otomatis:
+    1. Inisialisasi token quota di ai_assistant.role_limits
+    2. Daftarkan baris role_modes dengan enabled = FALSE (least privilege)
+    3. Invalidate cache kode peran.
+    """
+    c_clean = (code or "").strip().lower()
+    l_clean = (label or "").strip()
+    if not c_clean or not l_clean:
+        raise ValueError("Role code and label cannot be empty")
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        # Cek apakah kode sudah dipakai
+        existing = conn.execute(text("SELECT code FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        if existing:
+            raise ValueError(f"Role with code '{c_clean}' already exists")
+
+        # Insert master role
+        row = conn.execute(text("""
+            INSERT INTO ai_assistant.roles
+                (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+            VALUES
+                (:c, :l, :d, :col, :ico, FALSE, :can_mod, :en, :so)
+            RETURNING *
+        """), {
+            "c": c_clean, "l": l_clean, "d": description.strip(),
+            "col": (color or "zinc").strip().lower(),
+            "ico": (icon or "users").strip().lower(),
+            "can_mod": bool(can_modify_program),
+            "en": bool(enabled),
+            "so": int(sort_order),
+        }).fetchone()
+
+        # Inisialisasi kuota token
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            VALUES (:r, :dtl, :pml)
+            ON CONFLICT (role) DO UPDATE SET
+                daily_token_limit = EXCLUDED.daily_token_limit,
+                per_minute_limit = EXCLUDED.per_minute_limit,
+                updated_at = CURRENT_TIMESTAMP
+        """), {
+            "r": c_clean,
+            "dtl": max(0, int(daily_token_limit)),
+            "pml": max(0, int(per_minute_limit)),
+        })
+
+        # Daftarkan role_modes dengan enabled = FALSE untuk semua mode yang ada (least privilege)
+        modes = conn.execute(text("SELECT code FROM ai_assistant.chat_modes")).fetchall()
+        for m in modes:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                VALUES (:r, :m, FALSE)
+                ON CONFLICT (role, mode_code) DO NOTHING
+            """), {"r": c_clean, "m": m.code})
+
+        conn.commit()
+        invalidate_role_codes_cache()
+        return dict(row._mapping) if row else {}
+
+
+def update_role(
+    code: str,
+    label: str = None,
+    description: str = None,
+    color: str = None,
+    icon: str = None,
+    can_modify_program: bool = None,
+    enabled: bool = None,
+    sort_order: int = None,
+) -> dict | None:
+    """Mengupdate data peran master."""
+    c_clean = (code or "").strip().lower()
+    if not c_clean:
+        return None
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        existing = conn.execute(text("SELECT * FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        if not existing:
+            return None
+
+        is_system = bool(existing.is_system)
+
+        updates = []
+        params = {"c": c_clean}
+
+        if label is not None:
+            updates.append("label = :l")
+            params["l"] = label.strip()
+        if description is not None:
+            updates.append("description = :d")
+            params["d"] = description.strip()
+        if color is not None:
+            updates.append("color = :col")
+            params["col"] = color.strip().lower()
+        if icon is not None:
+            updates.append("icon = :ico")
+            params["ico"] = icon.strip().lower()
+        if can_modify_program is not None:
+            updates.append("can_modify_program = :cmp")
+            params["cmp"] = bool(can_modify_program)
+        if enabled is not None:
+            # Peran sistem tidak boleh dinonaktifkan
+            if is_system and not enabled:
+                raise ValueError("System roles cannot be disabled")
+            updates.append("enabled = :en")
+            params["en"] = bool(enabled)
+        if sort_order is not None:
+            updates.append("sort_order = :so")
+            params["so"] = int(sort_order)
+
+        if not updates:
+            return dict(existing._mapping)
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        query = f"UPDATE ai_assistant.roles SET {', '.join(updates)} WHERE code = :c RETURNING *"
+        row = conn.execute(text(query), params).fetchone()
+        conn.commit()
+        invalidate_role_codes_cache()
+        return dict(row._mapping) if row else None
+
+
+def delete_role(code: str) -> bool:
+    """
+    Menghapus peran kustom jika:
+    1. Bukan peran sistem (is_system = FALSE)
+    2. Tidak sedang digunakan oleh user manapun (user_count == 0)
+    Tabel anak (role_limits, role_modes, role_resource_access) akan terhapus via CASCADE.
+    """
+    c_clean = (code or "").strip().lower()
+    if not c_clean:
+        return False
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        role = conn.execute(text("SELECT is_system FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        if not role:
+            raise ValueError(f"Role '{c_clean}' not found")
+
+        if role.is_system:
+            raise ValueError(f"Role '{c_clean}' is a system role and cannot be deleted")
+
+        # Cek apakah ada user yang menggunakan role ini
+        user_in_user_roles = conn.execute(
+            text("SELECT COUNT(*) FROM ai_assistant.user_roles WHERE role = :c"), {"c": c_clean}
+        ).scalar() or 0
+        user_in_users = conn.execute(
+            text("SELECT COUNT(*) FROM ai_assistant.users WHERE role = :c"), {"c": c_clean}
+        ).scalar() or 0
+
+        total_users = user_in_user_roles + user_in_users
+        if total_users > 0:
+            raise ValueError(f"Cannot delete role '{c_clean}': {total_users} user(s) are currently assigned to this role")
+
+        conn.execute(text("DELETE FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean})
+        conn.commit()
+        invalidate_role_codes_cache()
+        return True
+
 
 
