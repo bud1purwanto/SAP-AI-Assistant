@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Gauge, History, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
 import AdminAccessControl from './AdminAccessControl';
 import AdminRoles from './AdminRoles';
 import AdminChatAudit from './AdminChatAudit';
+import AdminMcpConfig from './AdminMcpConfig';
 import {
   formatRoleLabel as formatRoleLabelFallback,
   getRoleBadgeStyle as getRoleBadgeStyleByColor,
@@ -31,6 +33,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [personaSaving, setPersonaSaving] = useState(false);
   const [isPersonaInfoOpen, setIsPersonaInfoOpen] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
 
   // Reusable Standardized Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState({
@@ -2037,120 +2040,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB 3: MCP CONFIGURATION */}
             {activeTab === 'mcp' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
-                  <div className="hidden sm:block">
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
-                      <Server className="w-5 h-5 text-accent" />
-                      {language === 'en' ? 'MCP Server Connections' : 'Konfigurasi Server MCP'}
-                    </h3>
-                    <p className="text-xs text-content-muted mt-0.5">
-                      {language === 'en'
-                        ? 'Manage JSON endpoint configurations and authentication headers for SAP ERP, RAG Knowledge Base, and SQL Database MCP gateways.'
-                        : 'Kelola konfigurasi endpoint JSON dan header autentikasi untuk server gateway MCP SAP ERP, Basis Dokumen RAG, dan Database SQL.'}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto">
-                    <span className="sm:hidden text-xs font-bold text-content flex items-center gap-1.5">
-                      <Server className="w-4 h-4 text-accent" />
-                      MCP Gateway
-                    </span>
-                    <button
-                      onClick={handleSaveMcpConfig}
-                      disabled={mcpSaving}
-                      className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
-                    >
-                      <Save className="w-4 h-4" />
-                      {mcpSaving
-                        ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
-                        : (language === 'en' ? 'Save MCP' : 'Simpan MCP')}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {/* MCP SAP Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-3.5 h-3.5" />
-                        </div>
-                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
-                          MCP SAP Config (JSON)
-                        </label>
-                      </div>
-                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold">
-                        SAP ERP Gateway
-                      </span>
-                    </div>
-                    <textarea 
-                      rows="4"
-                      value={mcpSapConfig}
-                      onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
-                      placeholder='{"type": "http", "url": "http://192.168.1.162:8091/mcp"}'
-                    />
-                    <p className="text-[10px] text-content-subtle">
-                      {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to SAP MCP Server.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke SAP MCP Server.'}
-                    </p>
-                  </div>
-
-                  {/* MCP RAG Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-3.5 h-3.5" />
-                        </div>
-                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
-                          MCP RAG Config (JSON)
-                        </label>
-                      </div>
-                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
-                        RAG Knowledge Gateway
-                      </span>
-                    </div>
-                    <textarea 
-                      rows="4"
-                      value={mcpRagConfig}
-                      onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
-                      placeholder='{"type": "http", "url": "http://192.168.1.162:8090/mcp"}'
-                    />
-                    <p className="text-[10px] text-content-subtle">
-                      {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke Basis Pengetahuan Dokumen RAG.'}
-                    </p>
-                  </div>
-
-                  {/* MCP SQL Config JSON */}
-                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-3.5 h-3.5" />
-                        </div>
-                        <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
-                          MCP SQL & Tools Config (JSON)
-                        </label>
-                      </div>
-                      <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
-                        SQL & Utility Gateway
-                      </span>
-                    </div>
-                    <textarea 
-                      rows="4"
-                      value={mcpSqlConfig}
-                      onChange={(e) => setMcpSqlConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
-                      placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8090/mcp",\n      "headers": { "Authorization": "Bearer ..." }\n    }\n  }\n}'
-                    />
-                    <p className="text-[10px] text-content-subtle">
-                      {language === 'en' ? 'HTTP/SSE config format for connecting to SQL & Database MCP Server cluster.' : 'Format konfigurasi HTTP/SSE untuk koneksi ke kluster MCP SQL Server & Database.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <AdminMcpConfig
+                mcpSapConfig={mcpSapConfig}
+                setMcpSapConfig={setMcpSapConfig}
+                mcpRagConfig={mcpRagConfig}
+                setMcpRagConfig={setMcpRagConfig}
+                mcpSqlConfig={mcpSqlConfig}
+                setMcpSqlConfig={setMcpSqlConfig}
+                handleSaveMcpConfig={handleSaveMcpConfig}
+                mcpSaving={mcpSaving}
+                stats={stats}
+                fetchStats={fetchStats}
+                statsLoading={statsLoading}
+                language={language}
+              />
             )}
 
             {/* TAB: PENILAIAN JAWABAN & KUOTA */}
