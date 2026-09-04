@@ -278,7 +278,7 @@ def test_role_change_listener_clears_cache_on_cross_connection_notify(db):
             assert access_control._ROLES_CACHE
 
             # Kirim NOTIFY dari KONEKSI TERPISAH -- inilah yang dilakukan
-            # broadcast_role_change() saat worker lain memutasi sebuah role.
+            # broadcast_access_change() saat worker lain memutasi sebuah role/izin.
             engine = database_module.get_engine()
             with engine.connect() as conn:
                 conn.execute(text("NOTIFY roles_changed"))

@@ -365,26 +365,20 @@ export default function AdminRoles({ onRefreshRoles }) {
         </div>
       )}
 
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface border border-line/80 rounded-2xl p-4 shadow-2xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-extrabold text-content font-display tracking-tight flex items-center gap-2">
-              <UserCog className="w-5 h-5 text-accent" />
-              {isEn ? 'Master Roles Management' : 'Master Data Peran & Otoritas'}
-            </h2>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-accent-soft text-accent font-mono font-bold">
-              {roles.length} {isEn ? 'Roles' : 'Peran'}
-            </span>
-          </div>
-          <p className="text-xs text-content-muted mt-1">
+      {/* Standardized Header Row matching User Management */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+            {isEn ? `Master Roles Management (${roles.length})` : `Master Data Peran & Otoritas (${roles.length})`}
+          </h3>
+          <p className="text-xs text-content-muted mt-0.5">
             {isEn
               ? 'Manage dynamic system & custom roles, mutation permissions, and user distribution.'
               : 'Kelola peran dinamis, hak mutasi program SAP, kuota default, dan perizinan sistem.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 shrink-0 self-start lg:self-center">
           <button
             type="button"
             onClick={fetchRoles}
@@ -397,10 +391,10 @@ export default function AdminRoles({ onRefreshRoles }) {
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent-hover active:scale-95 transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            {isEn ? 'Add Role' : 'Tambah Peran'}
+            <span>{isEn ? 'Add Role' : 'Tambah Peran'}</span>
           </button>
         </div>
       </div>
@@ -464,8 +458,8 @@ export default function AdminRoles({ onRefreshRoles }) {
         </div>
       </div>
 
-      {/* Roles List */}
-      <div className="bg-surface border border-line/80 rounded-2xl overflow-hidden shadow-2xs">
+      {/* Roles List Table Card */}
+      <div className="bg-surface border border-line/80 rounded-2xl overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>

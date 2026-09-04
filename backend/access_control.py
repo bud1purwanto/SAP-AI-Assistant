@@ -58,16 +58,17 @@ def invalidate_effective_roles_cache(username: Optional[str] = None):
 _ROLES_CHANGED_CHANNEL = "roles_changed"
 
 
-def broadcast_role_change():
+def broadcast_access_change():
     """Membersihkan seluruh cache role/izin di proses INI, dan memberi tahu proses
     worker LAIN lewat Postgres LISTEN/NOTIFY agar mereka ikut membersihkan cache
     mereka sendiri.
 
     Server produksi berjalan dengan >1 worker uvicorn (lihat deploy/deploy.sh
     --workers 2), masing-masing dengan memori proses terpisah. Tanpa mekanisme ini,
-    perubahan role (nonaktif/suspend/hapus/ubah izin) hanya terlihat di worker yang
-    menerima request admin tsb; worker lain baru ikut konsisten setelah TTL cache
-    (30 detik) habis. Dipanggil di setiap endpoint yang memutasi role atau izinnya.
+    perubahan role ATAU override akses per-user (nonaktif/suspend/hapus/ubah izin)
+    hanya terlihat di worker yang menerima request admin tsb; worker lain baru ikut
+    konsisten setelah TTL cache (30 detik) habis. Dipanggil di setiap endpoint yang
+    memutasi role, izin resource role, maupun override akses per-user.
     """
     clear_access_cache()
     invalidate_effective_roles_cache()
@@ -86,7 +87,7 @@ def broadcast_role_change():
 
 def start_role_change_listener():
     """Coroutine long-running: LISTEN pada channel Postgres yang di-NOTIFY oleh
-    broadcast_role_change() (dipanggil dari proses worker lain), lalu bersihkan
+    broadcast_access_change() (dipanggil dari proses worker lain), lalu bersihkan
     cache lokal proses ini setiap kali ada notifikasi. Dipasang sebagai
     background task di lifespan FastAPI. Menyambung ulang otomatis bila koneksi
     listen terputus (mis. restart Postgres)."""

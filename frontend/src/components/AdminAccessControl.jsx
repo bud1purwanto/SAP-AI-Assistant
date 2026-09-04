@@ -608,80 +608,61 @@ export default function AdminAccessControl({
         </div>
       )}
 
-      {/* 1. MASTER SWITCH BANNER - COMPACT STYLE */}
-      <div
-        className={`relative overflow-hidden rounded-xl border px-3.5 py-2 sm:px-4 sm:py-2.5 transition-all shadow-2xs ${
-          masterEnabled
-            ? 'bg-gradient-to-r from-emerald-950/30 via-surface to-surface border-emerald-500/30'
-            : 'bg-gradient-to-r from-amber-950/30 via-surface to-surface border-amber-500/30'
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 relative z-10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className={`p-1.5 rounded-lg shrink-0 ${
+      {/* Standardized Header Row matching User Management & Roles */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
+            {isEn ? `MCP Access Control (${resources.length})` : `Kontrol Akses MCP (${resources.length})`}
+          </h3>
+          <p className="text-xs text-content-muted mt-0.5">
+            {isEn
+              ? 'Role-based permission matrix for MCP servers, databases, and companion services.'
+              : 'Matriks izin berbasis peran untuk server MCP, basis data, dan layanan pendamping.'}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+          {/* Compact Master Switch Toggle */}
+          <div className="flex items-center gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-line/80 bg-surface shadow-2xs">
+            <span className="text-xs font-bold text-content">
+              {isEn ? 'Enforcement' : 'Penegakan'}
+            </span>
+            <span
+              className={`text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded-full ${
                 masterEnabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
               }`}
             >
-              {masterEnabled ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
-            </div>
-            <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <h3 className="font-bold text-xs sm:text-sm text-content tracking-tight">
-                {t('access.masterSwitch')}
-              </h3>
-              <span
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                  masterEnabled
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${masterEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                {masterEnabled ? t('access.masterSwitchOn') : t('access.masterSwitchOff')}
-              </span>
-              <span className="text-[11px] text-content-muted hidden md:inline truncate max-w-xl">
-                • {masterEnabled ? t('access.masterDescOn') : t('access.masterDescOff')}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-            <button
-              type="button"
-              onClick={handleSyncResources}
-              disabled={loading || saving}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface-sunken hover:bg-surface-hover border border-line text-content transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
-              title={isEn ? 'Sync latest MCP resource discovery' : 'Sinkronkan penemuan resource MCP terbaru'}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-accent ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden xs:inline">{t('access.syncResources')}</span>
-            </button>
-
+              {masterEnabled ? (isEn ? 'Active' : 'Aktif') : (isEn ? 'Off' : 'Mati')}
+            </span>
             <button
               type="button"
               onClick={handleToggleMaster}
               disabled={saving}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-[0.98] ${
-                masterEnabled
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+              aria-label="Toggle Master Access Control"
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
+                masterEnabled ? 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-2xs' : 'bg-line'
               }`}
             >
-              {masterEnabled ? (
-                <>
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>{t('access.disableSwitch')}</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="w-3.5 h-3.5" />
-                  <span>{t('access.enableSwitch')}</span>
-                </>
-              )}
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                  masterEnabled ? 'left-4.5' : 'left-0.5'
+                }`}
+              />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleSyncResources}
+            disabled={loading || saving}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-hover text-content hover:bg-line border border-line transition-colors cursor-pointer disabled:opacity-60 shrink-0 shadow-2xs"
+            title={isEn ? 'Sync latest MCP resource discovery' : 'Sinkronkan penemuan resource MCP terbaru'}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-accent ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden xs:inline">{t('access.syncResources')}</span>
+          </button>
         </div>
       </div>
 

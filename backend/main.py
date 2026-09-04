@@ -858,7 +858,7 @@ async def create_admin_role_endpoint(
             daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
             per_minute_limit=int(pml),
         )
-        access_control.broadcast_role_change()
+        access_control.broadcast_access_change()
         access_control.log_audit(
             actor=admin.get("username", "admin"),
             target_type="role",
@@ -904,7 +904,7 @@ async def clone_admin_role_endpoint(
             label=req.label.strip(),
             description=(req.description or "").strip(),
         )
-        access_control.broadcast_role_change()
+        access_control.broadcast_access_change()
         access_control.log_audit(
             actor=admin.get("username", "admin"),
             target_type="role",
@@ -944,7 +944,7 @@ async def update_admin_role_endpoint(
             suspended=req.suspended,
             sort_order=req.sort_order,
         )
-        access_control.broadcast_role_change()
+        access_control.broadcast_access_change()
         changed = {
             k: v for k, v in req.model_dump(exclude_none=True).items()
         }
@@ -972,7 +972,7 @@ async def delete_admin_role_endpoint(
     c_clean = code.strip().lower()
     try:
         delete_role(c_clean)
-        access_control.broadcast_role_change()
+        access_control.broadcast_access_change()
         access_control.log_audit(
             actor=admin.get("username", "admin"),
             target_type="role",
@@ -1427,7 +1427,7 @@ async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, a
     ok = access_control.update_role_access(role_clean, req.items, actor=actor)
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
-    access_control.broadcast_role_change()
+    access_control.broadcast_access_change()
     return {"status": "success", "role": role_clean}
 
 
@@ -1449,6 +1449,7 @@ async def update_admin_access_user_endpoint(username: str, req: AdminUpdateUserA
     ok = access_control.update_user_access(username, req.items, actor=actor)
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal memperbarui izin pengguna.")
+    access_control.broadcast_access_change()
     return {"status": "success", "username": username}
 
 
@@ -1464,6 +1465,7 @@ async def bulk_update_admin_access_user_endpoint(req: AdminBulkUserAccessRequest
         valid_until=req.valid_until,
         actor=actor,
     )
+    access_control.broadcast_access_change()
     return {"status": "success", "updated_count": count}
 
 
