@@ -1574,6 +1574,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <div className="h-full flex flex-col space-y-3.5 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-line/80 shrink-0">
                   <div className="hidden sm:block">
+                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'Organization Global Persona' : 'Persona Organisasi'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1604,8 +1606,28 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         i
                       </div>
                       <p className="font-bold text-content text-xs sm:text-sm font-display truncate">
+                        {language === 'en' ? 'How Persona is Applied' : 'Cara Persona Diterapkan'}
+                      </p>
+                      <span className="hidden md:inline text-[11px] text-content-subtle font-normal truncate">
+                        • {language === 'en' ? 'Foundational system prompt for all organization users' : 'Instruksi dasar untuk seluruh prompt AI organisasi'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsPersonaInfoOpen(!isPersonaInfoOpen)}
+                      className="text-xs text-accent hover:underline font-medium flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <span>{isPersonaInfoOpen ? (language === 'en' ? 'Hide Guide' : 'Tutup Panduan') : (language === 'en' ? 'Read Guide' : 'Baca Panduan')}</span>
                       {isPersonaInfoOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
+                  </div>
+                  {isPersonaInfoOpen && (
+                    <div className="mt-2.5 pt-2.5 border-t border-line/60 space-y-1.5 animate-fadeIn text-[11.5px]">
+                      <p>
+                        {language === 'en' 
+                          ? 'The organization persona serves as the foundational layer. On top of it, personal preferences configured by individual users in Settings are applied.'
+                          : 'Persona organisasi menjadi lapisan dasar. Di atasnya, persona pribadi yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.'}
+                      </p>
                       <p>
                         {language === 'en'
                           ? 'When both contradict on writing style or length, personal preference takes precedence. However, for data accuracy, security, and compliance, the organization persona always prevails.'
@@ -1617,11 +1639,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 <div className="flex-1 min-h-[360px] p-4 sm:p-5 rounded-2xl border border-line/80 bg-surface shadow-xs flex flex-col space-y-2.5">
                   <div className="flex items-center justify-between shrink-0">
+                    <label htmlFor="global-persona" className="block text-xs font-bold uppercase tracking-wider text-content font-display">
+                      {language === 'en' ? 'Organization Persona Instructions (Global System Prompt)' : 'Instruksi Persona Organisasi (System Prompt Global)'}
+                    </label>
+                    <div className="flex items-center gap-2 text-[11px] text-content-subtle font-mono">
+                      <span>{globalPersona.length} {language === 'en' ? 'chars' : 'karakter'}</span>
+                      <span>•</span>
+                      <span>{globalPersona ? globalPersona.split('\n').filter(Boolean).length : 0} {language === 'en' ? 'lines' : 'baris'}</span>
+                    </div>
+                  </div>
+
+                  <textarea
+                    id="global-persona"
+                    value={globalPersona}
+                    onChange={(e) => setGlobalPersona(e.target.value)}
                     className="flex-1 w-full p-4 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-none leading-relaxed text-content focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-all [scrollbar-width:thin]"
                     placeholder={language === 'en' 
                       ? 'Example:\n- Always specify source SAP table for all numbers displayed.\n- Never reveal employee data other than the requester.\n- Format dates and currencies clearly.'
                       : 'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
                   />
+
+                  <div className="flex items-center justify-between text-[11px] text-content-subtle shrink-0 pt-0.5">
+                    <p>
+                      {language === 'en' ? 'Leave empty to use default assistant behaviors.' : 'Kosongkan untuk memakai perilaku bawaan asisten.'}
+                    </p>
+                    <p className="hidden sm:block">
+                      {language === 'en' ? 'Press Save Persona button to apply globally' : 'Tekan tombol Simpan Persona untuk menerapkan ke seluruh sistem'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* TAB: KATALOG SKILL (MODUL & SPESIALISASI) */}
             {activeTab === 'skills' && (
@@ -1629,6 +1677,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
                   <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
+                      <BookOpen className="w-5 h-5 text-accent" />
                       {language === 'en' ? `Assistant Skill Catalog (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})` : `Katalog Skill Asisten (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1636,6 +1685,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
+                  <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-56 sm:flex-initial">
+                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
+                      <input 
+                        type="text"
+                        placeholder={language === 'en' ? 'Search skill...' : 'Cari skill...'}
+                        value={skillSearch}
+                        onChange={(e) => setSkillSearch(e.target.value)}
+                        className="pl-9 pr-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 w-full text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
@@ -2038,12 +2096,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
+                  {/* MCP RAG Config JSON */}
                   <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
                     <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center font-bold shadow-2xs">
                           <Database className="w-3.5 h-3.5" />
                         </div>
                         <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
+                          MCP RAG Config (JSON)
+                        </label>
                       </div>
                       <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
                         RAG Knowledge Gateway
@@ -2055,22 +2117,28 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onChange={(e) => setMcpRagConfig(e.target.value)}
                       className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
                       placeholder='{"type": "http", "url": "http://192.168.1.162:8090/mcp"}'
+                    />
                     <p className="text-[10px] text-content-subtle">
                       {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke Basis Pengetahuan Dokumen RAG.'}
                     </p>
+                  </div>
 
                   {/* MCP SQL Config JSON */}
                   <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
                           <Database className="w-3.5 h-3.5" />
                         </div>
                         <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
                           MCP SQL & Tools Config (JSON)
+                        </label>
                       </div>
                       <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
                         SQL & Utility Gateway
                       </span>
+                    </div>
+                    <textarea 
                       rows="4"
                       value={mcpSqlConfig}
                       onChange={(e) => setMcpSqlConfig(e.target.value)}
@@ -2082,22 +2150,26 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
                 </div>
+              </div>
             )}
 
-            {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
-                Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
+            {/* TAB: PENILAIAN JAWABAN & KUOTA */}
             {activeTab === 'kuota' && (
               <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 sm:pb-3 border-b border-line">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm sm:text-base font-bold text-content truncate">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
                       <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
                         {kuota?.usage_date || '—'}
                       </span>
+                    </div>
                     <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
                       {language === 'en' 
                         ? 'Usage resets daily at midnight WIB.'
                         : 'Pemakaian direset setiap tengah malam WIB.'}
+                    </p>
+                  </div>
 
                   <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
                     {/* Compact Quota Enforcement Switch */}
@@ -2109,12 +2181,15 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         kuota?.enforced
                           ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                           : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                      }`}>
                         {kuota?.enforced ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Off' : 'Mati')}
                       </span>
                       <button
+                        onClick={() => gantiSaklar(!kuota?.enforced)}
                         disabled={!kuota}
                         aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
                         aria-pressed={!!kuota?.enforced}
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
                           kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-2xs' : 'bg-line'
                         }`}
                       >
