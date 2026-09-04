@@ -240,6 +240,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, user?.role, activeTab, feedbackKind]);
 
+  useEffect(() => {
+    if (isOpen && user?.role === 'superadmin' && activeTab === 'mcp') {
+      fetchConfig();
+      fetchStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user?.role, activeTab]);
+
   const fetchKuota = async () => {
     setKuotaLoading(true);
     try {

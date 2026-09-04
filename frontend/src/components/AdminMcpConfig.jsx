@@ -47,14 +47,14 @@ const DEFAULTS = {
 /**
  * Helper to parse a gateway JSON string into visual form fields.
  */
-function parseGatewayJson(jsonStr, defaultServerKey) {
+function parseGatewayJson(jsonStr, defaultServerKey, defaultFallback) {
   try {
     if (!jsonStr || !jsonStr.trim()) {
       return {
         serverKey: defaultServerKey,
-        url: '',
-        token: '',
-        type: 'http',
+        url: defaultFallback?.url || '',
+        token: defaultFallback?.token || '',
+        type: defaultFallback?.type || 'http',
         extraHeaders: {},
         isRawCustom: false,
       };
@@ -65,8 +65,8 @@ function parseGatewayJson(jsonStr, defaultServerKey) {
     const serverKey = keys.length > 0 ? keys[0] : defaultServerKey;
     const srv = keys.length > 0 ? servers[serverKey] : (parsed.url ? parsed : {});
 
-    const url = srv.url || '';
-    const type = srv.type || 'http';
+    const url = srv.url || defaultFallback?.url || '';
+    const type = srv.type || defaultFallback?.type || 'http';
     let token = '';
     const extraHeaders = { ...(srv.headers || {}) };
 
@@ -74,6 +74,8 @@ function parseGatewayJson(jsonStr, defaultServerKey) {
       const auth = extraHeaders['Authorization'];
       token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
       delete extraHeaders['Authorization'];
+    } else if (defaultFallback?.token) {
+      token = defaultFallback.token;
     }
 
     return {
@@ -87,9 +89,9 @@ function parseGatewayJson(jsonStr, defaultServerKey) {
   } catch {
     return {
       serverKey: defaultServerKey,
-      url: '',
-      token: '',
-      type: 'http',
+      url: defaultFallback?.url || '',
+      token: defaultFallback?.token || '',
+      type: defaultFallback?.type || 'http',
       extraHeaders: {},
       isRawCustom: true,
       parseError: true,
@@ -147,17 +149,25 @@ export default function AdminMcpConfig({
 
   // Local form state for Visual GUI mode
   const [formState, setFormState] = useState(() => ({
-    sap: parseGatewayJson(mcpSapConfig, DEFAULTS.sap.key),
-    rag: parseGatewayJson(mcpRagConfig, DEFAULTS.rag.key),
-    sql: parseGatewayJson(mcpSqlConfig, DEFAULTS.sql.key),
+    sap: parseGatewayJson(mcpSapConfig, DEFAULTS.sap.key, DEFAULTS.sap),
+    rag: parseGatewayJson(mcpRagConfig, DEFAULTS.rag.key, DEFAULTS.rag),
+    sql: parseGatewayJson(mcpSqlConfig, DEFAULTS.sql.key, DEFAULTS.sql),
   }));
+
+  // Trigger ping / stats refresh on mount so live status is immediately loaded
+  useEffect(() => {
+    if (fetchStats) {
+      fetchStats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Re-sync formState when parent JSON changes externally (e.g. initial fetch)
   useEffect(() => {
     setFormState({
-      sap: parseGatewayJson(mcpSapConfig, DEFAULTS.sap.key),
-      rag: parseGatewayJson(mcpRagConfig, DEFAULTS.rag.key),
-      sql: parseGatewayJson(mcpSqlConfig, DEFAULTS.sql.key),
+      sap: parseGatewayJson(mcpSapConfig, DEFAULTS.sap.key, DEFAULTS.sap),
+      rag: parseGatewayJson(mcpRagConfig, DEFAULTS.rag.key, DEFAULTS.rag),
+      sql: parseGatewayJson(mcpSqlConfig, DEFAULTS.sql.key, DEFAULTS.sql),
     });
   }, [mcpSapConfig, mcpRagConfig, mcpSqlConfig]);
 
@@ -232,9 +242,38 @@ export default function AdminMcpConfig({
   const ragStatus = stats?.mcp_status?.rag;
   const sqlStatus = stats?.mcp_status?.sql;
 
-  const isSapOnline = sapStatus?.status === 'online' || sapStatus?.online === true;
-  const isRagOnline = ragStatus?.status === 'online' || ragStatus?.online === true;
-  const isSqlOnline = sqlStatus?.status === 'online' || sqlStatus?.online === true;
+  const renderStatusBadge = (statusObj) => {
+    if (statsLoading || !stats) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-amber-500/15 text-amber-500 border-amber-500/30">
+          <RefreshCw className="w-3 h-3 animate-spin" />
+          <span>{isEn ? 'Checking…' : 'Memeriksa…'}</span>
+        </span>
+      );
+    }
+    const isOnline = statusObj?.status === 'online' || statusObj?.online === true;
+    if (isOnline) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30"
+          title={statusObj?.active_server || ''}
+        >
+          <CheckCircle2 className="w-3 h-3" />
+          <span>{isEn ? 'Online' : 'Online'}</span>
+          <span className="text-[9px] opacity-80">({statusObj?.tool_count ?? statusObj?.tools_count ?? 0} tools)</span>
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 bg-rose-500/15 text-rose-500 border-rose-500/30"
+        title={statusObj?.error || (isEn ? 'Server unreachable' : 'Server tidak dapat dijangkau')}
+      >
+        <XCircle className="w-3 h-3" />
+        <span>{isEn ? 'Offline' : 'Offline'}</span>
+      </span>
+    );
+  };
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -396,18 +435,7 @@ export default function AdminMcpConfig({
                 </div>
 
                 {/* Status Badge */}
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                    isSapOnline
-                      ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
-                      : 'bg-rose-500/15 text-rose-500 border-rose-500/30'
-                  }`}
-                  title={sapStatus?.error || ''}
-                >
-                  {isSapOnline ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                  <span>{isSapOnline ? (isEn ? 'Online' : 'Online') : (isEn ? 'Offline' : 'Offline')}</span>
-                  {isSapOnline && <span className="text-[9px] opacity-80">({sapStatus?.tool_count ?? sapStatus?.tools_count ?? 0})</span>}
-                </span>
+                {renderStatusBadge(sapStatus)}
               </div>
 
               {formState.sap.isRawCustom && (
@@ -516,18 +544,7 @@ export default function AdminMcpConfig({
                 </div>
 
                 {/* Status Badge */}
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                    isRagOnline
-                      ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
-                      : 'bg-rose-500/15 text-rose-500 border-rose-500/30'
-                  }`}
-                  title={ragStatus?.error || ''}
-                >
-                  {isRagOnline ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                  <span>{isRagOnline ? (isEn ? 'Online' : 'Online') : (isEn ? 'Offline' : 'Offline')}</span>
-                  {isRagOnline && <span className="text-[9px] opacity-80">({ragStatus?.tool_count ?? ragStatus?.tools_count ?? 0})</span>}
-                </span>
+                {renderStatusBadge(ragStatus)}
               </div>
 
               {formState.rag.isRawCustom && (
@@ -636,18 +653,7 @@ export default function AdminMcpConfig({
                 </div>
 
                 {/* Status Badge */}
-                <span
-                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${
-                    isSqlOnline
-                      ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
-                      : 'bg-rose-500/15 text-rose-500 border-rose-500/30'
-                  }`}
-                  title={sqlStatus?.error || ''}
-                >
-                  {isSqlOnline ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                  <span>{isSqlOnline ? (isEn ? 'Online' : 'Online') : (isEn ? 'Offline' : 'Offline')}</span>
-                  {isSqlOnline && <span className="text-[9px] opacity-80">({sqlStatus?.tool_count ?? sqlStatus?.tools_count ?? 0})</span>}
-                </span>
+                {renderStatusBadge(sqlStatus)}
               </div>
 
               {formState.sql.isRawCustom && (
