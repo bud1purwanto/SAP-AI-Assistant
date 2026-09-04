@@ -16,6 +16,10 @@ import {
   Gauge,
   Sliders,
   ChevronDown,
+  Info,
+  Copy,
+  AlertTriangle,
+  ArrowDown,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
@@ -25,6 +29,8 @@ import {
   ROLE_ICON_OPTIONS,
   getRoleBadgeStyle,
   getRoleIconComponent,
+  getRoleColorLabel,
+  getRoleIconLabel,
 } from '../lib/roles';
 
 const DEFAULT_FORM = {
@@ -55,9 +61,12 @@ export default function AdminRoles({ onRefreshRoles }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isCloneOpen, setIsCloneOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState(null);
   const [formData, setFormData] = useState(DEFAULT_FORM);
+  const [cloneForm, setCloneForm] = useState({ code: '', label: '', description: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [impactModal, setImpactModal] = useState(null); // { role, nextStatus, loading, impact }
 
   const fetchRoles = async () => {
     setLoading(true);
@@ -110,6 +119,61 @@ export default function AdminRoles({ onRefreshRoles }) {
     setActionError('');
     setActionSuccess('');
     setIsDeleteOpen(true);
+  };
+
+  const handleOpenClone = (role) => {
+    setSelectedRole(role);
+    setCloneForm({
+      code: '',
+      label: `${role.label} (Copy)`,
+      description: role.description || '',
+    });
+    setActionError('');
+    setActionSuccess('');
+    setIsCloneOpen(true);
+  };
+
+  const handleCloneSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedRole) return;
+    setActionError('');
+    setSubmitting(true);
+
+    const cleanCode = (cloneForm.code || '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{2,40}$/.test(cleanCode)) {
+      setActionError(
+        isEn
+          ? 'Role code must be 2-40 characters, lowercase letters, numbers, and underscores only.'
+          : 'Kode peran wajib 2-40 karakter, hanya huruf kecil, angka, dan garis bawah (_).'
+      );
+      setSubmitting(false);
+      return;
+    }
+    if (!cloneForm.label.trim()) {
+      setActionError(isEn ? 'Role label is required.' : 'Label peran wajib diisi.');
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      await api.adminCloneRole(selectedRole.code, {
+        code: cleanCode,
+        label: cloneForm.label.trim(),
+        description: cloneForm.description.trim(),
+      });
+
+      setActionSuccess(
+        isEn
+          ? `Role '${cleanCode}' created as a copy of '${selectedRole.code}', including its MCP resource and chat mode permissions.`
+          : `Peran '${cleanCode}' berhasil dibuat sebagai salinan '${selectedRole.code}', lengkap dengan izin resource MCP dan mode chatnya.`
+      );
+      setIsCloneOpen(false);
+      fetchRoles();
+    } catch (err) {
+      setActionError(err.message || (isEn ? 'Failed to clone role' : 'Gagal mengkloning peran'));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleCreateSubmit = async (e) => {
@@ -210,16 +274,50 @@ export default function AdminRoles({ onRefreshRoles }) {
     }
   };
 
-  const handleToggleStatus = async (role) => {
-    if (role.is_system) return;
-    const nextStatus = !role.enabled;
+  const applyRoleFlag = async (role, field, nextValue) => {
     try {
-      await api.adminUpdateRole(role.code, { enabled: nextStatus });
-      setRoles((prev) => prev.map((r) => (r.code === role.code ? { ...r, enabled: nextStatus } : r)));
+      await api.adminUpdateRole(role.code, { [field]: nextValue });
+      setRoles((prev) => prev.map((r) => (r.code === role.code ? { ...r, [field]: nextValue } : r)));
       if (onRefreshRoles) onRefreshRoles();
     } catch (err) {
-      setActionError(err.message || (isEn ? 'Failed to toggle status' : 'Gagal mengubah status peran'));
+      setActionError(err.message || (isEn ? 'Failed to update role status' : 'Gagal mengubah status peran'));
     }
+  };
+
+  // 'enabled' hanya soal boleh-tidaknya peran ini DIPILIH untuk user baru (dropdown
+  // form tambah/ubah user). Pemegang yang sudah ada TIDAK terpengaruh sama sekali,
+  // jadi tidak perlu pratinjau dampak.
+  const handleToggleEnabled = (role) => {
+    if (role.is_system) return;
+    applyRoleFlag(role, 'enabled', !role.enabled);
+  };
+
+  // 'suspended' mencabut izin peran ini dari SELURUH pemegangnya saat ini juga --
+  // ini aksi berdampak nyata, jadi tampilkan pratinjau dulu sebelum benar-benar
+  // dieksekusi (mengaktifkan kembali/un-suspend tidak butuh konfirmasi).
+  const handleToggleSuspended = async (role) => {
+    if (role.is_system) return;
+    const nextSuspended = !role.suspended;
+
+    if (nextSuspended && role.user_count > 0) {
+      setImpactModal({ role, field: 'suspended', nextValue: nextSuspended, loading: true, impact: null });
+      try {
+        const impact = await api.adminRoleImpact(role.code);
+        setImpactModal({ role, field: 'suspended', nextValue: nextSuspended, loading: false, impact });
+      } catch (err) {
+        setImpactModal(null);
+        setActionError(err.message || (isEn ? 'Failed to load impact preview' : 'Gagal memuat pratinjau dampak'));
+      }
+      return;
+    }
+
+    applyRoleFlag(role, 'suspended', nextSuspended);
+  };
+
+  const confirmImpactModal = async () => {
+    if (!impactModal) return;
+    await applyRoleFlag(impactModal.role, impactModal.field, impactModal.nextValue);
+    setImpactModal(null);
   };
 
   // Filtered roles
@@ -374,7 +472,21 @@ export default function AdminRoles({ onRefreshRoles }) {
               <tr className="border-b border-line bg-surface-sunken/50 text-[11px] font-bold text-content-subtle uppercase tracking-wider">
                 <th className="py-3 px-4">{isEn ? 'Role & Code' : 'Peran & Kode'}</th>
                 <th className="py-3 px-4">{isEn ? 'Description' : 'Deskripsi'}</th>
-                <th className="py-3 px-3 text-center">{isEn ? 'Modify Program' : 'Mutasi Program'}</th>
+                <th className="py-3 px-3 text-center">
+                  <div className="inline-flex items-center gap-1 justify-center">
+                    <span>{isEn ? 'SAP Program Mutation' : 'Mutasi Program SAP'}</span>
+                    <span
+                      title={
+                        isEn
+                          ? 'Controls permission to create, edit, activate ABAP programs, repository objects, and transport requests in SAP.'
+                          : 'Hak akses untuk membuat, mengubah, mengaktifkan program/kode ABAP, dan transport request di SAP.'
+                      }
+                      className="cursor-help text-content-subtle hover:text-accent transition-colors"
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </th>
                 <th className="py-3 px-3 text-center">{isEn ? 'Users' : 'Pengguna'}</th>
                 <th className="py-3 px-3 text-center">{isEn ? 'Type' : 'Tipe'}</th>
                 <th className="py-3 px-3 text-center">{isEn ? 'Status' : 'Status'}</th>
@@ -433,12 +545,26 @@ export default function AdminRoles({ onRefreshRoles }) {
                       {/* Modify Program Permission */}
                       <td className="py-3 px-3 text-center">
                         {role.can_modify_program ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 cursor-help"
+                            title={
+                              isEn
+                                ? 'Full access: Can create, edit, delete, and activate ABAP code/objects in SAP.'
+                                : 'Izin Penuh: Berhak membuat, mengubah, menghapus, dan mengaktifkan program/kode ABAP di SAP.'
+                            }
+                          >
                             <Code2 className="w-3 h-3" />
                             {isEn ? 'Can Modify' : 'Boleh Ubah'}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-surface-sunken text-content-subtle border border-line">
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-surface-sunken text-content-subtle border border-line cursor-help"
+                            title={
+                              isEn
+                                ? 'Read-only: Can only inspect/read ABAP programs, tables, and dictionary structures in SAP.'
+                                : 'Hanya Baca: Hanya berhak membaca/melihat kode program ABAP dan struktur tabel di SAP.'
+                            }
+                          >
                             {isEn ? 'Read Only' : 'Hanya Baca'}
                           </span>
                         )}
@@ -473,40 +599,93 @@ export default function AdminRoles({ onRefreshRoles }) {
                         )}
                       </td>
 
-                      {/* Status Toggle */}
-                      <td className="py-3 px-3 text-center">
-                        <button
-                          type="button"
-                          disabled={role.is_system}
-                          onClick={() => handleToggleStatus(role)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                            role.enabled ? 'bg-emerald-500' : 'bg-surface-sunken'
-                          } ${role.is_system ? 'opacity-60 cursor-not-allowed' : ''}`}
-                          title={
-                            role.is_system
-                              ? isEn
-                                ? 'System roles cannot be disabled'
-                                : 'Peran sistem tidak dapat dinonaktifkan'
-                              : role.enabled
-                              ? isEn
-                                ? 'Active (Click to disable)'
-                                : 'Aktif (Klik untuk nonaktifkan)'
-                              : isEn
-                              ? 'Inactive (Click to activate)'
-                              : 'Nonaktif (Klik untuk aktifkan)'
-                          }
-                        >
-                          <span
-                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                              role.enabled ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          />
-                        </button>
+                      {/* Status: dua toggle independen -- Enabled (boleh dipilih untuk user
+                          baru) dan Suspended (mencabut izin dari pemegang saat ini) */}
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col items-center gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-semibold text-content-subtle w-14 text-right">
+                              {isEn ? 'Assignable' : 'Bisa Dipilih'}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={role.is_system}
+                              onClick={() => handleToggleEnabled(role)}
+                              className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                                role.enabled ? 'bg-emerald-500' : 'bg-surface-sunken'
+                              } ${role.is_system ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              title={
+                                role.is_system
+                                  ? isEn
+                                    ? 'System roles cannot be disabled'
+                                    : 'Peran sistem tidak dapat dinonaktifkan'
+                                  : role.enabled
+                                  ? isEn
+                                    ? 'Shown when assigning roles to users (click to hide from new assignments; current holders unaffected)'
+                                    : 'Muncul saat menetapkan peran ke user (klik untuk sembunyikan dari penetapan baru; pemegang saat ini tidak terpengaruh)'
+                                  : isEn
+                                  ? 'Hidden from new assignments (click to make assignable again)'
+                                  : 'Disembunyikan dari penetapan baru (klik untuk tampilkan lagi)'
+                              }
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                  role.enabled ? 'translate-x-3' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-semibold text-content-subtle w-14 text-right">
+                              {isEn ? 'Suspended' : 'Disuspend'}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={role.is_system}
+                              onClick={() => handleToggleSuspended(role)}
+                              className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                                role.suspended ? 'bg-rose-500' : 'bg-surface-sunken'
+                              } ${role.is_system ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              title={
+                                role.is_system
+                                  ? isEn
+                                    ? 'System roles cannot be suspended'
+                                    : 'Peran sistem tidak dapat disuspend'
+                                  : role.suspended
+                                  ? isEn
+                                    ? "Access revoked for all current holders (click to restore)"
+                                    : 'Akses dicabut dari seluruh pemegang saat ini (klik untuk pulihkan)'
+                                  : isEn
+                                  ? "Click to revoke this role's access from all current holders immediately"
+                                  : 'Klik untuk mencabut akses peran ini dari seluruh pemegangnya seketika'
+                              }
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                                  role.suspended ? 'translate-x-3' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </div>
                       </td>
 
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenClone(role)}
+                            className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors cursor-pointer"
+                            title={
+                              isEn
+                                ? 'Clone Role (copy permissions to a new role)'
+                                : 'Kloning Peran (salin izin ke peran baru)'
+                            }
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(role)}
@@ -644,7 +823,7 @@ export default function AdminRoles({ onRefreshRoles }) {
                   >
                     {ROLE_COLOR_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                        {getRoleColorLabel(opt.value, isEn)}
                       </option>
                     ))}
                   </select>
@@ -661,7 +840,7 @@ export default function AdminRoles({ onRefreshRoles }) {
                   >
                     {ROLE_ICON_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                        {getRoleIconLabel(opt.value, isEn)}
                       </option>
                     ))}
                   </select>
@@ -848,7 +1027,7 @@ export default function AdminRoles({ onRefreshRoles }) {
                   >
                     {ROLE_COLOR_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                        {getRoleColorLabel(opt.value, isEn)}
                       </option>
                     ))}
                   </select>
@@ -865,7 +1044,7 @@ export default function AdminRoles({ onRefreshRoles }) {
                   >
                     {ROLE_ICON_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
-                        {opt.label}
+                        {getRoleIconLabel(opt.value, isEn)}
                       </option>
                     ))}
                   </select>
@@ -1012,6 +1191,207 @@ export default function AdminRoles({ onRefreshRoles }) {
                   {submitting ? (isEn ? 'Deleting...' : 'Menghapus...') : isEn ? 'Delete Permanently' : 'Hapus Permanen'}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLONE MODAL */}
+      {isCloneOpen && selectedRole && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-surface border border-line rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-line">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-accent-soft text-accent flex items-center justify-center">
+                  <Copy className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-content">
+                    {isEn ? 'Clone Role' : 'Kloning Peran'}:{' '}
+                    <span className="font-mono text-accent">{selectedRole.code}</span>
+                  </h3>
+                  <p className="text-xs text-content-muted">
+                    {isEn
+                      ? 'Create a new role starting from this one’s permissions'
+                      : 'Buat peran baru dimulai dari izin peran ini'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCloneOpen(false)}
+                className="p-1 rounded-lg text-content-muted hover:text-content"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCloneSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-content mb-1">
+                  {isEn ? 'New Role Code' : 'Kode Peran Baru'} <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={cloneForm.code}
+                  onChange={(e) =>
+                    setCloneForm({ ...cloneForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })
+                  }
+                  placeholder={`${selectedRole.code}_v2`}
+                  className="w-full bg-surface-raised border border-line rounded-lg px-3 py-2 text-xs font-mono text-content focus:border-accent focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-content mb-1">
+                  {isEn ? 'Display Label' : 'Label Tampilan'} <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cloneForm.label}
+                  onChange={(e) => setCloneForm({ ...cloneForm, label: e.target.value })}
+                  className="w-full bg-surface-raised border border-line rounded-lg px-3 py-2 text-xs text-content focus:border-accent focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-content mb-1">
+                  {isEn ? 'Description' : 'Deskripsi'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={cloneForm.description}
+                  onChange={(e) => setCloneForm({ ...cloneForm, description: e.target.value })}
+                  className="w-full bg-surface-raised border border-line rounded-lg px-3 py-2 text-xs text-content focus:border-accent focus:outline-hidden"
+                />
+              </div>
+
+              <div className="p-2.5 bg-blue-500/10 border border-blue-500/25 rounded-xl text-[11px] text-blue-400 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  {isEn
+                    ? `This new role will start with the exact same MCP resource access and chat mode permissions as '${selectedRole.label}'. Badge color, icon, program mutation right, and token quota are also copied — adjust anything afterwards in Edit Role.`
+                    : `Peran baru ini akan memulai dengan izin resource MCP dan mode chat yang persis sama dengan '${selectedRole.label}'. Warna badge, ikon, hak mutasi program, dan kuota token juga disalin — sesuaikan lagi lewat Ubah Peran bila perlu.`}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+                <button
+                  type="button"
+                  onClick={() => setIsCloneOpen(false)}
+                  className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+                >
+                  {isEn ? 'Cancel' : 'Batal'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-bold hover:bg-accent-hover active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {submitting ? (isEn ? 'Cloning...' : 'Mengkloning...') : isEn ? 'Clone Role' : 'Kloning Peran'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* IMPACT PREVIEW MODAL (before suspending a role still in use) */}
+      {impactModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-surface border border-line rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-content">
+                  {isEn ? 'Suspend Role' : 'Suspend Peran'}:{' '}
+                  <span className="font-mono text-rose-400">{impactModal.role.code}</span>
+                </h3>
+                <p className="text-xs text-content-muted">
+                  {isEn ? 'Review who and what this affects before confirming' : 'Tinjau siapa dan apa yang terdampak sebelum konfirmasi'}
+                </p>
+              </div>
+            </div>
+
+            {impactModal.loading ? (
+              <div className="py-6 text-center text-xs text-content-muted">
+                <RefreshCw className="w-5 h-5 mx-auto mb-2 animate-spin" />
+                {isEn ? 'Loading impact preview...' : 'Memuat pratinjau dampak...'}
+              </div>
+            ) : (
+              <>
+                <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl text-xs text-amber-400 flex items-start gap-2">
+                  <ArrowDown className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    {isEn
+                      ? "Disabling does not lock users out — everyone below falls back to 'Standard User' permissions immediately."
+                      : "Menonaktifkan TIDAK memblokir user — semua user di bawah ini otomatis turun ke hak akses 'Standard User' seketika."}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="p-2.5 bg-surface-sunken border border-line/60 rounded-xl text-center">
+                    <p className="text-lg font-bold text-content">{impactModal.impact?.resource_count ?? 0}</p>
+                    <p className="text-[10px] text-content-muted">
+                      {isEn ? 'MCP resources allowed' : 'Izin resource MCP'}
+                    </p>
+                  </div>
+                  <div className="p-2.5 bg-surface-sunken border border-line/60 rounded-xl text-center">
+                    <p className="text-lg font-bold text-content">{impactModal.impact?.mode_count ?? 0}</p>
+                    <p className="text-[10px] text-content-muted">
+                      {isEn ? 'Chat modes allowed' : 'Izin mode chat'}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-xs font-bold text-content mb-1.5">
+                    {isEn ? 'Affected users' : 'Pengguna terdampak'} ({(impactModal.impact?.affected_users || []).length})
+                  </p>
+                  <div className="max-h-40 overflow-y-auto rounded-xl border border-line/60 divide-y divide-line/40">
+                    {(impactModal.impact?.affected_users || []).map((u) => (
+                      <div key={u.username} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                        <span className="text-content">{u.full_name || u.username}</span>
+                        {u.only_role && (
+                          <span
+                            className="text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.2 rounded"
+                            title={
+                              isEn
+                                ? 'This is their only role — they lose all elevated access.'
+                                : 'Ini satu-satunya peran mereka — mereka kehilangan seluruh hak akses tambahan.'
+                            }
+                          >
+                            {isEn ? 'only role' : 'satu-satunya peran'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
+              <button
+                type="button"
+                onClick={() => setImpactModal(null)}
+                className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold text-content-muted hover:text-content hover:bg-surface-hover transition-colors"
+              >
+                {isEn ? 'Cancel' : 'Batal'}
+              </button>
+              <button
+                type="button"
+                disabled={impactModal.loading}
+                onClick={confirmImpactModal}
+                className="px-4 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isEn ? 'Disable Role' : 'Nonaktifkan Peran'}
+              </button>
             </div>
           </div>
         </div>

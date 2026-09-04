@@ -7,6 +7,7 @@ from database import (
     get_role_by_code,
     get_role_codes,
     create_role,
+    clone_role,
     update_role,
     delete_role,
     get_modes_for_role,
@@ -228,10 +229,68 @@ def test_user_creation_with_long_role_code(client, admin_auth):
     client.delete(f"/api/admin/roles/{long_role}", headers=admin_auth)
 
 
-def test_disabled_role_realtime_revocation(client, admin_auth):
-    """Memverifikasi penegakan status nonaktif peran secara real-time (revocation)."""
-    code = "temp_auditor"
-    # Pre-cleanup
+def test_disabling_role_does_not_revoke_current_holders(client, admin_auth):
+    """'enabled=False' hanya menyembunyikan peran dari penetapan baru. Pemegang
+    yang sudah ada TIDAK kehilangan akses apa pun -- ini yang membedakannya dari
+    'suspended' (lihat test_suspended_role_realtime_revocation)."""
+    code = "temp_auditor_disable"
+    client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
+    client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+
+    try:
+        res_role = client.post("/api/admin/roles", headers=admin_auth, json={
+            "code": code,
+            "label": "Temp Auditor",
+            "can_modify_program": True,
+            "enabled": True,
+        })
+        assert res_role.status_code == 200
+        assert set_role_mode(code, "fast", True) is True
+
+        res_user = client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "auditor_user_01",
+            "password": "Password123!",
+            "role": code,
+            "roles": [code],
+        })
+        assert res_user.status_code == 200
+        assert get_user_roles("auditor_user_01") == [code]
+
+        # Nonaktifkan (bukan suspend) peran ini
+        res_dis = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={"enabled": False})
+        assert res_dis.status_code == 200
+
+        # Pemegang yang sudah ada TIDAK terpengaruh sama sekali
+        assert get_user_roles("auditor_user_01") == [code]
+        fresh_user = get_user_by_username("auditor_user_01")
+        assert fresh_user["role"] == code
+        can_mod = get_roles_can_modify_program()
+        assert code in can_mod
+        modes = get_modes_for_role(code)
+        fast_mode = next((m for m in modes if m["code"] == "fast"), None)
+        assert fast_mode["available"] is True
+
+        # Tapi peran ini sekarang tidak bisa ditetapkan ke USER BARU
+        res_new_user = client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "auditor_user_02_should_fail",
+            "password": "Password123!",
+            "role": code,
+            "roles": [code],
+        })
+        assert res_new_user.status_code == 400
+    finally:
+        client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
+        client.delete("/api/admin/users/auditor_user_02_should_fail", headers=admin_auth)
+        try:
+            delete_role(code)
+        except ValueError:
+            pass
+
+
+def test_suspended_role_realtime_revocation(client, admin_auth):
+    """'suspended=True' mencabut izin peran dari SELURUH pemegangnya seketika --
+    ini mekanisme penegakan yang setara dengan 'enabled=False' versi lama."""
+    code = "temp_auditor_suspend"
     client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
     client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
 
@@ -271,9 +330,9 @@ def test_disabled_role_realtime_revocation(client, admin_auth):
         assert fast_mode is not None
         assert fast_mode["available"] is True
 
-        # 3. Nonaktifkan peran
+        # 3. Suspend peran
         res_dis = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={
-            "enabled": False,
+            "suspended": True,
         })
         assert res_dis.status_code == 200
 
@@ -292,9 +351,9 @@ def test_disabled_role_realtime_revocation(client, admin_auth):
         fast_mode_dis = next((m for m in modes_disabled if m["code"] == "fast"), None)
         assert fast_mode_dis["available"] is False
 
-        # 5. Aktifkan kembali peran
+        # 5. Un-suspend peran
         res_en = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={
-            "enabled": True,
+            "suspended": False,
         })
         assert res_en.status_code == 200
 
@@ -306,7 +365,15 @@ def test_disabled_role_realtime_revocation(client, admin_auth):
     finally:
         # Cleanup
         client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
-        client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+        try:
+            delete_role(code)
+        except ValueError:
+            pass
+
+
+def test_system_role_cannot_be_suspended(client, admin_auth):
+    res = client.put("/api/admin/roles/user", headers=admin_auth, json={"suspended": True})
+    assert res.status_code == 400
 
 
 def test_update_user_role_normalized_to_lowercase(client, admin_auth):
@@ -481,3 +548,198 @@ def test_users_role_column_rejects_uppercase_and_unknown_role(db):
                     INSERT INTO ai_assistant.users (username, password_hash, role)
                     VALUES ('bad_role_fk_test', 'x', 'role_yang_tidak_pernah_ada')
                 """))
+
+
+def test_clone_role_copies_permissions_and_quota(client, admin_auth):
+    """clone_role() menyalin izin resource MCP, mode chat, warna/ikon, dan kuota
+    dari peran sumber ke peran baru -- bukan mulai dari nol seperti create_role biasa."""
+    source_code = "clone_src_role"
+    cloned_code = "clone_dst_role"
+    for c in (source_code, cloned_code):
+        try:
+            delete_role(c)
+        except ValueError:
+            pass
+
+    try:
+        # 1. Buat peran sumber dengan atribut & kuota yang berbeda dari default
+        create_role(
+            code=source_code,
+            label="Clone Source",
+            description="Peran sumber untuk uji kloning",
+            color="rose",
+            icon="key",
+            can_modify_program=True,
+            enabled=True,
+            daily_token_limit=250000,
+            per_minute_limit=15,
+        )
+        set_role_mode(source_code, "expert", True)
+
+        # Beri izin resource MCP pada peran sumber lewat endpoint access control
+        res_access = client.put("/api/admin/access/roles", headers=admin_auth, json={
+            "role": source_code,
+            "items": [{"resource_key": "service:rag", "allowed": True, "can_write": False}],
+        })
+        assert res_access.status_code == 200
+
+        # 2. Kloning
+        res_clone = client.post(f"/api/admin/roles/{source_code}/clone", headers=admin_auth, json={
+            "code": cloned_code,
+            "label": "Clone Destination",
+        })
+        assert res_clone.status_code == 200, res_clone.text
+        cloned = res_clone.json()["role"]
+
+        # 3. Verifikasi atribut & kuota tersalin
+        assert cloned["color"] == "rose"
+        assert cloned["icon"] == "key"
+        assert cloned["can_modify_program"] is True
+
+        cloned_full = get_role_by_code(cloned_code)
+        assert cloned_full["is_system"] is False
+
+        # 4. Verifikasi izin mode chat tersalin (bukan default-deny)
+        cloned_modes = get_modes_for_role(cloned_code)
+        expert_mode = next((m for m in cloned_modes if m["code"] == "expert"), None)
+        assert expert_mode is not None
+        assert expert_mode["available"] is True
+
+        # 5. Verifikasi izin resource MCP tersalin
+        user_matrix_res = client.get(f"/api/admin/access/roles", headers=admin_auth)
+        matrix = user_matrix_res.json()["matrix"]
+        assert matrix.get(cloned_code, {}).get("service:rag", {}).get("allowed") is True
+    finally:
+        for c in (source_code, cloned_code):
+            try:
+                delete_role(c)
+            except ValueError:
+                pass
+
+
+def test_clone_role_rejects_duplicate_or_missing_source(client, admin_auth):
+    """Kloning ke kode yang sudah ada, atau dari peran sumber yang tidak ada, harus ditolak (400)."""
+    res_dup = client.post("/api/admin/roles/user/clone", headers=admin_auth, json={
+        "code": "user",  # sudah ada
+        "label": "Duplicate",
+    })
+    assert res_dup.status_code == 400
+
+    res_missing_src = client.post("/api/admin/roles/role_sumber_tidak_ada/clone", headers=admin_auth, json={
+        "code": "some_new_role_xyz",
+        "label": "New Role",
+    })
+    assert res_missing_src.status_code == 400
+
+
+def test_role_impact_preview(client, admin_auth):
+    """GET /api/admin/roles/{code}/impact melaporkan user, resource, dan mode
+    terdampak dengan akurat -- termasuk deteksi user yang akan turun total ke
+    'Standard User' karena ini satu-satunya peran mereka."""
+    code = "impact_preview_role"
+    try:
+        delete_role(code)
+    except ValueError:
+        pass
+    client.delete("/api/admin/users/impact_user_solo", headers=admin_auth)
+    client.delete("/api/admin/users/impact_user_multi", headers=admin_auth)
+
+    try:
+        create_role(code=code, label="Impact Preview Role", can_modify_program=False)
+        set_role_mode(code, "fast", True)
+        set_role_mode(code, "medium", True)
+
+        client.put("/api/admin/access/roles", headers=admin_auth, json={
+            "role": code,
+            "items": [{"resource_key": "service:rag", "allowed": True, "can_write": False}],
+        })
+
+        # User dengan HANYA peran ini
+        client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "impact_user_solo",
+            "password": "Password123!",
+            "role": code,
+            "roles": [code],
+        })
+        # User dengan peran ini DAN peran lain
+        client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "impact_user_multi",
+            "password": "Password123!",
+            "role": code,
+            "roles": [code, "functional"],
+        })
+
+        res = client.get(f"/api/admin/roles/{code}/impact", headers=admin_auth)
+        assert res.status_code == 200
+        data = res.json()
+
+        assert data["resource_count"] == 1
+        assert data["mode_count"] == 2
+
+        by_username = {u["username"]: u for u in data["affected_users"]}
+        assert "impact_user_solo" in by_username
+        assert "impact_user_multi" in by_username
+        assert by_username["impact_user_solo"]["only_role"] is True
+        assert by_username["impact_user_multi"]["only_role"] is False
+    finally:
+        client.delete("/api/admin/users/impact_user_solo", headers=admin_auth)
+        client.delete("/api/admin/users/impact_user_multi", headers=admin_auth)
+        try:
+            delete_role(code)
+        except ValueError:
+            pass
+
+
+def test_role_impact_unknown_role_404(client, admin_auth):
+    res = client.get("/api/admin/roles/role_tidak_ada_xyz/impact", headers=admin_auth)
+    assert res.status_code == 404
+
+
+def test_quota_unaffected_by_disable_but_lost_on_suspend(client, admin_auth):
+    """Kuota token milik peran (role_limits) HARUS tetap berlaku untuk pemegang saat
+    ini walau peran di-'enabled=False' (deprecated untuk penetapan baru), tapi HILANG
+    saat peran di-suspend -- menguji regresi _batas_peran() memakai get_active_role_codes()
+    (berbasis suspended), bukan get_available_roles() (berbasis enabled)."""
+    code = "quota_split_role"
+    client.delete("/api/admin/users/quota_split_user", headers=admin_auth)
+    try:
+        delete_role(code)
+    except ValueError:
+        pass
+
+    try:
+        client.post("/api/admin/roles", headers=admin_auth, json={
+            "code": code,
+            "label": "Quota Split Role",
+            "daily_token_limit": 777000,
+            "per_minute_limit": 7,
+        })
+        res_user = client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "quota_split_user",
+            "password": "Password123!",
+            "role": code,
+            "roles": [code],
+        })
+        assert res_user.status_code == 200
+        login = client.post("/api/login", json={"username": "quota_split_user", "password": "Password123!"})
+        auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        # Baseline: kuota peran berlaku
+        res_q1 = client.get("/api/quota", headers=auth)
+        assert res_q1.json()["daily_token_limit"] == 777000
+
+        # Nonaktifkan (bukan suspend): kuota TIDAK berubah untuk pemegang saat ini
+        client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={"enabled": False})
+        res_q2 = client.get("/api/quota", headers=auth)
+        assert res_q2.json()["daily_token_limit"] == 777000
+
+        # Suspend: kuota jatuh ke default 'user'
+        client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={"suspended": True})
+        res_q3 = client.get("/api/quota", headers=auth)
+        assert res_q3.json()["daily_token_limit"] != 777000
+    finally:
+        client.delete("/api/admin/users/quota_split_user", headers=admin_auth)
+        try:
+            delete_role(code)
+        except ValueError:
+            pass

@@ -6,56 +6,7 @@ import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
 import AdminAccessControl from './AdminAccessControl';
 import AdminRoles from './AdminRoles';
-
-const formatRoleLabel = (role) => {
-  const r = (role || '').toLowerCase().trim();
-  switch (r) {
-    case 'superadmin':
-      return 'Super Admin';
-    case 'abaper':
-      return 'ABAPer';
-    case 'functional':
-      return 'Functional';
-    case 'backend':
-      return 'Backend';
-    case 'frontend':
-      return 'Frontend';
-    case 'basis':
-      return 'Basis';
-    case 'data_analyst':
-      return 'Data Analyst';
-    case 'user':
-      return 'Standard User';
-    case 'guest':
-      return 'Guest';
-    default:
-      return r.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-  }
-};
-
-const getRoleBadgeStyle = (role) => {
-  const r = (role || '').toLowerCase().trim();
-  switch (r) {
-    case 'superadmin':
-      return 'bg-purple-500/15 text-purple-300 border-purple-500/30';
-    case 'abaper':
-      return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
-    case 'functional':
-      return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
-    case 'backend':
-      return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
-    case 'frontend':
-      return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
-    case 'basis':
-      return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
-    case 'data_analyst':
-      return 'bg-teal-500/15 text-teal-300 border-teal-500/30';
-    case 'user':
-      return 'bg-sky-500/15 text-sky-300 border-sky-500/30';
-    default:
-      return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
-  }
-};
+import { formatRoleLabel as formatRoleLabelFallback, getRoleBadgeStyle as getRoleBadgeStyleByColor } from '../lib/roles';
 
 const AVAILABLE_ROLES_OPTIONS = [
   { value: 'abaper', label: 'ABAPer' },
@@ -108,6 +59,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
   const [masterRoles, setMasterRoles] = useState([]);
+
+  // Label & warna badge role diambil dari master roles (bukan hardcode per-kode),
+  // agar role kustom yang admin buat lewat tab Roles ikut tampil dengan label dan
+  // warna yang benar, bukan default abu-abu. formatRoleLabelFallback/getRoleBadgeStyleByColor
+  // (dari lib/roles.js) dipakai hanya saat master roles belum termuat.
+  const formatRoleLabel = (roleCode) => {
+    const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (roleCode || '').toLowerCase());
+    return meta?.label || formatRoleLabelFallback(roleCode);
+  };
+  const getRoleBadgeStyle = (roleCode) => {
+    const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (roleCode || '').toLowerCase());
+    return getRoleBadgeStyleByColor(meta?.color);
+  };
 
   // Skills State
   const [skillsList, setSkillsList] = useState([]);
@@ -673,17 +637,26 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const currentTab = allTabs.find(tab => tab.id === activeTab) || allTabs[0];
   const CurrentTabIcon = currentTab?.icon || Activity;
 
+  // Bisa ditetapkan ke user baru hanya jika enabled DAN tidak suspended (samakan
+  // dengan validasi backend di get_role_codes(enabled_only=True)).
   const activeRoleOptions = masterRoles.length > 0
-    ? masterRoles.filter(r => r.enabled).map(r => ({ value: r.code, label: r.label, enabled: true }))
+    ? masterRoles.filter(r => r.enabled && !r.suspended).map(r => ({ value: r.code, label: r.label, enabled: true }))
     : AVAILABLE_ROLES_OPTIONS;
 
   const editRoleOptions = masterRoles.length > 0
     ? masterRoles
-        .filter(r => r.enabled || (editUserForm.roles || [editUserForm.role]).includes(r.code))
+        .filter(r => (r.enabled && !r.suspended) || (editUserForm.roles || [editUserForm.role]).includes(r.code))
         .map(r => ({
           value: r.code,
-          label: r.label + (!r.enabled ? (language === 'en' ? ' (Nonaktif)' : ' (Nonaktif)') : ''),
+          label:
+            r.label +
+            (r.suspended
+              ? (language === 'en' ? ' (Suspended)' : ' (Disuspend)')
+              : !r.enabled
+              ? (language === 'en' ? ' (Not assignable)' : ' (Tak bisa dipilih)')
+              : ''),
           enabled: r.enabled,
+          suspended: r.suspended,
         }))
     : AVAILABLE_ROLES_OPTIONS;
 
@@ -1258,27 +1231,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   <div className="flex flex-wrap items-center gap-1 max-w-xs">
                                     {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map((r) => {
                                       const roleMeta = masterRoles.find((mr) => mr.code.toLowerCase() === r.toLowerCase());
-                                      const isDisabled = roleMeta && roleMeta.enabled === false;
+                                      // 'suspended' adalah satu-satunya kondisi yang benar-benar mencabut
+                                      // akses pemegangnya; 'enabled=false' saja tidak berdampak ke user ini.
+                                      const isSuspended = roleMeta && roleMeta.suspended;
                                       return (
                                         <span
                                           key={r}
                                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border whitespace-nowrap ${
-                                            isDisabled
+                                            isSuspended
                                               ? 'bg-surface-sunken text-content-subtle border-line/70 opacity-70 line-through'
                                               : getRoleBadgeStyle(r)
                                           }`}
                                           title={
-                                            isDisabled
+                                            isSuspended
                                               ? (language === 'en'
-                                                  ? `${formatRoleLabel(r)} (Disabled / Suspended by admin)`
-                                                  : `${formatRoleLabel(r)} (Nonaktif / Ditangguhkan oleh admin)`)
+                                                  ? `${formatRoleLabel(r)} is suspended — this user's effective permissions fall back to Standard User, not blocked entirely.`
+                                                  : `${formatRoleLabel(r)} disuspend — hak akses efektif user ini turun ke Standard User, bukan diblokir total.`)
                                               : formatRoleLabel(r)
                                           }
                                         >
                                           <span>{formatRoleLabel(r)}</span>
-                                          {isDisabled && (
+                                          {isSuspended && (
                                             <span className="text-[9px] no-underline font-normal text-rose-400">
-                                              ({language === 'en' ? 'Disabled' : 'Nonaktif'})
+                                              ({language === 'en' ? 'downgraded' : 'diturunkan'})
                                             </span>
                                           )}
                                         </span>
@@ -2183,63 +2158,73 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
             {activeTab === 'kuota' && (
               <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
-                <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 sm:pb-3 border-b border-line">
                   <div className="min-w-0">
-                    <h3 className="text-sm sm:text-base font-bold text-content truncate">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
-                    <p className="text-[11px] sm:text-xs text-content-muted truncate">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm sm:text-base font-bold text-content truncate">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
+                        {kuota?.usage_date || '—'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
                       {language === 'en' 
-                        ? `Usage calculated for ${kuota?.usage_date || '—'} (midnight WIB reset).`
-                        : `Pemakaian tanggal ${kuota?.usage_date || '—'} (reset tengah malam WIB).`}
+                        ? 'Usage resets daily at midnight WIB.'
+                        : 'Pemakaian direset setiap tengah malam WIB.'}
                     </p>
                   </div>
-                  <button
-                    onClick={fetchKuota}
-                    disabled={kuotaLoading}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer disabled:opacity-60 shrink-0"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${kuotaLoading ? 'animate-spin' : ''}`} />
-                    <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
-                  </button>
+
+                  <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+                    {/* Compact Quota Enforcement Switch */}
+                    <div className="flex items-center gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-line/80 bg-surface shadow-2xs">
+                      <span className="text-xs font-bold text-content">
+                        {language === 'en' ? 'Enforcement' : 'Penegakan'}
+                      </span>
+                      <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded-full ${
+                        kuota?.enforced
+                          ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                      }`}>
+                        {kuota?.enforced ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Off' : 'Mati')}
+                      </span>
+                      <button
+                        onClick={() => gantiSaklar(!kuota?.enforced)}
+                        disabled={!kuota}
+                        aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
+                        aria-pressed={!!kuota?.enforced}
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
+                          kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-2xs' : 'bg-line'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                            kuota?.enforced ? 'left-4.5' : 'left-0.5'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={fetchKuota}
+                      disabled={kuotaLoading}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-hover text-content hover:bg-line border border-line transition-colors cursor-pointer disabled:opacity-60 shrink-0 shadow-2xs"
+                      title={language === 'en' ? 'Refresh' : 'Muat ulang'}
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${kuotaLoading ? 'animate-spin' : ''}`} />
+                      <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {kuotaLoading && !kuota ? (
-                  <div className="space-y-4 animate-pulse">
-                    <div className="h-20 rounded-2xl bg-surface border border-line p-5" />
-                    <div className="h-64 rounded-2xl bg-surface border border-line p-5" />
-                    <div className="h-48 rounded-2xl bg-surface border border-line p-5" />
+                  <div className="space-y-3 animate-pulse">
+                    <div className="h-64 rounded-2xl bg-surface border border-line p-4" />
+                    <div className="h-48 rounded-2xl bg-surface border border-line p-4" />
                   </div>
                 ) : (
                   <>
-                    {/* Saklar penegakan */}
-                <div className="flex items-center justify-between gap-3 p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-line/80 bg-surface shadow-xs">
-                  <div className="min-w-0">
-                    <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Quota Enforcement' : 'Penegakan Batas Token'}</p>
-                    <p className="text-[11px] sm:text-xs text-content-muted mt-0.5">
-                      {kuota?.enforced
-                        ? (language === 'en' ? 'Active — requests rejected when quota exceeded.' : 'Aktif — permintaan ditolak saat kuota habis.')
-                        : (language === 'en' ? 'Inactive — usage is tracked without blocking.' : 'Nonaktif — pemakaian dicatat tanpa blokir.')}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => gantiSaklar(!kuota?.enforced)}
-                    disabled={!kuota}
-                    aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
-                    aria-pressed={!!kuota?.enforced}
-                    className={`relative h-6 w-11 sm:h-7 sm:w-13 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
-                      kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-sm shadow-indigo-500/30' : 'bg-line'
-                    }`}
-                  >
-                    <span
-                      className={`absolute top-0.5 sm:top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
-                        kuota?.enforced ? 'left-5 sm:left-7' : 'left-0.5 sm:left-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Batas per peran - Redesigned as Table matching other tabs */}
+                {/* Batas per peran - Compact Table Card */}
                 <div className="rounded-2xl border border-line/80 bg-surface overflow-hidden shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-line/80 bg-surface">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 border-b border-line/80 bg-surface">
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
@@ -2247,7 +2232,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           {Object.keys(kuota?.role_limits || {}).length} {language === 'en' ? 'Roles' : 'Peran'}
                         </span>
                       </div>
-                      <p className="text-[11px] sm:text-xs text-content-muted mt-0.5">
+                      <p className="text-[11px] text-content-muted mt-0.5">
                         {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
                       </p>
                     </div>
@@ -2255,9 +2240,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <button
                       onClick={simpanSemuaBatas}
                       disabled={savingBatas || kuotaLoading}
-                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <Save className="w-3.5 h-3.5" />
                       <span>
                         {savingBatas
                           ? (language === 'en' ? 'Saving...' : 'Menyimpan...')

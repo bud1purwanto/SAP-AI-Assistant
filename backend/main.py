@@ -31,7 +31,9 @@ from database import (
     consume_guest_quota,
     create_chat_session,
     create_new_user,
+    clone_role,
     create_role,
+    get_role_impact,
     delete_chat_session,
     delete_role,
     delete_user_by_admin,
@@ -131,10 +133,15 @@ async def lifespan(app: FastAPI):
     # Server produksi bisa berjalan berminggu-minggu tanpa restart, sehingga
     # pembersihan saat startup saja tidak cukup.
     cleanup = asyncio.create_task(_artifact_cleanup_loop())
+    # Server produksi berjalan dengan >1 worker (deploy/deploy.sh --workers 2);
+    # listener ini membuat perubahan role dari satu worker langsung terlihat di
+    # worker lain, alih-alih menunggu TTL cache 30 detik.
+    role_listener = access_control.start_role_change_listener()
     try:
         yield
     finally:
         cleanup.cancel()
+        role_listener.cancel()
 
 
 app = FastAPI(title="Enterprise SAP Chat Assistant", lifespan=lifespan)
@@ -796,6 +803,7 @@ class AdminUpdateRoleRequest(BaseModel):
     icon: Optional[str] = None
     can_modify_program: Optional[bool] = None
     enabled: Optional[bool] = None
+    suspended: Optional[bool] = None
     sort_order: Optional[int] = None
 
 
@@ -803,6 +811,17 @@ class AdminUpdateRoleRequest(BaseModel):
 async def get_admin_roles_endpoint(admin: dict = Depends(require_superadmin)):
     """Mendapatkan daftar seluruh peran master beserta jumlah pengguna terdaftar."""
     return get_roles(enabled_only=False)
+
+
+@app.get("/api/admin/roles/{code}/impact")
+async def get_admin_role_impact_endpoint(code: str, admin: dict = Depends(require_superadmin)):
+    """Pratinjau dampak menonaktifkan/menghapus sebuah peran: user terdampak,
+    jumlah izin resource MCP dan mode chat yang akan hilang. Dipanggil UI sebelum
+    admin mengonfirmasi aksi, agar konsekuensinya jelas sebelum ditekan."""
+    c_clean = code.strip().lower()
+    if not get_role_by_code(c_clean):
+        raise HTTPException(status_code=404, detail=f"Peran '{c_clean}' tidak ditemukan.")
+    return get_role_impact(c_clean)
 
 
 @app.post("/api/admin/roles")
@@ -839,6 +858,7 @@ async def create_admin_role_endpoint(
             daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
             per_minute_limit=int(pml),
         )
+        access_control.broadcast_role_change()
         access_control.log_audit(
             actor=admin.get("username", "admin"),
             target_type="role",
@@ -852,6 +872,52 @@ async def create_admin_role_endpoint(
     except Exception as e:
         logger.error(f"Error create_admin_role_endpoint: {e}")
         raise HTTPException(status_code=500, detail="Gagal membuat peran baru.")
+
+
+class AdminCloneRoleRequest(BaseModel):
+    code: str
+    label: str
+    description: Optional[str] = ""
+
+
+@app.post("/api/admin/roles/{source_code}/clone")
+async def clone_admin_role_endpoint(
+    source_code: str,
+    req: AdminCloneRoleRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Membuat peran baru dengan menyalin izin resource MCP dan mode chat dari peran sumber."""
+    src_clean = source_code.strip().lower()
+    c_clean = req.code.strip().lower()
+    if not re.match(r'^[a-z0-9_]{2,40}$', c_clean):
+        raise HTTPException(
+            status_code=400,
+            detail="Kode peran hanya boleh terdiri dari huruf kecil, angka, garis bawah (_), dan panjang 2-40 karakter.",
+        )
+    if not req.label or not req.label.strip():
+        raise HTTPException(status_code=400, detail="Label peran tidak boleh kosong.")
+
+    try:
+        new_role = clone_role(
+            source_code=src_clean,
+            code=c_clean,
+            label=req.label.strip(),
+            description=(req.description or "").strip(),
+        )
+        access_control.broadcast_role_change()
+        access_control.log_audit(
+            actor=admin.get("username", "admin"),
+            target_type="role",
+            target_id=c_clean,
+            action="CLONE_ROLE",
+            detail=f"Peran '{c_clean}' dibuat dengan mengkloning izin dari '{src_clean}'",
+        )
+        return {"status": "success", "role": new_role}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error clone_admin_role_endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Gagal mengkloning peran.")
 
 
 @app.put("/api/admin/roles/{code}")
@@ -875,10 +941,10 @@ async def update_admin_role_endpoint(
             icon=req.icon.strip().lower() if req.icon is not None else None,
             can_modify_program=req.can_modify_program,
             enabled=req.enabled,
+            suspended=req.suspended,
             sort_order=req.sort_order,
         )
-        access_control.clear_access_cache()
-        access_control.invalidate_effective_roles_cache()
+        access_control.broadcast_role_change()
         changed = {
             k: v for k, v in req.model_dump(exclude_none=True).items()
         }
@@ -906,8 +972,7 @@ async def delete_admin_role_endpoint(
     c_clean = code.strip().lower()
     try:
         delete_role(c_clean)
-        access_control.clear_access_cache()
-        access_control.invalidate_effective_roles_cache()
+        access_control.broadcast_role_change()
         access_control.log_audit(
             actor=admin.get("username", "admin"),
             target_type="role",
@@ -1362,6 +1427,7 @@ async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, a
     ok = access_control.update_role_access(role_clean, req.items, actor=actor)
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
+    access_control.broadcast_role_change()
     return {"status": "success", "role": role_clean}
 
 
@@ -1425,9 +1491,12 @@ def _batas_peran(role: Union[str, list, None]) -> dict:
     if "superadmin" in roles:
         return {"daily_token_limit": 0, "per_minute_limit": 0}
 
-    # Filter hanya peran yang aktif (enabled = TRUE)
-    available_roles = set(get_available_roles(enabled_only=True))
-    active_roles = [r for r in roles if r.lower() in available_roles]
+    # Filter hanya peran yang izinnya masih berlaku (suspended = FALSE). Peran yang
+    # sekadar 'enabled=FALSE' (disembunyikan dari penetapan baru) TETAP dihitung di
+    # sini karena pemegangnya yang sudah ada tidak kehilangan kuota hanya karena itu.
+    from database import get_active_role_codes
+    active_role_codes = get_active_role_codes()
+    active_roles = [r for r in roles if r.lower() in active_role_codes]
     if not active_roles:
         active_roles = ["user"]
 

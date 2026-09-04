@@ -385,6 +385,7 @@ export default function AdminChatModes({
     label: r.label,
     desc: r.description,
     enabled: r.enabled,
+    suspended: r.suspended,
   }));
 
   return (
@@ -995,14 +996,33 @@ export default function AdminChatModes({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/60">
-                  {activeRoles.map(({ role, label, enabled }) => (
+                  {activeRoles.map(({ role, label, enabled, suspended }) => (
                     <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
                       <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`font-semibold text-content text-xs ${enabled === false ? 'opacity-60 line-through' : ''}`}>{label}</span>
-                          {enabled === false && (
-                            <span className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1 py-0.2 rounded">
-                              {language === 'en' ? 'Disabled' : 'Nonaktif'}
+                          <span className={`font-semibold text-content text-xs ${suspended ? 'opacity-60 line-through' : ''}`}>{label}</span>
+                          {suspended && (
+                            <span
+                              className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1 py-0.2 rounded"
+                              title={
+                                language === 'en'
+                                  ? "This role is suspended. Its users fall back to 'Standard User' mode permissions."
+                                  : "Peran ini disuspend. Penggunanya otomatis memakai izin mode 'Standard User'."
+                              }
+                            >
+                              {language === 'en' ? 'Suspended → downgraded' : 'Disuspend → diturunkan'}
+                            </span>
+                          )}
+                          {!suspended && enabled === false && (
+                            <span
+                              className="text-[9px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded"
+                              title={
+                                language === 'en'
+                                  ? 'Hidden from new user assignments. Current holders keep full access.'
+                                  : 'Disembunyikan dari penetapan user baru. Pemegang saat ini tetap punya akses penuh.'
+                              }
+                            >
+                              {language === 'en' ? 'Not assignable' : 'Tak bisa dipilih'}
                             </span>
                           )}
                         </div>

@@ -55,6 +55,72 @@ def invalidate_effective_roles_cache(username: Optional[str] = None):
         _ROLES_CACHE.clear()
 
 
+_ROLES_CHANGED_CHANNEL = "roles_changed"
+
+
+def broadcast_role_change():
+    """Membersihkan seluruh cache role/izin di proses INI, dan memberi tahu proses
+    worker LAIN lewat Postgres LISTEN/NOTIFY agar mereka ikut membersihkan cache
+    mereka sendiri.
+
+    Server produksi berjalan dengan >1 worker uvicorn (lihat deploy/deploy.sh
+    --workers 2), masing-masing dengan memori proses terpisah. Tanpa mekanisme ini,
+    perubahan role (nonaktif/suspend/hapus/ubah izin) hanya terlihat di worker yang
+    menerima request admin tsb; worker lain baru ikut konsisten setelah TTL cache
+    (30 detik) habis. Dipanggil di setiap endpoint yang memutasi role atau izinnya.
+    """
+    clear_access_cache()
+    invalidate_effective_roles_cache()
+    try:
+        database.invalidate_role_codes_cache()
+    except Exception:
+        pass
+    try:
+        engine = database.get_engine()
+        with engine.connect() as conn:
+            conn.execute(text(f"NOTIFY {_ROLES_CHANGED_CHANNEL}"))
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Gagal mengirim NOTIFY {_ROLES_CHANGED_CHANNEL} (worker lain tetap memakai cache TTL): {e}")
+
+
+def start_role_change_listener():
+    """Coroutine long-running: LISTEN pada channel Postgres yang di-NOTIFY oleh
+    broadcast_role_change() (dipanggil dari proses worker lain), lalu bersihkan
+    cache lokal proses ini setiap kali ada notifikasi. Dipasang sebagai
+    background task di lifespan FastAPI. Menyambung ulang otomatis bila koneksi
+    listen terputus (mis. restart Postgres)."""
+    import asyncio
+
+    async def _loop():
+        import psycopg
+        from config import settings
+
+        dsn = (settings.database_url or database.DEFAULT_DB_URL).replace(
+            "postgresql+psycopg://", "postgresql://"
+        )
+        while True:
+            try:
+                async with await psycopg.AsyncConnection.connect(dsn, autocommit=True) as conn:
+                    await conn.execute(f"LISTEN {_ROLES_CHANGED_CHANNEL}")
+                    logger.info(f"Mendengarkan notifikasi lintas-worker di channel '{_ROLES_CHANGED_CHANNEL}'.")
+                    async for _notify in conn.notifies():
+                        clear_access_cache()
+                        invalidate_effective_roles_cache()
+                        try:
+                            database.invalidate_role_codes_cache()
+                        except Exception:
+                            pass
+                        logger.info("Cache role/izin dibersihkan karena notifikasi perubahan dari worker lain.")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"Listener perubahan role terputus, mencoba lagi dalam 5 detik: {e}")
+                await asyncio.sleep(5)
+
+    return asyncio.create_task(_loop())
+
+
 def effective_roles(username: Optional[str], is_guest: bool = False, token_roles: Optional[List[str]] = None) -> List[str]:
     """Mengembalikan role efektif pengguna berdasarkan status TERKINI di database.
 
@@ -489,7 +555,7 @@ def resolve_access(username: str, role: Union[str, List[str], None] = "user") ->
                 SELECT rra.resource_key, rra.allowed, rra.can_write
                 FROM ai_assistant.role_resource_access rra
                 JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(rra.role)
-                WHERE LOWER(rra.role) = ANY(:roles) AND r.enabled = TRUE
+                WHERE LOWER(rra.role) = ANY(:roles) AND r.suspended = FALSE
             """),
                 {"roles": list(roles_tuple), "role": roles_tuple[0] if roles_tuple else "user"},
             ).fetchall()

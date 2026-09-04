@@ -200,6 +200,9 @@ export const api = {
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   adminRoles: () => apiFetch('/api/admin/roles'),
   adminCreateRole: (payload) => apiFetch('/api/admin/roles', { method: 'POST', body: payload }),
+  adminCloneRole: (sourceCode, payload) =>
+    apiFetch(`/api/admin/roles/${encodeURIComponent(sourceCode)}/clone`, { method: 'POST', body: payload }),
+  adminRoleImpact: (code) => apiFetch(`/api/admin/roles/${encodeURIComponent(code)}/impact`),
   adminUpdateRole: (code, payload) =>
     apiFetch(`/api/admin/roles/${encodeURIComponent(code)}`, { method: 'PUT', body: payload }),
   adminDeleteRole: (code) =>

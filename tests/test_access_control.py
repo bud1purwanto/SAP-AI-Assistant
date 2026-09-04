@@ -256,3 +256,50 @@ def test_multi_role_superadmin_bypass(monkeypatch):
     assert res["sap:dev-aix"]["source"] == "superadmin"
 
 
+def test_role_change_listener_clears_cache_on_cross_connection_notify(db):
+    """LISTEN/NOTIFY lintas-worker: sebuah NOTIFY yang dikirim dari koneksi Postgres
+    LAIN (mensimulasikan proses worker uvicorn lain) harus membuat listener yang
+    berjalan di proses ini membersihkan cache role/izin lokalnya -- ini yang
+    membuat perubahan role terlihat instan di semua worker, bukan menunggu TTL 30 detik."""
+    import asyncio
+    from sqlalchemy import text
+    import database as database_module
+
+    async def _run():
+        listener = access_control.start_role_change_listener()
+        try:
+            # Beri waktu listener benar-benar tersambung dan LISTEN sebelum diuji.
+            await asyncio.sleep(0.5)
+
+            # Kotori cache lokal agar bisa dideteksi apakah listener membersihkannya.
+            access_control._ACCESS_CACHE[("dummy_user", ("user",))] = (0.0, {})
+            access_control._ROLES_CACHE["dummy_user"] = (0.0, ["user"])
+            assert access_control._ACCESS_CACHE
+            assert access_control._ROLES_CACHE
+
+            # Kirim NOTIFY dari KONEKSI TERPISAH -- inilah yang dilakukan
+            # broadcast_role_change() saat worker lain memutasi sebuah role.
+            engine = database_module.get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("NOTIFY roles_changed"))
+                conn.commit()
+
+            # Beri waktu listener memproses notifikasi.
+            cleared = False
+            for _ in range(25):
+                await asyncio.sleep(0.2)
+                if not access_control._ACCESS_CACHE and not access_control._ROLES_CACHE:
+                    cleared = True
+                    break
+
+            assert cleared, "Listener tidak membersihkan cache setelah NOTIFY dari koneksi lain"
+        finally:
+            listener.cancel()
+            try:
+                await listener
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(_run())
+
+

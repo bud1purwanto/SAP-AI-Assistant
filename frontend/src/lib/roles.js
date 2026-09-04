@@ -160,6 +160,47 @@ export const ROLE_ICON_OPTIONS = [
   { value: 'activity', label: 'Activity', icon: Activity },
 ];
 
+export const ROLE_COLOR_LABELS = {
+  purple: { en: 'Purple', id: 'Ungu' },
+  indigo: { en: 'Indigo', id: 'Nila' },
+  emerald: { en: 'Emerald', id: 'Jamrud (Emerald)' },
+  amber: { en: 'Amber', id: 'Kuning Amber' },
+  cyan: { en: 'Cyan', id: 'Sian (Cyan)' },
+  rose: { en: 'Rose', id: 'Merah Mawar' },
+  teal: { en: 'Teal', id: 'Hijau Laut (Teal)' },
+  sky: { en: 'Sky Blue', id: 'Biru Langit' },
+  blue: { en: 'Blue', id: 'Biru' },
+  orange: { en: 'Orange', id: 'Jingga' },
+  violet: { en: 'Violet', id: 'Violet' },
+  zinc: { en: 'Zinc', id: 'Abu-Abu (Zinc)' },
+};
+
+export const ROLE_ICON_LABELS = {
+  'users': { en: 'Users (Group)', id: 'Pengguna (Grup)' },
+  'user': { en: 'User (Single)', id: 'Pengguna (Tunggal)' },
+  'shield-check': { en: 'Shield Check', id: 'Perisai Centang' },
+  'shield': { en: 'Shield', id: 'Perisai' },
+  'code-2': { en: 'Code', id: 'Kode Program' },
+  'terminal': { en: 'Terminal', id: 'Terminal' },
+  'database': { en: 'Database', id: 'Basis Data' },
+  'globe': { en: 'Globe', id: 'Globe / Web' },
+  'cpu': { en: 'CPU', id: 'Prosesor (CPU)' },
+  'layers': { en: 'Layers', id: 'Lapisan (Layers)' },
+  'key': { en: 'Key', id: 'Kunci (Key)' },
+  'lock': { en: 'Lock', id: 'Gembok (Lock)' },
+  'sparkles': { en: 'Sparkles', id: 'Kilau AI' },
+  'wrench': { en: 'Wrench', id: 'Kunci Pas (Alat)' },
+  'activity': { en: 'Activity', id: 'Aktivitas' },
+};
+
+export function getRoleColorLabel(color, isEn = false) {
+  return ROLE_COLOR_LABELS[color]?.[isEn ? 'en' : 'id'] || color;
+}
+
+export function getRoleIconLabel(icon, isEn = false) {
+  return ROLE_ICON_LABELS[icon]?.[isEn ? 'en' : 'id'] || icon;
+}
+
 /**
  * Mengambil class badge Tailwind yang aman untuk suatu warna.
  */

@@ -687,6 +687,27 @@ def _m0014_users_role_integrity(conn):
     """))
 
 
+def _m0015_role_suspended_flag(conn):
+    """Memisahkan makna 'enabled' (peran boleh DIPILIH untuk user baru) dari
+    'suspended' (izin peran DICABUT dari seluruh pemegangnya saat ini).
+
+    Sebelumnya satu kolom `enabled` dipakai untuk dua hal sekaligus: menyembunyikan
+    peran dari daftar pilihan admin DAN mencabut akses user yang sudah memegangnya
+    -- membingungkan karena "menonaktifkan" terdengar seperti aksi ringan (sekadar
+    menyembunyikan dari dropdown) padahal efeknya langsung menurunkan akses semua
+    pemegangnya. Sekarang keduanya independen:
+    - enabled=FALSE  -> peran tidak muncul di form tambah/ubah user (deprecated
+      untuk penetapan baru), TAPI pemegang saat ini tidak terpengaruh.
+    - suspended=TRUE -> seluruh izin peran ini berhenti berlaku untuk pemegangnya
+      SEKARANG JUGA (mekanisme penegakan yang sama seperti 'enabled' versi lama).
+    Peran sistem tidak boleh disuspend, sama seperti tidak boleh dinonaktifkan.
+    """
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.roles
+        ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT FALSE;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -702,6 +723,7 @@ MIGRATIONS = [
     ("0012_standardize_persona_and_skills", _m0012_standardize_persona_and_skills),
     ("0013_master_data_roles", _m0013_master_data_roles),
     ("0014_users_role_integrity", _m0014_users_role_integrity),
+    ("0015_role_suspended_flag", _m0015_role_suspended_flag),
 ]
 
 

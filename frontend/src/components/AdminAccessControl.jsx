@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
-import { getRoleBadgeStyle, getRoleIconComponent } from '../lib/roles';
+import { ROLE_COLOR_MAP, getRoleBadgeStyle, getRoleIconComponent } from '../lib/roles';
 
 export default function AdminAccessControl({
   setActionSuccess,
@@ -52,7 +52,7 @@ export default function AdminAccessControl({
   masterRoles,
   onRefreshRoles,
 }) {
-  const { t, language } = useLanguage();
+  const { t, language, isEn } = useLanguage();
   const [activeSubTab, setActiveSubTab] = useState('roles'); // 'roles' | 'users' | 'audit'
   const [roleViewMode, setRoleViewMode] = useState(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -130,7 +130,7 @@ export default function AdminAccessControl({
       setModifiedRoles(new Set());
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal memuat matriks peran');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to load role matrix' : 'Gagal memuat matriks peran'));
     } finally {
       setLoading(false);
       setInitialLoading(false);
@@ -142,7 +142,7 @@ export default function AdminAccessControl({
       const uRes = await api.adminUsers();
       setUsersList(uRes || []);
     } catch (err) {
-      console.error('Gagal mengambil user list:', err);
+      console.error('Failed to load user list:', err);
     }
   };
 
@@ -155,7 +155,7 @@ export default function AdminAccessControl({
       setUserDirty(false);
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal memuat izin pengguna');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to load user permissions' : 'Gagal memuat izin pengguna'));
     } finally {
       setLoading(false);
     }
@@ -168,7 +168,7 @@ export default function AdminAccessControl({
       setAuditLogs(res.logs || []);
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal memuat log audit');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to load audit logs' : 'Gagal memuat log audit'));
     } finally {
       setAuditLoading(false);
     }
@@ -187,7 +187,7 @@ export default function AdminAccessControl({
       }
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal sinkronisasi resource');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to sync resources' : 'Gagal sinkronisasi resource'));
     } finally {
       setLoading(false);
     }
@@ -202,13 +202,13 @@ export default function AdminAccessControl({
       if (setActionSuccess) {
         setActionSuccess(
           nextState
-            ? 'Penegakan kontrol akses MCP sekarang AKTIF.'
-            : 'Penegakan kontrol akses MCP sekarang NONAKTIF (Transisi aman).'
+            ? (isEn ? 'MCP access control enforcement is now ACTIVE.' : 'Penegakan kontrol akses MCP sekarang AKTIF.')
+            : (isEn ? 'MCP access control enforcement is now INACTIVE (Safe transition).' : 'Penegakan kontrol akses MCP sekarang NONAKTIF (Transisi aman).')
         );
       }
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal mengubah status master switch');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to update master switch' : 'Gagal mengubah status master switch'));
     } finally {
       setSaving(false);
     }
@@ -311,10 +311,10 @@ export default function AdminAccessControl({
         next.delete(role);
         return next;
       });
-      if (setActionSuccess) setActionSuccess(`Izin untuk peran '${role}' berhasil disimpan.`);
+      if (setActionSuccess) setActionSuccess(isEn ? `Permissions for role '${role}' saved successfully.` : `Izin untuk peran '${role}' berhasil disimpan.`);
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal menyimpan izin peran');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to save role permissions' : 'Gagal menyimpan izin peran'));
     } finally {
       setSaving(false);
     }
@@ -332,10 +332,10 @@ export default function AdminAccessControl({
         await api.adminUpdateAccessRoles({ role, items: roleItems });
       }
       setModifiedRoles(new Set());
-      if (setActionSuccess) setActionSuccess('Semua perubahan matriks peran berhasil disimpan.');
+      if (setActionSuccess) setActionSuccess(isEn ? 'All role matrix changes saved successfully.' : 'Semua perubahan matriks peran berhasil disimpan.');
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal menyimpan izin peran');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to save role permissions' : 'Gagal menyimpan izin peran'));
     } finally {
       setSaving(false);
     }
@@ -416,11 +416,11 @@ export default function AdminAccessControl({
       }));
       await api.adminUpdateUserAccess(selectedUser, { items });
       setUserDirty(false);
-      if (setActionSuccess) setActionSuccess(`Override izin untuk '${selectedUser}' berhasil disimpan.`);
+      if (setActionSuccess) setActionSuccess(isEn ? `Permission overrides for '${selectedUser}' saved successfully.` : `Override izin untuk '${selectedUser}' berhasil disimpan.`);
       await loadUserAccess(selectedUser);
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal menyimpan override pengguna');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to save user overrides' : 'Gagal menyimpan override pengguna'));
     } finally {
       setSaving(false);
     }
@@ -440,12 +440,16 @@ export default function AdminAccessControl({
       setIsBulkOpen(false);
       setBulkSelectedUsers([]);
       if (setActionSuccess) {
-        setActionSuccess(`Berhasil menerapkan izin ke ${res.updated_count || bulkSelectedUsers.length} pengguna.`);
+        setActionSuccess(
+          isEn
+            ? `Successfully applied permissions to ${res.updated_count || bulkSelectedUsers.length} user(s).`
+            : `Berhasil menerapkan izin ke ${res.updated_count || bulkSelectedUsers.length} pengguna.`
+        );
       }
       if (selectedUser) loadUserAccess(selectedUser);
     } catch (err) {
       console.error(err);
-      if (setActionError) setActionError(err.message || 'Gagal menerapkan aksi massal');
+      if (setActionError) setActionError(err.message || (isEn ? 'Failed to apply bulk action' : 'Gagal menerapkan aksi massal'));
     } finally {
       setSaving(false);
     }
@@ -463,23 +467,12 @@ export default function AdminAccessControl({
   };
 
   const getRoleTheme = (role) => {
-    switch (role?.toLowerCase()) {
-      case 'admin':
-      case 'superadmin':
-        return { bg: 'bg-indigo-500/15', text: 'text-indigo-400', border: 'border-indigo-500/30' };
-      case 'functional':
-        return { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' };
-      case 'basis':
-        return { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30' };
-      case 'data_analyst':
-        return { bg: 'bg-teal-500/15', text: 'text-teal-400', border: 'border-teal-500/30' };
-      case 'backend':
-      case 'developer':
-      case 'abaper':
-        return { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' };
-      default:
-        return { bg: 'bg-surface-sunken', text: 'text-content-muted', border: 'border-line' };
-    }
+    // Warna diambil dari master roles (bukan hardcode per-kode-role), agar role
+    // kustom yang dibuat admin ikut mendapat warna yang benar, bukan abu-abu default.
+    const source = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesMeta;
+    const meta = (source || []).find((r) => (r.code || '').toLowerCase() === (role || '').toLowerCase());
+    const c = ROLE_COLOR_MAP[(meta?.color || 'zinc').toLowerCase()] || ROLE_COLOR_MAP.zinc;
+    return { bg: c.bg, text: c.text, border: c.border };
   };
 
   // Group resources by kind (supporting search)
@@ -519,37 +512,34 @@ export default function AdminAccessControl({
 
   if (initialLoading) {
     return (
-      <div className="space-y-6 animate-fadeIn">
+      <div className="space-y-3 sm:space-y-3.5 animate-fadeIn">
         {/* Top Loading Progress Bar */}
         <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full shadow-xs">
           <div className="progress-bar-indeterminate rounded-full" />
         </div>
 
-        {/* Skeleton Master Switch Hero Banner */}
-        <div className="rounded-2xl border border-line p-5 sm:p-6 bg-surface animate-pulse">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-            <div className="flex items-start gap-4">
-              <div className="w-13 h-13 rounded-2xl bg-surface-sunken shrink-0" />
-              <div className="space-y-2.5">
-                <div className="w-52 h-6 rounded-lg bg-surface-sunken" />
-                <div className="w-80 sm:w-96 h-3.5 rounded-lg bg-surface-sunken/70" />
-              </div>
+        {/* Skeleton Master Switch Compact Banner */}
+        <div className="rounded-xl border border-line p-3 bg-surface animate-pulse">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-lg bg-surface-sunken shrink-0" />
+              <div className="w-48 h-5 rounded-lg bg-surface-sunken" />
             </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-36 h-9 rounded-xl bg-surface-sunken" />
-              <div className="w-36 h-9 rounded-xl bg-surface-sunken" />
+            <div className="flex items-center gap-2">
+              <div className="w-24 h-7 rounded-lg bg-surface-sunken" />
+              <div className="w-32 h-7 rounded-lg bg-surface-sunken" />
             </div>
           </div>
         </div>
 
         {/* Skeleton Subtabs Navigation */}
-        <div className="flex items-center justify-between gap-4 border-b border-line pb-3">
+        <div className="flex items-center justify-between gap-4 border-b border-line pb-2.5">
           <div className="flex items-center gap-2">
-            <div className="w-28 h-9 rounded-xl bg-surface-sunken animate-pulse" />
-            <div className="w-32 h-9 rounded-xl bg-surface-sunken animate-pulse" />
-            <div className="w-24 h-9 rounded-xl bg-surface-sunken animate-pulse" />
+            <div className="w-24 h-7 rounded-lg bg-surface-sunken animate-pulse" />
+            <div className="w-28 h-7 rounded-lg bg-surface-sunken animate-pulse" />
+            <div className="w-20 h-7 rounded-lg bg-surface-sunken animate-pulse" />
           </div>
-          <div className="w-40 h-8 rounded-lg bg-surface-sunken animate-pulse" />
+          <div className="w-48 h-7 rounded-lg bg-surface-sunken animate-pulse" />
         </div>
 
         {/* Skeleton Role Matrix Table */}
@@ -582,10 +572,11 @@ export default function AdminAccessControl({
     icon: getRoleIconComponent(r.icon),
     is_system: r.is_system,
     enabled: r.enabled,
+    suspended: r.suspended,
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-3.5">
       {/* Top Loading Progress Bar */}
       {(loading || saving || auditLoading) && (
         <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-2 -mb-3 shadow-xs">
@@ -617,44 +608,42 @@ export default function AdminAccessControl({
         </div>
       )}
 
-      {/* 1. MASTER SWITCH BANNER - HERO STYLE */}
+      {/* 1. MASTER SWITCH BANNER - COMPACT STYLE */}
       <div
-        className={`relative overflow-hidden rounded-xl sm:rounded-2xl border p-3.5 sm:p-6 transition-all shadow-md ${
+        className={`relative overflow-hidden rounded-xl border px-3.5 py-2 sm:px-4 sm:py-2.5 transition-all shadow-2xs ${
           masterEnabled
-            ? 'bg-gradient-to-r from-emerald-950/40 via-surface to-surface border-emerald-500/40'
-            : 'bg-gradient-to-r from-amber-950/40 via-surface to-surface border-amber-500/40'
+            ? 'bg-gradient-to-r from-emerald-950/30 via-surface to-surface border-emerald-500/30'
+            : 'bg-gradient-to-r from-amber-950/30 via-surface to-surface border-amber-500/30'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-5 relative z-10">
-          <div className="flex items-start gap-3 sm:gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 relative z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
             <div
-              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shrink-0 shadow-inner ${
+              className={`p-1.5 rounded-lg shrink-0 ${
                 masterEnabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 ring-2 sm:ring-4 ring-emerald-500/10'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 ring-2 sm:ring-4 ring-amber-500/10'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
               }`}
             >
-              {masterEnabled ? <ShieldCheck className="w-5 h-5 sm:w-7 sm:h-7" /> : <ShieldAlert className="w-5 h-5 sm:w-7 sm:h-7" />}
+              {masterEnabled ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
             </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-lg text-content tracking-tight">
-                  {t('access.masterSwitch')}
-                </h3>
-                <span
-                  className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider ${
-                    masterEnabled
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${masterEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                  {masterEnabled ? t('access.masterSwitchOn') : t('access.masterSwitchOff')}
-                </span>
-              </div>
-              <p className="text-[11px] sm:text-sm text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed max-w-2xl line-clamp-2 sm:line-clamp-none">
-                {masterEnabled ? t('access.masterDescOn') : t('access.masterDescOff')}
-              </p>
+            <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <h3 className="font-bold text-xs sm:text-sm text-content tracking-tight">
+                {t('access.masterSwitch')}
+              </h3>
+              <span
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                  masterEnabled
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${masterEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                {masterEnabled ? t('access.masterSwitchOn') : t('access.masterSwitchOff')}
+              </span>
+              <span className="text-[11px] text-content-muted hidden md:inline truncate max-w-xl">
+                • {masterEnabled ? t('access.masterDescOn') : t('access.masterDescOff')}
+              </span>
             </div>
           </div>
 
@@ -663,8 +652,8 @@ export default function AdminAccessControl({
               type="button"
               onClick={handleSyncResources}
               disabled={loading || saving}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover border border-line text-content transition-all cursor-pointer disabled:opacity-50 hover:border-line/80 shadow-xs"
-              title="Sinkronkan penemuan resource MCP terbaru"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface-sunken hover:bg-surface-hover border border-line text-content transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+              title={isEn ? 'Sync latest MCP resource discovery' : 'Sinkronkan penemuan resource MCP terbaru'}
             >
               <RefreshCw className={`w-3.5 h-3.5 text-accent ${loading ? 'animate-spin' : ''}`} />
               <span className="hidden xs:inline">{t('access.syncResources')}</span>
@@ -674,10 +663,10 @@ export default function AdminAccessControl({
               type="button"
               onClick={handleToggleMaster}
               disabled={saving}
-              className={`inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50 active:scale-[0.98] ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 active:scale-[0.98] ${
                 masterEnabled
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
               }`}
             >
               {masterEnabled ? (
@@ -696,33 +685,33 @@ export default function AdminAccessControl({
         </div>
       </div>
 
-      {/* 2. SUB-NAVIGATION BAR & VIEW CONTROLS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line pb-3">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-1.5 p-1 bg-surface-sunken rounded-xl border border-line/60 self-start">
+      {/* 2. SUB-NAVIGATION BAR & CONTROLS */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-line pb-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 p-0.5 bg-surface-sunken rounded-xl border border-line/60 self-start">
             <button
               type="button"
               onClick={() => setActiveSubTab('roles')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'roles'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
               }`}
             >
-              <Layers className="w-4 h-4" />
+              <Layers className="w-3.5 h-3.5" />
               <span>{t('access.tabRoles')}</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveSubTab('users')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'users'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
               }`}
             >
-              <UserCheck className="w-4 h-4" />
+              <UserCheck className="w-3.5 h-3.5" />
               <span>{t('access.tabUsers')}</span>
             </button>
 
@@ -732,72 +721,96 @@ export default function AdminAccessControl({
                 setActiveSubTab('audit');
                 loadAuditLogs();
               }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'audit'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
               }`}
             >
-              <Clock className="w-4 h-4" />
+              <Clock className="w-3.5 h-3.5" />
               <span>{t('access.tabAudit')}</span>
             </button>
           </div>
 
-          {/* Action Bar for Unsaved Role Changes: Ditaruh di samping tombol Role Matrix */}
+          {/* Action Bar for Unsaved Role Changes */}
           {activeSubTab === 'roles' && modifiedRoles.size > 0 && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-accent/10 border border-accent/30 text-xs animate-fadeIn">
-              <span className="flex items-center gap-1.5 text-accent font-bold text-xs">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/10 border border-accent/30 text-xs animate-fadeIn">
+              <span className="flex items-center gap-1 text-accent font-bold text-xs">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                <span>{modifiedRoles.size} peran diubah</span>
+                <span>
+                  {modifiedRoles.size}{' '}
+                  {isEn ? (modifiedRoles.size > 1 ? 'roles modified' : 'role modified') : 'peran diubah'}
+                </span>
               </span>
-              <div className="h-3.5 w-px bg-accent/25" />
+              <div className="h-3 w-px bg-accent/25" />
               <button
                 type="button"
                 onClick={loadRoleMatrix}
                 disabled={saving}
-                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-surface hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
+                className="px-2 py-0.5 rounded text-[11px] font-semibold bg-surface hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
               >
-                Batal
+                {isEn ? 'Cancel' : 'Batal'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveAllModifiedRoles}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-accent text-white hover:bg-accent/90 shadow-xs cursor-pointer transition-all active:scale-95"
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-accent text-white hover:bg-accent/90 shadow-xs cursor-pointer transition-all active:scale-95"
               >
-                <Save className="w-3.5 h-3.5" />
-                <span>{saving ? 'Menyimpan…' : 'Simpan Semua'}</span>
+                <Save className="w-3 h-3" />
+                <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save All' : 'Simpan Semua')}</span>
               </button>
             </div>
           )}
         </div>
 
-        {/* View Switcher for Roles tab */}
+        {/* Right side controls for Roles tab: Search + View Switcher */}
         {activeSubTab === 'roles' && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-content-subtle font-medium">Tampilan:</span>
-            <div className="inline-flex rounded-lg p-0.5 bg-surface-sunken border border-line text-xs font-semibold">
+          <div className="flex items-center gap-2 self-start md:self-auto w-full md:w-auto">
+            {/* Inline Resource Search */}
+            <div className="relative flex-1 md:w-56">
+              <Search className="w-3 h-3 text-content-subtle absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                value={roleResSearch}
+                onChange={(e) => setRoleResSearch(e.target.value)}
+                placeholder={isEn ? 'Search resource / SID...' : 'Cari resource / SID...'}
+                className="w-full pl-7 pr-6 py-1 text-xs rounded-lg bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
+              />
+              {roleResSearch && (
+                <button
+                  type="button"
+                  onClick={() => setRoleResSearch('')}
+                  className="absolute right-2 top-1.5 text-content-subtle hover:text-content cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* View Switcher */}
+            <div className="inline-flex rounded-lg p-0.5 bg-surface-sunken border border-line text-xs font-semibold shrink-0">
               <button
                 type="button"
                 onClick={() => setRoleViewMode('grid')}
-                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                   roleViewMode === 'grid'
                     ? 'bg-surface text-accent shadow-xs font-bold'
                     : 'text-content-subtle hover:text-content'
                 }`}
               >
-                Matriks Tabel
+                {isEn ? 'Table Matrix' : 'Matriks Tabel'}
               </button>
               <button
                 type="button"
                 onClick={() => setRoleViewMode('cards')}
-                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                   roleViewMode === 'cards'
                     ? 'bg-surface text-accent shadow-xs font-bold'
                     : 'text-content-subtle hover:text-content'
                 }`}
               >
-                Per Peran (Cards)
+                {isEn ? 'By Role (Cards)' : 'Per Peran (Cards)'}
               </button>
             </div>
           </div>
@@ -813,34 +826,7 @@ export default function AdminAccessControl({
 
       {/* 3. SUBTAB CONTENT: ROLES MATRIX (TABEL GRID / ROLE CARDS) */}
       {activeSubTab === 'roles' && (
-        <div className="space-y-4">
-          {/* Resource Search for Role Matrix */}
-          <div className="flex items-center justify-between gap-3 p-2.5 sm:p-3 rounded-xl bg-surface border border-line shadow-xs">
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-content-subtle absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={roleResSearch}
-                onChange={(e) => setRoleResSearch(e.target.value)}
-                placeholder="Cari server / SID / database / companion service..."
-                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
-              />
-              {roleResSearch && (
-                <button
-                  type="button"
-                  onClick={() => setRoleResSearch('')}
-                  className="absolute right-2 top-2 text-content-subtle hover:text-content cursor-pointer"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-            <span className="text-[11px] font-mono text-content-subtle whitespace-nowrap hidden xs:inline">
-              {filteredResources.length === resources.length
-                ? `${resources.length} resource`
-                : `${filteredResources.length} dari ${resources.length} resource`}
-            </span>
-          </div>
+        <div className="space-y-3">
 
           {/* VIEW A: MATRIKS TABEL (GRID VIEW) */}
           {roleViewMode === 'grid' && (
@@ -857,20 +843,32 @@ export default function AdminAccessControl({
                       return (
                         <th key={r.role} className="sticky top-0 z-20 py-3 px-3 text-center border-l border-b border-line/40 bg-surface-sunken">
                           <div className="flex flex-col items-center">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass} ${r.enabled === false ? 'opacity-60 border-dashed' : ''}`}>
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass} ${r.suspended ? 'opacity-60 border-dashed' : ''}`}>
                               <Icon className="w-3.5 h-3.5" />
-                              <span className={r.enabled === false ? 'line-through' : ''}>{r.label}</span>
+                              <span className={r.suspended ? 'line-through' : ''}>{r.label}</span>
                             </span>
-                            {r.enabled === false && (
+                            {r.suspended && (
                               <span
                                 className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 mt-1"
                                 title={
                                   language === 'en'
-                                    ? 'This role is currently disabled/suspended. Permissions are not active.'
-                                    : 'Peran ini sedang dinonaktifkan. Izin tidak berlaku untuk pengguna.'
+                                    ? "This role is suspended. Users assigned to it fall back to 'Standard User' permissions — they are NOT locked out, just downgraded."
+                                    : "Peran ini disuspend. Pengguna yang memakainya otomatis turun ke hak akses 'Standard User' — BUKAN diblokir total, hanya diturunkan."
                                 }
                               >
-                                {language === 'en' ? 'Suspended' : 'Nonaktif'}
+                                {language === 'en' ? 'Suspended → downgraded' : 'Disuspend → diturunkan'}
+                              </span>
+                            )}
+                            {!r.suspended && r.enabled === false && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 mt-1"
+                                title={
+                                  language === 'en'
+                                    ? 'Hidden from new user assignments. Current holders keep full access.'
+                                    : 'Disembunyikan dari penetapan user baru. Pemegang saat ini tetap punya akses penuh.'
+                                }
+                              >
+                                {language === 'en' ? 'Not assignable' : 'Tak bisa dipilih'}
                               </span>
                             )}
                             <span className="text-[10px] text-content-subtle font-normal mt-1 max-w-[130px] truncate">
@@ -884,17 +882,17 @@ export default function AdminAccessControl({
                                   type="button"
                                   onClick={() => handleQuickGrantAllRead(r.role)}
                                   className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all cursor-pointer"
-                                  title={`Beri hak baca ke semua server untuk ${r.label}`}
+                                  title={isEn ? `Grant read access to all servers for ${r.label}` : `Beri hak baca ke semua server untuk ${r.label}`}
                                 >
-                                  All Read
+                                  {isEn ? 'All Read' : 'Semua Baca'}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleQuickResetRole(r.role)}
                                   className="px-2 py-0.5 rounded text-[9px] font-bold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line transition-all cursor-pointer"
-                                  title={`Reset perizinan ${r.label}`}
+                                  title={isEn ? `Reset permissions for ${r.label}` : `Reset perizinan ${r.label}`}
                                 >
-                                  Reset
+                                  {isEn ? 'Reset' : 'Reset'}
                                 </button>
                               </div>
                             )}
@@ -912,7 +910,7 @@ export default function AdminAccessControl({
                         <Server className="w-4 h-4 text-accent" />
                         <span>SAP ERP Systems</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-accent/15 text-accent border border-accent/30">
-                          {sapResources.length} Server
+                          {sapResources.length} {isEn ? (sapResources.length === 1 ? 'Server' : 'Servers') : 'Server'}
                         </span>
                       </div>
                     </td>
@@ -926,7 +924,7 @@ export default function AdminAccessControl({
                         <Database className="w-4 h-4 text-blue-400" />
                         <span>SQL Database Instances</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30">
-                          {sqlResources.length} Database
+                          {sqlResources.length} {isEn ? (sqlResources.length === 1 ? 'Database' : 'Databases') : 'Database'}
                         </span>
                       </div>
                     </td>
@@ -940,7 +938,7 @@ export default function AdminAccessControl({
                         <Layers className="w-4 h-4 text-amber-400" />
                         <span>Companion Integrations</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                          {serviceResources.length} Layanan
+                          {serviceResources.length} {isEn ? (serviceResources.length === 1 ? 'Service' : 'Services') : 'Layanan'}
                         </span>
                       </div>
                     </td>
@@ -984,7 +982,7 @@ export default function AdminAccessControl({
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line">
                   <div>
                     <h3 className="text-base font-bold text-content flex items-center gap-2">
-                      <span>Perizinan Khusus untuk</span>
+                      <span>{isEn ? 'Specific Permissions for' : 'Perizinan Khusus untuk'}</span>
                       <span className="text-accent underline decoration-accent/40 underline-offset-4">
                         {activeRoles.find((r) => r.role === selectedRoleCard)?.label}
                       </span>
@@ -1001,14 +999,14 @@ export default function AdminAccessControl({
                         onClick={() => handleQuickGrantAllRead(selectedRoleCard)}
                         className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-pointer transition-all"
                       >
-                        Beri Semua Izin Baca
+                        {isEn ? 'Grant All Read' : 'Beri Semua Izin Baca'}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleQuickResetRole(selectedRoleCard)}
                         className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
                       >
-                        Kosongkan (Deny All)
+                        {isEn ? 'Clear (Deny All)' : 'Kosongkan (Deny All)'}
                       </button>
                     </div>
                   )}
@@ -1078,7 +1076,7 @@ export default function AdminAccessControl({
                   onClick={() => setMobileUserSelectorOpen(!mobileUserSelectorOpen)}
                   className="px-2.5 py-1.5 rounded-lg bg-surface-sunken hover:bg-surface text-accent text-xs font-semibold border border-line flex items-center gap-1 shrink-0 cursor-pointer"
                 >
-                  <span>{mobileUserSelectorOpen ? 'Tutup' : 'Ganti User'}</span>
+                  <span>{mobileUserSelectorOpen ? (isEn ? 'Close' : 'Tutup') : (isEn ? 'Switch User' : 'Ganti User')}</span>
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileUserSelectorOpen ? 'rotate-180' : ''}`} />
                 </button>
               </div>
@@ -1089,7 +1087,7 @@ export default function AdminAccessControl({
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-content-subtle flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5 text-accent" />
-                  <span>Daftar Pengguna</span>
+                  <span>{isEn ? 'User List' : 'Daftar Pengguna'}</span>
                   <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-surface-sunken text-content-muted border border-line font-mono font-normal">
                     {filteredUsers.length === usersList.length ? usersList.length : `${filteredUsers.length}/${usersList.length}`}
                   </span>
@@ -1133,13 +1131,10 @@ export default function AdminAccessControl({
                     onChange={(e) => setUserRoleFilter(e.target.value)}
                     className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
                   >
-                    <option value="all">Semua Peran</option>
-                    <option value="admin">Admin</option>
-                    <option value="functional">Functional</option>
-                    <option value="abaper">Abaper</option>
-                    <option value="basis">Basis</option>
-                    <option value="data_analyst">Data Analyst</option>
-                    <option value="user">User Biasa</option>
+                    <option value="all">{isEn ? 'All Roles' : 'Semua Peran'}</option>
+                    {activeRoles.map((r) => (
+                      <option key={r.role} value={r.role}>{r.label}</option>
+                    ))}
                   </select>
                   <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
                 </div>
@@ -1151,10 +1146,10 @@ export default function AdminAccessControl({
                     onChange={(e) => setUserSort(e.target.value)}
                     className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
                   >
-                    <option value="name_asc">Nama (A-Z)</option>
-                    <option value="name_desc">Nama (Z-A)</option>
-                    <option value="username_asc">Username (A-Z)</option>
-                    <option value="role">Urutkan Peran</option>
+                    <option value="name_asc">{isEn ? 'Name (A-Z)' : 'Nama (A-Z)'}</option>
+                    <option value="name_desc">{isEn ? 'Name (Z-A)' : 'Nama (Z-A)'}</option>
+                    <option value="username_asc">{isEn ? 'Username (A-Z)' : 'Username (A-Z)'}</option>
+                    <option value="role">{isEn ? 'Sort by Role' : 'Urutkan Peran'}</option>
                   </select>
                   <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
                 </div>
@@ -1208,7 +1203,7 @@ export default function AdminAccessControl({
                     })
                   ) : (
                     <div className="py-8 text-center text-xs text-content-subtle">
-                      Tidak ada pengguna cocok.
+                      {isEn ? 'No matching users found.' : 'Tidak ada pengguna cocok.'}
                     </div>
                   )}
                 </div>
@@ -1223,7 +1218,7 @@ export default function AdminAccessControl({
                 <div className="flex items-center justify-between p-4 rounded-2xl bg-surface border border-line shadow-xs">
                   <div>
                     <h3 className="text-sm font-bold text-content flex items-center gap-2 flex-wrap">
-                      <span>Override Hak Akses:</span>
+                      <span>{isEn ? 'Access Override:' : 'Override Hak Akses:'}</span>
                       <span className="text-accent font-mono px-2 py-0.5 rounded-lg bg-accent/10 border border-accent/30">
                         @{selectedUser}
                       </span>
@@ -1238,7 +1233,9 @@ export default function AdminAccessControl({
                       })()}
                     </h3>
                     <p className="text-[11px] text-content-muted mt-1">
-                      Pilih 'Warisi' untuk mengikuti template Role gabungan, atau tentukan Allow / Deny khusus.
+                      {isEn
+                        ? "Select 'Inherit' to follow the role template, or specify custom Allow / Deny."
+                        : "Pilih 'Warisi' untuk mengikuti template Role gabungan, atau tentukan Allow / Deny khusus."}
                     </p>
                   </div>
                   <button
@@ -1252,7 +1249,7 @@ export default function AdminAccessControl({
                     }`}
                   >
                     <Save className="w-4 h-4" />
-                    <span>{saving ? 'Menyimpan…' : 'Simpan Override'}</span>
+                    <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save Override' : 'Simpan Override')}</span>
                   </button>
                 </div>
 
@@ -1261,10 +1258,18 @@ export default function AdminAccessControl({
                   <table className="w-full text-left border-separate border-spacing-0 text-xs min-w-[700px]">
                     <thead className="sticky top-0 z-20 shadow-xs">
                       <tr className="bg-surface-sunken text-content-subtle text-[11px] font-bold uppercase tracking-wider">
-                        <th className="sticky top-0 left-0 z-30 py-3 px-4 w-[280px] min-w-[260px] bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">Sumber Daya</th>
-                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">Status Izin (Tri-State)</th>
-                        <th className="sticky top-0 py-3 px-3 text-center bg-surface-sunken border-b border-line">Hak Tulis (Write)</th>
-                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">Berlaku Hingga</th>
+                        <th className="sticky top-0 left-0 z-30 py-3 px-4 w-[280px] min-w-[260px] bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
+                          {isEn ? 'Resource' : 'Sumber Daya'}
+                        </th>
+                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">
+                          {isEn ? 'Permission Status (Tri-State)' : 'Status Izin (Tri-State)'}
+                        </th>
+                        <th className="sticky top-0 py-3 px-3 text-center bg-surface-sunken border-b border-line">
+                          {isEn ? 'Write Access' : 'Hak Tulis (Write)'}
+                        </th>
+                        <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">
+                          {isEn ? 'Valid Until' : 'Berlaku Hingga'}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/60">
@@ -1273,8 +1278,8 @@ export default function AdminAccessControl({
                         return (
                           <tr key={res.resource_key} className="hover:bg-surface-hover/50 transition-colors group">
                             <td className="sticky left-0 z-10 py-3 px-4 w-[280px] min-w-[260px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
-                              <div className="font-semibold text-content flex items-center gap-2">
-                                <span>{res.label || res.resource_key}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-content">{res.label || res.resource_key}</span>
                                 {isProd && (
                                   <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
                                     PRD
@@ -1295,7 +1300,7 @@ export default function AdminAccessControl({
                                         ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
                                         : 'text-content-subtle hover:text-content'
                                     }`}
-                                    title="Mewarisi aturan peran"
+                                    title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
                                   >
                                     {t('access.stateInherit')}
                                   </button>
@@ -1337,7 +1342,11 @@ export default function AdminAccessControl({
                                   }`}
                                 >
                                   <PenTool className="w-3 h-3" />
-                                  <span>{res.can_write ? 'Write Aktif' : 'Nonaktif'}</span>
+                                  <span>
+                                    {res.can_write
+                                      ? (isEn ? 'Write Active' : 'Write Aktif')
+                                      : (isEn ? 'Inactive' : 'Nonaktif')}
+                                  </span>
                                 </button>
                               </td>
 
@@ -1362,7 +1371,7 @@ export default function AdminAccessControl({
                 <div className="p-3 rounded-2xl bg-surface border border-line text-content-subtle mb-3">
                   <Users className="w-8 h-8" />
                 </div>
-                <h4 className="text-sm font-bold text-content">Pilih Pengguna</h4>
+                <h4 className="text-sm font-bold text-content">{isEn ? 'Select User' : 'Pilih Pengguna'}</h4>
                 <p className="text-xs text-content-muted mt-1 max-w-sm">
                   {t('access.selectUser')}
                 </p>
@@ -1378,7 +1387,7 @@ export default function AdminAccessControl({
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold uppercase tracking-wider text-content-subtle flex items-center gap-2">
               <Clock className="w-4 h-4 text-accent" />
-              <span>Riwayat Perubahan Hak Akses MCP ({auditLogs.length})</span>
+              <span>{isEn ? `MCP Access Control Audit Trail (${auditLogs.length})` : `Riwayat Perubahan Hak Akses MCP (${auditLogs.length})`}</span>
             </h4>
             <button
               type="button"
@@ -1387,7 +1396,7 @@ export default function AdminAccessControl({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-surface border border-line text-content hover:bg-surface-hover cursor-pointer shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-accent ${auditLoading ? 'animate-spin' : ''}`} />
-              <span>Muat Ulang</span>
+              <span>{isEn ? 'Refresh' : 'Muat Ulang'}</span>
             </button>
           </div>
 
@@ -1396,11 +1405,11 @@ export default function AdminAccessControl({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-line bg-surface-sunken/80 text-content-subtle text-[11px] font-bold uppercase tracking-wider">
-                    <th className="py-3 px-4">Waktu</th>
-                    <th className="py-3 px-3">Pelaku</th>
-                    <th className="py-3 px-3">Target</th>
-                    <th className="py-3 px-3">Aksi</th>
-                    <th className="py-3 px-4">Detail Perubahan</th>
+                    <th className="py-3 px-4">{isEn ? 'Time' : 'Waktu'}</th>
+                    <th className="py-3 px-3">{isEn ? 'Actor' : 'Pelaku'}</th>
+                    <th className="py-3 px-3">{isEn ? 'Target' : 'Target'}</th>
+                    <th className="py-3 px-3">{isEn ? 'Action' : 'Aksi'}</th>
+                    <th className="py-3 px-4">{isEn ? 'Change Details' : 'Detail Perubahan'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/60">
@@ -1427,7 +1436,7 @@ export default function AdminAccessControl({
                   ) : (
                     <tr>
                       <td colSpan={5} className="text-center py-12 text-content-subtle text-xs">
-                        Belum ada riwayat audit perubahan hak akses.
+                        {isEn ? 'No access control audit history yet.' : 'Belum ada riwayat audit perubahan hak akses.'}
                       </td>
                     </tr>
                   )}
@@ -1445,7 +1454,7 @@ export default function AdminAccessControl({
             <div className="flex items-center justify-between pb-3 border-b border-line">
               <h3 className="font-bold text-sm text-content flex items-center gap-2">
                 <Users className="w-4 h-4 text-accent" />
-                <span>{t('access.bulkAction')} (Aksi Massal)</span>
+                <span>{t('access.bulkAction')}{isEn ? '' : ' (Aksi Massal)'}</span>
               </h3>
               <button
                 type="button"
@@ -1458,13 +1467,15 @@ export default function AdminAccessControl({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-content-subtle font-bold mb-1">Target Sumber Daya</label>
+                <label className="block text-content-subtle font-bold mb-1">
+                  {isEn ? 'Target Resource' : 'Target Sumber Daya'}
+                </label>
                 <select
                   value={bulkResource}
                   onChange={(e) => setBulkResource(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none"
                 >
-                  <option value="">-- Pilih Resource --</option>
+                  <option value="">-- {isEn ? 'Select Resource' : 'Pilih Resource'} --</option>
                   {resources.map((r) => (
                     <option key={r.resource_key} value={r.resource_key}>
                       {r.label} ({r.resource_key}) {r.is_production ? '[PRD]' : ''}
@@ -1474,7 +1485,9 @@ export default function AdminAccessControl({
               </div>
 
               <div>
-                <label className="block text-content-subtle font-bold mb-1">Status Izin</label>
+                <label className="block text-content-subtle font-bold mb-1">
+                  {isEn ? 'Permission Status' : 'Status Izin'}
+                </label>
                 <div className="grid grid-cols-3 gap-2">
                   {['allow', 'deny', 'inherit'].map((st) => (
                     <button
@@ -1503,12 +1516,14 @@ export default function AdminAccessControl({
                   className="w-4 h-4 rounded text-accent cursor-pointer"
                 />
                 <label htmlFor="bulkCanWrite" className="text-content font-medium cursor-pointer">
-                  Berikan juga hak tulis (can_write)
+                  {isEn ? 'Also grant write access (can_write)' : 'Berikan juga hak tulis (can_write)'}
                 </label>
               </div>
 
               <div>
-                <label className="block text-content-subtle font-bold mb-1">Berlaku Hingga (Opsional)</label>
+                <label className="block text-content-subtle font-bold mb-1">
+                  {isEn ? 'Valid Until (Optional)' : 'Berlaku Hingga (Opsional)'}
+                </label>
                 <input
                   type="date"
                   value={bulkValidUntil}
@@ -1519,7 +1534,7 @@ export default function AdminAccessControl({
 
               <div>
                 <label className="block text-content-subtle font-bold mb-1">
-                  Pilih Pengguna ({bulkSelectedUsers.length} terpilih)
+                  {isEn ? `Select Users (${bulkSelectedUsers.length} selected)` : `Pilih Pengguna (${bulkSelectedUsers.length} terpilih)`}
                 </label>
                 <div className="max-h-40 overflow-y-auto space-y-1 p-2 rounded-xl bg-surface-sunken border border-line">
                   <div className="flex items-center justify-between pb-1 mb-1 border-b border-line">
@@ -1528,14 +1543,14 @@ export default function AdminAccessControl({
                       onClick={() => setBulkSelectedUsers(usersList.map((u) => u.username))}
                       className="text-[10px] text-accent font-bold hover:underline cursor-pointer"
                     >
-                      Pilih Semua
+                      {isEn ? 'Select All' : 'Pilih Semua'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setBulkSelectedUsers([])}
                       className="text-[10px] text-content-subtle hover:underline cursor-pointer"
                     >
-                      Kosongkan
+                      {isEn ? 'Clear' : 'Kosongkan'}
                     </button>
                   </div>
                   {usersList.map((u) => {
@@ -1572,7 +1587,7 @@ export default function AdminAccessControl({
                 onClick={() => setIsBulkOpen(false)}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content border border-line cursor-pointer"
               >
-                Batal
+                {isEn ? 'Cancel' : 'Batal'}
               </button>
               <button
                 type="button"
@@ -1604,13 +1619,31 @@ export default function AdminAccessControl({
             </div>
 
             <p className="text-xs text-content-muted leading-relaxed">
-              Anda akan memberikan hak <strong>TULIS (WRITE / MODIFY)</strong> pada server <strong>PRODUCTION</strong> (
-              <span className="text-danger font-bold">{prodModal.resource?.label || prodModal.resource?.resource_key}</span>
-              ) untuk <strong>{prodModal.target}</strong>.
+              {isEn ? (
+                <>
+                  You are granting <strong>WRITE (WRITE / MODIFY)</strong> permission on a <strong>PRODUCTION</strong> server (
+                  <span className="text-danger font-bold">{prodModal.resource?.label || prodModal.resource?.resource_key}</span>
+                  ) for <strong>{prodModal.target}</strong>.
+                </>
+              ) : (
+                <>
+                  Anda akan memberikan hak <strong>TULIS (WRITE / MODIFY)</strong> pada server <strong>PRODUCTION</strong> (
+                  <span className="text-danger font-bold">{prodModal.resource?.label || prodModal.resource?.resource_key}</span>
+                  ) untuk <strong>{prodModal.target}</strong>.
+                </>
+              )}
             </p>
 
             <p className="text-xs text-content-subtle">
-              Ketik nama server <code className="text-danger font-mono font-bold">{prodModal.resource?.resource_key}</code> di bawah untuk mengonfirmasi:
+              {isEn ? (
+                <>
+                  Type the server name <code className="text-danger font-mono font-bold">{prodModal.resource?.resource_key}</code> below to confirm:
+                </>
+              ) : (
+                <>
+                  Ketik nama server <code className="text-danger font-mono font-bold">{prodModal.resource?.resource_key}</code> di bawah untuk mengonfirmasi:
+                </>
+              )}
             </p>
 
             <input
@@ -1630,7 +1663,7 @@ export default function AdminAccessControl({
                 }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content border border-line cursor-pointer"
               >
-                Batal
+                {isEn ? 'Cancel' : 'Batal'}
               </button>
               <button
                 type="button"
@@ -1638,7 +1671,7 @@ export default function AdminAccessControl({
                 disabled={prodInputConfirm.trim() !== prodModal.resource?.resource_key}
                 className="px-5 py-2 rounded-xl text-xs font-bold bg-danger text-white hover:bg-danger/90 disabled:opacity-40 cursor-pointer shadow-md"
               >
-                Konfirmasi Hak Tulis PRD
+                {isEn ? 'Confirm PRD Write Access' : 'Konfirmasi Hak Tulis PRD'}
               </button>
             </div>
           </div>
@@ -1705,7 +1738,7 @@ export default function AdminAccessControl({
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/20'
                       : 'bg-surface-sunken text-content-subtle/70 border-line hover:text-content hover:bg-surface-hover'
                   }`}
-                  title={isRead ? 'Izin Baca Aktif (Klik untuk matikan)' : 'Izin Baca Nonaktif (Klik untuk aktifkan)'}
+                  title={isRead ? (isEn ? 'Read Active (Click to disable)' : 'Izin Baca Aktif (Klik untuk matikan)') : (isEn ? 'Read Inactive (Click to enable)' : 'Izin Baca Nonaktif (Klik untuk aktifkan)')}
                 >
                   <Eye className={`w-3 h-3 ${isRead ? 'text-emerald-400' : 'text-content-subtle'}`} />
                   <span>Read</span>
@@ -1722,7 +1755,7 @@ export default function AdminAccessControl({
                         : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-xs ring-1 ring-indigo-500/20'
                       : 'bg-surface-sunken text-content-subtle/70 border-line hover:text-content hover:bg-surface-hover'
                   }`}
-                  title={isWrite ? 'Izin Tulis Aktif (Klik untuk matikan)' : 'Izin Tulis Nonaktif (Klik untuk aktifkan)'}
+                  title={isWrite ? (isEn ? 'Write Active (Click to disable)' : 'Izin Tulis Aktif (Klik untuk matikan)') : (isEn ? 'Write Inactive (Click to enable)' : 'Izin Tulis Nonaktif (Klik untuk aktifkan)')}
                 >
                   <PenTool className={`w-3 h-3 ${isWrite ? (isProd ? 'text-danger' : 'text-indigo-400') : 'text-content-subtle'}`} />
                   <span>Write</span>
@@ -1778,7 +1811,7 @@ export default function AdminAccessControl({
                 : 'bg-surface-sunken text-content-subtle border border-line'
             }`}
           >
-            {isWrite ? 'Read + Write' : isRead ? 'Read-Only' : 'Tolak'}
+            {isWrite ? 'Read + Write' : isRead ? 'Read-Only' : (isEn ? 'Deny' : 'Tolak')}
           </span>
         </div>
 
@@ -1795,7 +1828,7 @@ export default function AdminAccessControl({
               }`}
             >
               <Eye className="w-3 h-3" />
-              <span>{isRead ? 'Baca: ON' : 'Baca: OFF'}</span>
+              <span>{isRead ? (isEn ? 'Read: ON' : 'Baca: ON') : (isEn ? 'Read: OFF' : 'Baca: OFF')}</span>
             </button>
 
             <button
@@ -1810,12 +1843,12 @@ export default function AdminAccessControl({
               }`}
             >
               <PenTool className="w-3 h-3" />
-              <span>{isWrite ? 'Tulis: ON' : 'Tulis: OFF'}</span>
+              <span>{isWrite ? (isEn ? 'Write: ON' : 'Tulis: ON') : (isEn ? 'Write: OFF' : 'Tulis: OFF')}</span>
             </button>
           </div>
         ) : (
           <div className="pt-2 mt-2 border-t border-line/40 text-center text-[10px] text-purple-300 font-semibold">
-            Superadmin memiliki akses penuh permanen
+            {isEn ? 'Superadmin has permanent full access' : 'Superadmin memiliki akses penuh permanen'}
           </div>
         )}
       </div>

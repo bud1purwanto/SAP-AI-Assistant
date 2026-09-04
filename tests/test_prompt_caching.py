@@ -124,6 +124,33 @@ def test_konteks_memuat_keterangan_yang_dibutuhkan(monkeypatch, db):
     prompt = _prompt_untuk(monkeypatch, role="superadmin", persona="Pakai bahasa santai.")
     konteks = prompt[prompt.index("## KONTEKS PERMINTAAN INI"):]
 
-    assert "Role pengguna: superadmin" in konteks
+    # Role pengguna kini ditulis dengan label dari master ai_assistant.roles
+    # (mis. 'Super Admin'), bukan kode mentah ('superadmin').
+    assert "Role pengguna: Super Admin" in konteks
     assert "Sistem SAP aktif" in konteks
     assert "Pakai bahasa santai." in konteks
+
+
+def test_konteks_role_kustom_memakai_label_dan_deskripsi_master(monkeypatch, db):
+    """Role kustom yang dibuat admin lewat tab Roles harus otomatis mendapat
+    konteks LLM yang benar (label + deskripsi), tanpa perlu hardcode di agent.py."""
+    from database import create_role, delete_role
+
+    code = "prompt_ctx_role"
+    try:
+        delete_role(code)
+    except ValueError:
+        pass
+    try:
+        create_role(
+            code=code,
+            label="Auditor Keuangan",
+            description="Meninjau transaksi finansial dan kepatuhan SOX",
+        )
+
+        prompt = _prompt_untuk(monkeypatch, role=code)
+        konteks = prompt[prompt.index("## KONTEKS PERMINTAAN INI"):]
+
+        assert "Role pengguna: Auditor Keuangan (Meninjau transaksi finansial dan kepatuhan SOX)" in konteks
+    finally:
+        delete_role(code)

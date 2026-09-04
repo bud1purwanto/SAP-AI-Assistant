@@ -948,9 +948,26 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     panjang_stabil = len(system_prompt)
 
     now_real = datetime.now()
+
+    # Deskripsi role diambil dari master ai_assistant.roles agar LLM memahami
+    # konteks peran (termasuk role kustom buatan admin) tanpa perlu hardcode di sini.
+    role_descriptions = []
+    try:
+        from database import get_role_by_code
+        for r_code in roles_list:
+            r_meta = get_role_by_code(r_code)
+            if r_meta and r_meta.get("label"):
+                desc = r_meta.get("description") or ""
+                role_descriptions.append(f"{r_meta['label']}" + (f" ({desc})" if desc else ""))
+            else:
+                role_descriptions.append(r_code)
+    except Exception as e:
+        logger.warning(f"Gagal mengambil deskripsi role untuk konteks prompt: {e}")
+        role_descriptions = list(roles_list)
+
     konteks = [
         "\n\n## KONTEKS PERMINTAAN INI\n",
-        f"- Role pengguna: {', '.join(roles_list)}\n",
+        f"- Role pengguna: {', '.join(role_descriptions)}\n",
         f"- Tanggal sistem saat ini (real-world): {now_real.strftime('%d.%m.%Y')} (format SAP: {now_real.strftime('%Y%m%d')}). Gunakan tanggal riil ini bila membuat dokumen atau transaksi. HINDARI menggunakan tahun masa depan (seperti 2028) bila tool get_server_date membaca tanggal anomali dari tabel USR02 testing.\n",
         (
             "- Hak ubah program: DIIZINKAN. Anda boleh membantu membuat dan mengubah "
@@ -1841,9 +1858,21 @@ async def generate_chat_suggestions(
         selected_theme = random.choice(themes_list)
         random_seed = random.randint(1000, 999999)
 
+        # Deskripsi role diambil dari master ai_assistant.roles (label + description),
+        # bukan daftar contoh hardcode -- role kustom yang admin buat lewat tab Roles
+        # otomatis mendapat konteks yang benar untuk LLM tanpa perlu deploy ulang kode.
+        role_context = role_key or "guest"
+        try:
+            from database import get_role_by_code
+            role_meta = get_role_by_code(role_key)
+            if role_meta:
+                role_context = f"{role_meta.get('label') or role_key} - {role_meta.get('description') or 'Peran pengguna sistem'}"
+        except Exception as e:
+            logger.warning(f"Gagal mengambil deskripsi role '{role_key}' untuk saran chat: {e}")
+
         prompt = f"""You are an expert Enterprise SAP ERP AI Assistant generating diverse chat starter prompt cards.
 Generate exactly 3 DISTINCT, ACTIONABLE, and HIGHLY RELEVANT chat prompt starter cards for this user:
-- User Role: {role} (e.g. abaper = ABAP developer; functional = SAP functional consultant; superadmin = SAP Basis & System Admin; guest/user = Standard user)
+- User Role: {role_context}
 - User Preferences / Persona: {persona or 'Standard user'}
 - Recent Topics / Inquiries Asked By User:
 {queries_context}

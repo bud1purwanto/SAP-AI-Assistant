@@ -85,6 +85,7 @@ def _reset_schema():
     _guard_test_database(TEST_DB_URL)
 
     engine = database.get_engine()
+    engine.dispose()
     with engine.connect() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS ai_assistant CASCADE"))
         conn.commit()
@@ -97,7 +98,8 @@ def db():
     _reset_schema()
     import database
 
-    return database
+    yield database
+    database.get_engine().dispose()
 
 
 @pytest.fixture(scope="module")

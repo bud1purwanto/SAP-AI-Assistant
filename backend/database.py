@@ -444,7 +444,7 @@ def authenticate_user(username: str, password: str):
                     SELECT ur.role 
                     FROM ai_assistant.user_roles ur
                     JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
-                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
                 roles = [r.role for r in role_rows if r.role]
@@ -453,7 +453,7 @@ def authenticate_user(username: str, password: str):
                         SELECT u.role 
                         FROM ai_assistant.users u
                         JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
-                        WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                        WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
@@ -522,7 +522,7 @@ def get_user_roles(username: str, active_only: bool = True) -> list:
                     SELECT ur.role 
                     FROM ai_assistant.user_roles ur
                     JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
-                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
             else:
@@ -541,7 +541,7 @@ def get_user_roles(username: str, active_only: bool = True) -> list:
                     SELECT u.role 
                     FROM ai_assistant.users u
                     JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
-                    WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                    WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                 """), {"u": uname_clean}).scalar()
             else:
                 single = conn.execute(text("""
@@ -616,7 +616,7 @@ def get_user_by_username(username: str):
                     SELECT ur.role 
                     FROM ai_assistant.user_roles ur
                     JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
-                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
                 roles = [r.role for r in role_rows if r.role]
@@ -625,7 +625,7 @@ def get_user_by_username(username: str):
                         SELECT u.role 
                         FROM ai_assistant.users u
                         JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
-                        WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                        WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
@@ -2762,12 +2762,13 @@ def get_modes_for_role(role: str) -> list[dict]:
 
         engine = get_engine()
         with engine.connect() as conn:
-            # Cek status enabled dari peran master
+            # Cek status suspended dari peran master (mencabut izin dari pemegang saat ini;
+            # berbeda dari 'enabled' yang hanya soal boleh-tidaknya ditetapkan ke user baru)
             role_meta = conn.execute(
-                text("SELECT enabled FROM ai_assistant.roles WHERE LOWER(code) = LOWER(:r)"),
+                text("SELECT suspended FROM ai_assistant.roles WHERE LOWER(code) = LOWER(:r)"),
                 {"r": role}
             ).fetchone()
-            role_is_enabled = role_meta.enabled if role_meta is not None else True
+            role_is_enabled = not role_meta.suspended if role_meta is not None else True
 
             modes = conn.execute(
                 text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
@@ -2832,7 +2833,9 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
         with engine.connect() as conn:
             query = "SELECT code FROM ai_assistant.roles"
             if enabled_only:
-                query += " WHERE enabled = TRUE"
+                # Bisa ditetapkan ke user baru hanya jika enabled (tidak deprecated
+                # untuk penetapan baru) DAN tidak suspended (izinnya masih berlaku).
+                query += " WHERE enabled = TRUE AND suspended = FALSE"
             query += " ORDER BY sort_order ASC, code ASC"
             rows = conn.execute(text(query)).fetchall()
             codes = [r.code for r in rows if r.code]
@@ -2854,12 +2857,13 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
 
 
 def get_roles_can_modify_program() -> set[str]:
-    """Mengambil himpunan kode peran yang diizinkan mengubah program (can_modify_program = TRUE)."""
+    """Mengambil himpunan kode peran yang diizinkan mengubah program (can_modify_program = TRUE).
+    Peran yang suspended kehilangan hak ini; peran yang sekadar enabled=FALSE tidak (lihat get_active_role_codes)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT code FROM ai_assistant.roles WHERE can_modify_program = TRUE AND enabled = TRUE")
+                text("SELECT code FROM ai_assistant.roles WHERE can_modify_program = TRUE AND suspended = FALSE")
             ).fetchall()
             if rows:
                 return {r.code.lower() for r in rows}
@@ -2874,6 +2878,27 @@ def get_enabled_role_codes() -> set[str]:
     return {c.lower() for c in codes}
 
 
+def get_active_role_codes() -> set[str]:
+    """Mengambil himpunan kode peran yang izinnya MASIH BERLAKU untuk pemegangnya
+    saat ini (suspended = FALSE). Berbeda dari get_enabled_role_codes(): sebuah
+    peran yang `enabled=FALSE` (disembunyikan dari penetapan baru) tapi TIDAK
+    disuspend tetap masuk di sini, karena pemegang yang sudah ada tidak boleh
+    kehilangan izinnya hanya karena peran itu dihentikan untuk user baru.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT code FROM ai_assistant.roles WHERE suspended = FALSE")
+            ).fetchall()
+            codes = {r.code.lower() for r in rows if r.code}
+            if codes:
+                return codes
+    except Exception as e:
+        logger.warning(f"Fallback get_active_role_codes: {e}")
+    return {"superadmin", "abaper", "functional", "backend", "frontend", "basis", "data_analyst", "user", "guest"}
+
+
 def get_roles(enabled_only: bool = False) -> list[dict]:
     """Mengambil master peran beserta jumlah user yang menggunakannya."""
     try:
@@ -2881,7 +2906,7 @@ def get_roles(enabled_only: bool = False) -> list[dict]:
         with engine.connect() as conn:
             query = """
                 SELECT r.code, r.label, r.description, r.color, r.icon,
-                       r.is_system, r.can_modify_program, r.enabled, r.sort_order,
+                       r.is_system, r.can_modify_program, r.enabled, r.suspended, r.sort_order,
                        r.created_at, r.updated_at,
                        COALESCE(u_counts.cnt, 0) AS user_count
                 FROM ai_assistant.roles r
@@ -2915,7 +2940,7 @@ def get_role_by_code(code: str) -> dict | None:
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT r.code, r.label, r.description, r.color, r.icon,
-                       r.is_system, r.can_modify_program, r.enabled, r.sort_order,
+                       r.is_system, r.can_modify_program, r.enabled, r.suspended, r.sort_order,
                        r.created_at, r.updated_at,
                        COALESCE(u_counts.cnt, 0) AS user_count
                 FROM ai_assistant.roles r
@@ -2934,6 +2959,66 @@ def get_role_by_code(code: str) -> dict | None:
     except Exception as e:
         logger.error(f"Error get_role_by_code '{code}': {e}")
         return None
+
+
+def get_role_impact(code: str) -> dict:
+    """Menghitung dampak menonaktifkan/menghapus sebuah peran, agar admin bisa
+    melihat pratinjau konsekuensi SEBELUM benar-benar menekan tombol nonaktif/hapus.
+
+    Mengembalikan daftar user terdampak, jumlah izin resource MCP dan mode chat
+    yang sedang aktif untuk peran ini, serta apakah peran ini masih dipakai
+    sebagai satu-satunya peran seorang user (yang berarti user itu akan turun
+    total ke hak akses 'user' bila peran ini dinonaktifkan).
+    """
+    c_clean = (code or "").strip().lower()
+    if not c_clean:
+        return {"affected_users": [], "resource_count": 0, "mode_count": 0}
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            users = conn.execute(text("""
+                SELECT u.username, u.full_name,
+                       (SELECT COUNT(*) FROM ai_assistant.user_roles ur2
+                        WHERE LOWER(ur2.username) = LOWER(u.username)) AS other_role_count
+                FROM ai_assistant.users u
+                WHERE LOWER(u.username) IN (
+                    SELECT LOWER(username) FROM ai_assistant.user_roles WHERE LOWER(TRIM(role)) = :c
+                    UNION
+                    SELECT LOWER(username) FROM ai_assistant.users WHERE LOWER(TRIM(role)) = :c
+                )
+                ORDER BY u.username ASC
+            """), {"c": c_clean}).fetchall()
+
+            resource_count = conn.execute(text("""
+                SELECT COUNT(*) FROM ai_assistant.role_resource_access
+                WHERE LOWER(TRIM(role)) = :c AND allowed = TRUE
+            """), {"c": c_clean}).scalar() or 0
+
+            mode_count = conn.execute(text("""
+                SELECT COUNT(*) FROM ai_assistant.role_modes
+                WHERE LOWER(TRIM(role)) = :c AND enabled = TRUE
+            """), {"c": c_clean}).scalar() or 0
+
+            affected_users = [
+                {
+                    "username": u.username,
+                    "full_name": u.full_name or "",
+                    # Bila peran ini satu-satunya baris di user_roles milik user tsb,
+                    # menonaktifkannya menurunkan user itu total ke hak akses 'user'.
+                    "only_role": int(u.other_role_count or 0) <= 1,
+                }
+                for u in users
+            ]
+
+            return {
+                "affected_users": affected_users,
+                "resource_count": int(resource_count),
+                "mode_count": int(mode_count),
+            }
+    except Exception as e:
+        logger.error(f"Error get_role_impact '{code}': {e}")
+        return {"affected_users": [], "resource_count": 0, "mode_count": 0}
 
 
 def create_role(
@@ -3011,6 +3096,93 @@ def create_role(
         return dict(row._mapping) if row else {}
 
 
+def clone_role(
+    source_code: str,
+    code: str,
+    label: str,
+    description: str = "",
+) -> dict:
+    """Membuat peran baru dengan menyalin izin resource MCP dan mode chat dari
+    peran sumber (`source_code`), alih-alih memulai dari default-deny kosong.
+
+    Warna/icon/can_modify_program/kuota token ikut disalin dari sumber sebagai
+    titik awal yang masuk akal, dan bisa diubah lagi lewat update_role().
+    Membuat role kustom baru biasanya berarti "role X tapi dengan sedikit
+    perbedaan" -- clone menghindari admin harus mencentang ulang puluhan
+    resource satu per satu dari nol.
+    """
+    src_clean = (source_code or "").strip().lower()
+    c_clean = (code or "").strip().lower()
+    l_clean = (label or "").strip()
+    if not src_clean or not c_clean or not l_clean:
+        raise ValueError("Role sumber, kode, dan label peran baru wajib diisi")
+    if src_clean == c_clean:
+        raise ValueError("Kode peran baru tidak boleh sama dengan peran sumber")
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        source = conn.execute(
+            text("SELECT * FROM ai_assistant.roles WHERE code = :c"), {"c": src_clean}
+        ).fetchone()
+        if not source:
+            raise ValueError(f"Peran sumber '{src_clean}' tidak ditemukan")
+
+        existing = conn.execute(
+            text("SELECT code FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}
+        ).fetchone()
+        if existing:
+            raise ValueError(f"Peran dengan kode '{c_clean}' sudah ada")
+
+        source_limits = conn.execute(
+            text("SELECT daily_token_limit, per_minute_limit FROM ai_assistant.role_limits WHERE role = :r"),
+            {"r": src_clean},
+        ).fetchone()
+
+    # create_role membuka koneksinya sendiri; dipanggil di luar `with` di atas
+    # agar tidak bersarang dua transaksi pada connection yang sama.
+    new_role = create_role(
+        code=c_clean,
+        label=l_clean,
+        description=(description or f"Kloning dari peran '{src_clean}'").strip(),
+        color=source.color,
+        icon=source.icon,
+        can_modify_program=bool(source.can_modify_program),
+        enabled=True,
+        sort_order=int(source.sort_order) + 1,
+        daily_token_limit=source_limits.daily_token_limit if source_limits else 100000,
+        per_minute_limit=source_limits.per_minute_limit if source_limits else 5,
+    )
+
+    with engine.connect() as conn:
+        # Salin izin resource MCP (role_resource_access) dari sumber
+        conn.execute(text("""
+            INSERT INTO ai_assistant.role_resource_access (role, resource_key, allowed, can_write, updated_at)
+            SELECT :new_role, resource_key, allowed, can_write, CURRENT_TIMESTAMP
+            FROM ai_assistant.role_resource_access
+            WHERE role = :src
+            ON CONFLICT (role, resource_key) DO UPDATE SET
+                allowed = EXCLUDED.allowed,
+                can_write = EXCLUDED.can_write,
+                updated_at = CURRENT_TIMESTAMP
+        """), {"new_role": c_clean, "src": src_clean})
+
+        # Salin izin mode chat (role_modes) dari sumber, menimpa default-deny
+        # yang tadi dipasang create_role()
+        conn.execute(text("""
+            UPDATE ai_assistant.role_modes rm_new
+            SET enabled = rm_src.enabled, updated_at = CURRENT_TIMESTAMP
+            FROM ai_assistant.role_modes rm_src
+            WHERE rm_new.role = :new_role
+              AND rm_src.role = :src
+              AND rm_new.mode_code = rm_src.mode_code
+        """), {"new_role": c_clean, "src": src_clean})
+
+        conn.commit()
+
+    invalidate_role_codes_cache()
+    return get_role_by_code(c_clean) or new_role
+
+
 def update_role(
     code: str,
     label: str = None,
@@ -3019,6 +3191,7 @@ def update_role(
     icon: str = None,
     can_modify_program: bool = None,
     enabled: bool = None,
+    suspended: bool = None,
     sort_order: int = None,
 ) -> dict | None:
     """Mengupdate data peran master."""
@@ -3063,6 +3236,13 @@ def update_role(
                 raise ValueError("System roles cannot be disabled")
             updates.append("enabled = :en")
             params["en"] = bool(enabled)
+        if suspended is not None:
+            # Peran sistem tidak boleh disuspend -- ini bisa mengunci seluruh
+            # pemegangnya (termasuk berpotensi superadmin/user) dari akses.
+            if is_system and suspended:
+                raise ValueError("System roles cannot be suspended")
+            updates.append("suspended = :sus")
+            params["sus"] = bool(suspended)
         if sort_order is not None:
             updates.append("sort_order = :so")
             params["so"] = int(sort_order)
