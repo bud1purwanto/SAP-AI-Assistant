@@ -386,8 +386,8 @@ export default function AdminChatModes({
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+        <div className="hidden sm:block">
           <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
             <Sliders className="w-5 h-5 text-indigo-500" />
             {language === 'en' ? 'AI Provider & LLM Configuration' : 'Konfigurasi AI Provider & LLM'}
@@ -399,7 +399,11 @@ export default function AdminChatModes({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+          <span className="sm:hidden text-xs font-bold text-content flex items-center gap-1.5">
+            <Sliders className="w-4 h-4 text-indigo-500" />
+            {language === 'en' ? 'AI Provider' : 'Provider AI'}
+          </span>
           <button
             type="button"
             onClick={fetchData}

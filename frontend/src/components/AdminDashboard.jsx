@@ -645,54 +645,60 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       >
       {/* Header Modal */}
       <div
-        className="relative flex items-center justify-between px-4 sm:px-8 pb-3.5 border-b border-line/80 bg-surface/90 backdrop-blur-xl shrink-0 z-40"
-        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1rem)' }}
+        className="relative flex items-center justify-between px-3.5 sm:px-6 py-2.5 sm:py-3 border-b border-line/80 bg-surface/95 backdrop-blur-xl shrink-0 z-40"
+        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.5rem)' }}
       >
-        <div className="flex items-center gap-3 sm:gap-3.5 min-w-0 pr-2 sm:pr-4">
-          <div className="relative p-2 sm:p-2.5 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-sm shadow-indigo-500/10">
-            <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
+          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-2xs">
+            <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-base font-extrabold tracking-tight text-content truncate font-display leading-tight">
+
+          {/* Desktop View: Clean Breadcrumb on a single row */}
+          <div className="hidden md:flex items-center gap-2 min-w-0">
+            <span className="text-sm font-extrabold tracking-tight text-content font-display truncate">
               {t('admin.title')}
-            </h2>
-
-            {/* Desktop View: active tab label */}
-            <span className="hidden md:block text-xs text-accent font-semibold truncate mt-0.5">
-              {currentTab?.label}
             </span>
+            <span className="text-content-subtle/40 text-xs">/</span>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-accent bg-accent-soft/70 px-2 py-0.5 rounded-md border border-accent/20">
+              <CurrentTabIcon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{currentTab?.label}</span>
+            </div>
+          </div>
 
-            {/* Mobile View: Clickable dropdown trigger */}
+          {/* Mobile View: Compact single-row trigger button */}
+          <div className="md:hidden flex items-center gap-1.5 min-w-0">
+            <span className="text-xs font-extrabold text-content-muted shrink-0">Admin</span>
+            <span className="text-content-subtle/40 text-xs shrink-0">/</span>
             <button
               type="button"
               onClick={() => setIsMobileNavOpen((prev) => !prev)}
-              className="md:hidden inline-flex items-center gap-1.5 text-accent font-bold px-2 py-0.5 mt-0.5 rounded-lg bg-accent-soft border border-accent/30 hover:bg-accent/20 active:scale-95 transition-all cursor-pointer shadow-2xs text-xs"
+              className="inline-flex items-center gap-1.5 text-accent font-bold px-2.5 py-1 rounded-lg bg-accent-soft/80 hover:bg-accent-soft active:scale-95 border border-accent/25 transition-all cursor-pointer shadow-2xs text-xs min-w-0"
               aria-expanded={isMobileNavOpen}
               aria-haspopup="listbox"
               title="Pilih Menu"
             >
               <CurrentTabIcon className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate max-w-[160px] sm:max-w-[220px]">{currentTab?.label}</span>
+              <span className="truncate max-w-[140px] sm:max-w-[200px]">{currentTab?.label}</span>
               <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isMobileNavOpen ? 'rotate-180' : ''}`} />
             </button>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
-          <kbd className="hidden sm:inline-flex items-center text-[10px] font-mono font-medium px-2 py-1 rounded-md bg-surface-sunken border border-line text-content-subtle">
+          <kbd className="hidden sm:inline-flex items-center text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-surface-sunken border border-line text-content-subtle">
             Esc
           </kbd>
           <button 
             onClick={onClose}
-            className="-mr-1 p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-line/60 hover:border-line"
+            className="-mr-1 p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-line/60 hover:border-line"
             aria-label={t('admin.closeAria')}
             title="Tutup (Esc)"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
 
@@ -827,13 +833,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {activeTab === 'overview' && (
               <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
                 <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
-                  <div className="min-w-0">
+                  <div className="min-w-0 hidden sm:block">
                     <h3 className="text-sm sm:text-base font-bold text-content font-display tracking-tight truncate">
                       {language === 'en' ? 'System Overview & Metrics' : 'Ringkasan & Metrik Sistem'}
                     </h3>
-                    <p className="text-[11px] sm:text-xs text-content-muted mt-0.5 truncate hidden xs:block">
+                    <p className="text-[11px] sm:text-xs text-content-muted mt-0.5 truncate">
                       {language === 'en' ? 'Chat activity statistics, user satisfaction, and live MCP server status.' : 'Statistik aktivitas percakapan, kepuasan pengguna, dan status live server MCP.'}
                     </p>
+                  </div>
+                  <div className="sm:hidden text-xs font-bold text-content truncate">
+                    {language === 'en' ? 'System Overview' : 'Ringkasan Sistem'}
                   </div>
                   <button 
                     onClick={fetchStats}
@@ -1056,8 +1065,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB 2: USER MANAGEMENT (CRUD) */}
             {activeTab === 'users' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
                       {language === 'en' ? `User Management (${usersLoading && usersList.length === 0 ? '…' : usersList.length})` : `Manajemen Pengguna (${usersLoading && usersList.length === 0 ? '…' : usersList.length})`}
                     </h3>
@@ -1066,22 +1075,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2.5">
-                    <div className="relative flex-1 sm:flex-initial">
+                  <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-60 sm:flex-initial">
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                       <input 
                         type="text"
                         placeholder={language === 'en' ? 'Search user...' : 'Cari user...'}
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full sm:w-60 text-content placeholder:text-content-subtle transition-all"
+                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddUserOpen(true)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> {language === 'en' ? 'New User' : 'User Baru'}
+                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New User' : 'User Baru'}</span><span className="xs:hidden">Baru</span>
                     </button>
                   </div>
                 </div>
@@ -1474,8 +1483,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB: PERSONA ORGANISASI */}
             {activeTab === 'persona' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'Organization Global Persona' : 'Persona Organisasi'}
@@ -1485,14 +1494,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <button
-                    onClick={handleSaveGlobalPersona}
-                    disabled={personaSaving}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
-                  >
-                    <Save className="w-4 h-4" />
-                    {personaSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Organization Persona' : 'Simpan Persona Organisasi')}
-                  </button>
+                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto">
+                    <span className="sm:hidden text-xs font-bold text-content flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-accent" />
+                      {language === 'en' ? 'Persona' : 'Persona'}
+                    </span>
+                    <button
+                      onClick={handleSaveGlobalPersona}
+                      disabled={personaSaving}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
+                    >
+                      <Save className="w-4 h-4" />
+                      {personaSaving ? (language === 'en' ? 'Saving…' : 'Menyimpan…') : (language === 'en' ? 'Save Persona' : 'Simpan Persona')}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="bg-surface border border-line/80 rounded-2xl p-5 text-xs text-content-muted leading-relaxed space-y-2.5 shadow-xs">
@@ -1538,8 +1553,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB: KATALOG SKILL (MODUL & SPESIALISASI) */}
             {activeTab === 'skills' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
                       <BookOpen className="w-5 h-5 text-accent" />
                       {language === 'en' ? `Assistant Skill Catalog (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})` : `Katalog Skill Asisten (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})`}
@@ -1549,22 +1564,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2.5">
-                    <div className="relative flex-1 sm:flex-initial">
+                  <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                    <div className="relative flex-1 sm:w-56 sm:flex-initial">
                       <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                       <input 
                         type="text"
                         placeholder={language === 'en' ? 'Search skill...' : 'Cari skill...'}
                         value={skillSearch}
                         onChange={(e) => setSkillSearch(e.target.value)}
-                        className="pl-9 pr-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 w-full sm:w-56 text-content placeholder:text-content-subtle transition-all"
+                        className="pl-9 pr-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 w-full text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
                       onClick={() => setIsAddSkillOpen(true)}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> {language === 'en' ? 'New Skill' : 'Skill Baru'}
+                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New Skill' : 'Skill Baru'}</span><span className="xs:hidden">Baru</span>
                     </button>
                   </div>
                 </div>
@@ -1902,8 +1917,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             {/* TAB 3: MCP CONFIGURATION */}
             {activeTab === 'mcp' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line/80">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
                       <Server className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'MCP Server Connections' : 'Konfigurasi Server MCP'}
@@ -1914,16 +1929,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         : 'Kelola konfigurasi endpoint JSON dan header autentikasi untuk server gateway MCP SAP ERP, Basis Dokumen RAG, dan Database SQL.'}
                     </p>
                   </div>
-                  <button
-                    onClick={handleSaveMcpConfig}
-                    disabled={mcpSaving}
-                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 w-full sm:w-auto cursor-pointer active:scale-95"
-                  >
-                    <Save className="w-4 h-4" />
-                    {mcpSaving
-                      ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
-                      : (language === 'en' ? 'Save MCP Config' : 'Simpan Konfigurasi MCP')}
-                  </button>
+                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto">
+                    <span className="sm:hidden text-xs font-bold text-content flex items-center gap-1.5">
+                      <Server className="w-4 h-4 text-accent" />
+                      MCP Gateway
+                    </span>
+                    <button
+                      onClick={handleSaveMcpConfig}
+                      disabled={mcpSaving}
+                      className="flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
+                    >
+                      <Save className="w-4 h-4" />
+                      {mcpSaving
+                        ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
+                        : (language === 'en' ? 'Save MCP' : 'Simpan MCP')}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -2280,8 +2301,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {activeTab === 'feedback' && (
               <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col gap-3 border-b border-line/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-line/80 pb-3 sm:pb-4">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
                       <ThumbsUp className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'Response Evaluation' : 'Penilaian Jawaban'}
@@ -2293,7 +2314,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+                    <span className="sm:hidden text-xs font-bold text-content flex items-center gap-1.5">
+                      <ThumbsUp className="w-4 h-4 text-accent" />
+                      {language === 'en' ? 'Feedback' : 'Penilaian'}
+                    </span>
                     <div className="flex rounded-xl border border-line/80 bg-surface-sunken p-1 shadow-2xs">
                       {[
                         { key: 'dislike', label: language === 'en' ? 'Unhelpful' : 'Kurang sesuai', icon: ThumbsDown },
@@ -2405,8 +2430,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {activeTab === 'audit' && (
               <div className="h-full flex flex-col space-y-4 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-line shrink-0">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line shrink-0">
+                  <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
                       {language === 'en' ? 'Chat Audit Logs' : 'Audit Log Percakapan'}
                     </h3>
@@ -2415,7 +2440,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                    <div className="relative w-full sm:w-auto">
+                  <div className="relative w-full sm:w-auto">
                     <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
                     <input 
                       type="text"
