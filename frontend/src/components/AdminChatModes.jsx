@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AlertCircle,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -20,18 +21,6 @@ import {
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { renderModeIcon } from './ModeSelector';
-
-const ALL_ROLES = [
-  { role: 'superadmin', label: 'Super Admin', desc: 'Full System & Configuration Access' },
-  { role: 'abaper', label: 'ABAPer', desc: 'Technical & ABAP Development' },
-  { role: 'functional', label: 'Functional', desc: 'Business Consultant Modules' },
-  { role: 'backend', label: 'Backend', desc: 'Backend & Database Systems' },
-  { role: 'frontend', label: 'Frontend', desc: 'Frontend & UI Engineering' },
-  { role: 'basis', label: 'Basis', desc: 'SAP Basis & Infrastructure' },
-  { role: 'data_analyst', label: 'Data Analyst', desc: 'BI & Analytical Reporting' },
-  { role: 'user', label: 'Standard User', desc: 'General End-User Access' },
-  { role: 'guest', label: 'Guest', desc: 'Public / Unregistered User' },
-];
 
 const INITIAL_FORM = {
   code: '',
@@ -62,6 +51,7 @@ export default function AdminChatModes({
   setActionSuccess,
   setActionError,
   setConfirmModal,
+  masterRoles,
 }) {
   const { t, language } = useLanguage();
   const [modesList, setModesList] = useState([]);
@@ -385,10 +375,17 @@ export default function AdminChatModes({
     );
   }
 
-  const activeRoles =
-    rolesList && rolesList.length > 0
-      ? rolesList.map((r) => ({ role: r.code, label: r.label, desc: r.description, enabled: r.enabled }))
-      : ALL_ROLES;
+  // Prioritaskan prop `masterRoles` (dikelola bersama di AdminDashboard) agar
+  // role baru/diedit di tab Roles langsung terlihat di sini tanpa refresh manual.
+  // Tidak ada fallback ke role hardcode: matriks kosong yang jujur lebih aman
+  // daripada diam-diam menampilkan role palsu yang tidak benar-benar tersimpan.
+  const roleSource = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesList;
+  const activeRoles = (roleSource || []).map((r) => ({
+    role: r.code,
+    label: r.label,
+    desc: r.description,
+    enabled: r.enabled,
+  }));
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -967,6 +964,21 @@ export default function AdminChatModes({
           </span>
         </div>
 
+        {activeRoles.length === 0 ? (
+          <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <div className="flex-1 min-w-0 text-xs">
+              <p className="font-bold">
+                {language === 'en' ? 'Failed to load master roles' : 'Gagal memuat master peran'}
+              </p>
+              <p className="text-content-muted mt-0.5">
+                {language === 'en'
+                  ? 'The role access matrix cannot be shown safely without confirmed role data.'
+                  : 'Matriks hak akses tidak ditampilkan karena data peran belum dipastikan valid.'}
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="overflow-x-auto custom-scrollbar border border-line/80 rounded-2xl bg-surface shadow-2xs">
           <table className="w-full text-xs text-left">
             <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted uppercase text-[10px] tracking-wider font-bold">
@@ -1026,6 +1038,7 @@ export default function AdminChatModes({
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Add Modal */}

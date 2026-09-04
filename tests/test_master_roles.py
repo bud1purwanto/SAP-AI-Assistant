@@ -359,3 +359,125 @@ def test_update_access_role_unknown_role_returns_404_not_500(client, admin_auth)
         "items": [],
     })
     assert res.status_code == 404
+
+
+class _FakeEmptyResult:
+    def fetchall(self):
+        return []
+
+
+class _FakeEmptyConn:
+    def execute(self, *args, **kwargs):
+        return _FakeEmptyResult()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _FakeEmptyEngine:
+    def connect(self):
+        return _FakeEmptyConn()
+
+
+def test_get_role_codes_empty_table_does_not_resurrect_hardcoded_roles(db, monkeypatch):
+    """Bila query BERHASIL tapi tabel roles kosong (bukan exception), harus mengembalikan
+    [] apa adanya -- bukan diam-diam mengembalikan 9 role hardcode yang mungkin sudah
+    tidak ada di database. Fallback hardcode hanya untuk kegagalan koneksi/exception."""
+    import database as database_module
+
+    monkeypatch.setattr(database_module, "get_engine", lambda: _FakeEmptyEngine())
+    database_module.invalidate_role_codes_cache()
+
+    assert database_module.get_role_codes(enabled_only=True) == []
+    assert database_module.get_role_codes(enabled_only=False) == []
+
+
+def test_get_role_codes_exception_still_uses_hardcoded_fallback(db, monkeypatch):
+    """Bila koneksi DB benar-benar gagal (exception), fallback hardcode tetap dipakai
+    agar sistem tidak lumpuh total saat database sedang bermasalah."""
+    import database as database_module
+
+    def _raise():
+        raise RuntimeError("simulasi database down")
+
+    monkeypatch.setattr(database_module, "get_engine", _raise)
+    database_module.invalidate_role_codes_cache()
+
+    codes = database_module.get_role_codes(enabled_only=True)
+    assert "superadmin" in codes
+    assert "user" in codes
+
+
+def test_can_modify_program_cannot_be_revoked_from_superadmin(client, admin_auth):
+    """superadmin.can_modify_program tidak boleh dicabut -- agent.py tidak memberi
+    bypass superadmin untuk hak mutasi program seperti assert_can_use, jadi mencabutnya
+    di master role benar-benar mengunci superadmin dari fitur ubah program."""
+    res = client.put("/api/admin/roles/superadmin", headers=admin_auth, json={
+        "can_modify_program": False,
+    })
+    assert res.status_code == 400
+
+    still_ok = get_role_by_code("superadmin")
+    assert still_ok["can_modify_program"] is True
+
+
+def test_role_crud_writes_audit_log(client, admin_auth):
+    """Create/update/delete role harus tercatat di access_audit."""
+    code = "audit_check_role"
+    client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+
+    res_create = client.post("/api/admin/roles", headers=admin_auth, json={
+        "code": code,
+        "label": "Audit Check Role",
+    })
+    assert res_create.status_code == 200
+
+    res_update = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={
+        "label": "Audit Check Role Updated",
+    })
+    assert res_update.status_code == 200
+
+    res_delete = client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+    assert res_delete.status_code == 200
+
+    logs_res = client.get("/api/admin/access/audit?limit=50", headers=admin_auth)
+    assert logs_res.status_code == 200
+    logs = logs_res.json()["logs"]
+    actions_for_role = [
+        (l["action"], l["target_id"]) for l in logs if l["target_id"] == code
+    ]
+    assert ("CREATE_ROLE", code) in actions_for_role
+    assert ("UPDATE_ROLE", code) in actions_for_role
+    assert ("DELETE_ROLE", code) in actions_for_role
+
+
+def test_users_role_column_rejects_uppercase_and_unknown_role(db):
+    """Migrasi 0014: CHECK + FK pada users.role menolak input yang tidak sesuai
+    langsung di level database, terlepas dari validasi aplikasi."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        constraints = conn.execute(text("""
+            SELECT constraint_name FROM information_schema.table_constraints
+            WHERE table_schema = 'ai_assistant' AND table_name = 'users'
+              AND constraint_name IN ('chk_users_role_lowercase', 'fk_users_role')
+        """)).fetchall()
+        names = {c.constraint_name for c in constraints}
+        assert "chk_users_role_lowercase" in names
+        assert "fk_users_role" in names
+
+        with pytest.raises(Exception):
+            with conn.begin():
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.users (username, password_hash, role)
+                    VALUES ('bad_role_case_test', 'x', 'Backend')
+                """))
+
+        with pytest.raises(Exception):
+            with conn.begin():
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.users (username, password_hash, role)
+                    VALUES ('bad_role_fk_test', 'x', 'role_yang_tidak_pernah_ada')
+                """))

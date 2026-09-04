@@ -630,6 +630,63 @@ def _m0013_master_data_roles(conn):
             """), {"r": r_code, "m": m_code, "en": is_en})
 
 
+def _m0014_users_role_integrity(conn):
+    """Menegakkan integritas ai_assistant.users.role: lowercase konsisten + FK ke roles.
+
+    Sebelum migrasi ini, users.role bisa berisi casing berbeda dari user_roles.role
+    (mis. 'Backend' vs 'backend') karena jalur update lama tidak menormalisasi input
+    admin. Ini membuat penghitungan user_count per role dan pengecekan "role masih
+    dipakai" saat delete_role bisa salah. Migrasi ini menormalisasi data yang ada,
+    lalu memasang FK + CHECK agar pelanggaran serupa tidak bisa masuk lagi lewat SQL
+    langsung, terlepas dari validasi di level aplikasi.
+    """
+    # 1. Backfill defensif: jaga-jaga ada users.role yang belum terdaftar di master roles
+    #    (mis. diisi manual lewat SQL di luar aplikasi).
+    conn.execute(text("""
+        INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+        SELECT DISTINCT LOWER(TRIM(role)), INITCAP(REPLACE(TRIM(role), '_', ' ')), 'Peran kustom sistem', 'zinc', 'users', FALSE, FALSE, TRUE, 100
+        FROM ai_assistant.users
+        WHERE role IS NOT NULL AND TRIM(role) != ''
+          AND LOWER(TRIM(role)) NOT IN (SELECT code FROM ai_assistant.roles)
+        ON CONFLICT (code) DO NOTHING;
+    """))
+
+    # 2. Normalisasi data yang sudah ada ke lowercase (menyamakan dengan user_roles.role)
+    conn.execute(text("""
+        UPDATE ai_assistant.users SET role = LOWER(TRIM(role)) WHERE role <> LOWER(TRIM(role));
+    """))
+
+    # 3. Pasang CHECK constraint agar tidak bisa dimasukkan huruf besar lagi
+    conn.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_schema = 'ai_assistant' AND constraint_name = 'chk_users_role_lowercase'
+            ) THEN
+                ALTER TABLE ai_assistant.users
+                ADD CONSTRAINT chk_users_role_lowercase CHECK (role = LOWER(role));
+            END IF;
+        END $$;
+    """))
+
+    # 4. Pasang FK users.role -> roles.code (idempoten)
+    conn.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.table_constraints
+                WHERE table_schema = 'ai_assistant' AND constraint_name = 'fk_users_role'
+            ) THEN
+                ALTER TABLE ai_assistant.users
+                ADD CONSTRAINT fk_users_role
+                FOREIGN KEY (role) REFERENCES ai_assistant.roles(code)
+                ON UPDATE CASCADE ON DELETE RESTRICT;
+            END IF;
+        END $$;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -644,6 +701,7 @@ MIGRATIONS = [
     ("0011_skill_tags", _m0011_skill_tags),
     ("0012_standardize_persona_and_skills", _m0012_standardize_persona_and_skills),
     ("0013_master_data_roles", _m0013_master_data_roles),
+    ("0014_users_role_integrity", _m0014_users_role_integrity),
 ]
 
 

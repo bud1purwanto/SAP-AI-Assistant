@@ -45,85 +45,12 @@ import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { getRoleBadgeStyle, getRoleIconComponent } from '../lib/roles';
 
-const ALL_ROLES = [
-  {
-    role: 'superadmin',
-    label: 'Super Admin',
-    desc: 'Full System & Access',
-    color: 'purple',
-    badgeClass: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-    icon: ShieldCheck,
-  },
-  {
-    role: 'abaper',
-    label: 'ABAPer',
-    desc: 'Technical & Development',
-    color: 'indigo',
-    badgeClass: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
-    icon: Code2,
-  },
-  {
-    role: 'functional',
-    label: 'Functional',
-    desc: 'Business Consultant Modules',
-    color: 'emerald',
-    badgeClass: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-    icon: Terminal,
-  },
-  {
-    role: 'backend',
-    label: 'Backend',
-    desc: 'Backend & Database Systems',
-    color: 'amber',
-    badgeClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-    icon: Database,
-  },
-  {
-    role: 'frontend',
-    label: 'Frontend',
-    desc: 'Frontend & UI Engineering',
-    color: 'cyan',
-    badgeClass: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-    icon: Globe,
-  },
-  {
-    role: 'basis',
-    label: 'Basis',
-    desc: 'SAP Basis & Infrastructure',
-    color: 'rose',
-    badgeClass: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-    icon: Cpu,
-  },
-  {
-    role: 'data_analyst',
-    label: 'Data Analyst',
-    desc: 'BI & Analytical Reporting',
-    color: 'teal',
-    badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
-    icon: Layers,
-  },
-  {
-    role: 'user',
-    label: 'Standard User',
-    desc: 'General End-User Access',
-    color: 'sky',
-    badgeClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-    icon: User,
-  },
-  {
-    role: 'guest',
-    label: 'Guest',
-    desc: 'Public / Unregistered',
-    color: 'zinc',
-    badgeClass: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
-    icon: Globe,
-  },
-];
-
 export default function AdminAccessControl({
   setActionSuccess,
   setActionError,
   setConfirmModal,
+  masterRoles,
+  onRefreshRoles,
 }) {
   const { t, language } = useLanguage();
   const [activeSubTab, setActiveSubTab] = useState('roles'); // 'roles' | 'users' | 'audit'
@@ -133,7 +60,7 @@ export default function AdminAccessControl({
     }
     return 'grid';
   }); // 'grid' | 'cards'
-  const [selectedRoleCard, setSelectedRoleCard] = useState('abaper');
+  const [selectedRoleCard, setSelectedRoleCard] = useState('');
   const [roleResSearch, setRoleResSearch] = useState('');
 
   const [initialLoading, setInitialLoading] = useState(true);
@@ -178,6 +105,19 @@ export default function AdminAccessControl({
     loadRoleMatrix();
     loadUsersList();
   }, []);
+
+  // Bila peran yang sedang dipilih di kartu (default hardcode / sisa pilihan lama)
+  // ternyata sudah dihapus atau tidak lagi ada di master roles, alihkan otomatis ke
+  // peran pertama yang tersedia -- daripada menampilkan kartu kosong tanpa label/desk.
+  useEffect(() => {
+    const source = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesMeta;
+    if (!source || source.length === 0) return;
+    const codes = source.map((r) => r.code);
+    if (!codes.includes(selectedRoleCard)) {
+      setSelectedRoleCard(codes[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterRoles, rolesMeta]);
 
   const loadRoleMatrix = async () => {
     try {
@@ -625,19 +565,24 @@ export default function AdminAccessControl({
     );
   }
 
-  const activeRoles =
-    rolesMeta && rolesMeta.length > 0
-      ? rolesMeta.map((r) => ({
-          role: r.code,
-          label: r.label,
-          desc: r.description,
-          color: r.color,
-          badgeClass: getRoleBadgeStyle(r.color),
-          icon: getRoleIconComponent(r.icon),
-          is_system: r.is_system,
-          enabled: r.enabled,
-        }))
-      : ALL_ROLES;
+  // Sumber peran diprioritaskan dari prop `masterRoles` (dikelola bersama di
+  // AdminDashboard, selalu segar setelah CRUD di tab Roles) agar tidak ada jeda
+  // "role baru belum muncul di tab ini sampai di-refresh manual". `rolesMeta`
+  // (hasil fetch matriks izin sendiri) dipakai sebagai fallback bila prop belum
+  // tersedia. Tidak ada fallback ke role hardcode: bila keduanya kosong karena
+  // gagal dimuat, matriks kosong yang jujur (ditemani banner error) lebih aman
+  // daripada diam-diam menampilkan role palsu yang tidak benar-benar tersimpan.
+  const roleSource = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesMeta;
+  const activeRoles = (roleSource || []).map((r) => ({
+    role: r.code,
+    label: r.label,
+    desc: r.description,
+    color: r.color,
+    badgeClass: getRoleBadgeStyle(r.color),
+    icon: getRoleIconComponent(r.icon),
+    is_system: r.is_system,
+    enabled: r.enabled,
+  }));
 
   return (
     <div className="space-y-6">
@@ -645,6 +590,30 @@ export default function AdminAccessControl({
       {(loading || saving || auditLoading) && (
         <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-2 -mb-3 shadow-xs">
           <div className="progress-bar-indeterminate rounded-full" />
+        </div>
+      )}
+
+      {/* Empty state jujur: master roles gagal dimuat, JANGAN tampilkan matriks palsu */}
+      {!loading && activeRoles.length === 0 && (
+        <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <div className="flex-1 min-w-0 text-xs">
+            <p className="font-bold">
+              {language === 'en' ? 'Failed to load master roles' : 'Gagal memuat master peran'}
+            </p>
+            <p className="text-content-muted mt-0.5">
+              {language === 'en'
+                ? 'The role x resource matrix cannot be shown safely without confirmed role data. Try refreshing.'
+                : 'Matriks izin role x resource tidak ditampilkan karena data peran belum dipastikan valid. Coba muat ulang.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadRoleMatrix}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold hover:bg-rose-500/25 transition-colors cursor-pointer"
+          >
+            {language === 'en' ? 'Retry' : 'Muat Ulang'}
+          </button>
         </div>
       )}
 

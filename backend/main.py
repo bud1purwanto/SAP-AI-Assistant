@@ -839,6 +839,13 @@ async def create_admin_role_endpoint(
             daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
             per_minute_limit=int(pml),
         )
+        access_control.log_audit(
+            actor=admin.get("username", "admin"),
+            target_type="role",
+            target_id=c_clean,
+            action="CREATE_ROLE",
+            detail=f"Peran '{c_clean}' dibuat (label='{req.label.strip()}', can_modify_program={bool(req.can_modify_program)}, enabled={bool(req.enabled)})",
+        )
         return {"status": "success", "role": new_role}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -872,6 +879,16 @@ async def update_admin_role_endpoint(
         )
         access_control.clear_access_cache()
         access_control.invalidate_effective_roles_cache()
+        changed = {
+            k: v for k, v in req.model_dump(exclude_none=True).items()
+        }
+        access_control.log_audit(
+            actor=admin.get("username", "admin"),
+            target_type="role",
+            target_id=c_clean,
+            action="UPDATE_ROLE",
+            detail=f"Peran '{c_clean}' diperbarui: {changed}",
+        )
         return {"status": "success", "role": updated}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -891,6 +908,13 @@ async def delete_admin_role_endpoint(
         delete_role(c_clean)
         access_control.clear_access_cache()
         access_control.invalidate_effective_roles_cache()
+        access_control.log_audit(
+            actor=admin.get("username", "admin"),
+            target_type="role",
+            target_id=c_clean,
+            action="DELETE_ROLE",
+            detail=f"Peran '{c_clean}' dihapus.",
+        )
         return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

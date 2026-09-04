@@ -105,7 +105,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'abaper', roles: ['abaper'], assistant_persona: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
   const [masterRoles, setMasterRoles] = useState([]);
 
@@ -447,7 +447,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       await api.adminCreateUser(payload);
       
       setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'abaper', roles: ['abaper'], assistant_persona: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -1610,6 +1610,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 setActionSuccess={setActionSuccess}
                 setActionError={setActionError}
                 setConfirmModal={setConfirmModal}
+                masterRoles={masterRoles}
+                onRefreshRoles={fetchMasterRoles}
               />
             )}
 
@@ -1620,6 +1622,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 setActionSuccess={setActionSuccess}
                 setActionError={setActionError}
                 setConfirmModal={setConfirmModal}
+                masterRoles={masterRoles}
               />
             )}
 

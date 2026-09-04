@@ -2836,8 +2836,14 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
             query += " ORDER BY sort_order ASC, code ASC"
             rows = conn.execute(text(query)).fetchall()
             codes = [r.code for r in rows if r.code]
+            # Query berhasil tapi tabel roles kosong: ini kondisi data nyata (mis. admin
+            # menghapus semua peran, atau semuanya nonaktif), BUKAN kegagalan koneksi.
+            # Mengembalikan 9 role hardcode di sini akan "menghidupkan" role hantu yang
+            # tidak ada di database, sehingga validasi user/mode jadi tidak konsisten
+            # dengan apa yang sebenarnya tersimpan. Fallback hardcode hanya untuk exception.
             if not codes:
-                return default_fallback
+                logger.warning("Tabel ai_assistant.roles kosong (enabled_only=%s) - tidak ada role hardcode fallback yang dikembalikan.", enabled_only)
+                return []
             if enabled_only:
                 _ROLE_CODES_CACHE = list(codes)
                 _ROLE_CODES_CACHE_TIME = now
@@ -3044,6 +3050,11 @@ def update_role(
             updates.append("icon = :ico")
             params["ico"] = icon.strip().lower()
         if can_modify_program is not None:
+            # Superadmin harus selalu bisa mengubah program: agent.py tidak memberi
+            # bypass superadmin untuk hak ini seperti assert_can_use, jadi mencabutnya
+            # di sini benar-benar mengunci superadmin dari fitur mutasi program.
+            if c_clean == "superadmin" and not can_modify_program:
+                raise ValueError("Hak 'can_modify_program' milik superadmin tidak boleh dicabut")
             updates.append("can_modify_program = :cmp")
             params["cmp"] = bool(can_modify_program)
         if enabled is not None:

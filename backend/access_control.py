@@ -751,15 +751,16 @@ def get_all_roles_matrix() -> Dict[str, Any]:
     resources = get_all_resources(include_archived=False)
     engine = database.get_engine()
     
-    role_meta = []
+    # Fallback hardcode hanya dipakai saat query BENAR-BENAR gagal (exception),
+    # bukan saat tabel roles memang kosong secara sah - kondisi kosong yang sah
+    # harus tampil apa adanya di matriks, bukan diganti diam-diam dengan 9 role
+    # hantu yang mungkin sudah tidak ada di database.
     try:
         role_meta = database.get_roles(enabled_only=False)
-        known_roles = [r["code"] for r in role_meta] if role_meta else []
+        known_roles = [r["code"] for r in role_meta]
     except Exception as e:
         logger.warning(f"Fallback get_roles in get_all_roles_matrix: {e}")
-        known_roles = []
-
-    if not known_roles:
+        role_meta = []
         known_roles = [
             "superadmin",
             "abaper",
