@@ -245,6 +245,12 @@ export const api = {
     apiFetch(`/api/admin/access/audit?limit=${limit}&offset=${offset}`),
   adminToggleAccessMaster: (enabled) =>
     apiFetch('/api/admin/access/enabled', { method: 'POST', body: { enabled } }),
+
+  // Per-user SAP Credentials
+  mySapCredentials: () => apiFetch('/api/me/sap-credentials'),
+  saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
+  deleteMySapCredential: (target) =>
+    apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
 };
 
 /**

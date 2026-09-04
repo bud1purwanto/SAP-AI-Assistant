@@ -2,6 +2,9 @@ import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Union
+import base64
+import hashlib
+from cryptography.fernet import Fernet
 
 from sqlalchemy import create_engine, text
 
@@ -132,6 +135,17 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS ai_assistant.system_config (
                     key VARCHAR(50) PRIMARY KEY,
                     value TEXT
+                );
+            """))
+
+            # 3b. Buat Tabel ai_assistant.user_sap_credentials untuk Multi-User MCP SAP
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.user_sap_credentials (
+                    username VARCHAR(50) NOT NULL,
+                    target VARCHAR(50) NOT NULL,
+                    encrypted_data TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (username, target)
                 );
             """))
 
@@ -3294,7 +3308,135 @@ def delete_role(code: str) -> bool:
         conn.execute(text("DELETE FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean})
         conn.commit()
         invalidate_role_codes_cache()
-        return True
 
+def _get_fernet_key() -> bytes:
+    """Derive a deterministic 32-byte Fernet key from settings.jwt_secret."""
+    secret = (getattr(settings, "jwt_secret", "") or "default_secret_key_change_in_prod").encode("utf-8")
+    return base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+
+
+def encrypt_fernet(data: str) -> str:
+    """Encrypt a plaintext string using Fernet."""
+    if not data:
+        return ""
+    f = Fernet(_get_fernet_key())
+    return f.encrypt(data.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_fernet(encrypted_data: str) -> Optional[str]:
+    """Decrypt a ciphertext string using Fernet."""
+    if not encrypted_data:
+        return None
+    try:
+        f = Fernet(_get_fernet_key())
+        return f.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
+    except Exception as ex:
+        logger.warning(f"Failed to decrypt data: {ex}")
+        return None
+
+
+def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: str, sap_client: str = "100") -> bool:
+    """Save encrypted SAP credentials for a specific user and SAP target."""
+    clean_user = (username or "").strip()
+    clean_target = (target or "").strip()
+    if not clean_user or not clean_target:
+        return False
+    
+    plain_payload = f"{sap_user}\t{sap_password}\t{sap_client}"
+    enc = encrypt_fernet(plain_payload)
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.user_sap_credentials (username, target, encrypted_data, updated_at)
+            VALUES (:u, :t, :e, CURRENT_TIMESTAMP)
+            ON CONFLICT (username, target)
+            DO UPDATE SET encrypted_data = :e, updated_at = CURRENT_TIMESTAMP
+        """), {"u": clean_user, "t": clean_target, "e": enc})
+        conn.commit()
+    return True
+
+
+def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, str]]:
+    """Retrieve and decrypt SAP credentials for a user and target."""
+    clean_user = (username or "").strip()
+    clean_target = (target or "").strip()
+    if not clean_user or not clean_target:
+        return None
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT encrypted_data FROM ai_assistant.user_sap_credentials
+            WHERE username = :u AND target = :t
+        """), {"u": clean_user, "t": clean_target}).fetchone()
+    
+    if not row or not row[0]:
+        return None
+    
+    dec = decrypt_fernet(row[0])
+    if not dec:
+        return None
+    
+    parts = dec.split("\t")
+    if len(parts) >= 3:
+        return {
+            "sap_user": parts[0],
+            "sap_password": parts[1],
+            "sap_client": parts[2]
+        }
+    return None
+
+
+def list_user_sap_credentials(username: str) -> List[Dict[str, Any]]:
+    """List all configured SAP credential targets for a user (without exposing passwords)."""
+    clean_user = (username or "").strip()
+    if not clean_user:
+        return []
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT target, encrypted_data, updated_at
+            FROM ai_assistant.user_sap_credentials
+            WHERE username = :u
+            ORDER BY target ASC
+        """), {"u": clean_user}).fetchall()
+    
+    result = []
+    for r in rows:
+        target_name = r[0]
+        dec = decrypt_fernet(r[1])
+        sap_user = ""
+        sap_client = "100"
+        if dec:
+            parts = dec.split("\t")
+            if len(parts) >= 3:
+                sap_user = parts[0]
+                sap_client = parts[2]
+        result.append({
+            "target": target_name,
+            "sap_user": sap_user,
+            "sap_client": sap_client,
+            "updated_at": _iso(r[2])
+        })
+    return result
+
+
+def delete_user_sap_credential(username: str, target: str) -> bool:
+    """Delete configured SAP credentials for a user and target."""
+    clean_user = (username or "").strip()
+    clean_target = (target or "").strip()
+    if not clean_user or not clean_target:
+        return False
+    
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            DELETE FROM ai_assistant.user_sap_credentials
+            WHERE username = :u AND target = :t
+        """), {"u": clean_user, "t": clean_target})
+        conn.commit()
+    return True
 
 

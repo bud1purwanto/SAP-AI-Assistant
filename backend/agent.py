@@ -537,6 +537,17 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if sap_target:
         logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
 
+    # Ambil kredensial SAP khusus pengguna ini jika ada untuk target SAP ini
+    user_sap_credentials = None
+    if sap_target:
+        try:
+            from database import get_user_sap_credential
+            user_sap_credentials = get_user_sap_credential(username, sap_target)
+            if user_sap_credentials:
+                logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target}' (user: {user_sap_credentials.get('sap_user')})")
+        except Exception as ex:
+            logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
+
     # Normalisasi user_role ke list roles untuk access control
     roles_list = access_control.normalize_roles(user_role)
     roles_str_primary = roles_list[0] if roles_list else "user"
@@ -1208,7 +1219,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     await reset_stream()
                     await report("tool", _describe_tool(server_name, actual_tool_name, t_args), iteration)
                     tool_result = await mcp_manager.call_tool(
-                        server_name, actual_tool_name, t_args, sap_target=sap_target
+                        server_name, actual_tool_name, t_args, sap_target=sap_target, sap_credentials=user_sap_credentials
                     )
                     
                     res_str = ""
@@ -1410,7 +1421,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)
                 result = await mcp_manager.call_tool(
-                    server_name, mcp_name, tool_args, sap_target=sap_target
+                    server_name, mcp_name, tool_args, sap_target=sap_target, sap_credentials=user_sap_credentials
                 )
                 texts = []
                 if result.content:

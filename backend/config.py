@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     mcp_sql_config_json: str = ""
     mcp_email_config_json: str = ""
 
+    # Dashboard MCP Integration
+    dashboard_mcp_url: str = "http://127.0.0.1:3000"
+    dashboard_mcp_api_token: str = ""
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",

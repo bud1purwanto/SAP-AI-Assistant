@@ -34,6 +34,16 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
   const [passMessage, setPassMessage] = useState({ type: '', text: '' });
   const [isChangingPass, setIsChangingPass] = useState(false);
 
+  // SAP Per-user credentials state
+  const [sapCreds, setSapCreds] = useState([]);
+  const [loadingSapCreds, setLoadingSapCreds] = useState(false);
+  const [sapTarget, setSapTarget] = useState('dev');
+  const [sapUser, setSapUser] = useState('');
+  const [sapPass, setSapPass] = useState('');
+  const [sapClient, setSapClient] = useState('100');
+  const [sapCredMsg, setSapCredMsg] = useState({ type: '', text: '' });
+  const [savingSapCred, setSavingSapCred] = useState(false);
+
   useEffect(() => {
     if (isOpen) {
       const currentRole = user?.role || 'user';
@@ -65,6 +75,12 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             setActiveTab(prev => (fetchedRole !== 'superadmin' && (prev === 'router' || prev === 'mcp')) ? 'persona' : prev);
           })
           .catch(err => console.error("Failed to load config", err));
+
+        setLoadingSapCreds(true);
+        api.mySapCredentials()
+          .then(data => setSapCreds(Array.isArray(data) ? data : []))
+          .catch(err => console.error('Failed to load SAP credentials', err))
+          .finally(() => setLoadingSapCreds(false));
       }
     }
   }, [isOpen, user]);
@@ -228,6 +244,20 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
             >
               <KeyRound className="w-3.5 h-3.5" />
               <span>{t('settings.tabSecurity')}</span>
+            </button>
+          )}
+
+          {isLoggedIn && (
+            <button
+              onClick={() => setActiveTab('sapCreds')}
+              className={`pb-2.5 px-3 text-xs font-bold transition-all border-b-2 flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'sapCreds'
+                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                  : 'border-transparent text-content-muted hover:text-content'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>SAP Login</span>
             </button>
           )}
         </div>
@@ -610,6 +640,149 @@ const SettingsModal = ({ isOpen, onClose, user }) => {
                 <span>{isChangingPass ? t('security.processing') : t('security.submit')}</span>
               </button>
             </form>
+          )}
+
+          {/* TAB 5: SAP Personal Credentials */}
+          {activeTab === 'sapCreds' && isLoggedIn && (
+            <div className="space-y-5">
+              <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200/60 dark:border-indigo-800/40 rounded-2xl text-xs text-content-secondary space-y-1">
+                <p className="font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Kredensial SAP Pribadi
+                </p>
+                <p className="text-[11px] text-content-muted">
+                  Masukkan kredensial user SAP Anda untuk sistem target tertentu. Password disimpan terenkripsi dengan AES dan hanya diteruskan saat Anda memanggil tool SAP.
+                </p>
+              </div>
+
+              {sapCredMsg.text && (
+                <div className={`p-3 rounded-2xl text-xs flex items-center gap-2 ${
+                  sapCredMsg.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400'
+                }`}>
+                  {sapCredMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  <span>{sapCredMsg.text}</span>
+                </div>
+              )}
+
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setSavingSapCred(true);
+                setSapCredMsg({ type: '', text: '' });
+                try {
+                  await api.saveMySapCredential({
+                    target: sapTarget,
+                    sap_user: sapUser,
+                    sap_password: sapPass,
+                    sap_client: sapClient || '100'
+                  });
+                  setSapCredMsg({ type: 'success', text: `Kredensial SAP untuk '${sapTarget}' berhasil disimpan.` });
+                  setSapPass('');
+                  const updated = await api.mySapCredentials();
+                  setSapCreds(Array.isArray(updated) ? updated : []);
+                } catch (err) {
+                  setSapCredMsg({ type: 'error', text: err.message || 'Gagal menyimpan kredensial SAP.' });
+                } finally {
+                  setSavingSapCred(false);
+                }
+              }} className="space-y-3.5 bg-surface-sunken p-4 rounded-2xl border border-line">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">Target Sistem SAP</label>
+                    <input
+                      type="text"
+                      required
+                      value={sapTarget}
+                      onChange={e => setSapTarget(e.target.value)}
+                      placeholder="misal: dev, prd, qa"
+                      className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">Client SAP</label>
+                    <input
+                      type="text"
+                      value={sapClient}
+                      onChange={e => setSapClient(e.target.value)}
+                      placeholder="misal: 100, 130, 999"
+                      className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">SAP Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={sapUser}
+                      onChange={e => setSapUser(e.target.value)}
+                      placeholder="Username akun SAP Anda"
+                      className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">SAP Password</label>
+                    <input
+                      type="password"
+                      required
+                      value={sapPass}
+                      onChange={e => setSapPass(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-surface border border-line rounded-xl px-3 py-2 text-xs text-content focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingSapCred}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{savingSapCred ? 'Menyimpan...' : 'Simpan Kredensial SAP'}</span>
+                </button>
+              </form>
+
+              {/* Daftar Kredensial Tersimpan */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-content-secondary uppercase tracking-wider">Target Tersimpan</h4>
+                {loadingSapCreds ? (
+                  <p className="text-xs text-content-muted">Memuat kredensial tersimpan...</p>
+                ) : sapCreds.length === 0 ? (
+                  <p className="text-xs text-content-muted italic">Belum ada kredensial target SAP khusus yang disimpan.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {sapCreds.map((c) => (
+                      <div key={c.target} className="flex items-center justify-between p-2.5 bg-surface-sunken border border-line rounded-xl text-xs">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-3.5 h-3.5 text-indigo-500" />
+                          <span className="font-bold text-content">{c.target}</span>
+                          <span className="text-content-muted">({c.sap_user || '—'}, Client {c.sap_client || '—'})</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!window.confirm(`Hapus kredensial tersimpan untuk target '${c.target}'?`)) return;
+                            try {
+                              await api.deleteMySapCredential(c.target);
+                              setSapCreds(prev => prev.filter(x => x.target !== c.target));
+                            } catch (err) {
+                              alert(err.message || 'Gagal menghapus');
+                            }
+                          }}
+                          className="text-[11px] text-rose-500 hover:text-rose-600 font-bold px-2 py-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
         </div>

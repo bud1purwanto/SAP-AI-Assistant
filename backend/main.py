@@ -279,6 +279,53 @@ async def change_password_endpoint(
         raise HTTPException(status_code=400, detail=res["message"])
     return res
 
+# --- PER-USER SAP CREDENTIALS ---
+
+class UserSapCredentialRequest(BaseModel):
+    target: str
+    sap_user: str
+    sap_password: str
+    sap_client: str = "100"
+
+
+@app.get("/api/me/sap-credentials")
+async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
+    """Ambil daftar konfigurasi kredensial SAP milik pengguna saat ini (tanpa password plaintext)."""
+    from database import list_user_sap_credentials
+    return list_user_sap_credentials(user["username"])
+
+
+@app.post("/api/me/sap-credentials")
+async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
+    """Simpan kredensial login SAP pribadi terenkripsi untuk target tertentu."""
+    from database import save_user_sap_credential
+    target = (req.target or "").strip()
+    sap_user = (req.sap_user or "").strip()
+    if not target or not sap_user:
+        raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
+    
+    ok = save_user_sap_credential(
+        username=user["username"],
+        target=target,
+        sap_user=sap_user,
+        sap_password=req.sap_password,
+        sap_client=(req.sap_client or "100").strip()
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan kredensial SAP.")
+    return {"success": True, "message": f"Kredensial SAP untuk '{target}' berhasil disimpan terenkripsi."}
+
+
+@app.delete("/api/me/sap-credentials/{target}")
+async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
+    """Hapus kredensial SAP pribadi untuk target tertentu."""
+    from database import delete_user_sap_credential
+    target_clean = (target or "").strip()
+    if not target_clean:
+        raise HTTPException(status_code=400, detail="Target tidak valid.")
+    ok = delete_user_sap_credential(user["username"], target_clean)
+    return {"success": ok, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
+
 
 # --- KONFIGURASI ---
 

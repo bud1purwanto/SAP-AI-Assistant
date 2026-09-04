@@ -260,10 +260,42 @@ class MCPManager:
             self.clients[name] = StreamableHttpClient(name=name, url=url, headers=headers)
         return self.clients[name]
 
+    async def _fetch_dashboard_resources(self, http_client: httpx.AsyncClient) -> Optional[dict]:
+        """Ambil list resource & status server dinamis dari Dashboard MCP jika tersedia."""
+        if not settings.dashboard_mcp_url:
+            return None
+        url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
+        headers = {}
+        if settings.dashboard_mcp_api_token:
+            headers["Authorization"] = f"Bearer {settings.dashboard_mcp_api_token}"
+        try:
+            r = await http_client.get(url, headers=headers, timeout=4.0)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as ex:
+            logger.debug(f"Dashboard MCP resources endpoint tidak dapat dihubungi: {ex}")
+        return None
+
     async def check_servers_status(self) -> dict:
         status = {}
         async with httpx.AsyncClient() as http_client:
-            # SAP Server status
+            # 0. Cek integrasi dynamic dashboard resources
+            dash_data = await self._fetch_dashboard_resources(http_client)
+            if dash_data and isinstance(dash_data, dict):
+                resources = dash_data.get("resources", [])
+                if resources:
+                    try:
+                        from access_control import sync_resources_from_mcp
+                        sync_resources_from_mcp(resources)
+                    except Exception as ex:
+                        logger.warning(f"Gagal sinkronisasi resources dari dashboard ke access_control: {ex}")
+                
+                dash_status = dash_data.get("status", {})
+                if dash_status:
+                    # Gunakan status live dari dashboard bila ada
+                    pass
+
+            # 1. SAP Server
             try:
                 sap_client = self.get_client("sap")
                 sap_tools = await sap_client.list_tools(http_client)
@@ -451,35 +483,36 @@ class MCPManager:
 
         return status
 
-    async def _set_active_sap_server_unlocked(self, http_client, target_sap: str):
-        """Set server aktif pada MCP SAP. Pemanggil wajib memegang _sap_lock."""
-        if self._active_sap_target and str(self._active_sap_target).strip().lower() == str(target_sap).strip().lower():
-            # Server sudah aktif pada sesi koneksi ini. Jangan reset koneksi agar LUW buffer SAP tidak ter-rollback!
-            return True
+    async def _set_active_sap_server_unlocked(self, http_client, target_sap: str, sap_credentials: Optional[dict] = None):
+        """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
         sap_client = self.get_client("sap")
         last_error = None
+        payload = {"server_ref": target_sap}
+        if sap_credentials:
+            if sap_credentials.get("sap_user"):
+                payload["user"] = sap_credentials["sap_user"]
+            if sap_credentials.get("sap_password"):
+                payload["password"] = sap_credentials["sap_password"]
+            if sap_credentials.get("sap_client"):
+                payload["client"] = sap_credentials["sap_client"]
+
         for attempt in range(2):
             try:
-                res = await sap_client.call_tool(http_client, "set_active_server", {"server_ref": target_sap})
+                res = await sap_client.call_tool(http_client, "set_active_server", payload)
                 if res.is_error:
-                    err_txt = " ".join(c.text for c in res.content) if res.content else "Unknown error"
-                    logger.warning(f"MCP server gagal menset SAP active server ke '{target_sap}': {err_txt}")
-                    self._active_sap_target = None
-                    return False
+                    msg = res.content[0].text if res.content else "Unknown error"
+                    raise RuntimeError(f"Tool set_active_server mengembalikan error: {msg}")
 
                 if res.content and res.content[0].text:
                     try:
                         data = json.loads(res.content[0].text)
-                        if data.get("success") is False:
-                            err_msg = data.get("error", "Server ref not recognized")
-                            logger.warning(f"MCP server menolak target SAP '{target_sap}': {err_msg}")
-                            self._active_sap_target = None
-                            return False
-                    except Exception:
+                        if not data.get("success", True):
+                            raise RuntimeError(f"MCP SAP menolak active server '{target_sap}': {data.get('message')}")
+                    except (json.JSONDecodeError, TypeError):
                         pass
 
                 self._active_sap_target = target_sap
-                logger.info(f"SAP Active Server diset ke '{target_sap}': {[c.text for c in res.content]}")
+                logger.info(f"SAP Active Server diset ke '{target_sap}' (overrides: {bool(sap_credentials)}): {[c.text for c in res.content]}")
                 return True
             except Exception as ex:
                 last_error = ex
@@ -492,7 +525,6 @@ class MCPManager:
         self._active_sap_target = None
         logger.error(f"Gagal menset SAP active server ke '{target_sap}' setelah 2 percobaan: {type(last_error).__name__} ({last_error or 'timeout'})")
         return False
-
     async def set_active_sap_server(self, target_sap: str):
         """Set server aktif pada MCP SAP (dilindungi lock)."""
         if not target_sap:
@@ -591,10 +623,12 @@ class MCPManager:
         tool_name: str,
         arguments: dict,
         sap_target: str = None,
+        sap_credentials: Optional[dict] = None,
     ) -> MCPCallResult:
         """Panggil satu tool MCP.
 
         Untuk server SAP/SQL, `sap_target` menyatakan sistem server mana yang dituju.
+        `sap_credentials` dapat menyediakan kredensial per-user (sap_user, sap_password, sap_client).
         Penetapan target dan pemanggilan tool dilakukan di bawah satu lock agar
         request user lain tidak dapat menyisip di antaranya dan mengalihkan
         query ke sistem yang salah.
@@ -608,7 +642,7 @@ class MCPManager:
         if server_name == "sap" and sap_target:
             async with self._sap_lock:
                 async with httpx.AsyncClient() as http_client:
-                    ok = await self._set_active_sap_server_unlocked(http_client, sap_target)
+                    ok = await self._set_active_sap_server_unlocked(http_client, sap_target, sap_credentials=sap_credentials)
                     if not ok:
                         return MCPCallResult(
                             content=[MCPContentItem(
