@@ -387,7 +387,7 @@ export default function AdminChatModes({
 
   const activeRoles =
     rolesList && rolesList.length > 0
-      ? rolesList.map((r) => ({ role: r.code, label: r.label, desc: r.description }))
+      ? rolesList.map((r) => ({ role: r.code, label: r.label, desc: r.description, enabled: r.enabled }))
       : ALL_ROLES;
 
   return (
@@ -983,10 +983,17 @@ export default function AdminChatModes({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line/60">
-                  {activeRoles.map(({ role, label }) => (
+                  {activeRoles.map(({ role, label, enabled }) => (
                     <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
                       <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
-                        <span className="font-semibold text-content block text-xs">{label}</span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`font-semibold text-content text-xs ${enabled === false ? 'opacity-60 line-through' : ''}`}>{label}</span>
+                          {enabled === false && (
+                            <span className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1 py-0.2 rounded">
+                              {language === 'en' ? 'Disabled' : 'Nonaktif'}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-content-subtle font-mono block">{role}</span>
                       </td>
                   {modesList.map((mode) => {

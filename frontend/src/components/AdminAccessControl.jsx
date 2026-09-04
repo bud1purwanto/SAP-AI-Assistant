@@ -888,10 +888,22 @@ export default function AdminAccessControl({
                       return (
                         <th key={r.role} className="sticky top-0 z-20 py-3 px-3 text-center border-l border-b border-line/40 bg-surface-sunken">
                           <div className="flex flex-col items-center">
-                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass}`}>
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${r.badgeClass} ${r.enabled === false ? 'opacity-60 border-dashed' : ''}`}>
                               <Icon className="w-3.5 h-3.5" />
-                              <span>{r.label}</span>
+                              <span className={r.enabled === false ? 'line-through' : ''}>{r.label}</span>
                             </span>
+                            {r.enabled === false && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 mt-1"
+                                title={
+                                  language === 'en'
+                                    ? 'This role is currently disabled/suspended. Permissions are not active.'
+                                    : 'Peran ini sedang dinonaktifkan. Izin tidak berlaku untuk pengguna.'
+                                }
+                              >
+                                {language === 'en' ? 'Suspended' : 'Nonaktif'}
+                              </span>
+                            )}
                             <span className="text-[10px] text-content-subtle font-normal mt-1 max-w-[130px] truncate">
                               {r.desc}
                             </span>

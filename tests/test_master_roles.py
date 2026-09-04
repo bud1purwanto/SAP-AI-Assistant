@@ -10,7 +10,10 @@ from database import (
     update_role,
     delete_role,
     get_modes_for_role,
+    set_role_mode,
     get_roles_can_modify_program,
+    get_user_roles,
+    get_user_by_username,
 )
 
 
@@ -223,3 +226,84 @@ def test_user_creation_with_long_role_code(client, admin_auth):
     # Cleanup: hapus user dulu baru hapus role
     client.delete("/api/admin/users/consultant_01", headers=admin_auth)
     client.delete(f"/api/admin/roles/{long_role}", headers=admin_auth)
+
+
+def test_disabled_role_realtime_revocation(client, admin_auth):
+    """Memverifikasi penegakan status nonaktif peran secara real-time (revocation)."""
+    code = "temp_auditor"
+    # Pre-cleanup
+    client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
+    client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+
+    try:
+        # 1. Buat peran
+        res_role = client.post("/api/admin/roles", headers=admin_auth, json={
+            "code": code,
+            "label": "Temp Auditor",
+            "description": "Peran pengujian pencabutan akses",
+            "can_modify_program": True,
+            "enabled": True,
+        })
+        assert res_role.status_code == 200
+
+        # Beri izin salah satu mode chat yang ada (fast)
+        assert set_role_mode(code, "fast", True) is True
+
+        # 2. Buat user dengan peran ini
+        res_user = client.post("/api/admin/users", headers=admin_auth, json={
+            "username": "auditor_user_01",
+            "password": "Password123!",
+            "full_name": "Auditor One",
+            "role": code,
+            "roles": [code],
+        })
+        assert res_user.status_code == 200
+
+        # Verifikasi saat aktif: user memegang peran code
+        assert get_user_roles("auditor_user_01") == [code]
+        user_info = get_user_by_username("auditor_user_01")
+        assert user_info["role"] == code
+        assert user_info["roles"] == [code]
+
+        # Verifikasi mode chat available
+        modes = get_modes_for_role(code)
+        fast_mode = next((m for m in modes if m["code"] == "fast"), None)
+        assert fast_mode is not None
+        assert fast_mode["available"] is True
+
+        # 3. Nonaktifkan peran
+        res_dis = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={
+            "enabled": False,
+        })
+        assert res_dis.status_code == 200
+
+        # 4. Verifikasi seketika (real-time):
+        # a. get_user_roles fallback ke ['user']
+        assert get_user_roles("auditor_user_01") == ["user"]
+        # b. get_user_by_username fallback ke 'user'
+        fresh_user = get_user_by_username("auditor_user_01")
+        assert fresh_user["role"] == "user"
+        assert fresh_user["roles"] == ["user"]
+        # c. can_modify_program dicabut
+        can_mod = get_roles_can_modify_program()
+        assert code not in can_mod
+        # d. mode chat available menjadi False
+        modes_disabled = get_modes_for_role(code)
+        fast_mode_dis = next((m for m in modes_disabled if m["code"] == "fast"), None)
+        assert fast_mode_dis["available"] is False
+
+        # 5. Aktifkan kembali peran
+        res_en = client.put(f"/api/admin/roles/{code}", headers=admin_auth, json={
+            "enabled": True,
+        })
+        assert res_en.status_code == 200
+
+        # 6. Verifikasi izin pulih kembali
+        assert get_user_roles("auditor_user_01") == [code]
+        modes_restored = get_modes_for_role(code)
+        fast_mode_res = next((m for m in modes_restored if m["code"] == "fast"), None)
+        assert fast_mode_res["available"] is True
+    finally:
+        # Cleanup
+        client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
+        client.delete(f"/api/admin/roles/{code}", headers=admin_auth)

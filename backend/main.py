@@ -866,6 +866,7 @@ async def update_admin_role_endpoint(
             enabled=req.enabled,
             sort_order=req.sort_order,
         )
+        access_control.clear_access_cache()
         return {"status": "success", "role": updated}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -883,6 +884,7 @@ async def delete_admin_role_endpoint(
     c_clean = code.strip().lower()
     try:
         delete_role(c_clean)
+        access_control.clear_access_cache()
         return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1060,13 +1062,21 @@ async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_use
     if user and not user.get("is_guest"):
         user_roles = user.get("roles") or [user.get("role", "user")]
 
-    # Union seluruh mode yang diizinkan untuk setiap peran pengguna
+    # Pastikan user_roles hanya memperhitungkan peran yang enabled (atau superadmin)
+    available_roles = set(get_available_roles(enabled_only=True))
+    active_roles = [r for r in user_roles if r.lower() in available_roles or r.lower() == "superadmin"]
+    if not active_roles:
+        active_roles = ["user"]
+
+    # Union seluruh mode yang diizinkan untuk setiap peran aktif pengguna
     modes_by_code = {}
-    for r in user_roles:
+    for r in active_roles:
         r_modes = get_modes_for_role(r)
         for m in r_modes:
             if m["code"] not in modes_by_code:
-                modes_by_code[m["code"]] = m
+                modes_by_code[m["code"]] = dict(m)
+            elif m.get("available"):
+                modes_by_code[m["code"]]["available"] = True
 
     modes = list(modes_by_code.values())
     modes.sort(key=lambda x: x.get("sort_order", 0))
@@ -1380,11 +1390,17 @@ def _batas_peran(role: Union[str, list, None]) -> dict:
     if "superadmin" in roles:
         return {"daily_token_limit": 0, "per_minute_limit": 0}
 
+    # Filter hanya peran yang aktif (enabled = TRUE)
+    available_roles = set(get_available_roles(enabled_only=True))
+    active_roles = [r for r in roles if r.lower() in available_roles]
+    if not active_roles:
+        active_roles = ["user"]
+
     all_limits = get_role_limits()
     daily_limits = []
     minute_limits = []
 
-    for r in roles:
+    for r in active_roles:
         b = all_limits.get(r.lower(), {"daily_token_limit": 0, "per_minute_limit": 0})
         daily_limits.append(b.get("daily_token_limit", 0))
         minute_limits.append(b.get("per_minute_limit", 0))

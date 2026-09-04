@@ -441,15 +441,27 @@ def authenticate_user(username: str, password: str):
 
             if authenticated:
                 role_rows = conn.execute(text("""
-                    SELECT role FROM ai_assistant.user_roles
-                    WHERE LOWER(username) = LOWER(:u)
-                    ORDER BY created_at ASC
+                    SELECT ur.role 
+                    FROM ai_assistant.user_roles ur
+                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
-                roles = [r.role for r in role_rows if r.role] if role_rows else ([row.role] if row.role else ["user"])
+                roles = [r.role for r in role_rows if r.role]
+                if not roles:
+                    single = conn.execute(text("""
+                        SELECT u.role 
+                        FROM ai_assistant.users u
+                        JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                        WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                    """), {"u": uname_clean}).scalar()
+                    roles = [single] if single else ["user"]
+
+                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
-                    "role": row.role,
+                    "role": primary_role,
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or ""
                 }
@@ -495,25 +507,47 @@ def change_user_password(username: str, old_password: str, new_password: str):
         return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
 
 
-def get_user_roles(username: str) -> list:
-    """Mengambil seluruh role yang dimiliki oleh user dari ai_assistant.user_roles."""
+def get_user_roles(username: str, active_only: bool = True) -> list:
+    """Mengambil seluruh role yang dimiliki oleh user dari ai_assistant.user_roles.
+    Bila active_only=True, hanya mengembalikan peran yang statusnya enabled di ai_assistant.roles.
+    """
     uname_clean = (username or "").strip()
     if not uname_clean:
         return ["user"]
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("""
-                SELECT role FROM ai_assistant.user_roles
-                WHERE LOWER(username) = LOWER(:u)
-                ORDER BY created_at ASC
-            """), {"u": uname_clean}).fetchall()
+            if active_only:
+                rows = conn.execute(text("""
+                    SELECT ur.role 
+                    FROM ai_assistant.user_roles ur
+                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    ORDER BY ur.created_at ASC
+                """), {"u": uname_clean}).fetchall()
+            else:
+                rows = conn.execute(text("""
+                    SELECT role FROM ai_assistant.user_roles
+                    WHERE LOWER(username) = LOWER(:u)
+                    ORDER BY created_at ASC
+                """), {"u": uname_clean}).fetchall()
+
             if rows:
                 return [r.role for r in rows if r.role]
+
             # Fallback ke kolom role pada tabel users jika belum ada baris di user_roles
-            single = conn.execute(text("""
-                SELECT role FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)
-            """), {"u": uname_clean}).scalar()
+            if active_only:
+                single = conn.execute(text("""
+                    SELECT u.role 
+                    FROM ai_assistant.users u
+                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                    WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                """), {"u": uname_clean}).scalar()
+            else:
+                single = conn.execute(text("""
+                    SELECT role FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)
+                """), {"u": uname_clean}).scalar()
+
             return [single] if single else ["user"]
     except Exception as e:
         logger.error(f"Error get_user_roles for '{username}': {e}")
@@ -579,15 +613,27 @@ def get_user_by_username(username: str):
             """), {"u": uname_clean}).fetchone()
             if row:
                 role_rows = conn.execute(text("""
-                    SELECT role FROM ai_assistant.user_roles
-                    WHERE LOWER(username) = LOWER(:u)
-                    ORDER BY created_at ASC
+                    SELECT ur.role 
+                    FROM ai_assistant.user_roles ur
+                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.enabled = TRUE
+                    ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
-                roles = [r.role for r in role_rows if r.role] if role_rows else ([row.role] if row.role else ["user"])
+                roles = [r.role for r in role_rows if r.role]
+                if not roles:
+                    single = conn.execute(text("""
+                        SELECT u.role 
+                        FROM ai_assistant.users u
+                        JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                        WHERE LOWER(u.username) = LOWER(:u) AND r.enabled = TRUE
+                    """), {"u": uname_clean}).scalar()
+                    roles = [single] if single else ["user"]
+
+                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
-                    "role": row.role,
+                    "role": primary_role,
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or ""
                 }
@@ -2712,6 +2758,13 @@ def get_modes_for_role(role: str) -> list[dict]:
 
         engine = get_engine()
         with engine.connect() as conn:
+            # Cek status enabled dari peran master
+            role_meta = conn.execute(
+                text("SELECT enabled FROM ai_assistant.roles WHERE LOWER(code) = LOWER(:r)"),
+                {"r": role}
+            ).fetchone()
+            role_is_enabled = role_meta.enabled if role_meta is not None else True
+
             modes = conn.execute(
                 text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
             ).fetchall()
@@ -2727,7 +2780,7 @@ def get_modes_for_role(role: str) -> list[dict]:
                 mode_dict = dict(m._mapping)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
-                is_role_allowed = role_map.get(mode_dict["code"], True if role == "superadmin" else False)
+                is_role_allowed = (role_map.get(mode_dict["code"], True if role == "superadmin" else False)) if role_is_enabled else False
 
                 # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
                 # dan mode diaktifkan di level sistem, serta role memiliki izin.
@@ -2803,6 +2856,12 @@ def get_roles_can_modify_program() -> set[str]:
     except Exception as e:
         logger.warning(f"Fallback get_roles_can_modify_program: {e}")
     return {"superadmin", "abaper"}
+
+
+def get_enabled_role_codes() -> set[str]:
+    """Mengambil himpunan kode peran yang sedang aktif (enabled = TRUE)."""
+    codes = get_role_codes(enabled_only=True)
+    return {c.lower() for c in codes}
 
 
 def get_roles(enabled_only: bool = False) -> list[dict]:

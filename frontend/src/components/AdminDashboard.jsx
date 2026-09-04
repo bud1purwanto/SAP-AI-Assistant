@@ -674,7 +674,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const CurrentTabIcon = currentTab?.icon || Activity;
 
   const activeRoleOptions = masterRoles.length > 0
-    ? masterRoles.filter(r => r.enabled).map(r => ({ value: r.code, label: r.label }))
+    ? masterRoles.filter(r => r.enabled).map(r => ({ value: r.code, label: r.label, enabled: true }))
+    : AVAILABLE_ROLES_OPTIONS;
+
+  const editRoleOptions = masterRoles.length > 0
+    ? masterRoles
+        .filter(r => r.enabled || (editUserForm.roles || [editUserForm.role]).includes(r.code))
+        .map(r => ({
+          value: r.code,
+          label: r.label + (!r.enabled ? (language === 'en' ? ' (Nonaktif)' : ' (Nonaktif)') : ''),
+          enabled: r.enabled,
+        }))
     : AVAILABLE_ROLES_OPTIONS;
 
   const isCurrentTabLoading =
@@ -1245,16 +1255,36 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 {u.full_name || <span className="italic text-content-subtle">—</span>}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="flex flex-wrap items-center gap-1 max-w-xs">
-                                  {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map((r) => (
-                                    <span
-                                      key={r}
-                                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border whitespace-nowrap ${getRoleBadgeStyle(r)}`}
-                                    >
-                                      {formatRoleLabel(r)}
-                                    </span>
-                                  ))}
-                                </div>
+                                  <div className="flex flex-wrap items-center gap-1 max-w-xs">
+                                    {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map((r) => {
+                                      const roleMeta = masterRoles.find((mr) => mr.code.toLowerCase() === r.toLowerCase());
+                                      const isDisabled = roleMeta && roleMeta.enabled === false;
+                                      return (
+                                        <span
+                                          key={r}
+                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border whitespace-nowrap ${
+                                            isDisabled
+                                              ? 'bg-surface-sunken text-content-subtle border-line/70 opacity-70 line-through'
+                                              : getRoleBadgeStyle(r)
+                                          }`}
+                                          title={
+                                            isDisabled
+                                              ? (language === 'en'
+                                                  ? `${formatRoleLabel(r)} (Disabled / Suspended by admin)`
+                                                  : `${formatRoleLabel(r)} (Nonaktif / Ditangguhkan oleh admin)`)
+                                              : formatRoleLabel(r)
+                                          }
+                                        >
+                                          <span>{formatRoleLabel(r)}</span>
+                                          {isDisabled && (
+                                            <span className="text-[9px] no-underline font-normal text-rose-400">
+                                              ({language === 'en' ? 'Disabled' : 'Nonaktif'})
+                                            </span>
+                                          )}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
                               </td>
                               <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
                                 {u.assistant_persona || <span className="italic text-content-subtle text-[11px]">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
@@ -1482,7 +1512,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
                           </label>
                           <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
-                            {activeRoleOptions.map((opt) => {
+                            {editRoleOptions.map((opt) => {
                               const currentRoles = editUserForm.roles || [editUserForm.role];
                               const isSelected = currentRoles.includes(opt.value);
                               return (

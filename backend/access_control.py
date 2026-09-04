@@ -442,9 +442,10 @@ def resolve_access(username: str, role: Union[str, List[str], None] = "user") ->
             roles_tuple = tuple(roles)
             r_rows = conn.execute(
                 text("""
-                SELECT resource_key, allowed, can_write
-                FROM ai_assistant.role_resource_access
-                WHERE LOWER(role) = ANY(:roles)
+                SELECT rra.resource_key, rra.allowed, rra.can_write
+                FROM ai_assistant.role_resource_access rra
+                JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(rra.role)
+                WHERE LOWER(rra.role) = ANY(:roles) AND r.enabled = TRUE
             """),
                 {"roles": list(roles_tuple), "role": roles_tuple[0] if roles_tuple else "user"},
             ).fetchall()
