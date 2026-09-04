@@ -426,7 +426,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         terkirim = ""
         is_tool_call = False
         flushed_initial = False
-        STREAM_BUFFER_THRESHOLD = 200
 
         try:
             async for chunk in model.astream(msgs):
@@ -450,12 +449,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 if not tampil:
                     continue
 
-                # Buffer teks awal sampai cukup panjang untuk memastikan ini bukan narasi pendek pra-tool
                 if not flushed_initial:
-                    if len(tampil) >= STREAM_BUFFER_THRESHOLD:
-                        flushed_initial = True
-                        terkirim = tampil
-                        await emit_token(tampil)
+                    flushed_initial = True
+                    terkirim = tampil
+                    await emit_token(tampil)
                 else:
                     if tampil.startswith(terkirim):
                         diff = tampil[len(terkirim):]

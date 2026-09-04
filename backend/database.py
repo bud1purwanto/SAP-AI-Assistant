@@ -1691,7 +1691,41 @@ def delete_user_by_admin(username: str):
         logger.error(f"Error delete_user_by_admin: {e}")
         return {"success": False, "message": str(e)}
 
-def get_admin_system_stats():
+def get_top_active_users(period: str = "month", limit: int = 10):
+    """Mengambil daftar user paling aktif berdasarkan jumlah sesi percakapan dengan filter periode."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            where_clauses = []
+            params = {"limit": max(1, min(limit, 50))}
+
+            if period == "today":
+                where_clauses.append("created_at >= date_trunc('day', CURRENT_TIMESTAMP)")
+            elif period == "week":
+                where_clauses.append("created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'")
+            elif period == "month":
+                where_clauses.append("created_at >= date_trunc('month', CURRENT_DATE)")
+            elif period == "year":
+                where_clauses.append("created_at >= date_trunc('year', CURRENT_DATE)")
+            # period == "all" -> tanpa filter tanggal
+
+            where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+            query = text(f"""
+                SELECT username, COUNT(session_id) as session_count
+                FROM ai_assistant.chat_sessions
+                {where_str}
+                GROUP BY username
+                ORDER BY session_count DESC
+                LIMIT :limit
+            """)
+            rows = conn.execute(query, params).fetchall()
+            return [{"username": r.username, "sessions": r.session_count} for r in rows]
+    except Exception as e:
+        logger.error(f"Error get_top_active_users: {e}")
+        return []
+
+def get_admin_system_stats(period: str = "month", top_users_limit: int = 10):
     """Mengambil ringkasan statistik sistem untuk dashboard."""
     try:
         engine = get_engine()
@@ -1704,14 +1738,7 @@ def get_admin_system_stats():
             total_feedback = likes_count + dislikes_count
             satisfaction_rate = round((likes_count / total_feedback) * 100, 1) if total_feedback > 0 else None
             
-            # 5 user teraktif
-            top_users = conn.execute(text("""
-                SELECT username, COUNT(session_id) as session_count
-                FROM ai_assistant.chat_sessions
-                GROUP BY username
-                ORDER BY session_count DESC
-                LIMIT 5
-            """)).fetchall()
+            top_users = get_top_active_users(period=period, limit=top_users_limit)
 
             return {
                 "total_users": user_count,
@@ -1721,7 +1748,8 @@ def get_admin_system_stats():
                 "dislikes_count": dislikes_count,
                 "total_feedback": total_feedback,
                 "satisfaction_rate": satisfaction_rate,
-                "top_users": [{"username": r.username, "sessions": r.session_count} for r in top_users]
+                "period": period,
+                "top_users": top_users
             }
     except Exception as e:
         logger.error(f"Error get_admin_system_stats: {e}")
@@ -1733,6 +1761,7 @@ def get_admin_system_stats():
             "dislikes_count": 0,
             "total_feedback": 0,
             "satisfaction_rate": None,
+            "period": period,
             "top_users": []
         }
 

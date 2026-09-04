@@ -342,21 +342,44 @@ class MCPManager:
                     "error": str(e)
                 }
 
-            # RAG Server status
+            # RAG & Email Server status (port 8090 melayani RAG Knowledge Base dan Email/Exchange Gateway)
             try:
                 rag_client = self.get_client("rag")
                 rag_tools = await rag_client.list_tools(http_client)
+                
+                # Pisahkan tool RAG murni dan tool Email secara akurat
+                rag_clean_tools = [
+                    t for t in rag_tools 
+                    if not t.name.startswith("sql_") and not is_email_tool(t.name)
+                ]
+                email_tools = [
+                    t for t in rag_tools 
+                    if is_email_tool(t.name)
+                ]
+
                 status["rag"] = {
                     "id": "rag",
                     "name": "Manufacturing RAG",
                     "description": "Enterprise Document & Knowledge Base",
                     "online": True,
                     "status": "online",
-                    "tool_count": len(rag_tools),
-                    "tools_count": len(rag_tools)
+                    "tool_count": len(rag_clean_tools),
+                    "tools_count": len(rag_clean_tools),
+                    "active_server": "Vector & Doc"
+                }
+
+                status["email"] = {
+                    "id": "email",
+                    "name": "Email Gateway",
+                    "description": "Email, Calendar & Mail Archive Gateway",
+                    "online": True,
+                    "status": "online",
+                    "tool_count": len(email_tools),
+                    "tools_count": len(email_tools),
+                    "active_server": "Mail Archive"
                 }
             except Exception as e:
-                logger.error(f"Error checking RAG server: {e}")
+                logger.error(f"Error checking RAG/Email server: {e}")
                 status["rag"] = {
                     "id": "rag",
                     "name": "Manufacturing RAG",
@@ -365,10 +388,22 @@ class MCPManager:
                     "status": "offline",
                     "tool_count": 0,
                     "tools_count": 0,
+                    "active_server": "-",
+                    "error": str(e)
+                }
+                status["email"] = {
+                    "id": "email",
+                    "name": "Email Gateway",
+                    "description": "Email, Calendar & Mail Archive Gateway",
+                    "online": False,
+                    "status": "offline",
+                    "tool_count": 0,
+                    "tools_count": 0,
+                    "active_server": "-",
                     "error": str(e)
                 }
 
-            # SQL Server status (mengambil daftar 8 database server SQL live via sql_list_servers)
+            # SQL Server status (mengambil daftar database server SQL live via sql_list_servers)
             try:
                 sql_client = self.get_client("sql")
                 sql_tools = await sql_client.list_tools(http_client)
@@ -398,7 +433,6 @@ class MCPManager:
                     "sub_servers": sql_sub_servers
                 }
                 status["sql"] = sql_info
-                status["email"] = {**sql_info, "id": "email"}
             except Exception as e:
                 logger.error(f"Error checking SQL MCP server: {e}")
                 sql_err = {
@@ -414,7 +448,6 @@ class MCPManager:
                     "error": str(e)
                 }
                 status["sql"] = sql_err
-                status["email"] = {**sql_err, "id": "email"}
 
         return status
 

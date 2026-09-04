@@ -33,6 +33,7 @@ from database import (
     delete_chat_session,
     delete_user_by_admin,
     get_admin_system_stats,
+    get_top_active_users,
     get_all_sessions_for_audit,
     get_chat_messages,
     get_backend_info,
@@ -482,9 +483,13 @@ async def get_mcp_servers(user: dict = Depends(get_current_user_optional)):
 # --- SUPER ADMIN ENDPOINTS ---
 
 @app.get("/api/admin/stats")
-async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
+async def get_admin_stats_endpoint(
+    period: str = "month",
+    limit: int = 10,
+    admin: dict = Depends(require_superadmin)
+):
     """Mengambil metrik statistik sistem & status live MCP servers."""
-    stats = get_admin_system_stats()
+    stats = get_admin_system_stats(period=period, top_users_limit=limit)
     mcp_st = await mcp_manager.check_servers_status()
     try:
         access_control.sync_resources_from_mcp(mcp_st)
@@ -492,6 +497,16 @@ async def get_admin_stats_endpoint(admin: dict = Depends(require_superadmin)):
         logger.warning(f"Auto-sync resources gagal: {e}")
     stats["mcp_status"] = mcp_st
     return stats
+
+
+@app.get("/api/admin/top-users")
+async def get_admin_top_users_endpoint(
+    period: str = "month",
+    limit: int = 10,
+    admin: dict = Depends(require_superadmin)
+):
+    """Mengambil daftar user teraktif berdasarkan filter periode tanpa reload MCP."""
+    return get_top_active_users(period=period, limit=limit)
 
 
 # --- PERAN ---
@@ -515,9 +530,10 @@ ROLE_TERSEDIA = (
 # --- KUOTA TOKEN ---
 
 class BatasPeranRequest(BaseModel):
-    role: str
-    daily_token_limit: int = 0     # 0 = tanpa batas
-    per_minute_limit: int = 0      # 0 = tanpa batas
+    role: Optional[str] = None
+    daily_token_limit: Optional[int] = 0     # 0 = tanpa batas
+    per_minute_limit: Optional[int] = 0      # 0 = tanpa batas
+    limits: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 class SaklarLimitRequest(BaseModel):
@@ -568,12 +584,31 @@ async def atur_batas_peran_endpoint(
     req: BatasPeranRequest,
     admin: dict = Depends(require_superadmin),
 ):
-    """Ubah batas harian dan batas per menit untuk satu peran."""
-    if req.role.strip().lower() not in ROLE_TERSEDIA:
+    """Ubah batas harian dan batas per menit untuk satu peran atau batch banyak peran."""
+    if req.limits:
+        for r, vals in req.limits.items():
+            clean_r = str(r).strip().lower()
+            if clean_r not in ROLE_TERSEDIA:
+                raise HTTPException(status_code=400, detail=f"Peran '{r}' tidak dikenal.")
+            daily = vals.get("daily_token_limit", 0) if isinstance(vals, dict) else 0
+            minute = vals.get("per_minute_limit", 0) if isinstance(vals, dict) else 0
+            if not isinstance(daily, int) or not isinstance(minute, int) or daily < 0 or minute < 0:
+                raise HTTPException(status_code=400, detail="Batas tidak boleh negatif.")
+            if not set_role_limit(clean_r, daily, minute):
+                raise HTTPException(status_code=500, detail=f"Batas '{clean_r}' gagal disimpan.")
+        return {"status": "success", "role_limits": get_role_limits()}
+
+    if not req.role:
+        raise HTTPException(status_code=400, detail="Peran atau daftar batas harus disertakan.")
+
+    clean_role = req.role.strip().lower()
+    if clean_role not in ROLE_TERSEDIA:
         raise HTTPException(status_code=400, detail=f"Peran '{req.role}' tidak dikenal.")
-    if req.daily_token_limit < 0 or req.per_minute_limit < 0:
+    daily = req.daily_token_limit if req.daily_token_limit is not None else 0
+    minute = req.per_minute_limit if req.per_minute_limit is not None else 0
+    if daily < 0 or minute < 0:
         raise HTTPException(status_code=400, detail="Batas tidak boleh negatif.")
-    if not set_role_limit(req.role, req.daily_token_limit, req.per_minute_limit):
+    if not set_role_limit(clean_role, daily, minute):
         raise HTTPException(status_code=500, detail="Batas gagal disimpan.")
     return {"status": "success", "role_limits": get_role_limits()}
 

@@ -88,8 +88,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     onConfirm: null,
   });
 
-  // Stats State
+  // Stats & Top Users State
   const [stats, setStats] = useState(null);
+  const [topUsersPeriod, setTopUsersPeriod] = useState('month');
+  const [topUsersList, setTopUsersList] = useState([]);
+  const [topUsersLoading, setTopUsersLoading] = useState(false);
 
   // Feedback State — daftar jawaban yang dinilai pengguna
   const [feedbackKind, setFeedbackKind] = useState('dislike');
@@ -151,16 +154,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [kuota, setKuota] = useState(null);
   const [kuotaLoading, setKuotaLoading] = useState(false);
   const [batasDraft, setBatasDraft] = useState({});
+  const [savingBatas, setSavingBatas] = useState(false);
   const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
-  const fetchStats = async () => {
+  const fetchStats = async (period = topUsersPeriod) => {
     setStatsLoading(true);
     try {
-      setStats(await api.adminStats());
+      const data = await api.adminStats(period, 10);
+      setStats(data);
+      if (data?.top_users) {
+        setTopUsersList(data.top_users);
+      }
     } catch (err) {
       console.error("Gagal load stats:", err);
     } finally {
       setStatsLoading(false);
+    }
+  };
+
+  const handleTopUsersPeriodChange = async (newPeriod) => {
+    setTopUsersPeriod(newPeriod);
+    setTopUsersLoading(true);
+    try {
+      const res = await api.adminTopUsers(newPeriod, 10);
+      setTopUsersList(res?.top_users || []);
+    } catch (err) {
+      console.error("Gagal load top users:", err);
+    } finally {
+      setTopUsersLoading(false);
     }
   };
 
@@ -334,28 +355,38 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     return '';
   };
 
-  const simpanBatas = async (peran) => {
+  const simpanSemuaBatas = async () => {
     setActionError('');
     setActionSuccess('');
-    const draft = batasDraft[peran] || {};
-    const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
-    const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
-    const harian = rawHarian === '' ? 0 : Number.parseInt(rawHarian, 10);
-    const permenit = rawPermenit === '' ? 0 : Number.parseInt(rawPermenit, 10);
-    if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
-      setActionError(language === 'en' ? 'Limits must be non-negative integers.' : 'Batas harus berupa angka bulat 0 atau lebih.');
-      return;
-    }
-    try {
-      const hasil = await api.adminQuotaBatas({
-        role: peran,
+    const roles = Object.keys(kuota?.role_limits || {});
+    if (roles.length === 0) return;
+
+    const payloadLimits = {};
+    for (const peran of roles) {
+      const draft = batasDraft[peran] || {};
+      const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
+      const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
+      const harian = rawHarian === '' ? 0 : Number.parseInt(rawHarian, 10);
+      const permenit = rawPermenit === '' ? 0 : Number.parseInt(rawPermenit, 10);
+      if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
+        setActionError(language === 'en' ? `Limits for role '${peran}' must be non-negative integers.` : `Batas peran '${peran}' harus berupa angka bulat 0 atau lebih.`);
+        return;
+      }
+      payloadLimits[peran] = {
         daily_token_limit: harian,
         per_minute_limit: permenit,
-      });
+      };
+    }
+
+    setSavingBatas(true);
+    try {
+      const hasil = await api.adminQuotaBatas({ limits: payloadLimits });
       setKuota((k) => (k ? { ...k, role_limits: hasil.role_limits } : k));
-      setActionSuccess(language === 'en' ? `Limits for role '${peran}' saved.` : `Batas peran '${peran}' tersimpan.`);
+      setActionSuccess(language === 'en' ? 'All role limits saved successfully.' : 'Semua batas peran berhasil disimpan.');
     } catch (err) {
       setActionError(err.message);
+    } finally {
+      setSavingBatas(false);
     }
   };
 
@@ -974,7 +1005,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-2.5 sm:mb-3.5 flex items-center gap-1.5 font-display">
                     <Server className="w-3.5 h-3.5 text-accent" /> {language === 'en' ? 'Live MCP Servers' : 'Status Server MCP'}
                   </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
                     {/* MCP SAP Card */}
                     <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
                       <div className="flex items-center justify-between gap-2">
@@ -1017,18 +1048,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-xs sm:text-sm text-content truncate">SQL Database</span>
-                        {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true || stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
+                        {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true) ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sql?.error || stats?.mcp_status?.email?.error || ''}>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sql?.error || ''}>
                             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
                           </span>
                         )}
                       </div>
                       <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
-                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} tools • DB & Email
+                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? 0} tools • {stats?.mcp_status?.sql?.active_server || 'Database'}
+                      </p>
+                    </div>
+
+                    {/* MCP Email Card */}
+                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-xs sm:text-sm text-content truncate">Email Gateway</span>
+                        {(stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.email?.error || ''}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
+                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} tools • {stats?.mcp_status?.email?.active_server || 'Mail Archive'}
                       </p>
                     </div>
                   </div>
@@ -1036,12 +1086,51 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
                 {/* Top Active Users */}
                 <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs">
-                  <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-3.5 flex items-center gap-2 font-display">
-                    <UserCheck className="w-4 h-4 text-indigo-400" /> {language === 'en' ? 'Most Active Users' : 'User Paling Aktif'}
-                  </h4>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3.5">
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
+                        <UserCheck className="w-4 h-4 text-indigo-400" /> {language === 'en' ? 'Most Active Users' : 'User Paling Aktif'}
+                        <span className="text-[10px] font-normal text-content-muted lowercase">
+                          (max 10)
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-content-muted mt-0.5">
+                        {language === 'en' ? 'Ranked by chat sessions created' : 'Diurutkan berdasarkan total sesi percakapan'}
+                      </p>
+                    </div>
+
+                    {/* Filter Period: default per month */}
+                    <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-xl border border-line/70 self-start sm:self-auto">
+                      {[
+                        { id: 'month', labelEn: 'Month', labelId: 'Bulan' },
+                        { id: 'week', labelEn: 'Week', labelId: 'Minggu' },
+                        { id: 'day', labelEn: 'Today', labelId: 'Hari Ini' },
+                        { id: 'all', labelEn: 'All Time', labelId: 'Semua' },
+                      ].map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleTopUsersPeriodChange(p.id)}
+                          className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-all ${
+                            topUsersPeriod === p.id
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'text-content-muted hover:text-content hover:bg-surface-elevated/60'
+                          }`}
+                        >
+                          {language === 'en' ? p.labelEn : p.labelId}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="divide-y divide-line/60">
-                    {stats?.top_users?.length > 0 ? (
-                      stats.top_users.map((u, i) => (
+                    {topUsersLoading ? (
+                      <div className="py-6 text-center text-content-muted text-xs flex items-center justify-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                        {language === 'en' ? 'Loading top users...' : 'Memuat user aktif...'}
+                      </div>
+                    ) : (topUsersList?.length > 0 ? (
+                      topUsersList.map((u, i) => (
                         <div key={i} className="py-2.5 flex items-center justify-between">
                           <div className="flex items-center gap-2.5 min-w-0 pr-2">
                             <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 font-bold text-xs flex items-center justify-center shrink-0">
@@ -1055,8 +1144,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
                       ))
                     ) : (
-                      <p className="text-xs text-content-muted py-3">{language === 'en' ? 'No session activity recorded yet.' : 'Belum ada data aktivitas sesi.'}</p>
-                    )}
+                      <p className="text-xs text-content-muted py-3">{language === 'en' ? 'No session activity recorded for this period.' : 'Belum ada aktivitas sesi pada periode ini.'}</p>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -2091,96 +2180,145 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </button>
                 </div>
 
-                {/* Batas per peran */}
-                <div className="rounded-xl sm:rounded-2xl border border-line/80 bg-surface p-3.5 sm:p-5 shadow-xs">
-                  <p className="font-bold text-content text-xs sm:text-sm mb-0.5">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
-                  <p className="text-[11px] sm:text-xs text-content-muted mb-3 sm:mb-4">
-                    {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
-                  </p>
-                  <div className="space-y-2.5 sm:space-y-3">
-                    {Object.keys(kuota?.role_limits || {}).map((peran) => (
-                      <div
-                        key={peran}
-                        className="flex flex-col sm:flex-row sm:items-end gap-2.5 sm:gap-3.5 p-3 sm:p-4 rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all"
-                      >
-                        <div className="sm:w-28 shrink-0 flex items-center justify-between sm:block">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-content-subtle">{language === 'en' ? 'Role' : 'Peran'}</p>
-                          <p className="font-mono text-xs sm:text-sm font-bold text-accent capitalize">{peran}</p>
-                        </div>
-                        <div className="grid grid-cols-2 sm:flex sm:flex-1 gap-2 sm:gap-3.5 min-w-0">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <label className="block text-[10px] sm:text-xs font-semibold text-content-muted truncate" htmlFor={`harian-${peran}`}>
-                                {language === 'en' ? 'Daily Tokens' : 'Token / hari'}
-                              </label>
-                              {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit) && (
-                                <span className={`text-[10px] font-semibold font-mono px-1 py-0.5 rounded ${
-                                  Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0
-                                    ? 'bg-emerald-500/15 text-emerald-400'
-                                    : 'bg-indigo-500/15 text-indigo-400'
-                                }`}>
-                                  {Number(String(batasDraft[peran]?.daily_token_limit).replace(/\D/g, '')) === 0 ? '♾️' : '≈ '}
-                                  {formatTokenWordHelper(batasDraft[peran]?.daily_token_limit)}
-                                </span>
-                              )}
-                            </div>
-                            <input
-                              id={`harian-${peran}`}
-                              type="text"
-                              inputMode="numeric"
-                              value={formatNumberSeparator(batasDraft[peran]?.daily_token_limit)}
-                              onChange={(e) => {
-                                const cleanDigits = e.target.value.replace(/\D/g, '');
-                                setBatasDraft((d) => ({
-                                  ...d,
-                                  [peran]: { ...d[peran], daily_token_limit: cleanDigits },
-                                }));
-                              }}
-                              placeholder="0"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
-                            />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <label className="block text-[10px] sm:text-xs font-semibold text-content-muted truncate" htmlFor={`menit-${peran}`}>
-                                {language === 'en' ? 'Per Minute' : 'Per menit'}
-                              </label>
-                              {Number(String(batasDraft[peran]?.per_minute_limit).replace(/\D/g, '')) === 0 && (
-                                <span className="text-[10px] font-semibold font-mono px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
-                                  ♾️
-                                </span>
-                              )}
-                            </div>
-                            <input
-                              id={`menit-${peran}`}
-                              type="text"
-                              inputMode="numeric"
-                              value={formatNumberSeparator(batasDraft[peran]?.per_minute_limit)}
-                              onChange={(e) => {
-                                const cleanDigits = e.target.value.replace(/\D/g, '');
-                                setBatasDraft((d) => ({
-                                  ...d,
-                                  [peran]: { ...d[peran], per_minute_limit: cleanDigits },
-                                }));
-                              }}
-                              placeholder="0"
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-line bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30"
-                            />
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => simpanBatas(peran)}
-                          aria-label={`${language === 'en' ? 'Save limits for' : 'Simpan batas'} ${peran}`}
-                          className="flex items-center justify-center gap-1.5 w-full sm:w-auto px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95"
-                        >
-                          <Save className="w-3.5 h-3.5" />
-                          {t('common.save')}
-                        </button>
+                {/* Batas per peran - Redesigned as Table matching other tabs */}
+                <div className="rounded-2xl border border-line/80 bg-surface overflow-hidden shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-line/80 bg-surface">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
+                          {Object.keys(kuota?.role_limits || {}).length} {language === 'en' ? 'Roles' : 'Peran'}
+                        </span>
                       </div>
-                    ))}
-                    {!kuotaLoading && !Object.keys(kuota?.role_limits || {}).length && (
-                      <p className="text-xs text-content-muted">{language === 'en' ? 'Role limits unavailable.' : 'Batas peran belum tersedia.'}</p>
-                    )}
+                      <p className="text-[11px] sm:text-xs text-content-muted mt-0.5">
+                        {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={simpanSemuaBatas}
+                      disabled={savingBatas || kuotaLoading}
+                      className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>
+                        {savingBatas
+                          ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
+                          : (language === 'en' ? 'Save All Limits' : 'Simpan Semua Batas')}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs sm:text-sm">
+                      <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
+                        <tr>
+                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'Role' : 'Peran'}</th>
+                          <th className="px-4 py-3">{language === 'en' ? 'Daily Tokens' : 'Token / Hari'}</th>
+                          <th className="px-4 py-3 sm:w-48">{language === 'en' ? 'Per Minute (Burst)' : 'Batas per Menit'}</th>
+                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'Limit Summary' : 'Ringkasan Batas'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-line/60 text-content-secondary">
+                        {Object.keys(kuota?.role_limits || {}).map((peran) => {
+                          const draft = batasDraft[peran] || {};
+                          const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
+                          const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
+                          const isUnlimitedDaily = rawHarian === '0';
+                          const isUnlimitedMinute = rawPermenit === '0';
+
+                          return (
+                            <tr key={peran} className="hover:bg-surface-hover/70 transition-colors">
+                              {/* Role */}
+                              <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs ${getRoleBadgeStyle(peran)}`}>
+                                    {peran.substring(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-semibold text-xs sm:text-sm text-content">
+                                        {formatRoleLabel(peran)}
+                                      </span>
+                                      <span className={`text-[9px] px-1.5 py-0.2 rounded border font-mono font-bold uppercase ${getRoleBadgeStyle(peran)}`}>
+                                        {peran}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-content-subtle font-mono mt-0.5">role:{peran.toLowerCase()}</p>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Daily Tokens Input */}
+                              <td className="px-4 py-3">
+                                <div className="max-w-xs">
+                                  <input
+                                    id={`harian-${peran}`}
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatNumberSeparator(draft.daily_token_limit)}
+                                    onChange={(e) => {
+                                      const cleanDigits = e.target.value.replace(/\D/g, '');
+                                      setBatasDraft((d) => ({
+                                        ...d,
+                                        [peran]: { ...d[peran], daily_token_limit: cleanDigits },
+                                      }));
+                                    }}
+                                    placeholder="0"
+                                    className="w-full px-3 py-1.5 rounded-lg border border-line bg-surface-sunken/60 hover:bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Per Minute Input */}
+                              <td className="px-4 py-3">
+                                <div className="max-w-[150px]">
+                                  <input
+                                    id={`menit-${peran}`}
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatNumberSeparator(draft.per_minute_limit)}
+                                    onChange={(e) => {
+                                      const cleanDigits = e.target.value.replace(/\D/g, '');
+                                      setBatasDraft((d) => ({
+                                        ...d,
+                                        [peran]: { ...d[peran], per_minute_limit: cleanDigits },
+                                      }));
+                                    }}
+                                    placeholder="0"
+                                    className="w-full px-3 py-1.5 rounded-lg border border-line bg-surface-sunken/60 hover:bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+                                  />
+                                </div>
+                              </td>
+
+                              {/* Summary Badges */}
+                              <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {isUnlimitedDaily ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                      ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                      ≈ {formatTokenWordHelper(draft.daily_token_limit)} / {language === 'en' ? 'day' : 'hari'}
+                                    </span>
+                                  )}
+                                  {isUnlimitedMinute ? (
+                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
+                                      Burst: ∞
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
+                                      Burst: {draft.per_minute_limit || 0}/m
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 

@@ -175,6 +175,21 @@ def test_admin_dapat_mengubah_batas_per_peran(client, admin_auth):
     assert data["role_limits"]["abaper"]["per_minute_limit"] == 12
 
 
+def test_admin_dapat_mengubah_banyak_batas_sekaligus(client, admin_auth):
+    res = client.put("/api/admin/quota/limits", headers=admin_auth, json={
+        "limits": {
+            "abaper": {"daily_token_limit": 1_500_000, "per_minute_limit": 20},
+            "user": {"daily_token_limit": 500_000, "per_minute_limit": 5},
+        }
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["role_limits"]["abaper"]["daily_token_limit"] == 1_500_000
+    assert data["role_limits"]["abaper"]["per_minute_limit"] == 20
+    assert data["role_limits"]["user"]["daily_token_limit"] == 500_000
+    assert data["role_limits"]["user"]["per_minute_limit"] == 5
+
+
 def test_batas_negatif_ditolak(client, admin_auth):
     res = client.put("/api/admin/quota/limits", headers=admin_auth, json={
         "role": "abaper", "daily_token_limit": -5, "per_minute_limit": 0,

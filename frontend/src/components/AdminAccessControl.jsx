@@ -17,6 +17,8 @@ import {
   HardDrive,
   Info,
   Layers,
+  LayoutGrid,
+  List,
   Lock,
   Mail,
   PenTool,
@@ -124,8 +126,14 @@ export default function AdminAccessControl({
 }) {
   const { t, language } = useLanguage();
   const [activeSubTab, setActiveSubTab] = useState('roles'); // 'roles' | 'users' | 'audit'
-  const [roleViewMode, setRoleViewMode] = useState('grid'); // 'grid' | 'cards'
+  const [roleViewMode, setRoleViewMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      return 'cards';
+    }
+    return 'grid';
+  }); // 'grid' | 'cards'
   const [selectedRoleCard, setSelectedRoleCard] = useState('abaper');
+  const [roleResSearch, setRoleResSearch] = useState('');
 
   const [initialLoading, setInitialLoading] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -140,7 +148,10 @@ export default function AdminAccessControl({
   // User Access State
   const [usersList, setUsersList] = useState([]);
   const [searchUser, setSearchUser] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userSort, setUserSort] = useState('name_asc');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [mobileUserSelectorOpen, setMobileUserSelectorOpen] = useState(false);
   const [userResources, setUserResources] = useState([]);
   const [userDirty, setUserDirty] = useState(false);
 
@@ -497,18 +508,70 @@ export default function AdminAccessControl({
     }
   };
 
-  // Group resources by kind
-  const sapResources = resources.filter((r) => r.kind === 'sap');
-  const sqlResources = resources.filter((r) => r.kind === 'sql');
-  const serviceResources = resources.filter((r) => r.kind === 'service');
+  // Helper: User initials for avatar
+  const getUserInitials = (user) => {
+    const name = (user?.full_name || user?.username || '').trim();
+    if (!name) return 'U';
+    const parts = name.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  };
+
+  const getRoleTheme = (role) => {
+    switch (role?.toLowerCase()) {
+      case 'admin':
+      case 'superadmin':
+        return { bg: 'bg-indigo-500/15', text: 'text-indigo-400', border: 'border-indigo-500/30' };
+      case 'functional':
+        return { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' };
+      case 'basis':
+        return { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30' };
+      case 'data_analyst':
+        return { bg: 'bg-teal-500/15', text: 'text-teal-400', border: 'border-teal-500/30' };
+      case 'backend':
+      case 'developer':
+      case 'abaper':
+        return { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' };
+      default:
+        return { bg: 'bg-surface-sunken', text: 'text-content-muted', border: 'border-line' };
+    }
+  };
+
+  // Group resources by kind (supporting search)
+  const filteredResources = resources.filter((r) => {
+    if (!roleResSearch) return true;
+    const q = roleResSearch.toLowerCase();
+    return (
+      (r.resource_key || '').toLowerCase().includes(q) ||
+      (r.label || '').toLowerCase().includes(q) ||
+      (r.sid || '').toLowerCase().includes(q) ||
+      (r.client || '').toLowerCase().includes(q) ||
+      (r.database || '').toLowerCase().includes(q)
+    );
+  });
+  const sapResources = filteredResources.filter((r) => r.kind === 'sap');
+  const sqlResources = filteredResources.filter((r) => r.kind === 'sql');
+  const serviceResources = filteredResources.filter((r) => r.kind === 'service');
 
   const filteredUsers = usersList.filter((u) => {
     const q = searchUser.toLowerCase();
-    return (
+    const matchesQuery = (
       (u.username || '').toLowerCase().includes(q) ||
       (u.full_name || '').toLowerCase().includes(q) ||
       (u.role || '').toLowerCase().includes(q)
     );
+    const matchesRole = userRoleFilter === 'all' || 
+      (u.role && u.role.toLowerCase() === userRoleFilter) ||
+      (u.roles && u.roles.some((r) => r.toLowerCase() === userRoleFilter));
+    return matchesQuery && matchesRole;
+  }).sort((a, b) => {
+    if (userSort === 'name_asc') return (a.full_name || a.username).localeCompare(b.full_name || b.username);
+    if (userSort === 'name_desc') return (b.full_name || b.username).localeCompare(a.full_name || a.username);
+    if (userSort === 'username_asc') return a.username.localeCompare(b.username);
+    if (userSort === 'role') return (a.role || '').localeCompare(b.role || '');
+    return 0;
   });
 
   if (initialLoading) {
@@ -570,30 +633,30 @@ export default function AdminAccessControl({
 
       {/* 1. MASTER SWITCH BANNER - HERO STYLE */}
       <div
-        className={`relative overflow-hidden rounded-2xl border p-5 sm:p-6 transition-all shadow-md ${
+        className={`relative overflow-hidden rounded-xl sm:rounded-2xl border p-3.5 sm:p-6 transition-all shadow-md ${
           masterEnabled
             ? 'bg-gradient-to-r from-emerald-950/40 via-surface to-surface border-emerald-500/40'
             : 'bg-gradient-to-r from-amber-950/40 via-surface to-surface border-amber-500/40'
         }`}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
-          <div className="flex items-start gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-5 relative z-10">
+          <div className="flex items-start gap-3 sm:gap-4">
             <div
-              className={`p-3 rounded-2xl shrink-0 shadow-inner ${
+              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shrink-0 shadow-inner ${
                 masterEnabled
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 ring-4 ring-emerald-500/10'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 ring-4 ring-amber-500/10'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 ring-2 sm:ring-4 ring-emerald-500/10'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30 ring-2 sm:ring-4 ring-amber-500/10'
               }`}
             >
-              {masterEnabled ? <ShieldCheck className="w-7 h-7" /> : <ShieldAlert className="w-7 h-7" />}
+              {masterEnabled ? <ShieldCheck className="w-5 h-5 sm:w-7 sm:h-7" /> : <ShieldAlert className="w-5 h-5 sm:w-7 sm:h-7" />}
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h3 className="font-bold text-base sm:text-lg text-content tracking-tight">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-lg text-content tracking-tight">
                   {t('access.masterSwitch')}
                 </h3>
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider ${
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider ${
                     masterEnabled
                       ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                       : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
@@ -603,29 +666,29 @@ export default function AdminAccessControl({
                   {masterEnabled ? t('access.masterSwitchOn') : t('access.masterSwitchOff')}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-content-muted mt-1.5 leading-relaxed max-w-2xl">
+              <p className="text-[11px] sm:text-sm text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed max-w-2xl line-clamp-2 sm:line-clamp-none">
                 {masterEnabled ? t('access.masterDescOn') : t('access.masterDescOff')}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
             <button
               type="button"
               onClick={handleSyncResources}
               disabled={loading || saving}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover border border-line text-content transition-all cursor-pointer disabled:opacity-50 hover:border-line/80 shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover border border-line text-content transition-all cursor-pointer disabled:opacity-50 hover:border-line/80 shadow-xs"
               title="Sinkronkan penemuan resource MCP terbaru"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-accent ${loading ? 'animate-spin' : ''}`} />
-              <span>{t('access.syncResources')}</span>
+              <span className="hidden xs:inline">{t('access.syncResources')}</span>
             </button>
 
             <button
               type="button"
               onClick={handleToggleMaster}
               disabled={saving}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50 active:scale-[0.98] ${
+              className={`inline-flex items-center gap-1.5 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer disabled:opacity-50 active:scale-[0.98] ${
                 masterEnabled
                   ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-950/50'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/50'
@@ -633,12 +696,12 @@ export default function AdminAccessControl({
             >
               {masterEnabled ? (
                 <>
-                  <Lock className="w-4 h-4" />
+                  <Lock className="w-3.5 h-3.5" />
                   <span>{t('access.disableSwitch')}</span>
                 </>
               ) : (
                 <>
-                  <Unlock className="w-4 h-4" />
+                  <Unlock className="w-3.5 h-3.5" />
                   <span>{t('access.enableSwitch')}</span>
                 </>
               )}
@@ -765,6 +828,34 @@ export default function AdminAccessControl({
       {/* 3. SUBTAB CONTENT: ROLES MATRIX (TABEL GRID / ROLE CARDS) */}
       {activeSubTab === 'roles' && (
         <div className="space-y-4">
+          {/* Resource Search for Role Matrix */}
+          <div className="flex items-center justify-between gap-3 p-2.5 sm:p-3 rounded-xl bg-surface border border-line shadow-xs">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-content-subtle absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={roleResSearch}
+                onChange={(e) => setRoleResSearch(e.target.value)}
+                placeholder="Cari server / SID / database / companion service..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
+              />
+              {roleResSearch && (
+                <button
+                  type="button"
+                  onClick={() => setRoleResSearch('')}
+                  className="absolute right-2 top-2 text-content-subtle hover:text-content cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+            <span className="text-[11px] font-mono text-content-subtle whitespace-nowrap hidden xs:inline">
+              {filteredResources.length === resources.length
+                ? `${resources.length} resource`
+                : `${filteredResources.length} dari ${resources.length} resource`}
+            </span>
+          </div>
+
           {/* VIEW A: MATRIKS TABEL (GRID VIEW) */}
           {roleViewMode === 'grid' && (
             <div className="relative overflow-auto max-h-[calc(100vh-270px)] min-h-[420px] rounded-2xl border border-line bg-surface shadow-sm select-none">
@@ -968,58 +1059,162 @@ export default function AdminAccessControl({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* User Selector Column */}
           <div className="md:col-span-1 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-content-subtle">
-                Daftar Pengguna ({usersList.length})
-              </h4>
-              <button
-                type="button"
-                onClick={() => setIsBulkOpen(true)}
-                className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-bold cursor-pointer"
-              >
-                <span>+ {t('access.bulkAction')}</span>
-              </button>
-            </div>
+            {/* Mobile Compact Selected User Header */}
+            {selectedUser && (
+              <div className="md:hidden flex items-center justify-between p-3 rounded-xl bg-surface border border-line shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 text-accent font-bold text-xs flex items-center justify-center shrink-0">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-content truncate">
+                      {usersList.find((x) => x.username === selectedUser)?.full_name || selectedUser}
+                    </p>
+                    <div className="flex items-center gap-1.5 text-[10px] text-content-muted font-mono">
+                      <span>@{selectedUser}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileUserSelectorOpen(!mobileUserSelectorOpen)}
+                  className="px-2.5 py-1.5 rounded-lg bg-surface-sunken hover:bg-surface text-accent text-xs font-semibold border border-line flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <span>{mobileUserSelectorOpen ? 'Tutup' : 'Ganti User'}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileUserSelectorOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+            )}
 
-            <div className="relative">
-              <Search className="w-4 h-4 text-content-subtle absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={searchUser}
-                onChange={(e) => setSearchUser(e.target.value)}
-                placeholder={t('access.searchUser')}
-                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none"
-              />
-            </div>
+            {/* User List Panel (always visible on desktop; collapsible on mobile when user selected) */}
+            <div className={`${selectedUser && !mobileUserSelectorOpen ? 'hidden md:block' : 'block'} space-y-3`}>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-content-subtle flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-accent" />
+                  <span>Daftar Pengguna</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-surface-sunken text-content-muted border border-line font-mono font-normal">
+                    {filteredUsers.length === usersList.length ? usersList.length : `${filteredUsers.length}/${usersList.length}`}
+                  </span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsBulkOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs text-accent hover:underline font-bold cursor-pointer"
+                >
+                  <span>+ {t('access.bulkAction')}</span>
+                </button>
+              </div>
 
-            <div className="max-h-[560px] overflow-y-auto space-y-1.5 pr-1">
-              {filteredUsers.map((u) => {
-                const isSel = selectedUser === u.username;
-                return (
+              {/* Search User Input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-content-subtle absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={searchUser}
+                  onChange={(e) => setSearchUser(e.target.value)}
+                  placeholder={t('access.searchUser')}
+                  className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none transition-colors"
+                />
+                {searchUser && (
                   <button
-                    key={u.username}
                     type="button"
-                    onClick={() => loadUserAccess(u.username)}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl text-left text-xs transition-all cursor-pointer ${
-                      isSel
-                        ? 'bg-accent/15 border border-accent/50 text-accent font-bold shadow-xs'
-                        : 'bg-surface hover:bg-surface-hover border border-line text-content'
-                    }`}
+                    onClick={() => setSearchUser('')}
+                    className="absolute right-2.5 top-2.5 text-content-subtle hover:text-content cursor-pointer"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-content">{u.full_name || u.username}</p>
-                      <p className="text-[10px] text-content-muted truncate font-mono">@{u.username}</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1 justify-end max-w-[140px]">
-                      {(u.roles && u.roles.length > 0 ? u.roles : [u.role || 'user']).map((r) => (
-                        <span key={r} className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-surface-sunken border border-line text-content-subtle">
-                          {r}
-                        </span>
-                      ))}
-                    </div>
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                );
-              })}
+                )}
+              </div>
+
+              {/* Role Filter & Sort Controls */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Role Filter */}
+                <div className="relative">
+                  <select
+                    value={userRoleFilter}
+                    onChange={(e) => setUserRoleFilter(e.target.value)}
+                    className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
+                  >
+                    <option value="all">Semua Peran</option>
+                    <option value="admin">Admin</option>
+                    <option value="functional">Functional</option>
+                    <option value="abaper">Abaper</option>
+                    <option value="basis">Basis</option>
+                    <option value="data_analyst">Data Analyst</option>
+                    <option value="user">User Biasa</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
+                </div>
+
+                {/* Sort Order */}
+                <div className="relative">
+                  <select
+                    value={userSort}
+                    onChange={(e) => setUserSort(e.target.value)}
+                    className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
+                  >
+                    <option value="name_asc">Nama (A-Z)</option>
+                    <option value="name_desc">Nama (Z-A)</option>
+                    <option value="username_asc">Username (A-Z)</option>
+                    <option value="role">Urutkan Peran</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Integrated Sleek User List */}
+              <div className="rounded-2xl border border-line bg-surface overflow-hidden shadow-xs">
+                <div className="max-h-[360px] sm:max-h-[500px] overflow-y-auto divide-y divide-line/40">
+                  {filteredUsers.length > 0 ? (
+                    filteredUsers.map((u) => {
+                      const isSel = selectedUser === u.username;
+                      const primaryRole = (u.roles && u.roles[0]) || u.role || 'user';
+                      const theme = getRoleTheme(primaryRole);
+                      return (
+                        <button
+                          key={u.username}
+                          type="button"
+                          onClick={() => {
+                            loadUserAccess(u.username);
+                            setMobileUserSelectorOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between p-2.5 sm:p-3 text-left transition-all cursor-pointer ${
+                            isSel
+                              ? 'bg-accent/10 border-l-4 border-l-accent border-y border-y-accent/20 font-medium'
+                              : 'hover:bg-surface-hover/80'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {/* Avatar Squircle with Initials */}
+                            <div
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${theme.bg} ${theme.text} ${theme.border}`}
+                            >
+                              {getUserInitials(u)}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-xs text-content leading-tight">
+                                {u.full_name || u.username}
+                              </p>
+                              <p className="text-[10px] text-content-muted truncate font-mono">
+                                @{u.username}
+                              </p>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border leading-none shrink-0 ${theme.bg} ${theme.text} ${theme.border}`}
+                          >
+                            {primaryRole}
+                          </span>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="py-8 text-center text-xs text-content-subtle">
+                      Tidak ada pengguna cocok.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 

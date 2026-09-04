@@ -177,7 +177,8 @@ export const api = {
       body: { feedback },
     }),
 
-  adminStats: () => apiFetch('/api/admin/stats'),
+  adminStats: (period = 'month', limit = 10) => apiFetch(`/api/admin/stats?period=${encodeURIComponent(period)}&limit=${limit}`),
+  adminTopUsers: (period = 'month', limit = 10) => apiFetch(`/api/admin/top-users?period=${encodeURIComponent(period)}&limit=${limit}`),
   quotaSaya: () => apiFetch('/api/quota'),
 
   adminQuota: () => apiFetch('/api/admin/quota'),
