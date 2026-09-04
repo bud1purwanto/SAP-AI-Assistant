@@ -31,6 +31,8 @@ import {
   getRoleIconComponent,
   getRoleColorLabel,
   getRoleIconLabel,
+  getRoleLabel,
+  getRoleDescription,
 } from '../lib/roles';
 
 const DEFAULT_FORM = {
@@ -73,7 +75,11 @@ export default function AdminRoles({ onRefreshRoles }) {
     setActionError('');
     try {
       const data = await api.adminRoles();
-      setRoles(Array.isArray(data) ? data : []);
+      const rolesList = Array.isArray(data) ? data : [];
+      setRoles(rolesList);
+      try {
+        localStorage.setItem('sap_ai_master_roles', JSON.stringify(rolesList));
+      } catch {}
       if (onRefreshRoles) onRefreshRoles();
     } catch (err) {
       console.error('Gagal mengambil daftar peran:', err);
@@ -323,10 +329,14 @@ export default function AdminRoles({ onRefreshRoles }) {
   // Filtered roles
   const filteredRoles = roles.filter((r) => {
     const q = searchQuery.toLowerCase();
+    const displayLabel = getRoleLabel(r, isEn).toLowerCase();
+    const displayDesc = getRoleDescription(r, isEn).toLowerCase();
     const matchQuery =
       r.code.toLowerCase().includes(q) ||
       (r.label || '').toLowerCase().includes(q) ||
-      (r.description || '').toLowerCase().includes(q);
+      displayLabel.includes(q) ||
+      (r.description || '').toLowerCase().includes(q) ||
+      displayDesc.includes(q);
 
     if (!matchQuery) return false;
     if (filterType === 'system') return r.is_system;
@@ -518,7 +528,7 @@ export default function AdminRoles({ onRefreshRoles }) {
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5 font-bold text-content text-xs">
-                              <span>{role.label}</span>
+                              <span>{getRoleLabel(role, isEn)}</span>
                             </div>
                             <span className="font-mono text-[11px] text-content-subtle">
                               {role.code}
@@ -528,8 +538,8 @@ export default function AdminRoles({ onRefreshRoles }) {
                       </td>
 
                       {/* Description */}
-                      <td className="py-3 px-4 max-w-xs text-content-muted text-xs truncate">
-                        {role.description || (
+                      <td className="py-3 px-4 max-w-xs text-content-muted text-xs truncate" title={getRoleDescription(role, isEn)}>
+                        {getRoleDescription(role, isEn) || (
                           <span className="text-content-subtle/50 italic">
                             {isEn ? 'No description' : 'Tanpa deskripsi'}
                           </span>

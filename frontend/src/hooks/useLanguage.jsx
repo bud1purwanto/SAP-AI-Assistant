@@ -36,10 +36,15 @@ export function LanguageProvider({ children }) {
     [language]
   );
 
+  const isEn = language === 'en';
+  const isId = language === 'id';
+
   return (
     <LanguageContext.Provider
       value={{
         language,
+        isEn,
+        isId,
         setLanguage,
         t,
         languages: SUPPORTED_LANGUAGES,
@@ -54,8 +59,12 @@ export function useLanguage() {
   const context = useContext(LanguageContext);
   if (!context) {
     // Fallback bila dipakai di luar provider
+    const isEn = DEFAULT_LANGUAGE === 'en';
+    const isId = DEFAULT_LANGUAGE === 'id';
     return {
       language: DEFAULT_LANGUAGE,
+      isEn,
+      isId,
       setLanguage: () => {},
       t: (key, params) => translate(DEFAULT_LANGUAGE, key, params),
       languages: SUPPORTED_LANGUAGES,

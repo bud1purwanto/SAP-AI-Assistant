@@ -227,12 +227,32 @@ export function getRoleBadgeStyle(colorOrRole) {
   return ROLE_COLOR_MAP[mappedColor]?.badge || ROLE_COLOR_MAP.zinc.badge;
 }
 
+export const DEFAULT_ROLE_ICONS = {
+  superadmin: 'shield-check',
+  admin: 'shield-check',
+  abaper: 'code-2',
+  functional: 'terminal',
+  backend: 'database',
+  frontend: 'globe',
+  basis: 'cpu',
+  data_analyst: 'layers',
+  user: 'user',
+  guest: 'globe',
+};
+
 /**
- * Mengambil Icon Component untuk nama icon.
+ * Mengambil Icon Component untuk nama icon atau kode peran.
  */
-export function getRoleIconComponent(iconName) {
-  const name = (iconName || 'users').toLowerCase();
-  return ROLE_ICON_MAP[name] || Users;
+export function getRoleIconComponent(iconOrRole) {
+  const key = (iconOrRole || 'users').toLowerCase();
+  if (ROLE_ICON_MAP[key]) {
+    return ROLE_ICON_MAP[key];
+  }
+  const mappedIcon = DEFAULT_ROLE_ICONS[key];
+  if (mappedIcon && ROLE_ICON_MAP[mappedIcon]) {
+    return ROLE_ICON_MAP[mappedIcon];
+  }
+  return Users;
 }
 
 /**
@@ -259,5 +279,139 @@ export function getUserInitials(user) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
   return name.slice(0, 2).toUpperCase();
+}
+
+export const SYSTEM_ROLE_TRANSLATIONS = {
+  superadmin: {
+    label: { en: 'Super Admin', id: 'Super Admin' },
+    description: {
+      en: 'Full access to entire system, configuration & audit',
+      id: 'Akses penuh seluruh sistem, konfigurasi & audit',
+    },
+  },
+  abaper: {
+    label: { en: 'ABAPer', id: 'ABAPer' },
+    description: {
+      en: 'ABAP technical developer & SAP modules',
+      id: 'Pengembang teknis ABAP & modul SAP',
+    },
+  },
+  functional: {
+    label: { en: 'Functional', id: 'Functional' },
+    description: {
+      en: 'SAP functional business consultant',
+      id: 'Konsultan bisnis modul fungsional SAP',
+    },
+  },
+  backend: {
+    label: { en: 'Backend', id: 'Backend' },
+    description: {
+      en: 'Backend architecture & database developer',
+      id: 'Pengembang arsitektur backend & database',
+    },
+  },
+  frontend: {
+    label: { en: 'Frontend', id: 'Frontend' },
+    description: {
+      en: 'User interface & UI/UX developer',
+      id: 'Pengembang tampilan antarmuka & UI/UX',
+    },
+  },
+  basis: {
+    label: { en: 'Basis', id: 'Basis' },
+    description: {
+      en: 'Infrastructure & SAP server administrator',
+      id: 'Administrator infrastruktur & server SAP',
+    },
+  },
+  data_analyst: {
+    label: { en: 'Data Analyst', id: 'Data Analyst' },
+    description: {
+      en: 'Data analysis and analytical reporting',
+      id: 'Analis data dan pelaporan analitik',
+    },
+  },
+  user: {
+    label: { en: 'Standard User', id: 'Standard User' },
+    description: {
+      en: 'Standard application user',
+      id: 'Pengguna standar aplikasi',
+    },
+  },
+  guest: {
+    label: { en: 'Guest', id: 'Guest' },
+    description: {
+      en: 'Guest user without registered account',
+      id: 'Pengguna tamu tanpa akun terdaftar',
+    },
+  },
+};
+
+/**
+ * Mendapatkan deskripsi peran terjemahan jika tersedia dan cocok dengan deskripsi bawaan sistem.
+ */
+export function getRoleDescription(role, isEn = false) {
+  if (!role) return '';
+  const code = (typeof role === 'string' ? role : role.code || '').toLowerCase();
+  const sys = SYSTEM_ROLE_TRANSLATIONS[code];
+  const currentDesc = typeof role === 'string' ? '' : role.description;
+  if (sys) {
+    if (!currentDesc || currentDesc === sys.description.id || currentDesc === sys.description.en) {
+      return sys.description[isEn ? 'en' : 'id'];
+    }
+    return currentDesc;
+  }
+  return currentDesc || '';
+}
+
+export function getStoredMasterRoles() {
+  try {
+    const raw = localStorage.getItem('sap_ai_master_roles');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // Ignore error
+  }
+  return [];
+}
+
+/**
+ * Mendapatkan label peran terjemahan jika tersedia.
+ */
+export function getRoleLabel(role, isEn = false) {
+  if (!role) return '';
+  const code = (typeof role === 'string' ? role : role.code || '').toLowerCase();
+
+  // 1. Cek jika objek role memiliki properti label langsung
+  const explicitLabel = typeof role === 'string' ? '' : role.label;
+  if (explicitLabel) {
+    const sys = SYSTEM_ROLE_TRANSLATIONS[code];
+    if (sys && (explicitLabel === sys.label.id || explicitLabel === sys.label.en)) {
+      return sys.label[isEn ? 'en' : 'id'];
+    }
+    return explicitLabel;
+  }
+
+  // 2. Cek dari master roles yang tersimpan di cache lokal
+  const cachedRoles = getStoredMasterRoles();
+  const cached = cachedRoles.find((r) => (r.code || '').toLowerCase() === code);
+  if (cached && cached.label) {
+    const sys = SYSTEM_ROLE_TRANSLATIONS[code];
+    if (sys && (cached.label === sys.label.id || cached.label === sys.label.en)) {
+      return sys.label[isEn ? 'en' : 'id'];
+    }
+    return cached.label;
+  }
+
+  // 3. Cek kamus peran sistem bawaan
+  const sys = SYSTEM_ROLE_TRANSLATIONS[code];
+  if (sys) {
+    return sys.label[isEn ? 'en' : 'id'];
+  }
+
+  // 4. Format kode string (misal: "data_analyst" -> "Data Analyst")
+  return formatRoleLabel(code);
 }
 

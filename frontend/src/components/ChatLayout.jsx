@@ -18,17 +18,13 @@ import { useLanguage } from '../hooks/useLanguage';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
-import { formatRoleLabel, getRoleBadgeStyle, getUserInitials } from '../lib/roles';
+import { formatRoleLabel, getRoleBadgeStyle, getRoleLabel, getUserInitials } from '../lib/roles';
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
-const getUserRoleLabel = (role, t) => {
+const getUserRoleLabel = (role, isEn = false) => {
   const roleCode = Array.isArray(role) ? role[0] : role;
-  if (!roleCode || roleCode === 'user') return t('admin.roleUser');
-  if (roleCode === 'superadmin') return 'Admin';
-  if (roleCode === 'guest') return t('admin.roleGuest');
-  if (roleCode === 'abaper') return t('admin.roleAbaper');
-  return formatRoleLabel(roleCode);
+  return getRoleLabel(roleCode, isEn);
 };
 
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
@@ -97,7 +93,7 @@ const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
-  const { t, language } = useLanguage();
+  const { t, language, isEn } = useLanguage();
   const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
   const isGuest = user.role === 'guest';
 
@@ -1432,7 +1428,7 @@ const ChatLayout = () => {
                 </div>
                 <div className="mt-1 flex items-center">
                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
-                    {getUserRoleLabel(user.role, t)}
+                    {getUserRoleLabel(user.role, isEn)}
                   </span>
                 </div>
               </div>

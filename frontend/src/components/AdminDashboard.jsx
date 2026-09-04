@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, ArrowLeft, BookOpen, Check, CheckCircle, ChevronDown, Code, Database, Edit3, Gauge, History, Key, Mail, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
-import { api } from '../lib/api';
+import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Gauge, History, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
 import AdminAccessControl from './AdminAccessControl';
 import AdminRoles from './AdminRoles';
-import { formatRoleLabel as formatRoleLabelFallback, getRoleBadgeStyle as getRoleBadgeStyleByColor } from '../lib/roles';
+import AdminChatAudit from './AdminChatAudit';
+import {
+  formatRoleLabel as formatRoleLabelFallback,
+  getRoleBadgeStyle as getRoleBadgeStyleByColor,
+  getRoleIconComponent,
+} from '../lib/roles';
 
 const AVAILABLE_ROLES_OPTIONS = [
   { value: 'abaper', label: 'ABAPer' },
@@ -25,7 +29,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [globalPersona, setGlobalPersona] = useState('');
   const [personaSaving, setPersonaSaving] = useState(false);
-  const [actionSuccess, setActionSuccess] = useState('');
+  const [isPersonaInfoOpen, setIsPersonaInfoOpen] = useState(false);
   const [actionError, setActionError] = useState('');
 
   // Reusable Standardized Confirmation Modal State
@@ -70,7 +74,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   };
   const getRoleBadgeStyle = (roleCode) => {
     const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (roleCode || '').toLowerCase());
-    return getRoleBadgeStyleByColor(meta?.color);
+    return getRoleBadgeStyleByColor(meta?.color || roleCode);
   };
 
   // Skills State
@@ -107,14 +111,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   // Skills Loading State
   const [skillsLoading, setSkillsLoading] = useState(false);
-
-  // Audit Logs State
-  const [auditSessions, setAuditSessions] = useState([]);
-  const [selectedAuditSession, setSelectedAuditSession] = useState(null);
-  const [auditMessages, setAuditMessages] = useState([]);
-  const [auditSearch, setAuditSearch] = useState('');
-  const [auditSessionsLoading, setAuditSessionsLoading] = useState(false);
-  const [auditMessagesLoading, setAuditMessagesLoading] = useState(false);
 
   // Kuota Token State
   const [kuota, setKuota] = useState(null);
@@ -208,33 +204,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const fetchAuditSessions = async () => {
-    setAuditSessionsLoading(true);
-    try {
-      setAuditSessions(await api.adminSessions(100));
-    } catch (err) {
-      console.error("Gagal load audit sessions:", err);
-    } finally {
-      setAuditSessionsLoading(false);
-    }
-  };
-
-  const fetchAuditMessages = async (sessionId) => {
-    setAuditMessagesLoading(true);
-    try {
-      setAuditMessages(await api.adminSessionMessages(sessionId));
-    } catch (err) {
-      console.error("Gagal load audit messages:", err);
-    } finally {
-      setAuditMessagesLoading(false);
-    }
-  };
-
   const fetchMasterRoles = async () => {
     try {
       const data = await api.adminRoles();
       if (Array.isArray(data) && data.length > 0) {
         setMasterRoles(data);
+        try {
+          localStorage.setItem('sap_ai_master_roles', JSON.stringify(data));
+        } catch {}
       }
     } catch (err) {
       console.warn("Gagal memuat master roles:", err);
@@ -249,7 +226,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchUsers();
       fetchSkills();
       fetchConfig();
-      fetchAuditSessions();
       fetchMasterRoles();
     }
   }, [isOpen, user?.role]);
@@ -599,11 +575,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     s.content.toLowerCase().includes(skillSearch.toLowerCase())
   );
 
-  const filteredAuditSessions = auditSessions.filter(s => 
-    s.username.toLowerCase().includes(auditSearch.toLowerCase()) ||
-    s.title.toLowerCase().includes(auditSearch.toLowerCase())
-  );
-
   const tabCategories = [
     {
       groupName: language === 'en' ? 'Monitoring & Metrics' : 'Monitoring & Metrik',
@@ -663,7 +634,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const isCurrentTabLoading =
     (activeTab === 'overview' && statsLoading) ||
     (activeTab === 'users' && usersLoading) ||
-    (activeTab === 'audit' && auditSessionsLoading) ||
     (activeTab === 'feedback' && feedbackLoading) ||
     (activeTab === 'kuota' && kuotaLoading) ||
     (activeTab === 'skills' && skillsLoading) ||
@@ -767,7 +737,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           type="button"
                           onClick={() => {
                             setActiveTab(tab.id);
-                            if (tab.id !== 'audit') setSelectedAuditSession(null);
                             setIsMobileNavOpen(false);
                           }}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -836,7 +805,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     key={tab.id}
                     onClick={() => {
                       setActiveTab(tab.id);
-                      if (tab.id !== 'audit') setSelectedAuditSession(null);
                     }}
                     className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-medium whitespace-nowrap transition-all cursor-pointer group ${
                       isActive
@@ -1603,11 +1571,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
             {/* TAB: PERSONA ORGANISASI */}
             {activeTab === 'persona' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
+              <div className="h-full flex flex-col space-y-3.5 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-line/80 shrink-0">
                   <div className="hidden sm:block">
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-accent" />
                       {language === 'en' ? 'Organization Global Persona' : 'Persona Organisasi'}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1631,45 +1597,31 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 </div>
 
-                <div className="bg-surface border border-line/80 rounded-2xl p-5 text-xs text-content-muted leading-relaxed space-y-2.5 shadow-xs">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center font-bold text-xs">
-                      i
+                <div className="bg-surface border border-line/80 rounded-2xl p-3 sm:p-4 text-xs text-content-muted leading-relaxed shadow-xs shrink-0 transition-all">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-5 h-5 rounded-md bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 flex items-center justify-center font-bold text-[11px] shrink-0">
+                        i
+                      </div>
+                      <p className="font-bold text-content text-xs sm:text-sm font-display truncate">
+                      {isPersonaInfoOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                      <p>
+                        {language === 'en'
+                          ? 'When both contradict on writing style or length, personal preference takes precedence. However, for data accuracy, security, and compliance, the organization persona always prevails.'
+                          : 'Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang jawaban — preferensi pribadi yang menang. Namun untuk aturan keakuratan data, keamanan, dan kepatuhan, persona organisasi selalu diutamakan.'}
+                      </p>
                     </div>
-                    <p className="font-bold text-content text-xs sm:text-sm font-display">{language === 'en' ? 'How Persona is Applied' : 'Cara persona diterapkan'}</p>
-                  </div>
-                  <p>
-                    {language === 'en' 
-                      ? 'The organization persona serves as the foundational layer. On top of it, personal preferences configured by individual users in Settings are applied.'
-                      : 'Persona organisasi menjadi lapisan dasar. Di atasnya, persona pribadi yang diatur masing-masing pengguna di menu Settings diterapkan sebagai penyesuaian.'}
-                  </p>
-                  <p>
-                    {language === 'en'
-                      ? 'When both contradict on writing style or length, personal preference takes precedence. However, for data accuracy, security, and compliance, the organization persona always prevails.'
-                      : 'Bila keduanya bertentangan pada hal yang sama — misalnya gaya bahasa atau panjang jawaban — preferensi pribadi yang menang. Namun untuk aturan keakuratan data, keamanan, dan kepatuhan, persona organisasi selalu diutamakan.'}
-                  </p>
+                  )}
                 </div>
 
-                <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
-                  <label htmlFor="global-persona" className="block text-xs font-bold uppercase tracking-wider text-content font-display">
-                    {language === 'en' ? 'Organization Persona Instructions (Global System Prompt)' : 'Instruksi persona organisasi (System Prompt Global)'}
-                  </label>
-                  <textarea
-                    id="global-persona"
-                    rows="12"
-                    value={globalPersona}
-                    onChange={(e) => setGlobalPersona(e.target.value)}
-                    className="w-full px-4 py-3.5 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-y leading-relaxed text-content focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-all"
+                <div className="flex-1 min-h-[360px] p-4 sm:p-5 rounded-2xl border border-line/80 bg-surface shadow-xs flex flex-col space-y-2.5">
+                  <div className="flex items-center justify-between shrink-0">
+                    className="flex-1 w-full p-4 text-xs font-mono bg-surface-sunken border border-line rounded-xl outline-none resize-none leading-relaxed text-content focus:ring-2 focus:ring-accent/30 focus:border-accent/40 transition-all [scrollbar-width:thin]"
                     placeholder={language === 'en' 
                       ? 'Example:\n- Always specify source SAP table for all numbers displayed.\n- Never reveal employee data other than the requester.\n- Format dates and currencies clearly.'
                       : 'Contoh:\n- Selalu sebutkan tabel SAP sumber data pada setiap angka yang ditampilkan.\n- Jangan pernah menampilkan data karyawan selain milik penanya.\n- Gunakan satuan dan format tanggal Indonesia.'}
                   />
-                  <p className="text-[11px] text-content-subtle">
-                    {language === 'en' ? 'Leave empty to use default assistant behaviors.' : 'Kosongkan untuk memakai perilaku bawaan asisten.'}
-                  </p>
-                </div>
-              </div>
-            )}
 
             {/* TAB: KATALOG SKILL (MODUL & SPESIALISASI) */}
             {activeTab === 'skills' && (
@@ -1677,7 +1629,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line/80">
                   <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight flex items-center gap-2">
-                      <BookOpen className="w-5 h-5 text-accent" />
                       {language === 'en' ? `Assistant Skill Catalog (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})` : `Katalog Skill Asisten (${skillsLoading && skillsList.length === 0 ? '…' : skillsList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
@@ -1685,15 +1636,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:w-56 sm:flex-initial">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
-                      <input 
-                        type="text"
-                        placeholder={language === 'en' ? 'Search skill...' : 'Cari skill...'}
-                        value={skillSearch}
-                        onChange={(e) => setSkillSearch(e.target.value)}
-                        className="pl-9 pr-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/40 w-full text-content placeholder:text-content-subtle transition-all"
                       />
                     </div>
                     <button
@@ -2068,13 +2010,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {/* MCP SAP Config JSON */}
-                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
+                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-4 h-4" />
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-400 border border-amber-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-3.5 h-3.5" />
                         </div>
                         <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
                           MCP SAP Config (JSON)
@@ -2085,93 +2027,77 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       </span>
                     </div>
                     <textarea 
-                      rows="6"
+                      rows="4"
                       value={mcpSapConfig}
                       onChange={(e) => setMcpSapConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content leading-relaxed transition-all"
+                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
                       placeholder='{"type": "http", "url": "http://192.168.1.162:8091/mcp"}'
                     />
-                    <p className="text-[11px] text-content-subtle">
+                    <p className="text-[10px] text-content-subtle">
                       {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to SAP MCP Server.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke SAP MCP Server.'}
                     </p>
                   </div>
 
-                  {/* MCP RAG Config JSON */}
-                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
+                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-4 h-4" />
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-3.5 h-3.5" />
                         </div>
                         <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
-                          MCP RAG Config (JSON)
-                        </label>
                       </div>
                       <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold">
                         RAG Knowledge Gateway
                       </span>
                     </div>
                     <textarea 
-                      rows="6"
+                      rows="4"
                       value={mcpRagConfig}
                       onChange={(e) => setMcpRagConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/40 outline-none text-content leading-relaxed transition-all"
+                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
                       placeholder='{"type": "http", "url": "http://192.168.1.162:8090/mcp"}'
-                    />
-                    <p className="text-[11px] text-content-subtle">
+                    <p className="text-[10px] text-content-subtle">
                       {language === 'en' ? 'HTTP/SSE or stdio config format for connecting to RAG Knowledge Base.' : 'Format konfigurasi HTTP/SSE atau stdio untuk koneksi ke Basis Pengetahuan Dokumen RAG.'}
                     </p>
-                  </div>
 
                   {/* MCP SQL Config JSON */}
-                  <div className="p-5 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-3">
-                    <div className="flex items-center justify-between">
+                  <div className="p-3.5 sm:p-4 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-2.5">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
-                          <Database className="w-4 h-4" />
+                        <div className="w-7 h-7 rounded-lg bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
+                          <Database className="w-3.5 h-3.5" />
                         </div>
                         <label className="text-xs font-bold uppercase tracking-wider text-content font-display">
                           MCP SQL & Tools Config (JSON)
-                        </label>
                       </div>
                       <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30 font-bold">
                         SQL & Utility Gateway
                       </span>
-                    </div>
-                    <textarea 
-                      rows="6"
+                      rows="4"
                       value={mcpSqlConfig}
                       onChange={(e) => setMcpSqlConfig(e.target.value)}
-                      className="w-full font-mono text-xs px-4 py-3.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500/40 outline-none text-content leading-relaxed transition-all"
+                      className="w-full font-mono text-xs px-3.5 py-2.5 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 focus:border-sky-500/40 outline-none text-content leading-relaxed transition-all resize-y [scrollbar-width:thin]"
                       placeholder='{\n  "mcpServers": {\n    "sql-mcp": {\n      "type": "http",\n      "url": "http://192.168.1.162:8090/mcp",\n      "headers": { "Authorization": "Bearer ..." }\n    }\n  }\n}'
                     />
-                    <p className="text-[11px] text-content-subtle">
+                    <p className="text-[10px] text-content-subtle">
                       {language === 'en' ? 'HTTP/SSE config format for connecting to SQL & Database MCP Server cluster.' : 'Format konfigurasi HTTP/SSE untuk koneksi ke kluster MCP SQL Server & Database.'}
                     </p>
                   </div>
                 </div>
-              </div>
             )}
 
             {/* TAB 4: AUDIT LOGS & ALL SESSIONS */}
-            {/* TAB: PENILAIAN JAWABAN — jawaban mana yang dinilai pengguna.
                 Angka kepuasan di Overview tidak dapat ditindaklanjuti tanpa isinya. */}
             {activeTab === 'kuota' && (
               <div className="space-y-3.5 sm:space-y-5 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 sm:pb-3 border-b border-line">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm sm:text-base font-bold text-content truncate">{language === 'en' ? 'Token Quotas' : 'Kuota Token'}</h3>
                       <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
                         {kuota?.usage_date || '—'}
                       </span>
-                    </div>
                     <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">
                       {language === 'en' 
                         ? 'Usage resets daily at midnight WIB.'
                         : 'Pemakaian direset setiap tengah malam WIB.'}
-                    </p>
-                  </div>
 
                   <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
                     {/* Compact Quota Enforcement Switch */}
@@ -2183,15 +2109,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         kuota?.enforced
                           ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                           : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                      }`}>
                         {kuota?.enforced ? (language === 'en' ? 'Active' : 'Aktif') : (language === 'en' ? 'Off' : 'Mati')}
                       </span>
                       <button
-                        onClick={() => gantiSaklar(!kuota?.enforced)}
                         disabled={!kuota}
                         aria-label={language === 'en' ? 'Token limit enforcement' : 'Penegakan batas token'}
                         aria-pressed={!!kuota?.enforced}
-                        className={`relative h-5 w-9 shrink-0 rounded-full transition-all cursor-pointer disabled:opacity-50 ${
                           kuota?.enforced ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-2xs' : 'bg-line'
                         }`}
                       >
@@ -2274,20 +2197,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               {/* Role */}
                               <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
                                 <div className="flex items-center gap-2.5">
-                                  <div className={`w-8 h-8 rounded-xl border flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs ${getRoleBadgeStyle(peran)}`}>
-                                    {peran.substring(0, 2).toUpperCase()}
+                                  <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs ${getRoleBadgeStyle(peran)}`}>
+                                    {(() => {
+                                      const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (peran || '').toLowerCase());
+                                      const IconComp = getRoleIconComponent(meta?.icon || peran);
+                                      return <IconComp className="w-4 h-4" />;
+                                    })()}
                                   </div>
-                                  <div>
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="font-semibold text-xs sm:text-sm text-content">
-                                        {formatRoleLabel(peran)}
-                                      </span>
-                                      <span className={`text-[9px] px-1.5 py-0.2 rounded border font-mono font-bold uppercase ${getRoleBadgeStyle(peran)}`}>
-                                        {peran}
-                                      </span>
-                                    </div>
-                                    <p className="text-[10px] text-content-subtle font-mono mt-0.5">role:{peran.toLowerCase()}</p>
-                                  </div>
+                                  <span className="font-semibold text-xs sm:text-sm text-content">
+                                    {formatRoleLabel(peran)}
+                                  </span>
                                 </div>
                               </td>
 
@@ -2609,151 +2528,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             )}
 
             {activeTab === 'audit' && (
-              <div className="h-full flex flex-col space-y-4 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line shrink-0">
-                  <div className="hidden sm:block">
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      {language === 'en' ? 'Chat Audit Logs' : 'Audit Log Percakapan'}
-                    </h3>
-                    <p className="text-xs text-content-muted mt-0.5">
-                      {language === 'en' ? 'Monitor chat history across all users for compliance and troubleshooting.' : 'Pantau riwayat percakapan dari seluruh user untuk keperluan audit dan troubleshooting.'}
-                    </p>
-                  </div>
-
-                  <div className="relative w-full sm:w-auto">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
-                    <input 
-                      type="text"
-                      placeholder={language === 'en' ? 'Search user / chat title...' : 'Cari user / judul chat...'}
-                      value={auditSearch}
-                      onChange={(e) => setAuditSearch(e.target.value)}
-                      className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full sm:w-72 text-content placeholder:text-content-subtle transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 min-h-0">
-                  {/* Sessions List: Hidden on mobile when a session is selected */}
-                  <div className={`${
-                    selectedAuditSession ? 'hidden md:block' : 'block'
-                  } border border-line/80 rounded-2xl overflow-y-auto max-h-[60vh] md:max-h-[65vh] divide-y divide-line/60 bg-surface shadow-xs`}>
-                    {auditSessionsLoading && auditSessions.length === 0 ? (
-                      <div className="p-3 space-y-2.5 animate-pulse">
-                        {[...Array(6)].map((_, i) => (
-                          <div key={i} className="p-3 rounded-xl bg-surface-sunken/60 space-y-2">
-                            <div className="flex justify-between">
-                              <div className="h-3.5 w-24 bg-surface-sunken rounded" />
-                              <div className="h-3 w-16 bg-surface-sunken rounded" />
-                            </div>
-                            <div className="h-3 w-40 bg-surface-sunken/80 rounded" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : filteredAuditSessions.length > 0 ? (
-                      filteredAuditSessions.map((s) => (
-                        <button
-                          key={s.session_id}
-                          onClick={() => {
-                            setSelectedAuditSession(s);
-                            fetchAuditMessages(s.session_id);
-                          }}
-                          className={`w-full text-left p-3.5 transition-all cursor-pointer ${
-                            selectedAuditSession?.session_id === s.session_id
-                              ? 'bg-accent/10 border-l-4 border-accent font-semibold'
-                              : 'hover:bg-surface-hover/70'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-content truncate">{s.username}</span>
-                            <span className="text-[10px] text-content-muted font-mono">{s.updated_at ? s.updated_at.slice(0, 10) : ''}</span>
-                          </div>
-                          <p className="text-xs text-content-muted truncate mt-1">{s.title}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="text-[10px] font-mono bg-surface-sunken px-2 py-0.5 rounded-md text-content-muted border border-line/60">
-                              {s.message_count} {language === 'en' ? 'messages' : 'pesan'}
-                            </span>
-                          </div>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="text-center text-xs text-content-muted py-8">{language === 'en' ? 'No session history found.' : 'Belum ada riwayat sesi ditemukan.'}</p>
-                    )}
-                  </div>
-
-                  {/* Messages Viewer: Visible on mobile when a session is selected */}
-                  <div className={`${
-                    !selectedAuditSession ? 'hidden md:flex' : 'flex'
-                  } md:col-span-2 border border-line/80 rounded-2xl p-4 sm:p-5 overflow-y-auto max-h-[60vh] md:max-h-[65vh] bg-surface-sunken/40 flex-col shadow-xs`}>
-                    {selectedAuditSession ? (
-                      auditMessagesLoading ? (
-                        <div className="space-y-4 p-3 animate-pulse">
-                          <div className="flex justify-end"><div className="h-12 w-2/3 bg-accent/20 rounded-2xl" /></div>
-                          <div className="flex justify-start"><div className="h-20 w-3/4 bg-surface-sunken rounded-2xl" /></div>
-                          <div className="flex justify-end"><div className="h-10 w-1/2 bg-accent/20 rounded-2xl" /></div>
-                          <div className="flex justify-start"><div className="h-24 w-4/5 bg-surface-sunken rounded-2xl" /></div>
-                        </div>
-                      ) : (
-                      <div className="space-y-3.5 sm:space-y-4">
-                        {/* Mobile Back Button */}
-                        <button 
-                          onClick={() => setSelectedAuditSession(null)}
-                          className="md:hidden flex items-center gap-1.5 text-xs font-bold text-accent py-1 cursor-pointer"
-                        >
-                          <ArrowLeft className="w-3.5 h-3.5" /> {language === 'en' ? 'Back to session list' : 'Kembali ke daftar sesi'}
-                        </button>
-
-                        <div className="pb-3 border-b border-line/80 flex items-center justify-between">
-                          <div className="min-w-0">
-                            <h4 className="font-bold text-xs sm:text-sm text-content truncate font-display">{selectedAuditSession.title}</h4>
-                            <p className="text-[11px] sm:text-xs text-content-muted truncate mt-0.5">User: <span className="font-semibold text-accent">{selectedAuditSession.username}</span> • ID: <span className="font-mono">{selectedAuditSession.session_id}</span></p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          {auditMessages.length > 0 ? (
-                            auditMessages.map((m, i) => (
-                              <div 
-                                key={i} 
-                                className={`p-3.5 rounded-xl text-xs leading-relaxed transition-all ${
-                                  m.role === 'user' 
-                                    ? 'bg-indigo-500/10 border border-indigo-500/25 text-content shadow-2xs' 
-                                    : 'bg-surface border border-line/80 text-content shadow-2xs'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between mb-1.5 font-semibold">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-content">{m.role === 'user' ? selectedAuditSession.username : 'AI Assistant'}</span>
-                                    {m.role !== 'user' && (m.feedback === 'like' || m.feedback === 'up') && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                        <ThumbsUp className="w-2.5 h-2.5" /> {language === 'en' ? 'Helpful' : 'Membantu'}
-                                      </span>
-                                    )}
-                                    {m.role !== 'user' && (m.feedback === 'dislike' || m.feedback === 'down') && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                                        <ThumbsDown className="w-2.5 h-2.5" /> {language === 'en' ? 'Unhelpful' : 'Kurang Sesuai'}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[10px] text-content-subtle font-mono">{m.created_at ? m.created_at.slice(11, 16) : ''}</span>
-                                </div>
-                                <div className="whitespace-pre-wrap font-sans select-text">{m.content}</div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-center text-xs text-content-muted py-6">{language === 'en' ? 'Loading messages...' : 'Memuat pesan...'}</p>
-                          )}
-                        </div>
-                      </div>
-                      )
-                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-content-muted text-xs py-16">
-                        <MessageSquare className="w-8 h-8 mb-2 opacity-30 text-accent" />
-                        {language === 'en' ? 'Select a session on the left to view conversation messages.' : 'Pilih salah satu sesi di sebelah kiri untuk melihat pesan percakapan.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <AdminChatAudit masterRoles={masterRoles} usersList={usersList} />
             )}
 
           </div>

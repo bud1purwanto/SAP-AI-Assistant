@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
-import { ROLE_COLOR_MAP, getRoleBadgeStyle, getRoleIconComponent } from '../lib/roles';
+import { ROLE_COLOR_MAP, getRoleBadgeStyle, getRoleIconComponent, getRoleLabel, getRoleDescription } from '../lib/roles';
 
 export default function AdminAccessControl({
   setActionSuccess,
@@ -565,8 +565,8 @@ export default function AdminAccessControl({
   const roleSource = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesMeta;
   const activeRoles = (roleSource || []).map((r) => ({
     role: r.code,
-    label: r.label,
-    desc: r.description,
+    label: getRoleLabel(r, isEn),
+    desc: getRoleDescription(r, isEn),
     color: r.color,
     badgeClass: getRoleBadgeStyle(r.color),
     icon: getRoleIconComponent(r.icon),
@@ -1177,7 +1177,7 @@ export default function AdminAccessControl({
                           <span
                             className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border leading-none shrink-0 ${theme.bg} ${theme.text} ${theme.border}`}
                           >
-                            {primaryRole}
+                            {getRoleLabel(primaryRole, isEn)}
                           </span>
                         </button>
                       );
