@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Union
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
+import access_control
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import trim_history
@@ -315,17 +316,36 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     chat_modes_enabled = sys_cfg.get("chat_modes_enabled", True)
     active_mode = None
+    mode_downgraded = False
     if chat_modes_enabled and chat_req.mode:
         target = get_chat_mode_by_code(chat_req.mode)
         if target and target.get("enabled"):
-            user_modes = get_modes_for_role(
-                user_role[0] if isinstance(user_role, list) else (user_role or "user")
-            )
-            if any(m["code"] == target["code"] and m.get("available") for m in user_modes):
+            # Union seluruh role yang dimiliki user: mode tersedia bila SALAH SATU
+            # role mengizinkannya (sama seperti resolusi yang dipakai endpoint /api/modes).
+            roles_for_mode = access_control.normalize_roles(user_role)
+            mode_available = False
+            for r in roles_for_mode:
+                r_modes = get_modes_for_role(r)
+                if any(m["code"] == target["code"] and m.get("available") for m in r_modes):
+                    mode_available = True
+                    break
+            if mode_available:
                 active_mode = target
+            else:
+                mode_downgraded = True
 
     if not active_mode:
         active_mode = get_default_chat_mode()
+        if mode_downgraded and on_progress:
+            try:
+                await on_progress(
+                    stage="mode_downgraded",
+                    label=f"Mode '{chat_req.mode}' tidak lagi diizinkan untuk peran Anda; menggunakan mode default.",
+                    step=0,
+                    max_steps=0,
+                )
+            except Exception as e:
+                logger.warning(f"Gagal mengirim progres mode_downgraded: {e}")
 
     if active_mode:
         MAX_ITERATIONS = int(active_mode.get("max_iterations") or 15)
@@ -518,7 +538,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
 
     # Normalisasi user_role ke list roles untuk access control
-    import access_control
     roles_list = access_control.normalize_roles(user_role)
     roles_str_primary = roles_list[0] if roles_list else "user"
 

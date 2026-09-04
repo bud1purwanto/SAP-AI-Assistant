@@ -307,3 +307,55 @@ def test_disabled_role_realtime_revocation(client, admin_auth):
         # Cleanup
         client.delete("/api/admin/users/auditor_user_01", headers=admin_auth)
         client.delete(f"/api/admin/roles/{code}", headers=admin_auth)
+
+
+def test_update_user_role_normalized_to_lowercase(client, admin_auth):
+    """users.role harus selalu tersimpan lowercase, walau input admin memakai huruf besar.
+
+    Regresi: sebelum diperbaiki, PUT /api/admin/users/{username} dengan role
+    'Backend' (huruf besar) menyimpan 'Backend' apa adanya ke kolom users.role,
+    sementara user_roles.role tersimpan 'backend' -> dua sumber data yang tidak
+    sinkron, dan user_count di get_roles() salah hitung karena join tanpa LOWER().
+    """
+    client.delete("/api/admin/users/case_test_user", headers=admin_auth)
+    res_create = client.post("/api/admin/users", headers=admin_auth, json={
+        "username": "case_test_user",
+        "password": "Password123!",
+        "full_name": "Case Test",
+        "role": "user",
+        "roles": ["user"],
+    })
+    assert res_create.status_code == 200
+
+    try:
+        res_update = client.put("/api/admin/users/case_test_user", headers=admin_auth, json={
+            "role": "Backend",
+        })
+        assert res_update.status_code == 200
+
+        fresh = get_user_by_username("case_test_user")
+        assert fresh["role"] == "backend"
+
+        roles_matrix = {r["code"]: r["user_count"] for r in get_roles(enabled_only=False)}
+        assert roles_matrix.get("backend", 0) >= 1
+    finally:
+        client.delete("/api/admin/users/case_test_user", headers=admin_auth)
+
+
+def test_set_role_mode_unknown_role_returns_404_not_500(client, admin_auth):
+    """PUT /api/admin/modes/roles dengan role yang tidak ada di master harus 404, bukan 500."""
+    res = client.put("/api/admin/modes/roles", headers=admin_auth, json={
+        "role": "role_yang_tidak_ada",
+        "mode_code": "fast",
+        "enabled": True,
+    })
+    assert res.status_code == 404
+
+
+def test_update_access_role_unknown_role_returns_404_not_500(client, admin_auth):
+    """PUT /api/admin/access/roles dengan role yang tidak ada di master harus 404, bukan 500."""
+    res = client.put("/api/admin/access/roles", headers=admin_auth, json={
+        "role": "role_yang_tidak_ada",
+        "items": [],
+    })
+    assert res.status_code == 404

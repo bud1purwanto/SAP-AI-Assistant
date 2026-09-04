@@ -42,6 +42,50 @@ def normalize_roles(role: Union[str, List[str], None]) -> List[str]:
 _ACCESS_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[float, Dict[str, Dict[str, Any]]]] = {}
 _CACHE_TTL_SECONDS = 30.0
 
+# Cache role efektif (dari DB, bukan token JWT) per username, TTL pendek.
+_ROLES_CACHE: Dict[str, Tuple[float, List[str]]] = {}
+_ROLES_CACHE_TTL = 30.0
+
+
+def invalidate_effective_roles_cache(username: Optional[str] = None):
+    """Menghapus cache role efektif. Panggil setelah role user/peran berubah."""
+    if username:
+        _ROLES_CACHE.pop((username or "").strip().lower(), None)
+    else:
+        _ROLES_CACHE.clear()
+
+
+def effective_roles(username: Optional[str], is_guest: bool = False, token_roles: Optional[List[str]] = None) -> List[str]:
+    """Mengembalikan role efektif pengguna berdasarkan status TERKINI di database.
+
+    Token JWT hanya menyimpan role pada saat login; role di database bisa berubah
+    kapan saja (admin mencabut/menambah role, atau menonaktifkan sebuah role master).
+    Fungsi ini adalah satu-satunya sumber kebenaran untuk keputusan otorisasi yang
+    tidak boleh menunggu token kedaluwarsa — dipakai di semua endpoint yang menentukan
+    resource/mode apa yang terlihat atau bisa dipakai oleh user saat ini.
+
+    Tamu (is_guest=True atau username kosong) langsung memakai token_roles (biasanya ["guest"]),
+    karena tidak ada baris di database untuk tamu.
+    """
+    uname_clean = (username or "").strip().lower()
+    if is_guest or not uname_clean or uname_clean == "guest":
+        return normalize_roles(token_roles or ["guest"])
+
+    now = time.time()
+    cached = _ROLES_CACHE.get(uname_clean)
+    if cached and (now - cached[0] < _ROLES_CACHE_TTL):
+        return list(cached[1])
+
+    try:
+        roles = database.get_user_roles(username, active_only=True)
+    except Exception as e:
+        logger.warning(f"Gagal mengambil role efektif untuk '{username}' dari DB, fallback ke token: {e}")
+        return normalize_roles(token_roles or ["user"])
+
+    roles = normalize_roles(roles)
+    _ROLES_CACHE[uname_clean] = (now, roles)
+    return roles
+
 # Pemetaan alias dinamis (didukung cache in-memory dan sinkronisasi otomatis dari mcp_resources / live probe)
 _SEED_SAP_ALIASES: Dict[str, str] = {
     "dev": "sap:dev-aix",

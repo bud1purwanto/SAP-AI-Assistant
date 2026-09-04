@@ -1,4 +1,6 @@
 """Pengujian Fitur Mode Chat (Fast, Medium, Expert, Custom) dan Matrix Hak Akses Per Role."""
+import asyncio
+
 import pytest
 from database import (
     get_chat_modes,
@@ -186,3 +188,87 @@ def test_admin_reorder_modes(client, admin_auth):
     user_res = client.get("/api/modes")
     new_user_ids = [m["id"] for m in user_res.json()["modes"]]
     assert new_user_ids == reversed_ids
+
+
+# --------------------------------------------------------------------------
+# Regresi: process_chat harus memakai UNION seluruh role, bukan role primer
+# saja, saat memvalidasi mode yang diminta (bug lama: role kedua yang
+# mengizinkan mode diabaikan karena hanya role_list[0] yang diperiksa).
+# --------------------------------------------------------------------------
+
+class _FakeModeModel:
+    """Model tiruan minimal, cukup untuk melewati satu putaran process_chat."""
+
+    def __init__(self):
+        self.astream_dipanggil = 0
+
+    async def astream(self, msgs):
+        from langchain_core.messages import AIMessageChunk
+        self.astream_dipanggil += 1
+        yield AIMessageChunk(content="Jawaban singkat.", tool_calls=[])
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+
+def _jalankan_process_chat(monkeypatch, roles, mode_code):
+    import agent as agent_module
+    import database
+    from models import ChatRequest
+
+    model = _FakeModeModel()
+
+    async def fake_tools(server_filter=None):
+        return []
+
+    monkeypatch.setattr(agent_module.mcp_manager, "get_all_tools", fake_tools)
+    monkeypatch.setattr(agent_module, "ChatOpenAI", lambda **kw: model)
+    monkeypatch.setattr(database, "get_system_config", lambda: {
+        "nine_router_enabled": True,
+        "nine_router_api_key": "kunci-uji",
+        "nine_router_base_url": "http://contoh.invalid/v1",
+        "nine_router_model": "model-uji",
+        "openrouter_enabled": False,
+        "chat_modes_enabled": True,
+    })
+
+    progres = []
+
+    async def on_progress(**event):
+        progres.append(event)
+
+    hasil = asyncio.run(agent_module.process_chat(
+        ChatRequest(message="stok material SRRPAI", mode=mode_code),
+        roles,
+        "",
+        username="penguji_mode_union",
+        on_progress=on_progress,
+    ))
+    return hasil, progres
+
+
+def test_process_chat_mode_diizinkan_via_role_sekunder(db, monkeypatch):
+    """User dengan roles=['frontend', 'backend']: 'expert' ditolak frontend
+    tapi diizinkan backend -> harus TETAP aktif (union), bukan turun ke default."""
+    # Sanity check data seed: frontend menolak expert, backend mengizinkan.
+    frontend_modes = {m["code"]: m["available"] for m in get_modes_for_role("frontend")}
+    backend_modes = {m["code"]: m["available"] for m in get_modes_for_role("backend")}
+    assert frontend_modes.get("expert") is False
+    assert backend_modes.get("expert") is True
+
+    _, progres = _jalankan_process_chat(monkeypatch, ["frontend", "backend"], "expert")
+
+    stages = [e.get("stage") for e in progres]
+    assert "mode_downgraded" not in stages, (
+        "Mode 'expert' seharusnya tetap aktif karena role 'backend' mengizinkannya, "
+        f"tapi malah diturunkan. Progress events: {progres}"
+    )
+
+
+def test_process_chat_mode_ditolak_bila_semua_role_melarang(db, monkeypatch):
+    """User dengan roles=['frontend'] saja: 'expert' ditolak -> harus turun ke default
+    dan mengirim event mode_downgraded (bukan gagal diam-diam)."""
+    _, progres = _jalankan_process_chat(monkeypatch, ["frontend"], "expert")
+
+    stages = [e.get("stage") for e in progres]
+    assert "mode_downgraded" in stages

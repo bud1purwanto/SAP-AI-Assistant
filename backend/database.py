@@ -1709,15 +1709,16 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                         ON CONFLICT (username, role) DO NOTHING
                     """), {"u": username.strip(), "r": r})
             elif role is not None:
+                role_clean = role.strip().lower()
                 updates.append("role = :r")
-                params["r"] = role
+                params["r"] = role_clean
                 # Selaraskan juga user_roles
                 conn.execute(text("DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
                 conn.execute(text("""
                     INSERT INTO ai_assistant.user_roles (username, role)
                     VALUES (:u, :r)
                     ON CONFLICT (username, role) DO NOTHING
-                """), {"u": username.strip(), "r": role.strip().lower()})
+                """), {"u": username.strip(), "r": role_clean})
 
             if persona is not None:
                 updates.append("assistant_persona = :p")
@@ -2733,6 +2734,9 @@ def get_role_modes() -> list[dict]:
 
 def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
     """Mengatur perizinan akses peran tertentu terhadap mode tertentu."""
+    role_clean = (role or "").strip().lower()
+    if not role_clean:
+        return False
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -2742,7 +2746,7 @@ def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
                 ON CONFLICT (role, mode_code) DO UPDATE SET
                     enabled = EXCLUDED.enabled,
                     updated_at = CURRENT_TIMESTAMP
-            """), {"r": role, "c": mode_code, "en": enabled})
+            """), {"r": role_clean, "c": mode_code, "en": enabled})
             conn.commit()
             return True
     except Exception as e:
@@ -2876,14 +2880,14 @@ def get_roles(enabled_only: bool = False) -> list[dict]:
                        COALESCE(u_counts.cnt, 0) AS user_count
                 FROM ai_assistant.roles r
                 LEFT JOIN (
-                    SELECT role, COUNT(DISTINCT username) AS cnt
+                    SELECT LOWER(TRIM(role)) AS role, COUNT(DISTINCT LOWER(username)) AS cnt
                     FROM (
                         SELECT username, role FROM ai_assistant.user_roles
                         UNION
                         SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
                     ) all_ur
-                    GROUP BY role
-                ) u_counts ON u_counts.role = r.code
+                    GROUP BY LOWER(TRIM(role))
+                ) u_counts ON u_counts.role = LOWER(r.code)
             """
             if enabled_only:
                 query += " WHERE r.enabled = TRUE"
@@ -2910,14 +2914,14 @@ def get_role_by_code(code: str) -> dict | None:
                        COALESCE(u_counts.cnt, 0) AS user_count
                 FROM ai_assistant.roles r
                 LEFT JOIN (
-                    SELECT role, COUNT(DISTINCT username) AS cnt
+                    SELECT LOWER(TRIM(role)) AS role, COUNT(DISTINCT LOWER(username)) AS cnt
                     FROM (
                         SELECT username, role FROM ai_assistant.user_roles
                         UNION
                         SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
                     ) all_ur
-                    GROUP BY role
-                ) u_counts ON u_counts.role = r.code
+                    GROUP BY LOWER(TRIM(role))
+                ) u_counts ON u_counts.role = LOWER(r.code)
                 WHERE r.code = :c
             """), {"c": c_clean}).fetchone()
             return dict(row._mapping) if row else None
@@ -3083,12 +3087,13 @@ def delete_role(code: str) -> bool:
         if role.is_system:
             raise ValueError(f"Role '{c_clean}' is a system role and cannot be deleted")
 
-        # Cek apakah ada user yang menggunakan role ini
+        # Cek apakah ada user yang menggunakan role ini (case-insensitive: kolom
+        # users.role/user_roles.role bisa berisi data lama dengan casing berbeda)
         user_in_user_roles = conn.execute(
-            text("SELECT COUNT(*) FROM ai_assistant.user_roles WHERE role = :c"), {"c": c_clean}
+            text("SELECT COUNT(*) FROM ai_assistant.user_roles WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
         ).scalar() or 0
         user_in_users = conn.execute(
-            text("SELECT COUNT(*) FROM ai_assistant.users WHERE role = :c"), {"c": c_clean}
+            text("SELECT COUNT(*) FROM ai_assistant.users WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
         ).scalar() or 0
 
         total_users = user_in_user_roles + user_in_users

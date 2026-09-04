@@ -483,7 +483,9 @@ async def get_mcp_servers(user: dict = Depends(get_current_user_optional)):
     except Exception as e:
         logger.warning(f"Auto-sync resources gagal: {e}")
     username = user.get("username", "guest") if user else "guest"
-    user_roles = user.get("roles", [user.get("role", "guest")]) if user else ["guest"]
+    is_guest = not user or bool(user.get("is_guest", True))
+    token_roles = user.get("roles", [user.get("role", "guest")]) if user else ["guest"]
+    user_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
     return access_control.filter_servers_for_user(raw, username=username, role=user_roles)
 
 
@@ -754,6 +756,7 @@ async def update_user_endpoint(
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
+    access_control.invalidate_effective_roles_cache(username)
     return res
 
 
@@ -766,6 +769,7 @@ async def delete_user_endpoint(username: str, admin: dict = Depends(require_supe
     res = delete_user_by_admin(username)
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
+    access_control.invalidate_effective_roles_cache(username)
     return res
 
 
@@ -867,6 +871,7 @@ async def update_admin_role_endpoint(
             sort_order=req.sort_order,
         )
         access_control.clear_access_cache()
+        access_control.invalidate_effective_roles_cache()
         return {"status": "success", "role": updated}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -885,6 +890,7 @@ async def delete_admin_role_endpoint(
     try:
         delete_role(c_clean)
         access_control.clear_access_cache()
+        access_control.invalidate_effective_roles_cache()
         return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1058,15 +1064,12 @@ class AdminUpdateRoleModeRequest(BaseModel):
 @app.get("/api/modes")
 async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_user_optional)):
     """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role)."""
-    user_roles = ["guest"]
-    if user and not user.get("is_guest"):
-        user_roles = user.get("roles") or [user.get("role", "user")]
-
-    # Pastikan user_roles hanya memperhitungkan peran yang enabled (atau superadmin)
-    available_roles = set(get_available_roles(enabled_only=True))
-    active_roles = [r for r in user_roles if r.lower() in available_roles or r.lower() == "superadmin"]
-    if not active_roles:
-        active_roles = ["user"]
+    username = user.get("username", "guest") if user else "guest"
+    is_guest = not user or bool(user.get("is_guest", True))
+    token_roles = (user.get("roles") or [user.get("role", "user")]) if user else ["guest"]
+    # Role diambil ulang dari database (bukan token) agar pencabutan/penonaktifan
+    # role langsung berlaku tanpa menunggu token kedaluwarsa.
+    active_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
 
     # Union seluruh mode yang diizinkan untuk setiap peran aktif pengguna
     modes_by_code = {}
@@ -1163,8 +1166,12 @@ async def set_role_mode_endpoint(req: AdminUpdateRoleModeRequest, admin: dict = 
     if not mode:
         raise HTTPException(status_code=404, detail=f"Mode dengan kode '{req.mode_code}' tidak ditemukan.")
 
+    role_clean = (req.role or "").strip().lower()
+    if not get_role_by_code(role_clean):
+        raise HTTPException(status_code=404, detail=f"Peran '{req.role}' tidak ditemukan.")
+
     target_enabled = req.enabled if req.enabled is not None else (req.allowed if req.allowed is not None else True)
-    ok = set_role_mode(req.role, req.mode_code, target_enabled)
+    ok = set_role_mode(role_clean, req.mode_code, target_enabled)
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal menyimpan perizinan role mode.")
     return {"status": "success", "role": req.role, "mode_code": req.mode_code, "enabled": target_enabled, "allowed": target_enabled}
@@ -1323,11 +1330,15 @@ async def get_admin_access_roles_endpoint(admin: dict = Depends(require_superadm
 @app.put("/api/admin/access/roles")
 async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, admin: dict = Depends(require_superadmin)):
     """Memperbarui set izin resource untuk role tertentu."""
+    role_clean = (req.role or "").strip().lower()
+    if role_clean != "superadmin" and not get_role_by_code(role_clean):
+        raise HTTPException(status_code=404, detail=f"Peran '{req.role}' tidak ditemukan.")
+
     actor = admin.get("username", "admin")
-    ok = access_control.update_role_access(req.role, req.items, actor=actor)
+    ok = access_control.update_role_access(role_clean, req.items, actor=actor)
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
-    return {"status": "success", "role": req.role}
+    return {"status": "success", "role": role_clean}
 
 
 @app.get("/api/admin/access/users/{username}")
