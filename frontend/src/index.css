@@ -493,3 +493,44 @@ input[type="search"]::-webkit-search-decoration {
 .prose .katex {
   color: inherit;
 }
+
+/* ==========================================================================
+   SMOOTH STREAMING TYPEWRITER CURSOR
+   Membuat kursor ketikan AI menempel langsung di akhir teks/paragraf,
+   bergerak mulus bersama karakter terakhir tanpa melompat ke baris baru.
+   ========================================================================== */
+@keyframes typewriter-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.chat-streaming-active > p:last-child::after,
+.chat-streaming-active > h1:last-child::after,
+.chat-streaming-active > h2:last-child::after,
+.chat-streaming-active > h3:last-child::after,
+.chat-streaming-active > blockquote:last-child::after,
+.chat-streaming-active ul:last-child > li:last-child::after,
+.chat-streaming-active ol:last-child > li:last-child::after {
+  content: '';
+  display: inline-block;
+  width: 2.5px;
+  height: 1.1em;
+  margin-left: 3px;
+  background-color: var(--color-accent, #6366f1);
+  border-radius: 2px;
+  vertical-align: -0.15em;
+  animation: typewriter-blink 0.75s ease-in-out infinite;
+}
+
+.chat-streaming-active pre:last-child code::after {
+  content: '▋';
+  display: inline-block;
+  color: var(--color-accent, #6366f1);
+  margin-left: 2px;
+  vertical-align: baseline;
+  animation: typewriter-blink 0.75s ease-in-out infinite;
+}

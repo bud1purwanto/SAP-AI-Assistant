@@ -572,7 +572,7 @@ const ChatMessage = ({
         {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
         <div className="relative px-4 sm:px-6 py-4 sm:py-5 rounded-3xl rounded-tl-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
           
-          <div className="prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full">
+          <div className={`prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full ${isStreaming ? 'chat-streaming-active' : ''}`}>
             <ReactMarkdown 
               remarkPlugins={[remarkGfm, remarkMath]}
               rehypePlugins={[rehypeKatex]}
@@ -580,14 +580,13 @@ const ChatMessage = ({
             >
               {message.content}
             </ReactMarkdown>
+            {isStreaming && !message.content?.trim() && (
+              <span
+                className="ml-0.5 inline-block h-4 w-[2.5px] translate-y-[3px] animate-pulse rounded-full bg-accent"
+                aria-hidden="true"
+              />
+            )}
           </div>
-          
-          {isStreaming && (
-            <span
-              className="ml-0.5 inline-block h-4 w-[2px] translate-y-[3px] animate-pulse rounded-full bg-accent"
-              aria-hidden="true"
-            />
-          )}
 
           {/* Action Footer Bar — belum relevan selagi jawaban masih ditulis. */}
           {!isStreaming && (
@@ -738,4 +737,4 @@ const ChatMessage = ({
   );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage);

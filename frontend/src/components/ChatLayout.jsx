@@ -15,6 +15,7 @@ import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
+import { useTypewriterStream } from '../hooks/useTypewriterStream';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
@@ -105,8 +106,14 @@ const ChatLayout = () => {
   // Status loading, progress, error, dan controller per session
   const [sessionLoadingMap, setSessionLoadingMap] = useState({});
   const [sessionProgressMap, setSessionProgressMap] = useState({});
-  // Teks jawaban yang sedang mengalir, per sesi.
-  const [sessionStreamMap, setSessionStreamMap] = useState({});
+  // Aliran teks jawaban halus dengan efek ketikan adaptif (typewriter stream)
+  const {
+    streamMap: sessionStreamMap,
+    appendToken,
+    flushAndFinish,
+    abortStream,
+    resetStream,
+  } = useTypewriterStream();
   const [sessionQuery, setSessionQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -569,7 +576,7 @@ const ChatLayout = () => {
             setSessionLoadingMap((prev) => ({ ...prev, [sessionId]: false }));
             setSessionProgressMap((prev) => ({ ...prev, [sessionId]: null }));
             setSessionErrorMap((prev) => ({ ...prev, [sessionId]: null }));
-            setSessionStreamMap((prev) => ({ ...prev, [sessionId]: '' }));
+            resetStream(sessionId);
             fetchSessions(true, true);
             return true;
           }
@@ -580,7 +587,7 @@ const ChatLayout = () => {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
     return false;
-  }, [isGuest, language, fetchSessions]);
+  }, [isGuest, language, fetchSessions, resetStream]);
 
   const loadSuggestions = useCallback(async (force = false) => {
     setIsSuggestionsLoading(true);
@@ -842,6 +849,7 @@ const ChatLayout = () => {
       controller.abort();
       delete abortControllersRef.current[targetSessionKey];
     }
+    abortStream(targetSessionKey);
     setSessionLoadingMap((prev) => ({ ...prev, [targetSessionKey]: false }));
     setSessionProgressMap((prev) => ({ ...prev, [targetSessionKey]: null }));
   };
@@ -889,7 +897,7 @@ const ChatLayout = () => {
       [targetKey]: { stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 },
     }));
     setSessionErrorMap((prev) => ({ ...prev, [targetKey]: null }));
-    setSessionStreamMap((prev) => ({ ...prev, [targetKey]: '' }));
+    resetStream(targetKey);
 
     const controller = new AbortController();
     abortControllersRef.current[targetKey] = controller;
@@ -918,14 +926,13 @@ const ChatLayout = () => {
           },
           onToken: (chunk) => {
             lastStreamActivityRef.current[targetKey] = Date.now();
-            setSessionStreamMap((prev) => ({
-              ...prev,
-              // `null` berarti server membatalkan teks yang sudah mengalir.
-              [targetKey]: chunk === null ? '' : (prev[targetKey] || '') + chunk,
-            }));
+            appendToken(targetKey, chunk);
           },
         },
       );
+
+      // Tuntaskan sisa pengetikan adaptif secara mulus sampai karakter terakhir
+      await flushAndFinish(targetKey, data.reply);
 
       const assistantMsg = {
         id: data.message_id,
@@ -1028,7 +1035,7 @@ const ChatLayout = () => {
       delete abortControllersRef.current[targetKey];
       setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: false }));
       setSessionProgressMap((prev) => ({ ...prev, [targetKey]: null }));
-      setSessionStreamMap((prev) => ({ ...prev, [targetKey]: '' }));
+      resetStream(targetKey);
     }
   };
 
@@ -1884,7 +1891,7 @@ const ChatLayout = () => {
           <div ref={messagesContentRef} className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
             {currentMessages.map((msg, index) => (
               <ChatMessage
-                key={index}
+                key={msg.id || `msg-${index}`}
                 message={msg}
                 onBukaPanel={bukaPanel}
                 onRegenerate={

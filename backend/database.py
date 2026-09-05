@@ -3308,6 +3308,7 @@ def delete_role(code: str) -> bool:
         conn.execute(text("DELETE FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean})
         conn.commit()
         invalidate_role_codes_cache()
+        return True
 
 def _get_fernet_key() -> bytes:
     """Derive a deterministic 32-byte Fernet key from settings.jwt_secret."""
