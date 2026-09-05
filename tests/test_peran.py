@@ -11,7 +11,7 @@ import pytest
 from langchain_core.messages import AIMessageChunk
 
 import agent as agent_module
-from agent import teks_sql_mengubah_data, tool_mengubah_program
+from agent import rfc_mengubah_data, teks_sql_mengubah_data, tool_mengubah_program
 from models import ChatRequest
 
 
@@ -229,3 +229,156 @@ def test_functional_tetap_bisa_query_sql_tapi_tidak_menulis(monkeypatch, db):
 def test_abaper_mendapat_seluruh_tool_sql(monkeypatch, db):
     model, _ = _jalankan_sql(monkeypatch, "abaper")
     assert any("sql_insert_row" in t for t in model.tools)
+
+
+# --------------------------------------------------------------------------
+# Function module RFC/BAPI
+#
+# Tool gerbang RFC ("call_function") tetap tersedia untuk peran read-only —
+# mayoritas pembacaan SAP justru lewat situ. Yang menentukan boleh atau
+# tidaknya adalah NAMA function module yang dipanggil.
+# --------------------------------------------------------------------------
+
+def test_gerbang_rfc_tetap_tersedia_untuk_peran_baca():
+    """call_function tidak boleh ikut disembunyikan: RFC_READ_TABLE dan
+    BAPI_*_GETDETAIL dipanggil lewat tool ini."""
+    assert tool_mengubah_program("call_function") is False
+
+
+@pytest.mark.parametrize("fm", [
+    "BAPI_SALESORDER_CREATEFROMDAT2",  # kata kerja dirangkai, bukan kata utuh
+    "BAPI_GOODSMVT_CREATE",
+    "BAPI_PO_CHANGE",
+    "BAPI_MATERIAL_SAVEDATA",
+    "BAPI_PO_RELEASE",
+    "BAPI_BILLINGDOC_CANCEL",
+    "BAPI_TRANSACTION_COMMIT",
+    # Penulis yang TIDAK berawalan BAPI_ — seluruhnya lolos pada
+    # pemeriksaan lama yang hanya mengenali awalan "BAPI_".
+    "SD_SALESDOCUMENT_CREATE",
+    "Z_POST_GOODS_MOVEMENT",
+    "BDC_INSERT",
+    "RV_ORDER_POST",
+])
+def test_rfc_penulis_dikenali(fm):
+    assert rfc_mengubah_data(fm) is True
+
+
+@pytest.mark.parametrize("fm", [
+    "RFC_READ_TABLE",
+    "RFC_GET_TABLE_ENTRIES",
+    "BAPI_MATERIAL_GET_DETAIL",
+    "BAPI_MATERIAL_GETLIST",
+    "BAPI_COMPANYCODE_GETLIST",
+    "Z_DISPLAY_STOCK",
+    "BAPI_SALESORDER_SIMULATE",
+    # Membaca RIWAYAT perubahan, bukan mengubah — kata kerja baca pada
+    # token terakhir harus menang atas "CHANGE" di token sebelumnya.
+    "CHANGEDOCUMENT_READ",
+    "BAPI_CHANGEDOCUMENT_GETDETAIL",
+    "",
+])
+def test_rfc_pembaca_tidak_ditolak(fm):
+    assert rfc_mengubah_data(fm) is False
+
+
+# --------------------------------------------------------------------------
+# Penjagaan hak tulis harus jalan MESKI master switch access control mati.
+#
+# Sebelumnya pemeriksaan ini bersarang di dalam blok
+# `if access_control.is_access_control_enabled():`, sedangkan nilai bawaan
+# master switch itu False. Akibatnya can_write_res tetap True dan tidak ada
+# satu pun pemeriksaan yang berjalan — peran read-only bisa menjalankan BAPI
+# transaksi lewat gerbang call_function.
+# --------------------------------------------------------------------------
+
+class ModelPemanggilRFC:
+    """Model tiruan yang memaksa satu panggilan call_function, lalu menjawab."""
+
+    def __init__(self, function_name):
+        self.function_name = function_name
+        self.sudah_memanggil = False
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    async def ainvoke(self, msgs):
+        if not self.sudah_memanggil:
+            self.sudah_memanggil = True
+            return AIMessageChunk(content="", tool_calls=[{
+                "name": "sap__call_function",
+                "args": {"function_name": self.function_name},
+                "id": "panggilan-1",
+            }])
+        return AIMessageChunk(content="Selesai.", tool_calls=[])
+
+    async def astream(self, msgs):
+        yield await self.ainvoke(msgs)
+
+
+def _jalankan_rfc(monkeypatch, role, function_name):
+    """Jalankan process_chat dengan access control MATI, catat apakah
+    panggilan MCP benar-benar diteruskan ke server SAP."""
+    model = ModelPemanggilRFC(function_name)
+    dipanggil = []
+
+    async def fake_tools(server_filter=None, allowed_connectors=None):
+        return [
+            {"server": "sap", "tool": type("T", (), {
+                "name": "call_function",
+                "description": "Panggil function module RFC",
+                "inputSchema": {}})()}
+        ]
+
+    async def fake_call_tool(server, nama, args, **kwargs):
+        dipanggil.append((server, nama, args))
+        class R:
+            is_error = False
+            content = []
+        return R()
+
+    monkeypatch.setattr(agent_module.mcp_manager, "get_all_tools", fake_tools)
+    monkeypatch.setattr(agent_module.mcp_manager, "call_tool", fake_call_tool)
+    monkeypatch.setattr(agent_module, "ChatOpenAI", lambda **kw: model)
+
+    import access_control
+    # Inti pengujian: master switch MATI.
+    monkeypatch.setattr(access_control, "is_access_control_enabled", lambda: False)
+
+    import database
+    monkeypatch.setattr(database, "get_system_config", lambda: {
+        "nine_router_enabled": True, "nine_router_api_key": "k",
+        "nine_router_base_url": "http://x/v1", "nine_router_model": "m",
+        "openrouter_enabled": False,
+    })
+
+    asyncio.run(agent_module.process_chat(
+        ChatRequest(message="jalankan transaksi"), role, "", username="penguji",
+    ))
+    return dipanggil
+
+
+def test_functional_tidak_bisa_rfc_transaksi_walau_access_control_mati(monkeypatch, db):
+    dipanggil = _jalankan_rfc(monkeypatch, "functional", "BAPI_SALESORDER_CREATEFROMDAT2")
+    assert dipanggil == [], (
+        "peran read-only berhasil menjalankan BAPI transaksi ketika master "
+        "switch access control mati"
+    )
+
+
+def test_functional_tidak_bisa_rfc_penulis_non_bapi(monkeypatch, db):
+    """Penulis yang tidak berawalan BAPI_ juga harus tertahan."""
+    dipanggil = _jalankan_rfc(monkeypatch, "functional", "Z_POST_GOODS_MOVEMENT")
+    assert dipanggil == []
+
+
+def test_functional_tetap_bisa_rfc_baca(monkeypatch, db):
+    """Yang dijaga hanya yang menulis — pembacaan harus tetap jalan."""
+    dipanggil = _jalankan_rfc(monkeypatch, "functional", "RFC_READ_TABLE")
+    assert len(dipanggil) == 1, "RFC baca ikut tertahan"
+    assert dipanggil[0][1] == "call_function"
+
+
+def test_abaper_tetap_bisa_rfc_transaksi(monkeypatch, db):
+    dipanggil = _jalankan_rfc(monkeypatch, "abaper", "BAPI_SALESORDER_CREATEFROMDAT2")
+    assert len(dipanggil) == 1, "peran abaper justru ikut tertahan"

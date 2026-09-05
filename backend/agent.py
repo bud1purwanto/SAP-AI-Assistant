@@ -190,6 +190,69 @@ _SQL_MUTASI_AWALAN = frozenset({
     "create", "grant", "revoke", "replace", "call", "exec", "execute",
 })
 
+# --- FUNCTION MODULE RFC/BAPI ---
+#
+# Tool gerbang RFC ("call_function") sengaja tetap tersedia untuk peran
+# read-only: mayoritas pembacaan SAP justru lewat situ (RFC_READ_TABLE,
+# BAPI_*_GETDETAIL). Yang menentukan boleh atau tidaknya adalah NAMA
+# function module yang dipanggil, bukan nama tool-nya.
+#
+# MCPManager._is_mutation_bapi sengaja tidak dipakai di sini: fungsi itu
+# mengatur auto-commit LUW dan hanya mengenali nama berawalan "BAPI_",
+# sehingga penulis non-BAPI (SD_SALESDOCUMENT_CREATE, Z_POST_*, BDC_INSERT,
+# RV_ORDER_POST) lolos. Memperlebarnya akan ikut mengubah perilaku
+# auto-commit, jadi pemeriksaan otorisasi berdiri sendiri di sini.
+#
+# Dicocokkan sebagai AWALAN token, bukan kata utuh: SAP merangkai kata
+# kerjanya ("CREATEFROMDAT2", "SAVEDATA", "GETLIST"), sehingga pencocokan
+# kata utuh justru meleset.
+_RFC_KATA_TULIS = (
+    "create", "change", "post", "insert", "update", "delete", "modify",
+    "save", "write", "cancel", "release", "confirm", "reverse", "commit",
+    "rollback", "activate", "deactivate", "transport", "remove", "replace",
+    "upload", "lock", "enqueue", "set",
+)
+# Kata kerja baca menang atas kata kerja tulis ketika keduanya muncul di
+# token TERAKHIR — "CHANGEDOCUMENT_READ" dan "BAPI_CHANGEDOCUMENT_GETDETAIL"
+# membaca riwayat perubahan, bukan mengubahnya.
+_RFC_KATA_BACA = (
+    "read", "get", "list", "display", "show", "check", "exist", "select",
+    "find", "search", "detail", "info", "query", "count", "validate",
+    "simulate", "test",
+)
+
+
+def _cocok_awalan(token: str, kata_kunci) -> bool:
+    return any(token.startswith(k) for k in kata_kunci)
+
+
+def rfc_mengubah_data(func_name: str) -> bool:
+    """Tebak apakah sebuah function module RFC/BAPI mengubah data di SAP.
+
+    Konvensi penamaan SAP menaruh kata kerja aksinya di TOKEN TERAKHIR
+    (BAPI_<OBJEK>_<AKSI>), jadi token itu yang paling menentukan. Bila
+    token terakhir netral (RFC_READ_TABLE → "TABLE",
+    Z_POST_GOODS_MOVEMENT → "MOVEMENT") barulah seluruh token diperiksa,
+    dan di situ kata tulis menang supaya penulis tidak lolos.
+    """
+    nama = (func_name or "").strip().lower()
+    if not nama:
+        return False
+    token = [t for t in re.split(r"[^a-z0-9]+", nama) if t]
+    if not token:
+        return False
+
+    terakhir = token[-1]
+    if _cocok_awalan(terakhir, _RFC_KATA_BACA):
+        return False
+    if _cocok_awalan(terakhir, _RFC_KATA_TULIS):
+        return True
+
+    # Token terakhir netral: periksa seluruh token, tulis menang.
+    if any(_cocok_awalan(t, _RFC_KATA_TULIS) for t in token):
+        return True
+    return False
+
 
 def teks_sql_mengubah_data(text) -> bool:
     """Tebak apakah sebuah pernyataan SQL mengubah data/skema, dari kata
@@ -1469,49 +1532,60 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     ))
                     continue
 
-                if server_name == "sap" and not can_write_res and (tool_mengubah_program(mcp_name) or mcp_manager.MCPManager._is_mutation_bapi(tool_args.get("function_name", ""))):
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="sap",
-                        target_id=target_srv,
-                        action="DENY_WRITE_TOOL",
-                        detail=f"Percobaan memanggil tool modifikasi SAP {mcp_name} pada mode read-only",
-                    )
-                    messages.append(ToolMessage(
-                        content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
+            # Penjagaan hak tulis SAP/SQL sengaja BERADA DI LUAR blok
+            # access_control di atas. Sebelumnya bersarang di dalamnya,
+            # sehingga ketika master switch access control mati (nilai
+            # bawaannya) can_write_res tetap True dan tidak ada satu pun
+            # pemeriksaan yang berjalan — peran read-only pun bisa
+            # menjalankan BAPI transaksi. Hak ubah program melekat pada
+            # PERAN, jadi penjagaannya tidak boleh ikut mati bersama
+            # master switch.
+            if server_name == "sap" and not boleh_ubah and (
+                tool_mengubah_program(mcp_name)
+                or rfc_mengubah_data(tool_args.get("function_name", ""))
+            ):
+                access_control.log_audit(
+                    actor=username,
+                    target_type="sap",
+                    target_id=target_srv,
+                    action="DENY_WRITE_TOOL",
+                    detail=f"Percobaan memanggil tool modifikasi SAP {mcp_name} pada mode read-only",
+                )
+                messages.append(ToolMessage(
+                    content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
+                    tool_call_id=tool_id
+                ))
+                continue
 
-                # Jaring pengaman untuk tool SQL generik (mis. "sql_query"):
-                # namanya sendiri tidak menyebutkan baca atau tulis, jadi
-                # yang diperiksa adalah isi pernyataannya — dicek di setiap
-                # argumen string, karena nama parameternya (query/sql/stmt)
-                # ditentukan oleh server MCP eksternal, bukan aplikasi ini.
-                if (
-                    server_name in ("sql", "database")
-                    and not can_write_res
-                    and (
-                        tool_mengubah_program(mcp_name)
-                        or any(
-                            teks_sql_mengubah_data(v)
-                            for v in (tool_args or {}).values()
-                            if isinstance(v, str)
-                        )
+            # Jaring pengaman untuk tool SQL generik (mis. "sql_query"):
+            # namanya sendiri tidak menyebutkan baca atau tulis, jadi
+            # yang diperiksa adalah isi pernyataannya — dicek di setiap
+            # argumen string, karena nama parameternya (query/sql/stmt)
+            # ditentukan oleh server MCP eksternal, bukan aplikasi ini.
+            if (
+                server_name in ("sql", "database")
+                and not boleh_ubah
+                and (
+                    tool_mengubah_program(mcp_name)
+                    or any(
+                        teks_sql_mengubah_data(v)
+                        for v in (tool_args or {}).values()
+                        if isinstance(v, str)
                     )
-                ):
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="sql",
-                        target_id=target_srv,
-                        action="DENY_WRITE_TOOL",
-                        detail=f"Percobaan memanggil tool modifikasi SQL {mcp_name} pada mode read-only",
-                    )
-                    messages.append(ToolMessage(
-                        content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada koneksi SQL '{target_srv}'. Pernyataan yang mengubah data atau skema tidak diizinkan.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
+                )
+            ):
+                access_control.log_audit(
+                    actor=username,
+                    target_type="sql",
+                    target_id=target_srv,
+                    action="DENY_WRITE_TOOL",
+                    detail=f"Percobaan memanggil tool modifikasi SQL {mcp_name} pada mode read-only",
+                )
+                messages.append(ToolMessage(
+                    content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada koneksi SQL '{target_srv}'. Pernyataan yang mengubah data atau skema tidak diizinkan.",
+                    tool_call_id=tool_id
+                ))
+                continue
             
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)
