@@ -77,6 +77,27 @@ def test_pengenalan_tool_pengubah(nama, mengubah):
     assert tool_mengubah_program(nama) is mengubah
 
 
+# Tool BACA yang kebetulan memuat pola pengubah sebagai bagian dari kata lain.
+# Pencocokan substring polos sebelumnya menolak semuanya, sehingga permintaan
+# analisis read-only untuk peran functional/user ikut ditolak — persis
+# keluhan yang memulai perbaikan ini.
+@pytest.mark.parametrize("nama", [
+    "get_commitment_report",     # commit ⊂ commitment
+    "read_updates_log",          # update ⊂ updates
+    "get_last_updated_docs",     # update ⊂ updated
+    "search_exchange_rate",      # change ⊂ exchange
+    "read_deleted_flag_status",  # delete ⊂ deleted
+    "read_committed_stock",      # commit ⊂ committed
+    "get_exchange_history",      # change ⊂ exchange
+    "read_updated_master_data",  # update ⊂ updated
+    "get_activation_status",     # activate ⊂ activation (dites juga, bukan substring)
+    "execute_query",             # "execute" saja, bukan frasa "execute_abap"
+    "run_report",                # "run" saja, bukan frasa "run_abap"
+])
+def test_tool_baca_yang_mirip_kata_pengubah_tidak_ditolak(nama):
+    assert tool_mengubah_program(nama) is False
+
+
 def test_abaper_mendapat_seluruh_tool(monkeypatch, db):
     model, _ = _jalankan(monkeypatch, "abaper")
     assert len(model.tools) == len(NAMA_TOOL)

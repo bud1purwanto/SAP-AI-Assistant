@@ -158,17 +158,34 @@ PERAN_BOLEH_UBAH_PROGRAM = ("superadmin", "abaper")
 # yang dipakai adalah pola nama — dan bila ragu, tool DITOLAK untuk peran yang
 # tidak berhak. Salah menolak hanya merepotkan; salah mengizinkan dapat
 # mengubah program di sistem SAP.
-_POLA_UBAH = (
+#
+# Dicocokkan sebagai KATA UTUH (token), bukan substring. Substring polos
+# sebelumnya menolak tool BACA yang sekadar kebetulan memuat pola itu di
+# tengah kata lain — get_commitment_report (commit), read_updates_log
+# (update), search_exchange_rate (change), reset_password (set_) — sehingga
+# permintaan analisis read-only pun ikut ditolak.
+_POLA_UBAH = frozenset({
     "write", "create", "update", "modify", "change", "delete", "remove",
-    "insert", "activate", "deactivate", "transport", "commit", "execute_abap",
-    "run_abap", "set_", "upload", "deploy", "rename",
-)
+    "insert", "activate", "deactivate", "transport", "commit",
+    "upload", "deploy", "rename", "set", "reset",
+})
+# Frasa dua kata: kedua tokennya harus berdampingan, bukan sekadar sama-sama
+# ada — "execute" dan "run" saja terlalu umum di tool baca (execute_query,
+# run_report) untuk dijadikan kata tunggal yang menolak.
+_FRASA_UBAH = ("execute_abap", "run_abap")
 
 
 def tool_mengubah_program(tool_name: str) -> bool:
     """Tebak apakah sebuah tool mengubah objek di SAP."""
-    nama = (tool_name or "").lower()
-    return any(pola in nama for pola in _POLA_UBAH)
+    nama = (tool_name or "")
+    # Sisipkan pemisah pada batas camelCase agar "getProgram" tertokenisasi
+    # sama seperti "get_program".
+    dinormalisasi = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", nama).lower()
+    token = re.findall(r"[a-z0-9]+", dinormalisasi)
+    if _POLA_UBAH.intersection(token):
+        return True
+    frasa = "_".join(token)
+    return any(f in frasa for f in _FRASA_UBAH)
 
 
 def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
