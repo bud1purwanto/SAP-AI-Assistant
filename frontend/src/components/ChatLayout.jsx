@@ -1799,22 +1799,6 @@ const ChatLayout = () => {
 
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {!isGuest && <QuotaChip quota={kuota} />}
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="hidden sm:inline-flex p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
-                aria-label={t('nav.settings')}
-                title={t('nav.settings')}
-              >
-                <Settings className="w-4 h-4" aria-hidden="true" />
-              </button>
-              <button
-                onClick={cycleTheme}
-                className="hidden sm:inline-flex p-2 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
-                aria-label={t('nav.theme')}
-                title={t('nav.theme')}
-              >
-                <ThemeIcon className="w-4 h-4" aria-hidden="true" />
-              </button>
             </div>
           </div>
         </header>
