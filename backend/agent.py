@@ -174,10 +174,55 @@ _POLA_UBAH = frozenset({
 # run_report) untuk dijadikan kata tunggal yang menolak.
 _FRASA_UBAH = ("execute_abap", "run_abap")
 
+# Tool infrastruktur/navigasi yang secara sengaja dikecualikan dari tebakan
+# kata. "sql_set_active_server" berisi kata "set" — mengganti server SQL
+# aktif untuk sesi ini, sama sekali bukan menulis data — tetapi tanpa
+# pengecualian ini tool tersebut ikut tertolak dan jalur SQL macet total
+# bagi peran yang tidak berhak ubah program, bukan cuma tool tulisnya.
+_TOOL_DIKECUALIKAN = frozenset({"sql_set_active_server", "sql_list_servers"})
+
+# Kata kerja pembuka pernyataan SQL yang mengubah data/skema. Tool SQL
+# generik (mis. "sql_query") tidak menyebutkan baca atau tulis lewat
+# namanya — isi pernyataannya sendiri yang menentukan, sehingga penebakan
+# dari nama tool saja tidak cukup untuk jalur SQL.
+_SQL_MUTASI_AWALAN = frozenset({
+    "insert", "update", "delete", "drop", "alter", "truncate", "merge",
+    "create", "grant", "revoke", "replace", "call", "exec", "execute",
+})
+
+
+def teks_sql_mengubah_data(text) -> bool:
+    """Tebak apakah sebuah pernyataan SQL mengubah data/skema, dari kata
+    kerja pembukanya.
+
+    Diperiksa PER PERNYATAAN (dipisah titik koma), bukan hanya kalimat
+    pertama — "SELECT 1; DROP TABLE x" tidak boleh lolos hanya karena
+    dimulai dengan SELECT.
+
+    Pernyataan berawalan WITH (CTE) diperiksa lebih longgar: kata kerja
+    tulisnya bisa muncul setelah blok "AS (...)", bukan sebagai kata
+    pertama — "WITH x AS (SELECT ...) INSERT INTO y ..." tetap menulis
+    walau kalimatnya dibuka dengan WITH. Salah menolak di sini hanya
+    merepotkan; salah mengizinkan bisa mengubah data produksi.
+    """
+    if not text:
+        return False
+    for pernyataan in str(text).split(";"):
+        kata = re.findall(r"[a-zA-Z]+", pernyataan)
+        if not kata:
+            continue
+        if kata[0].lower() in _SQL_MUTASI_AWALAN:
+            return True
+        if kata[0].lower() == "with" and any(k.lower() in _SQL_MUTASI_AWALAN for k in kata[1:]):
+            return True
+    return False
+
 
 def tool_mengubah_program(tool_name: str) -> bool:
-    """Tebak apakah sebuah tool mengubah objek di SAP."""
+    """Tebak apakah sebuah tool mengubah objek di SAP/SQL."""
     nama = (tool_name or "")
+    if nama in _TOOL_DIKECUALIKAN:
+        return False
     # Sisipkan pemisah pada batas camelCase agar "getProgram" tertokenisasi
     # sama seperti "get_program".
     dinormalisasi = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", nama).lower()
@@ -651,8 +696,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
         # Tool pengubah program tidak sekadar disembunyikan dari prompt: ia
         # tidak dibuatkan definisinya sama sekali, sehingga model tidak punya
-        # cara memanggilnya walau diminta pengguna.
-        if server == "sap" and not boleh_ubah and tool_mengubah_program(t.name):
+        # cara memanggilnya walau diminta pengguna. Berlaku juga untuk SQL —
+        # sebelumnya jalur SQL hanya diperiksa lewat konektor (boleh/tidak
+        # boleh pakai SQL sama sekali), tanpa pembeda baca/tulis: begitu
+        # konektor SQL diizinkan, tool yang menulis pun ikut lolos.
+        if server in ("sap", "sql", "database") and not boleh_ubah and tool_mengubah_program(t.name):
             tool_ditolak.append(t.name)
             continue
         
@@ -1431,6 +1479,36 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     )
                     messages.append(ToolMessage(
                         content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
+                        tool_call_id=tool_id
+                    ))
+                    continue
+
+                # Jaring pengaman untuk tool SQL generik (mis. "sql_query"):
+                # namanya sendiri tidak menyebutkan baca atau tulis, jadi
+                # yang diperiksa adalah isi pernyataannya — dicek di setiap
+                # argumen string, karena nama parameternya (query/sql/stmt)
+                # ditentukan oleh server MCP eksternal, bukan aplikasi ini.
+                if (
+                    server_name in ("sql", "database")
+                    and not can_write_res
+                    and (
+                        tool_mengubah_program(mcp_name)
+                        or any(
+                            teks_sql_mengubah_data(v)
+                            for v in (tool_args or {}).values()
+                            if isinstance(v, str)
+                        )
+                    )
+                ):
+                    access_control.log_audit(
+                        actor=username,
+                        target_type="sql",
+                        target_id=target_srv,
+                        action="DENY_WRITE_TOOL",
+                        detail=f"Percobaan memanggil tool modifikasi SQL {mcp_name} pada mode read-only",
+                    )
+                    messages.append(ToolMessage(
+                        content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada koneksi SQL '{target_srv}'. Pernyataan yang mengubah data atau skema tidak diizinkan.",
                         tool_call_id=tool_id
                     ))
                     continue
