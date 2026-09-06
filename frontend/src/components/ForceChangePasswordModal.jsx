@@ -9,11 +9,9 @@ import { useLanguage } from '../hooks/useLanguage';
  */
 export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLogout }) {
   const { isEn } = useLanguage();
-  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const [showOld, setShowOld] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -28,11 +26,6 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
     setError('');
     setSuccess('');
 
-    if (!oldPassword.trim()) {
-      setError(isEn ? 'Current / temporary password is required.' : 'Password sementara / saat ini wajib diisi.');
-      return;
-    }
-
     if (!newPassword || newPassword.length < 8) {
       setError(isEn ? 'New password must be at least 8 characters.' : 'Password baru minimal 8 karakter.');
       return;
@@ -43,18 +36,9 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
       return;
     }
 
-    if (newPassword === oldPassword) {
-      setError(
-        isEn
-          ? 'New password must be different from your temporary password.'
-          : 'Password baru tidak boleh sama dengan password sementara Anda.'
-      );
-      return;
-    }
-
     setLoading(true);
     try {
-      const res = await api.changePassword(oldPassword, newPassword);
+      const res = await api.changePassword(null, newPassword);
       if (res && res.success !== false) {
         setSuccess(
           isEn
@@ -120,31 +104,6 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
 
         {/* Formulir Pengaturan Password */}
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs sm:text-sm">
-          {/* Password Sementara Saat Ini */}
-          <div>
-            <label className="block text-content font-semibold mb-1 text-xs">
-              {isEn ? 'Current / Temporary Password' : 'Password Sementara / Saat Ini'}
-            </label>
-            <div className="relative flex items-center">
-              <input
-                type={showOld ? 'text' : 'password'}
-                required
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                placeholder={isEn ? 'Enter current temporary password' : 'Masukkan password sementara saat ini'}
-                className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 pr-10 text-xs sm:text-sm text-content placeholder:text-content-subtle focus:outline-none focus:border-accent transition-colors"
-              />
-              <button
-                type="button"
-                onClick={() => setShowOld(!showOld)}
-                className="absolute right-3 text-content-subtle hover:text-content p-1 cursor-pointer transition-colors"
-                tabIndex={-1}
-              >
-                {showOld ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
           {/* Password Baru Pribadi */}
           <div>
             <label className="block text-content font-semibold mb-1 text-xs flex items-center justify-between">
@@ -213,7 +172,7 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
 
             <button
               type="submit"
-              disabled={loading || !newPassword || !confirmPassword || !oldPassword}
+              disabled={loading || !newPassword || !confirmPassword}
               className="px-4 py-2 bg-accent text-accent-fg font-semibold rounded-xl text-xs shadow-md hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
             >
               <Lock className="w-3.5 h-3.5" />

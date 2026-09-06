@@ -489,8 +489,11 @@ def authenticate_user(username: str, password: str):
     return None
 
 
-def change_user_password(username: str, old_password: str, new_password: str):
-    """Ubah password user yang sedang login."""
+def change_user_password(username: str, old_password: Optional[str], new_password: str):
+    """Ubah password user yang sedang login.
+    Bila user dalam status force_change_password (setelah reset/pertama kali login),
+    old_password tidak wajib diisi karena user sudah berhasil login dengan kredensialnya.
+    """
     if not new_password or len(new_password) < 8:
         return {"success": False, "message": "Password baru minimal 8 karakter."}
 
@@ -498,20 +501,33 @@ def change_user_password(username: str, old_password: str, new_password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT password, password_hash FROM ai_assistant.users
+                SELECT password, password_hash, force_change_password FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": username.strip()}).fetchone()
 
             if not row:
                 return {"success": False, "message": "User tidak ditemukan."}
 
-            if is_bcrypt_hash(row.password_hash):
-                valid_old = verify_password(old_password, row.password_hash)
-            else:
-                valid_old = bool(row.password) and row.password == old_password
+            is_forced = bool(getattr(row, "force_change_password", False))
 
-            if not valid_old:
-                return {"success": False, "message": "Password lama salah."}
+            if not is_forced:
+                if not old_password:
+                    return {"success": False, "message": "Password lama wajib diisi."}
+                if is_bcrypt_hash(row.password_hash):
+                    valid_old = verify_password(old_password, row.password_hash)
+                else:
+                    valid_old = bool(row.password) and row.password == old_password
+
+                if not valid_old:
+                    return {"success": False, "message": "Password lama salah."}
+            else:
+                if old_password:
+                    if is_bcrypt_hash(row.password_hash):
+                        valid_old = verify_password(old_password, row.password_hash)
+                    else:
+                        valid_old = bool(row.password) and row.password == old_password
+                    if not valid_old:
+                        return {"success": False, "message": "Password saat ini salah."}
 
             conn.execute(text("""
                 UPDATE ai_assistant.users

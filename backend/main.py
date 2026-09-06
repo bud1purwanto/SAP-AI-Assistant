@@ -266,7 +266,7 @@ async def me(user: dict = Depends(get_current_user)):
 
 
 class ChangePasswordRequest(BaseModel):
-    old_password: str
+    old_password: Optional[str] = None
     new_password: str
 
 

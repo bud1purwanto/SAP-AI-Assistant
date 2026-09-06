@@ -44,11 +44,11 @@ def test_admin_reset_password_flow(client, admin_auth, make_user):
     assert me_res.status_code == 200
     assert me_res.json().get("force_change_password") is True
 
-    # 5. User melakukan penggantian password pribadi via /api/change-password
+    # 5. User melakukan penggantian password pribadi via /api/change-password TANPA old_password
     new_personal_pass = "MyNewSecretPassword123"
     change_res = client.post(
         "/api/change-password",
-        json={"old_password": temp_pass, "new_password": new_personal_pass},
+        json={"new_password": new_personal_pass},
         headers=user_auth,
     )
     assert change_res.status_code == 200, change_res.text
@@ -57,6 +57,15 @@ def test_admin_reset_password_flow(client, admin_auth, make_user):
     me_after = client.get("/api/me", headers=user_auth)
     assert me_after.status_code == 200
     assert me_after.json().get("force_change_password") is False
+
+    # 6b. Setelah force_change_password menjadi False, penggantian password reguler WAJIB menyertakan old_password
+    regular_change_no_old = client.post(
+        "/api/change-password",
+        json={"new_password": "YetAnotherPassword123"},
+        headers=user_auth,
+    )
+    assert regular_change_no_old.status_code == 400
+    assert "Password lama wajib diisi" in regular_change_no_old.text
 
     res_list_after = client.get("/api/admin/users", headers=admin_auth)
     assert res_list_after.status_code == 200
