@@ -118,7 +118,16 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   }
 
   if (!res.ok) {
-    let detail = (data && data.detail) || (typeof data === 'string' ? data : '');
+    let detail = '';
+    if (Array.isArray(data?.detail)) {
+      detail = data.detail.map((e) => e.msg || JSON.stringify(e)).join(', ');
+    } else if (typeof data?.detail === 'string') {
+      detail = data.detail;
+    } else if (data?.detail && typeof data.detail === 'object') {
+      detail = data.detail.message || JSON.stringify(data.detail);
+    } else if (typeof data === 'string') {
+      detail = data;
+    }
     if (typeof detail === 'string' && (detail.trim().startsWith('<') || res.status >= 500)) {
       if (res.status === 502) {
         detail = isEn ? 'Backend server is unreachable or offline (502 Bad Gateway).' : 'Server backend sedang tidak aktif atau tidak dapat dijangkau (502 Bad Gateway).';
@@ -196,6 +205,8 @@ export const api = {
   adminCreateUser: (payload) => apiFetch('/api/admin/users', { method: 'POST', body: payload }),
   adminUpdateUser: (username, payload) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
+  adminResetPassword: (username, payload) =>
+    apiFetch(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, { method: 'POST', body: payload }),
   adminDeleteUser: (username) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   adminRoles: () => apiFetch('/api/admin/roles'),

@@ -124,6 +124,9 @@ def init_db():
             conn.execute(text(
                 "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120)"
             ))
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN DEFAULT FALSE"
+            ))
             # Kolom password plaintext dipensiunkan; DROP NOT NULL bersifat
             # idempoten sehingga aman dijalankan berulang.
             conn.execute(text(
@@ -428,7 +431,7 @@ def authenticate_user(username: str, password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, password, password_hash, full_name, role, assistant_persona
+                SELECT username, password, password_hash, full_name, role, assistant_persona, force_change_password
                 FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
@@ -477,7 +480,8 @@ def authenticate_user(username: str, password: str):
                     "full_name": row.full_name or "",
                     "role": primary_role,
                     "roles": roles,
-                    "assistant_persona": row.assistant_persona or ""
+                    "assistant_persona": row.assistant_persona or "",
+                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                 }
     except Exception as e:
         logger.error(f"Error authenticate_user: {e}")
@@ -511,7 +515,7 @@ def change_user_password(username: str, old_password: str, new_password: str):
 
             conn.execute(text("""
                 UPDATE ai_assistant.users
-                SET password_hash = :new_h, password = NULL
+                SET password_hash = :new_h, password = NULL, force_change_password = FALSE
                 WHERE LOWER(username) = LOWER(:u)
             """), {"new_h": hash_password(new_password), "u": username.strip()})
             conn.commit()
@@ -621,7 +625,7 @@ def get_user_by_username(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, full_name, role, assistant_persona
+                SELECT username, full_name, role, assistant_persona, force_change_password
                 FROM ai_assistant.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
@@ -649,7 +653,8 @@ def get_user_by_username(username: str):
                     "full_name": row.full_name or "",
                     "role": primary_role,
                     "roles": roles,
-                    "assistant_persona": row.assistant_persona or ""
+                    "assistant_persona": row.assistant_persona or "",
+                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
@@ -1620,7 +1625,7 @@ def list_all_users():
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT username, full_name, role, assistant_persona
+                SELECT username, full_name, role, assistant_persona, force_change_password
                 FROM ai_assistant.users
                 ORDER BY role DESC, username ASC
             """)).fetchall()
@@ -1644,7 +1649,8 @@ def list_all_users():
                     "full_name": r.full_name or "",
                     "role": r.role,
                     "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
-                    "assistant_persona": r.assistant_persona or ""
+                    "assistant_persona": r.assistant_persona or "",
+                    "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                 }
                 for r in rows
             ]
@@ -1652,7 +1658,7 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None):
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False):
     """Buat user baru di database dengan dukungan banyak peran."""
     try:
         engine = get_engine()
@@ -1671,10 +1677,10 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
             primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
 
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona)
-                VALUES (:u, :p, :fn, :r, :persona)
+                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password)
+                VALUES (:u, :p, :fn, :r, :persona, :fcp)
             """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona})
+                   "r": primary_role, "persona": persona, "fcp": force_change_password})
 
             for r in clean_roles:
                 conn.execute(text("""
@@ -1689,8 +1695,37 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
         logger.error(f"Error create_new_user: {e}")
         return {"success": False, "message": str(e)}
 
+def reset_user_password_by_admin(username: str, new_password: str, force_change: bool = True) -> dict:
+    """Admin mereset password pengguna dan mengaktifkan status force_change_password (pending reset)."""
+    if not new_password or len(new_password) < 8:
+        return {"success": False, "message": "Password baru minimal 8 karakter."}
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT username FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"),
+                {"u": username.strip()},
+            ).fetchone()
+            if not existing:
+                return {"success": False, "message": "User tidak ditemukan."}
+
+            conn.execute(text("""
+                UPDATE ai_assistant.users
+                SET password_hash = :p, password = NULL, force_change_password = :fcp
+                WHERE LOWER(username) = LOWER(:u)
+            """), {
+                "u": username.strip(),
+                "p": hash_password(new_password),
+                "fcp": force_change,
+            })
+            conn.commit()
+            return {"success": True, "message": f"Password user '{username}' berhasil direset."}
+    except Exception as e:
+        logger.error(f"Error reset_user_password_by_admin: {e}")
+        return {"success": False, "message": str(e)}
+
 def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
-                         full_name: str = None, roles: list = None):
+                         full_name: str = None, roles: list = None, force_change_password: bool = None):
     """Admin mengupdate data user (role, roles, persona, dan optional reset password)."""
     try:
         engine = get_engine()
@@ -1744,6 +1779,13 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 updates.append("password_hash = :pass")
                 updates.append("password = NULL")
                 params["pass"] = hash_password(password)
+                if force_change_password is None:
+                    # Bila admin mengganti password lewat edit user, defaultkan juga ke pending reset
+                    updates.append("force_change_password = TRUE")
+
+            if force_change_password is not None:
+                updates.append("force_change_password = :fcp")
+                params["fcp"] = force_change_password
 
             if updates:
                 sql = f"UPDATE ai_assistant.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"

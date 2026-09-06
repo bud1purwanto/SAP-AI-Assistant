@@ -7,6 +7,7 @@ import AdminDashboard from './AdminDashboard';
 import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
 import ConfirmModal from './ConfirmModal';
+import ForceChangePasswordModal from './ForceChangePasswordModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import QuotaBanner, { QuotaChip } from './QuotaBanner';
@@ -17,7 +18,7 @@ import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
 import { useTypewriterStream } from '../hooks/useTypewriterStream';
 import {
-  api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
+  api, ApiError, chatWithProgress, clearSession, getStoredUser, getToken, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
 import { formatRoleLabel, getRoleBadgeStyle, getRoleLabel, getUserInitials } from '../lib/roles';
 
@@ -654,7 +655,9 @@ const ChatLayout = () => {
                   username: data.username,
                   full_name: data.full_name || '',
                   role: data.role,
-                  assistant_persona: data.assistant_persona
+                  roles: data.roles || [data.role],
+                  assistant_persona: data.assistant_persona,
+                  force_change_password: Boolean(data.force_change_password),
                 };
                 saveSession(data.access_token, userData);
                 
@@ -1119,6 +1122,17 @@ const ChatLayout = () => {
     setIsLoginModalOpen(false);
     setCustomLoginMsg('');
     setError(null);
+  };
+
+  const handleForcePasswordChanged = () => {
+    setUser((prev) => {
+      const updated = { ...prev, force_change_password: false };
+      const token = getToken();
+      if (token) {
+        saveSession(token, updated);
+      }
+      return updated;
+    });
   };
 
   const handleLogout = () => {
@@ -2079,6 +2093,13 @@ const ChatLayout = () => {
         user={user}
         onRefreshMcpServers={fetchServers}
         onRefreshModes={fetchModes}
+      />
+
+      <ForceChangePasswordModal
+        isOpen={Boolean(user && user.role !== 'guest' && user.force_change_password)}
+        user={user}
+        onSuccess={handleForcePasswordChanged}
+        onLogout={handleLogout}
       />
 
       {/* Confirmation Modal - Logout */}

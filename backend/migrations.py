@@ -708,6 +708,19 @@ def _m0015_role_suspended_flag(conn):
     """))
 
 
+def _m0016_force_change_password(conn):
+    """Menambahkan kolom force_change_password pada ai_assistant.users.
+
+    Ketika admin mereset password pengguna atau akun baru dibuat dengan password
+    sementara, flag ini bernilai TRUE. Pengguna diwajibkan mengganti password
+    pribadinya saat login sebelum dapat menggunakan aplikasi.
+    """
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.users
+        ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -724,6 +737,7 @@ MIGRATIONS = [
     ("0013_master_data_roles", _m0013_master_data_roles),
     ("0014_users_role_integrity", _m0014_users_role_integrity),
     ("0015_role_suspended_flag", _m0015_role_suspended_flag),
+    ("0016_force_change_password", _m0016_force_change_password),
 ]
 
 

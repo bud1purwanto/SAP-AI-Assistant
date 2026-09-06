@@ -104,6 +104,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         role: data.role,
         roles: data.roles || [data.role],
         assistant_persona: data.assistant_persona,
+        force_change_password: Boolean(data.force_change_password),
       });
     } catch (err) {
       setError(err.message || t('login.failed'));

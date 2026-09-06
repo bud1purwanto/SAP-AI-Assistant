@@ -72,6 +72,7 @@ from database import (
     update_message_feedback,
     update_role,
     update_system_config,
+    reset_user_password_by_admin,
     update_user_by_admin,
     update_user_full_name,
     update_user_persona,
@@ -251,6 +252,7 @@ async def login(req: LoginRequest, request: Request):
         "role": user["role"],
         "roles": user_roles,
         "assistant_persona": user["assistant_persona"],
+        "force_change_password": user.get("force_change_password", False),
     }
 
 
@@ -761,12 +763,45 @@ async def create_user_endpoint(
     return res
 
 
+class AdminResetPasswordRequest(BaseModel):
+    password: Optional[str] = None
+    new_password: Optional[str] = None
+    force_change_password: bool = True
+
+    @property
+    def effective_password(self) -> str:
+        return self.password or self.new_password or ""
+
+
+@app.post("/api/admin/users/{username}/reset-password")
+async def admin_reset_password_endpoint(
+    username: str,
+    req: AdminResetPasswordRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Reset password user oleh Super Admin dan tandai force_change_password."""
+    target_pwd = req.effective_password
+    if not target_pwd or len(target_pwd) < 8:
+        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
+
+    res = reset_user_password_by_admin(
+        username=username,
+        new_password=target_pwd,
+        force_change=req.force_change_password,
+    )
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    access_control.invalidate_effective_roles_cache(username)
+    return res
+
+
 class AdminUpdateUserRequest(BaseModel):
     role: Optional[str] = None
     roles: Optional[List[str]] = None
     assistant_persona: Optional[str] = None
     password: Optional[str] = None
     full_name: Optional[str] = None
+    force_change_password: Optional[bool] = None
 
 
 @app.put("/api/admin/users/{username}")
@@ -807,6 +842,7 @@ async def update_user_endpoint(
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
+        force_change_password=req.force_change_password,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])

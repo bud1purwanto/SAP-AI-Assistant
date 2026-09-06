@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Gauge, History, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -65,6 +65,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [editingUser, setEditingUser] = useState(null);
   const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
+  const [resetModalUser, setResetModalUser] = useState(null);
+  const [resetPasswordForm, setResetPasswordForm] = useState({
+    password: '',
+    force_change_password: true,
+    showPassword: false,
+    loading: false,
+    error: '',
+  });
   const [masterRoles, setMasterRoles] = useState([]);
 
   // Label & warna badge role diambil dari master roles (bukan hardcode per-kode),
@@ -426,6 +434,59 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchUsers();
     } catch (err) {
       setActionError(err.message);
+    }
+  };
+
+  const handleOpenResetModal = (u) => {
+    setResetModalUser(u);
+    setResetPasswordForm({
+      password: '',
+      force_change_password: true,
+      showPassword: false,
+      loading: false,
+      error: '',
+    });
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = '';
+    for (let i = 0; i < 10; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setResetPasswordForm((prev) => ({ ...prev, password: res, showPassword: true, error: '' }));
+  };
+
+  const handleExecuteResetPassword = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!resetModalUser) return;
+    if (!resetPasswordForm.password || resetPasswordForm.password.length < 8) {
+      setResetPasswordForm((prev) => ({
+        ...prev,
+        error: language === 'en' ? 'Password must be at least 8 characters.' : 'Password minimal 8 karakter.',
+      }));
+      return;
+    }
+    setResetPasswordForm((prev) => ({ ...prev, loading: true, error: '' }));
+    try {
+      await api.adminResetPassword(resetModalUser.username, {
+        password: resetPasswordForm.password,
+        new_password: resetPasswordForm.password,
+        force_change_password: resetPasswordForm.force_change_password,
+      });
+      setActionSuccess(
+        language === 'en'
+          ? `Password for '${resetModalUser.username}' was reset successfully.`
+          : `Password untuk user '${resetModalUser.username}' berhasil direset.`
+      );
+      setResetModalUser(null);
+      fetchUsers();
+    } catch (err) {
+      setResetPasswordForm((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || (language === 'en' ? 'Failed to reset password.' : 'Gagal mereset password.'),
+      }));
     }
   };
 
@@ -1201,6 +1262,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   {u.username === user.username && (
                                     <span className="text-[9px] bg-accent-soft text-accent px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">{language === 'en' ? 'You' : 'Anda'}</span>
                                   )}
+                                  {u.force_change_password && (
+                                    <span
+                                      className="inline-flex items-center gap-1 text-[9px] bg-amber-500/15 text-amber-500 border border-amber-500/30 px-1.5 py-0.5 rounded-md font-bold whitespace-nowrap"
+                                      title={language === 'en' ? 'User has not set personal password yet' : 'User belum mengganti password pribadinya'}
+                                    >
+                                      Pending Reset
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal text-xs">
@@ -1244,6 +1313,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 {u.assistant_persona || <span className="italic text-content-subtle text-[11px]">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
                               </td>
                               <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+                                <button
+                                  onClick={() => handleOpenResetModal(u)}
+                                  className="p-1.5 text-content-subtle hover:text-amber-500 hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
+                                  title={language === 'en' ? 'Reset password' : 'Reset password'}
+                                  aria-label={`Reset password ${u.username}`}
+                                >
+                                  <KeyRound className="w-4 h-4" />
+                                </button>
                                 <button
                                   onClick={() => {
                                     const userRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role];
@@ -1544,6 +1621,121 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 cursor-pointer active:scale-95 transition-all"
                           >
                             {language === 'en' ? 'Save Changes' : 'Simpan Perubahan'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                )}
+
+                {/* MODAL RESET PASSWORD USER BY ADMIN */}
+                {resetModalUser && (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
+                    style={{
+                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
+                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+                    }}
+                  >
+                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
+                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
+                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
+                          <KeyRound className="w-4 h-4 text-amber-500" />
+                          {language === 'en' ? `Reset Password: ${resetModalUser.username}` : `Reset Password: ${resetModalUser.username}`}
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setResetModalUser(null)}
+                          className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {resetPasswordForm.error && (
+                        <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-500 font-medium">
+                          {resetPasswordForm.error}
+                        </div>
+                      )}
+
+                      <form onSubmit={handleExecuteResetPassword} className="space-y-4 text-xs sm:text-sm">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-content-muted">
+                              {language === 'en' ? 'New Temporary Password' : 'Password Sementara Baru'} *
+                            </label>
+                            <button
+                              type="button"
+                              onClick={generateRandomPassword}
+                              className="text-[11px] text-accent hover:underline font-medium cursor-pointer"
+                            >
+                              {language === 'en' ? '🎲 Generate Random' : '🎲 Acak Password'}
+                            </button>
+                          </div>
+                          <div className="relative flex items-center">
+                            <input
+                              type={resetPasswordForm.showPassword ? 'text' : 'password'}
+                              value={resetPasswordForm.password}
+                              onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, password: e.target.value, error: '' })}
+                              className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content transition-all font-mono"
+                              placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
+                              required
+                              minLength={8}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setResetPasswordForm((p) => ({ ...p, showPassword: !p.showPassword }))}
+                              className="absolute right-2.5 p-1 text-content-subtle hover:text-content text-xs rounded transition-colors"
+                              title={resetPasswordForm.showPassword ? 'Hide' : 'Show'}
+                            >
+                              {resetPasswordForm.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Provide this temporary password to the user to sign in.'
+                              : 'Berikan password sementara ini kepada user untuk proses login.'}
+                          </p>
+                        </div>
+
+                        <div className="p-3 bg-surface-sunken/70 border border-line rounded-xl space-y-1">
+                          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={resetPasswordForm.force_change_password}
+                              onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, force_change_password: e.target.checked })}
+                              className="mt-0.5 rounded text-amber-500 focus:ring-amber-500/30 border-line"
+                            />
+                            <div className="text-xs">
+                              <span className="font-semibold text-content block">
+                                {language === 'en' ? 'Require password change on next login' : 'Wajibkan ganti password saat login'}
+                              </span>
+                              <span className="text-[11px] text-content-muted leading-relaxed block mt-0.5">
+                                {language === 'en'
+                                  ? 'Status will show "Pending Reset" until the user sets their personal password.'
+                                  : 'Status akan bertuliskan "Pending Reset" hingga user mengatur password pribadinya.'}
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
+                          <button
+                            type="button"
+                            onClick={() => setResetModalUser(null)}
+                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={resetPasswordForm.loading}
+                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white rounded-xl shadow-sm shadow-amber-500/25 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+                          >
+                            {resetPasswordForm.loading
+                              ? (language === 'en' ? 'Resetting...' : 'Mereset...')
+                              : (language === 'en' ? 'Reset Password' : 'Reset Password')}
                           </button>
                         </div>
                       </form>
