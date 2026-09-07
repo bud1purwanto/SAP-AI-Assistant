@@ -426,8 +426,8 @@ const ChatInput = ({
       {/* AI Disclaimer Footer */}
       <p className="composer-disclaimer text-center text-[9px] sm:text-[10px] text-content-subtle mt-1 mb-0 px-2 select-none leading-tight tracking-normal">
         {language === 'en'
-          ? 'Enterprise AI Assistant may make mistakes. Please verify important data in SAP GUI.'
-          : 'Enterprise AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di SAP GUI.'}
+          ? 'Enterprise AI Assistant may make mistakes. Please verify important data in the source system.'
+          : 'Enterprise AI Assistant dapat membuat kesalahan. Selalu verifikasi data penting di sistem terkait.'}
       </p>
     </div>
   );
