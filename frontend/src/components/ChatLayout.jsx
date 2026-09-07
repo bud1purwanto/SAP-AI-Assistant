@@ -557,37 +557,40 @@ const ChatLayout = () => {
       },
     }));
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        const data = await api.sessionMessages(sessionId);
-        if (Array.isArray(data) && data.length > 0) {
-          const lastMsg = data[data.length - 1];
-          if (lastMsg.role === 'ai' || lastMsg.role === 'assistant') {
-            const formatted = data.map((m) => ({
-              id: m.id,
-              role: m.role === 'user' ? 'user' : 'assistant',
-              content: m.content,
-              sources: parseJsonList(m.sources),
-              artifacts: parseJsonList(m.artifacts),
-              attachments: parseJsonList(m.attachments),
-              feedback: m.feedback || null,
-              created_at: m.created_at,
-            }));
-            setMessagesMap((prev) => ({ ...prev, [sessionId]: formatted }));
-            setSessionLoadingMap((prev) => ({ ...prev, [sessionId]: false }));
-            setSessionProgressMap((prev) => ({ ...prev, [sessionId]: null }));
-            setSessionErrorMap((prev) => ({ ...prev, [sessionId]: null }));
-            resetStream(sessionId);
-            fetchSessions(true, true);
-            return true;
+    try {
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          const data = await api.sessionMessages(sessionId);
+          if (Array.isArray(data) && data.length > 0) {
+            const lastMsg = data[data.length - 1];
+            if (lastMsg.role === 'ai' || lastMsg.role === 'assistant') {
+              const formatted = data.map((m) => ({
+                id: m.id,
+                role: m.role === 'user' ? 'user' : 'assistant',
+                content: m.content,
+                sources: parseJsonList(m.sources),
+                artifacts: parseJsonList(m.artifacts),
+                attachments: parseJsonList(m.attachments),
+                feedback: m.feedback || null,
+                created_at: m.created_at,
+              }));
+              setMessagesMap((prev) => ({ ...prev, [sessionId]: formatted }));
+              setSessionErrorMap((prev) => ({ ...prev, [sessionId]: null }));
+              resetStream(sessionId);
+              fetchSessions(true, true);
+              return true;
+            }
           }
+        } catch (e) {
+          console.warn('Gagal memulihkan pesan background:', e);
         }
-      } catch (e) {
-        console.warn('Gagal memulihkan pesan background:', e);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return false;
+    } finally {
+      setSessionLoadingMap((prev) => ({ ...prev, [sessionId]: false }));
+      setSessionProgressMap((prev) => ({ ...prev, [sessionId]: null }));
     }
-    return false;
   }, [isGuest, language, fetchSessions, resetStream]);
 
   const loadSuggestions = useCallback(async (force = false) => {
@@ -907,6 +910,7 @@ const ChatLayout = () => {
     isStreamActiveRef.current[targetKey] = true;
     lastStreamActivityRef.current[targetKey] = Date.now();
 
+    let finalSessionId = null;
     try {
       const history = prevMessages
         .filter((m) => !m.isWelcome)
@@ -948,7 +952,7 @@ const ChatLayout = () => {
         created_at: new Date().toISOString(),
       };
 
-      const finalSessionId = data.session_id || targetSessionId;
+      finalSessionId = data.session_id || targetSessionId;
 
       // Sesi yang baru saja dipakai harus pindah ke urutan teratas — termasuk
       // percakapan lama yang dilanjutkan hari ini. Diperbarui langsung di sini
@@ -1020,9 +1024,9 @@ const ChatLayout = () => {
         return;
       }
 
-      // Bila koneksi terputus (mis. browser HP di-minimize atau sinyal hilang),
+      // Bila koneksi benar-benar terputus/offline (status 0),
       // periksa apakah server tetap menyelesaikan respon di background dan simpan ke database.
-      if (!isGuest && targetSessionId) {
+      if (!isGuest && targetSessionId && (err?.status === 0 || !err?.status)) {
         const recovered = await recoverBackgroundMessage(targetSessionId);
         if (recovered) return;
       }
@@ -1036,9 +1040,27 @@ const ChatLayout = () => {
       delete isStreamActiveRef.current[targetKey];
       delete lastStreamActivityRef.current[targetKey];
       delete abortControllersRef.current[targetKey];
-      setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: false }));
-      setSessionProgressMap((prev) => ({ ...prev, [targetKey]: null }));
+      if (finalSessionId) {
+        delete isStreamActiveRef.current[finalSessionId];
+        delete lastStreamActivityRef.current[finalSessionId];
+        delete abortControllersRef.current[finalSessionId];
+      }
+      setSessionLoadingMap((prev) => ({
+        ...prev,
+        [targetKey]: false,
+        ...(finalSessionId ? { [finalSessionId]: false } : {}),
+        [DRAFT_SESSION_KEY]: false,
+      }));
+      setSessionProgressMap((prev) => ({
+        ...prev,
+        [targetKey]: null,
+        ...(finalSessionId ? { [finalSessionId]: null } : {}),
+        [DRAFT_SESSION_KEY]: null,
+      }));
       resetStream(targetKey);
+      if (finalSessionId && finalSessionId !== targetKey) {
+        resetStream(finalSessionId);
+      }
     }
   };
 
@@ -2062,6 +2084,7 @@ const ChatLayout = () => {
           modes={chatModesEnabled ? modesList : []}
           selectedMode={selectedMode}
           suggestions={dynamicSuggestions}
+          onClearChat={createNewSession}
           onSelectMode={(modeCode) => {
             setSelectedMode(modeCode);
             try {

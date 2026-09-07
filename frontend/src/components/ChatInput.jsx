@@ -1,5 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FileSpreadsheet, FileText, FileType, Image, Loader2, Mic, MicOff, Paperclip, Send, Square, X } from 'lucide-react';
+import {
+  BookOpen,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  HelpCircle,
+  Image,
+  Loader2,
+  Mail,
+  Mic,
+  MicOff,
+  Paperclip,
+  Send,
+  Server,
+  Sliders,
+  Sparkles,
+  Square,
+  Trash2,
+  UserCheck,
+  X,
+} from 'lucide-react';
 
 import { uploadAttachment } from '../lib/api';
 import { ALASAN, useVoiceInput } from '../hooks/useVoiceInput';
@@ -29,24 +50,117 @@ const formatSize = (bytes) => (bytes < 1024 * 1024
   ? `${Math.max(1, Math.round(bytes / 1024))} KB`
   : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
+const SLASH_COMMANDS = [
+  {
+    cmd: '/help',
+    title: '/help',
+    desc: 'Panduan lengkap seluruh pintasan perintah & fitur sistem',
+    descEn: 'Complete slash commands & system features guide',
+    icon: HelpCircle,
+    badge: 'Bantuan',
+    insertOnly: false,
+  },
+  {
+    cmd: '/sop',
+    title: '/sop <topik>',
+    desc: 'Cari panduan teknis & prosedur dari dokumen SOP internal',
+    descEn: 'Search guidelines & procedures from internal SOP docs',
+    icon: FileText,
+    badge: 'SOP RAG',
+    insertOnly: true,
+  },
+  {
+    cmd: '/email',
+    title: '/email <instruksi>',
+    desc: 'Susun draf email bisnis & laporan resmi perusahaan',
+    descEn: 'Draft business emails & official company reports',
+    icon: Mail,
+    badge: 'Email',
+    insertOnly: true,
+  },
+  {
+    cmd: '/export',
+    title: '/export <excel/csv>',
+    desc: 'Ekspor data tabel terakhir ke file Excel / CSV unduhan',
+    descEn: 'Export last data table to downloadable Excel / CSV',
+    icon: Download,
+    badge: 'Ekspor',
+    insertOnly: true,
+  },
+  {
+    cmd: '/summary',
+    title: '/summary',
+    desc: 'Rangkum diskusi chat menjadi memo eksekutif 3 poin',
+    descEn: 'Summarize chat discussion into 3-point executive memo',
+    icon: Sparkles,
+    badge: 'Rangkuman',
+    insertOnly: false,
+  },
+  {
+    cmd: '/skills',
+    title: '/skills',
+    desc: 'Katalog modul SOP keahlian teknis domain aktif',
+    descEn: 'Catalog of active domain SOP skill modules',
+    icon: BookOpen,
+    badge: 'Katalog',
+    insertOnly: false,
+  },
+  {
+    cmd: '/quota',
+    title: '/quota',
+    desc: 'Cek pemakaian token harian, batas kuota & peran akun',
+    descEn: 'Check daily token usage, limit & account roles',
+    icon: UserCheck,
+    badge: 'Akun',
+    insertOnly: false,
+  },
+  {
+    cmd: '/servers',
+    title: '/servers',
+    desc: 'Status live konektivitas gateway SAP, SQL & MCP',
+    descEn: 'Live status of SAP, SQL & MCP gateways',
+    icon: Server,
+    badge: 'Gateway',
+    insertOnly: false,
+  },
+  {
+    cmd: '/modes',
+    title: '/modes',
+    desc: 'Daftar mode penalaran AI & batas iterasi langkah',
+    descEn: 'List AI reasoning modes & step limits',
+    icon: Sliders,
+    badge: 'Mode',
+    insertOnly: false,
+  },
+  {
+    cmd: '/clear',
+    title: '/clear',
+    desc: 'Bersihkan percakapan aktif / mulai sesi baru',
+    descEn: 'Clear active chat / start fresh session',
+    icon: Trash2,
+    badge: 'Sesi',
+    insertOnly: false,
+  },
+];
+
 const ROTATING_PLACEHOLDERS_ID = [
   'Tanyakan sesuatu tentang SAP…',
-  'Coba ketik /skills untuk melihat daftar modul SOP keahlian…',
-  'Coba: Berapa stok material di Plant 1000 saat ini?',
-  'Coba: Cek status Purchase Order terbaru…',
-  'Coba: Jelaskan alur rilis PR menjadi PO…',
-  'Coba: Analisis penyebab runtime error ST22 short dump…',
-  'Coba: Buatkan contoh kode ABAP BAPI yang aman…',
+  'Coba ketik / untuk melihat daftar pintasan perintah…',
+  'Coba: /sop cara penanganan material reject…',
+  'Coba: /email buatkan draf laporan ke supervisor…',
+  'Coba: /export excel untuk mengunduh tabel data…',
+  'Coba: /summary untuk membuat rangkuman eksekutif…',
+  'Coba: /quota untuk mengecek sisa batas token hari ini…',
 ];
 
 const ROTATING_PLACEHOLDERS_EN = [
   'Ask something about SAP…',
-  'Try typing /skills to view domain SOP skill catalog…',
-  'Try: What is the current stock level in plant 1000?',
-  'Try: Check latest Purchase Order delivery status…',
-  'Try: Explain the release strategy flow for PO…',
-  'Try: How to troubleshoot an ST22 short dump?',
-  'Try: Show recommended ABAP BAPI code pattern…',
+  'Try typing / to view available slash commands…',
+  'Try: /sop material reject handling procedure…',
+  'Try: /email draft a formal report to supervisor…',
+  'Try: /export excel to download current data table…',
+  'Try: /summary to generate 3-point executive memo…',
+  'Try: /quota to check remaining daily token budget…',
 ];
 
 const ChatInput = ({
@@ -56,12 +170,72 @@ const ChatInput = ({
   selectedMode = '',
   onSelectMode,
   suggestions = null,
+  onClearChat,
 }) => {
   const { t, language } = useLanguage();
   const [input, setInput] = useState('');
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
+  const [dismissedSlash, setDismissedSlash] = useState(false);
   const teksSebelumBicaraRef = useRef('');
   const [pesanSuara, setPesanSuara] = useState('');
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
+
+  const isSlashActive = input.startsWith('/') && !input.includes(' ') && !dismissedSlash;
+  const slashQuery = isSlashActive ? input.slice(1).toLowerCase().trim() : '';
+
+  const filteredCommands = useMemo(() => {
+    if (!isSlashActive) return [];
+    if (!slashQuery) return SLASH_COMMANDS;
+    return SLASH_COMMANDS.filter((item) =>
+      item.cmd.toLowerCase().includes(slashQuery) ||
+      item.desc.toLowerCase().includes(slashQuery) ||
+      item.badge.toLowerCase().includes(slashQuery)
+    );
+  }, [isSlashActive, slashQuery]);
+
+  useEffect(() => {
+    setActiveSlashIndex(0);
+  }, [slashQuery]);
+
+  const selectSlashCommand = (item) => {
+    if (!item) return;
+    if (item.cmd === '/clear') {
+      setInput('');
+      setDismissedSlash(false);
+      if (onClearChat) {
+        onClearChat();
+      } else {
+        onSendMessage('/clear', attachments);
+      }
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+      return;
+    }
+
+    if (item.insertOnly) {
+      const newText = `${item.cmd} `;
+      setInput(newText);
+      setDismissedSlash(true);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newText.length, newText.length);
+        }
+      }, 50);
+      return;
+    }
+
+    onSendMessage(item.cmd, attachments);
+    setInput('');
+    setDismissedSlash(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    }
+  };
 
   const activePlaceholdersList = useMemo(() => {
     const defaultList = language === 'en' ? ROTATING_PLACEHOLDERS_EN : ROTATING_PLACEHOLDERS_ID;
@@ -155,6 +329,16 @@ const ChatInput = ({
     }
   }, [input]);
 
+  // Saat selesai loading jawaban (isLoading berubah jadi false), kembalikan fokus ke textarea
+  useEffect(() => {
+    if (!isLoading && textareaRef.current) {
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
+
   const addFiles = async (files) => {
     const incoming = Array.from(files || []);
     if (!incoming.length) return;
@@ -195,12 +379,41 @@ const ChatInput = ({
     const defaultMsg = language === 'en' ? 'Please review the attached files.' : 'Tolong periksa lampiran berikut.';
     onSendMessage(input.trim() || defaultMsg, attachments);
     setInput('');
+    setDismissedSlash(false);
     setAttachments([]);
     setUploadError('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    }
   };
 
   const handleKeyDown = (e) => {
+    if (isSlashActive && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveSlashIndex((prev) => (prev + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveSlashIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectSlashCommand(filteredCommands[activeSlashIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setDismissedSlash(true);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -244,7 +457,7 @@ const ChatInput = ({
 
   return (
     <div
-      className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4"
+      className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4 relative"
       style={{
         paddingBottom: isMobile ? 'max(0.25rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) * 0.25))' : '0.625rem',
       }}
@@ -253,6 +466,79 @@ const ChatInput = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* Slash Command Autocomplete Popover */}
+      {isSlashActive && filteredCommands.length > 0 && (
+        <div
+          role="listbox"
+          aria-label="Slash commands"
+          className="mb-2 w-full rounded-2xl border border-line bg-surface-raised/98 backdrop-blur-xl p-1.5 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-150"
+        >
+          <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-subtle flex items-center justify-between border-b border-line/60 mb-1">
+            <span className="flex items-center gap-1.5 font-sans">
+              <Sparkles className="w-3.5 h-3.5 text-accent" />
+              {language === 'en' ? 'Slash Commands' : 'Pintasan Perintah'}
+            </span>
+            <span className="text-[10px] text-content-muted font-normal normal-case">
+              {isMobile ? 'Ketuk untuk menjalankan' : '↑↓ Navigasi • Enter Pilih • Esc Tutup'}
+            </span>
+          </div>
+          <div className="space-y-0.5 max-h-56 overflow-y-auto">
+            {filteredCommands.map((item, idx) => {
+              const Icon = item.icon;
+              const isSelected = idx === activeSlashIndex;
+              return (
+                <button
+                  key={item.cmd}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    selectSlashCommand(item);
+                  }}
+                  onMouseEnter={() => setActiveSlashIndex(idx)}
+                  className={`w-full flex items-center justify-between gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-accent text-white shadow-xs'
+                      : 'hover:bg-surface-hover text-content'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-surface-soft text-content-muted'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs sm:text-sm font-semibold font-mono ${isSelected ? 'text-white' : 'text-content'}`}>
+                          {item.cmd}
+                        </span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            isSelected ? 'bg-white/20 text-white' : 'bg-surface-soft text-content-subtle'
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      </div>
+                      <p className={`text-[11px] sm:text-xs truncate ${isSelected ? 'text-white/90' : 'text-content-muted'}`}>
+                        {language === 'en' ? item.descEn : item.desc}
+                      </p>
+                    </div>
+                  </div>
+                  <span className={`text-[10px] shrink-0 font-mono hidden sm:inline ${isSelected ? 'text-white/80' : 'text-content-subtle'}`}>
+                    ↵
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className={`composer-form relative rounded-2xl sm:rounded-3xl border bg-surface-raised/95 backdrop-blur-md p-1.5 sm:p-2 shadow-lg transition-all ${
@@ -328,7 +614,13 @@ const ChatInput = ({
             ref={textareaRef}
             rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setInput(val);
+              if (dismissedSlash && !val.startsWith('/')) {
+                setDismissedSlash(false);
+              }
+            }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={displayedPlaceholder}

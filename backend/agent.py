@@ -397,9 +397,38 @@ async def _noop_progress(**kwargs):
 
 async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] = "user", user_persona: str = "",
                        username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
-    # 0.0 Penanganan Cepat Perintah Slash /skills
+    # 0.0 Penanganan Cepat Perintah Slash (Slash Commands)
     raw_message = (chat_req.message or "").strip()
-    if raw_message.lower() in ("/skills", "/skill", "/help skills"):
+    raw_lower = raw_message.lower()
+
+    if raw_lower in ("/", "/help", "/?", "/menu", "/commands", "/command"):
+        reply_md = (
+            "### 🧭 Panduan Pintasan Perintah (*Slash Commands*)\n\n"
+            "Anda dapat menggunakan perintah garis miring (`/`) untuk mengakses fitur, dokumen, dan otomasi sistem secara cepat:\n\n"
+            "| Perintah | Fungsi | Contoh Penggunaan |\n"
+            "| :--- | :--- | :--- |\n"
+            "| `/sop <topik>` | Cari panduan teknis & prosedur dari dokumen SOP internal | `/sop cara cancel order slitting` |\n"
+            "| `/email <instruksi>` | Susun draf & kirim email resmi laporan bisnis | `/email to:spv@company.com subject:Rekap PO` |\n"
+            "| `/export <format>` | Ekspor tabel data terakhir ke file Excel / CSV | `/export excel` atau `/export csv` |\n"
+            "| `/summary` | Rangkum diskusi chat menjadi memo eksekutif 3 poin | `/summary` |\n"
+            "| `/skills` | Tampilkan katalog modul keahlian & SOP domain aktif | `/skills` |\n"
+            "| `/quota` | Periksa pemakaian token harian & informasi akun | `/quota` |\n"
+            "| `/servers` | Cek status live gateway MCP (SAP, RAG, SQL, Mail) | `/servers` |\n"
+            "| `/modes` | Daftar mode penalaran AI & batas iterasi langkah | `/modes` |\n"
+            "| `/clear` | Membersihkan percakapan aktif dan memulai sesi baru | `/clear` |\n"
+            "| `/help` | Menampilkan panduan bantuan perintah ini | `/help` |\n\n"
+            "💡 *Tips: Cukup ketikkan `/` pada kolom pesan untuk memunculkan menu perintah interaktif secara otomatis.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/skills", "/skill", "/help skills"):
         from database import get_skills
         active_skills = get_skills(enabled_only=True)
         rows_md = []
@@ -421,14 +450,206 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         if on_token:
             await on_token(reply_md)
         if on_progress:
-            await on_progress("done", "Selesai", 1)
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
         return ChatResponse(reply=reply_md, sources=[])
 
+    if raw_lower in ("/quota", "/kuota", "/me", "/status kuota"):
+        from database import get_system_config, get_token_usage
+        sys_cfg = get_system_config()
+        limit_enabled = bool(sys_cfg.get("token_limit_enabled"))
+        roles_list = access_control.normalize_roles(user_role)
+        roles_disp = ", ".join(roles_list) if roles_list else "user"
+
+        usage_info = get_token_usage(username) if username != "Guest" else {"total_tokens": 0, "requests": 0, "usage_date": "-"}
+        tokens_used = usage_info.get("total_tokens", 0)
+        requests_count = usage_info.get("requests", 0)
+        status_limit = "🛡️ Ditegakkan Aktif" if limit_enabled else "🟢 Bebas (Monitoring Saja)"
+
+        reply_md = (
+            "### 📊 Ringkasan Akun & Status Kuota Pengguna\n\n"
+            f"- **Nama Pengguna**: `{username}`\n"
+            f"- **Peran / Roles**: `{roles_disp}`\n"
+            f"- **Pemakaian Token Hari Ini**: **{tokens_used:,} token**\n"
+            f"- **Jumlah Permintaan Hari Ini**: **{requests_count} pesan**\n"
+            f"- **Penegakan Batas Token**: {status_limit}\n"
+            f"- **Zona Waktu Server**: `Asia/Jakarta (WIB)`\n\n"
+            "💡 *Catatan: Pemakaian token direset otomatis setiap tengah malam pukul 00:00 WIB.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/modes", "/mode"):
+        from database import get_modes_for_role
+        roles_list = access_control.normalize_roles(user_role)
+        modes = get_modes_for_role(roles_list)
+        rows_md = []
+        for m in modes:
+            default_badge = " *(Default)*" if m.get("is_default") else ""
+            rows_md.append(f"| **{m.get('name')}{default_badge}** | `{m.get('code')}` | {m.get('max_iterations', 6)} langkah | {m.get('description') or '-'} |")
+        table_str = "\n".join(rows_md) if rows_md else "| Belum ada mode aktif | - | - | - |"
+        reply_md = (
+            "### ⚡ Mode Penalaran AI yang Tersedia\n\n"
+            "Berikut adalah mode percakapan yang dapat digunakan untuk peran akun Anda:\n\n"
+            "| Nama Mode | Kode | Batas Iterasi | Penjelasan |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 *Anda dapat memilih mode langsung melalui pemilih mode di samping kiri kolom pesan.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/servers", "/server", "/status"):
+        st = await mcp_manager.check_servers_status()
+        rows_md = []
+        for sid, sinfo in st.items():
+            st_badge = "🟢 Online" if sinfo.get("online") else ("⚪ Disabled" if sinfo.get("status") == "disabled" else "🔴 Offline")
+            tools_cnt = sinfo.get("tool_count", sinfo.get("tools_count", 0))
+            rows_md.append(f"| **{sinfo.get('name', sid)}** | `{sid}` | {st_badge} | {tools_cnt} tools |")
+        table_str = "\n".join(rows_md) if rows_md else "| Tidak ada server terdeteksi | - | - | - |"
+        reply_md = (
+            "### 🖥️ Status Konektivitas Gateway Server MCP\n\n"
+            "Berikut adalah status terkini gateway MCP dan database yang terhubung:\n\n"
+            "| Gateway Server | ID | Status | Jumlah Tool |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 *Jika ada server yang offline atau nonaktif, hubungi Administrator sistem.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/clear", "/reset"):
+        reply_md = "🧹 **Percakapan telah dibersihkan.**\n\nSesi percakapan baru telah dimulai. Silakan ajukan pertanyaan baru atau ketik `/help` untuk panduan."
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    # Panduan singkat jika perintah action dipanggil tanpa parameter
+    if raw_lower in ("/sop", "/rag", "/doc", "/kb"):
+        reply_md = (
+            "### 📖 Pencarian Dokumen SOP & Knowledge Base Perusahaan\n\n"
+            "Gunakan perintah `/sop` atau `/rag` diikuti topik atau prosedur yang ingin Anda cari dalam dokumen internal perusahaan.\n\n"
+            "**Contoh Penggunaan:**\n"
+            "- `/sop cara pembatalan order produksi slitting`\n"
+            "- `/sop penanganan material reject di gudang`\n"
+            "- `/rag ketentuan release strategy purchase order`\n\n"
+            "💡 *Asisten akan memfokuskan pencarian ke basis pengetahuan dokumen PDF/SOP resmi perusahaan dan mencantumkan sitasi dokumen.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/email", "/mail", "/sendemail", "/kirimemail"):
+        reply_md = (
+            "### ✉️ Pembuatan Draf & Pengiriman Email Perusahaan\n\n"
+            "Gunakan perintah `/email` untuk menyusun draf email bisnis formal atau rekapitulasi data operasional.\n\n"
+            "**Contoh Penggunaan:**\n"
+            "- `/email to:supervisor@company.com subject:Rekap Order Produksi Slitting`\n"
+            "- `/email to:supplier@vendor.com subject:Konfirmasi Jadwal Kirim Bahan Baku`\n"
+            "- `/email buatkan draf email permohonan approval PR urgent ke manager`\n\n"
+            "💡 *Protokol Keamanan: AI akan menyajikan draf lengkap (Kepada, CC, Subjek, Isi) untuk Anda periksa terlebih dahulu sebelum instruksi pengiriman dijalankan.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    if raw_lower in ("/export", "/ekspor"):
+        reply_md = (
+            "### 📥 Ekspor Data Tabel & Laporan Percakapan\n\n"
+            "Gunakan perintah `/export` untuk mengonversi data tabel dari percakapan saat ini menjadi berkas unduhan.\n\n"
+            "**Pilihan Format:**\n"
+            "- `/export excel` : Menyimpan data tabel terakhir ke format spreadsheet (.xlsx / CSV)\n"
+            "- `/export csv` : Menyimpan data tabel dalam format CSV siap olah\n"
+            "- `/export markdown` : Menyimpan rangkuman dokumen dalam format Markdown (.md)\n\n"
+            "💡 *Asisten akan mengemas data menjadi artifact berkas yang dapat langsung diunduh.*"
+        )
+        if on_token:
+            await on_token(reply_md)
+        if on_progress:
+            try:
+                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+            except Exception:
+                pass
+        return ChatResponse(reply=reply_md, sources=[])
+
+    # Transformasi Cerdas Prompt Berbasis Perintah Garis Miring (Smart Directives)
     explicit_skill_keyword = None
     m_exp = re.match(r'^/skill\s+(\w+)\s+(.*)$', raw_message, re.IGNORECASE | re.DOTALL)
     if m_exp:
         explicit_skill_keyword = m_exp.group(1).strip()
         chat_req.message = m_exp.group(2).strip()
+
+    m_sop = re.match(r'^/(?:sop|rag|doc|kb)\s+(.+)$', raw_message, re.IGNORECASE | re.DOTALL)
+    if m_sop:
+        sop_query = m_sop.group(1).strip()
+        chat_req.message = (
+            "[INSTRUKSI SISTEM KHUSUS: Pengguna meminta pencarian khusus dokumen SOP & basis pengetahuan (RAG Knowledge Base) internal perusahaan. "
+            "Prioritaskan penggunaan tool RAG / search_knowledge_base untuk mencari dokumen SOP resmi. "
+            "Sertakan nama dokumen resmi, nomor SOP, atau nomor bagian yang relevan dalam jawaban Anda.]\n\n"
+            f"Pertanyaan Pengguna: {sop_query}"
+        )
+
+    m_email = re.match(r'^/(?:email|mail)\s+(.+)$', raw_message, re.IGNORECASE | re.DOTALL)
+    if m_email:
+        email_query = m_email.group(1).strip()
+        chat_req.message = (
+            "[INSTRUKSI SISTEM KHUSUS: Pengguna meminta penyusunan draf email bisnis resmi perusahaan. "
+            "Susun draf email formal dengan struktur: Kepada (To), Tembusan (CC bila ada), Subjek (Subject), dan Isi Surat (Body). "
+            "Gunakan gaya bahasa bisnis profesional. Tampilkan draf lengkap kepada pengguna untuk peninjauan dan konfirmasi sebelum instruksi kirim dieksekusi.]\n\n"
+            f"Instruksi Email: {email_query}"
+        )
+
+    m_export = re.match(r'^/(?:export|ekspor)\s*(.*)$', raw_message, re.IGNORECASE | re.DOTALL)
+    if m_export and m_export.group(1).strip():
+        export_fmt = m_export.group(1).strip()
+        chat_req.message = (
+            f"[INSTRUKSI SISTEM KHUSUS: Pengguna meminta ekspor data tabel atau rangkuman dari sesi percakapan saat ini ke format '{export_fmt}'. "
+            "Ekstrak data tabel relevan dari konteks percakapan secara akurat dan sajikan sebagai berkas unduhan artifact sap-artifact lengkap.]"
+        )
+
+    if raw_lower in ("/summary", "/rekap", "/ringkasan"):
+        chat_req.message = (
+            "[INSTRUKSI SISTEM KHUSUS: Buatkan ringkasan eksekutif (*Executive Summary*) dari seluruh pembahasan dalam percakapan saat ini. "
+            "Sajikan secara padat dan terstruktur dengan format: "
+            "1. **Pokok Permasalahan / Topik Diskusi**\n"
+            "2. **Fakta Data & Temuan Sistem**\n"
+            "3. **Rekomendasi Tindak Lanjut & Action Items**]"
+        )
 
     # 0. Resolusi Mode Chat & Batas Iterasi
     from database import (
