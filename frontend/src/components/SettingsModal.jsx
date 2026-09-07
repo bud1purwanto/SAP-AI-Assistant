@@ -719,11 +719,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
               )}
 
               <form onSubmit={handleSaveSapCredential} className="space-y-3.5 bg-surface-sunken p-4 rounded-2xl border border-line">
-                {isEditMode && (
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-line text-xs">
-                    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-                      <Edit2 className="w-3.5 h-3.5" />
-                      <span>{language === 'en' ? `Editing Target: ${editingTarget}` : `Mode Edit Target: ${editingTarget}`}</span>
                 {isEditMode && (() => {
                   const editingServerObj = availableSapServers.find(
                     s => (s.alias || '').toLowerCase() === (editingTarget || '').toLowerCase()
@@ -745,15 +740,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                         {t('settings.sapBtnCancel')}
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleCancelEdit}
-                      className="text-xs text-content-muted hover:text-content underline cursor-pointer"
-                    >
-                      {t('settings.sapBtnCancel')}
-                    </button>
-                  </div>
-                )}
                   );
                 })()}
 
@@ -777,7 +763,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                         <span className="truncate font-medium text-content">
                           {loadingSapServers
                             ? t('settings.sapLoadingServers')
-                            : (availableSapServers.find(s => s.alias === sapTarget || s.name === sapTarget)?.name || sapTarget || t('settings.sapSelectTarget'))}
                             : (availableSapServers.find(s => 
                                 (s.alias || '').toLowerCase() === (sapTarget || '').toLowerCase() || 
                                 (s.name || '').toLowerCase() === (sapTarget || '').toLowerCase() ||
@@ -1007,24 +992,12 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                       return (
                         <div 
                           key={c.target} 
-                          className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-2xl text-xs gap-2 sm:gap-0 transition-colors ${
                           className={`flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-2xl text-xs gap-3 sm:gap-4 transition-all ${
                             isEditing 
-                              ? 'bg-emerald-500/10 border-2 border-emerald-500' 
                               ? 'bg-emerald-500/10 border-2 border-emerald-500 shadow-sm' 
                               : 'bg-surface-sunken border border-line hover:border-line-hover'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <Server className={`w-4 h-4 shrink-0 ${isEditing ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500'}`} />
-                            <div className="min-w-0 flex items-center flex-wrap gap-1.5">
-                              <span className="font-bold text-content uppercase tracking-wider">{c.target}</span>
-                              <span className="text-content-muted">
-                                ({c.sap_user || '—'}, Client {c.sap_client || '—'})
-                              </span>
-                              {isEditing && (
-                                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                                  {language === 'en' ? 'Editing' : 'Sedang Diedit'}
                           <div className="flex items-center gap-3 min-w-0">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                               isEditing 
@@ -1038,7 +1011,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                                 <span className="font-bold text-content text-xs sm:text-sm tracking-tight truncate">
                                   {serverDisplayName}
                                 </span>
-                              )}
                                 {sid && (
                                   <span className="px-1.5 py-0.5 text-[10px] font-mono font-semibold rounded-md bg-surface text-content-muted border border-line">
                                     {sid}
@@ -1094,7 +1066,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  const confirmPrompt = t('settings.sapDeleteConfirm', { target: c.target }) || `Hapus kredensial tersimpan untuk target '${c.target}'?`;
                                   const confirmPrompt = t('settings.sapDeleteConfirm', { target: serverDisplayName }) || `Hapus kredensial tersimpan untuk target '${serverDisplayName}'?`;
                                   if (!window.confirm(confirmPrompt)) return;
                                   try {
