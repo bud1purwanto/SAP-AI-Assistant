@@ -303,3 +303,37 @@ def test_role_change_listener_clears_cache_on_cross_connection_notify(db):
     asyncio.run(_run())
 
 
+def test_all_server_access_and_rbac(monkeypatch):
+    """Memastikan target 'all' tidak bypass role dan tetap mematuhi izin pengguna."""
+    monkeypatch.setattr(access_control, "is_access_control_enabled", lambda: True)
+    access_control.clear_access_cache()
+
+    # 1. canonical_resource_key untuk 'all' harus 'all', bukan 'sap:all'
+    assert access_control.canonical_resource_key("all") == "all"
+    assert access_control.canonical_resource_key("ALL") == "all"
+    assert access_control.canonical_resource_key("*") == "all"
+
+    # 2. User tanpa izin sama sekali harus ditolak (403) saat mengakses 'all'
+    monkeypatch.setattr(access_control, "resolve_access", lambda u, r: {
+        "sap:dev": {"allowed": False, "can_write": False},
+        "sql:main": {"allowed": False, "can_write": False},
+    })
+    with pytest.raises(HTTPException) as exc:
+        access_control.assert_can_use("user_kosong", "user", "all")
+    assert exc.value.status_code == 403
+
+    # 3. User dengan minimal 1 izin aktif lolos assert_can_use untuk 'all'
+    monkeypatch.setattr(access_control, "resolve_access", lambda u, r: {
+        "sap:dev": {"allowed": True, "can_write": False},
+        "sql:main": {"allowed": False, "can_write": False},
+    })
+    access_control.assert_can_use("user_terbatas", "user", "all")
+
+    # 4. Namun allowed_connectors HANYA mengembalikan konektor yang diizinkan (tidak ada bypass)
+    connectors = access_control.allowed_connectors("user_terbatas", "user")
+    assert "sap" in connectors
+    assert "sql" not in connectors
+    assert "email" not in connectors
+
+
+

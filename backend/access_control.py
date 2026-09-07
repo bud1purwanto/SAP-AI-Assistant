@@ -324,6 +324,8 @@ def canonical_resource_key(raw: str) -> str:
         return "sql"
     if s in ("sap", "sap:"):
         return "sap"
+    if s in ("all", "all:", "*"):
+        return "all"
 
     load_aliases_from_db()
 
@@ -683,8 +685,17 @@ def assert_can_use(username: str, role: Union[str, List[str], None], active_serv
 
     user_access = resolve_access(username, roles)
 
-    # Bila active_server adalah kategori umum ("sap" atau "sql")
+    # Bila active_server adalah kategori umum ("sap", "sql", atau "all")
     raw_lower = (active_server or "").strip().lower()
+    if raw_lower in ("all", "all:", "*", ""):
+        has_any = any(perm.get("allowed") for perm in user_access.values())
+        if not has_any:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Akses ditolak: Peran akun Anda tidak memiliki izin untuk mengakses server atau layanan apa pun.",
+            )
+        return
+
     if raw_lower in ("sap", "sap:"):
         has_any_sap = any(rk.startswith("sap:") and perm.get("allowed") for rk, perm in user_access.items())
         if not has_any_sap:

@@ -134,3 +134,24 @@ def test_scheduled_tasks_api_endpoints(db, client, admin_auth):
     assert resp.status_code == 200
     assert resp.json()["success"] is True
 
+
+def test_build_monitoring_email_html():
+    from scheduler import build_monitoring_email_html
+    md_sample = (
+        "### 📋 Daftar PO Belum Rilis\n\n"
+        "| Nomor PO | Vendor | Nilai |\n"
+        "|:---|:---|:---|\n"
+        "| **4508000306** | TOYOBO | `160,770,000` |\n\n"
+        "- Item: Inline Monitoring\n"
+        "- Status: In Release\n"
+    )
+    html = build_monitoring_email_html("Rekap PO", md_sample, "07 September 2026, 15:48 WIB")
+    assert "<table" in html
+    assert "border-collapse" in html
+    assert "bgcolor=\"#3730a3\"" in html  # Outlook MSO banner
+    assert "bgcolor=\"#f1f5f9\"" in html  # Table header
+    assert "4508000306" in html
+    assert "TOYOBO" in html
+    assert "<code" in html
+
+

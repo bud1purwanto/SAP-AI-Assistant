@@ -878,7 +878,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     sap_target = (
         target_srv.split(":", 1)[1]
         if ":" in target_srv
-        else (target_srv if target_srv not in ("sap", "sql") else None)
+        else (target_srv if target_srv not in ("sap", "sql", "all", "*") else None)
     )
     if sap_target:
         logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")

@@ -5,7 +5,9 @@ mengeksekusi prompt ke agent, dan opsional mengirimkan rekap via Email MCP.
 """
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone, timedelta
+import markdown
 import database
 from models import ChatRequest
 
@@ -68,12 +70,8 @@ def should_run(task: dict, now: datetime) -> bool:
         # Cek apakah sudah pernah berjalan hari ini untuk jadwal target tersebut
         if last_run:
             last_run_wib = last_run.astimezone(WIB_TZ)
-            if last_run_wib >= target_today:
-                return False
-        elif created_at:
-            created_wib = created_at.astimezone(WIB_TZ)
-            # Jika baru dibuat hari ini SETELAH jam target, tunggu besok
-            if created_wib >= target_today:
+            # Bila sudah pernah berjalan hari ini pada atau setelah jam target, jangan jalankan lagi hari ini
+            if last_run_wib.date() == now_wib.date() and last_run_wib >= target_today:
                 return False
 
         return True
@@ -115,6 +113,139 @@ def should_run(task: dict, now: datetime) -> bool:
         return elapsed_seconds >= 86400
 
 
+def build_monitoring_email_html(title: str, markdown_text: str, now_wib_str: str) -> str:
+    """Mengonversi respons markdown analisis SAP menjadi email HTML responsif yang kompatibel dengan Microsoft Outlook."""
+    try:
+        raw_html = markdown.markdown(
+            markdown_text,
+            extensions=["tables", "fenced_code", "nl2br", "sane_lists"]
+        )
+    except Exception as ex:
+        logger.warning(f"Gagal mem-parse markdown via modul markdown: {ex}")
+        raw_html = f"<p>{markdown_text}</p>"
+
+    # 1. Formatting Table untuk Outlook (Border collapse, MSO cell padding, table styling)
+    raw_html = re.sub(
+        r"<table>",
+        r'<div style="overflow-x:auto;margin:16px 0;"><table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:12.5px;border:1px solid #cbd5e1;background-color:#ffffff;font-family:Segoe UI,Helvetica,Arial,sans-serif;">',
+        raw_html,
+    )
+    raw_html = re.sub(r"</table>", r"</table></div>", raw_html)
+    raw_html = re.sub(
+        r"<th>",
+        r'<th bgcolor="#f1f5f9" style="background-color:#f1f5f9;color:#0f172a;font-weight:700;padding:9px 12px;border:1px solid #cbd5e1;text-align:left;font-size:12px;letter-spacing:0.3px;">',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<td>",
+        r'<td style="padding:8px 12px;border:1px solid #e2e8f0;color:#334155;font-size:12px;vertical-align:top;line-height:1.5;">',
+        raw_html,
+    )
+
+    # 2. Zebra striping pada baris tabel
+    def zebra_rows(match):
+        tbody_content = match.group(1)
+        rows = re.findall(r"<tr.*?>.*?</tr>", tbody_content, re.DOTALL)
+        styled = []
+        for idx, row in enumerate(rows):
+            bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
+            r_styled = re.sub(r"<tr.*?>", f'<tr bgcolor="{bg}" style="background-color:{bg};">', row, count=1)
+            styled.append(r_styled)
+        return "<tbody>" + "".join(styled) + "</tbody>"
+
+    raw_html = re.sub(r"<tbody>(.*?)</tbody>", zebra_rows, raw_html, flags=re.DOTALL)
+
+    # 3. Headings dengan warna solid & pembatas
+    raw_html = re.sub(
+        r"<h1>(.*?)</h1>",
+        r'<h1 style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:19px;font-weight:700;color:#0f172a;margin:22px 0 10px 0;padding-bottom:6px;border-bottom:2px solid #e2e8f0;">\1</h1>',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<h2>(.*?)</h2>",
+        r'<h2 style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:16.5px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding-bottom:4px;border-bottom:1px solid #e2e8f0;">\1</h2>',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<h3>(.*?)</h3>",
+        r'<h3 style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:14.5px;font-weight:700;color:#334155;margin:18px 0 6px 0;">\1</h3>',
+        raw_html,
+    )
+
+    # 4. Inline code, badges, dan backticks
+    raw_html = re.sub(
+        r"<code>(.*?)</code>",
+        r'<code style="background-color:#f1f5f9;color:#4338ca;padding:2px 5px;border-radius:4px;font-family:Consolas,Monaco,monospace;font-size:11.5px;border:1px solid #e2e8f0;">\1</code>',
+        raw_html,
+    )
+
+    # 5. Paragraf, Lists, dan Dividers
+    raw_html = re.sub(
+        r"<p>",
+        r'<p style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13.5px;color:#334155;line-height:1.6;margin:6px 0 10px 0;">',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<ul>",
+        r'<ul style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13.5px;color:#334155;margin:8px 0 12px 0;padding-left:22px;line-height:1.6;">',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<ol>",
+        r'<ol style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13.5px;color:#334155;margin:8px 0 12px 0;padding-left:22px;line-height:1.6;">',
+        raw_html,
+    )
+    raw_html = re.sub(r"<li>", r'<li style="margin-bottom:5px;">', raw_html)
+    raw_html = re.sub(
+        r"<hr\s*/?>",
+        r'<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0;" />',
+        raw_html,
+    )
+
+    # 6. Outlook-compatible Container Structure (Table-based layout dengan bgcolor solid untuk MSO)
+    full_email = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Segoe UI,-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:860px;background-color:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid #e2e8f0;">
+          <!-- Indigo Header Banner (Menggunakan bgcolor="#3730a3" murni agar tidak diabaikan oleh Outlook MSO engine) -->
+          <tr>
+            <td bgcolor="#3730a3" style="background-color:#3730a3;padding:22px 28px;text-align:left;">
+              <div style="font-size:11px;font-weight:700;color:#c7d2fe;letter-spacing:1.2px;text-transform:uppercase;font-family:Segoe UI,Helvetica,Arial,sans-serif;">SAP AI Assistant &bull; Scheduled Monitoring</div>
+              <div style="font-size:20px;font-weight:700;color:#ffffff;margin-top:6px;line-height:1.3;font-family:Segoe UI,Helvetica,Arial,sans-serif;">{title}</div>
+              <div style="font-size:12px;color:#e0e7ff;margin-top:6px;font-family:Segoe UI,Helvetica,Arial,sans-serif;">Eksekusi otomatis pada <strong>{now_wib_str}</strong></div>
+            </td>
+          </tr>
+          <!-- Body Content -->
+          <tr>
+            <td bgcolor="#ffffff" style="padding:28px;background-color:#ffffff;">
+              {raw_html}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td bgcolor="#f8fafc" style="padding:16px 28px;background-color:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;font-size:11.5px;color:#64748b;font-family:Segoe UI,Helvetica,Arial,sans-serif;line-height:1.5;">
+              Laporan ini dieksekusi dan dikirimkan secara otomatis oleh modul <strong>SAP AI Assistant</strong>.<br>
+              Data ditarik secara langsung dari sistem live ERP SAP perusahaan.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+    return full_email
+
+
 async def execute_task(task: dict) -> dict:
     """Mengeksekusi satu tugas pemantauan terjadwal."""
     task_id = task.get("id")
@@ -129,19 +260,48 @@ async def execute_task(task: dict) -> dict:
     try:
         # Import lazily to avoid circular dependencies
         from agent import process_chat
+        import json
 
-        # Cari role pengguna
-        user_roles = database.get_user_roles(user_id) if hasattr(database, "get_user_roles") else ["basis"]
-        primary_role = user_roles[0] if user_roles else "basis"
+        # Buat sesi chat baru di riwayat percakapan pengguna
+        now_wib_str = datetime.now(WIB_TZ).strftime('%d/%m/%Y %H:%M')
+        session_title = f"📋 [{title}] {now_wib_str}"
+        session_info = database.create_chat_session(user_id, session_title)
+        active_session_id = session_info.get("session_id") if session_info else None
+
+        if active_session_id:
+            # Simpan prompt pemantauan sebagai pesan pengguna
+            database.add_chat_message(
+                session_id=active_session_id,
+                role="user",
+                content=prompt,
+            )
+
+        # Ambil role otentik pemilik tugas dari basis data untuk penegakan RBAC yang ketat
+        user_roles = database.get_user_roles(user_id) if hasattr(database, "get_user_roles") else ["user"]
+        if not user_roles:
+            user_roles = ["user"]
 
         req = ChatRequest(
             message=prompt,
             history=[],
-            role=primary_role,
+            session_id=active_session_id,
+            selected_server="all",
         )
 
-        resp = await process_chat(req, username=user_id)
-        result_text = resp.message if hasattr(resp, "message") else str(resp)
+        resp = await process_chat(req, user_role=user_roles, username=user_id)
+        result_text = resp.reply if hasattr(resp, "reply") else (resp.message if hasattr(resp, "message") else str(resp))
+
+        # Simpan respons asisten ke dalam sesi chat yang baru dibuat
+        if active_session_id:
+            sources_str = json.dumps([s.model_dump() for s in resp.sources]) if getattr(resp, "sources", None) else ""
+            artifacts_str = json.dumps([a.model_dump() for a in resp.artifacts]) if getattr(resp, "artifacts", None) else ""
+            database.add_chat_message(
+                session_id=active_session_id,
+                role="ai",
+                content=result_text,
+                sources=sources_str,
+                artifacts=artifacts_str,
+            )
 
         # Opsional: Kirim via Email Gateway jika email_to terisi (mendukung multiple recipients)
         if email_to and "@" in email_to:
@@ -155,37 +315,8 @@ async def execute_task(task: dict) -> dict:
                     to_str = ", ".join(clean_recipients)
                     logger.info(f"Mengirim hasil rekap pemantauan '{title}' ke {to_str}")
 
-                    # Format HTML bersih dan responsif untuk Outlook dan mail client
-                    html_lines = []
-                    for line in result_text.splitlines():
-                        if line.startswith("# "):
-                            html_lines.append(f"<h2 style='color:#1e1b4b;margin-top:16px;margin-bottom:8px;font-size:18px;'>{line[2:]}</h2>")
-                        elif line.startswith("## "):
-                            html_lines.append(f"<h3 style='color:#312e81;margin-top:14px;margin-bottom:6px;font-size:16px;'>{line[3:]}</h3>")
-                        elif line.startswith("- "):
-                            html_lines.append(f"<li style='margin-bottom:4px;'>{line[2:]}</li>")
-                        elif line.strip() == "":
-                            html_lines.append("<div style='height:8px;'></div>")
-                        else:
-                            html_lines.append(f"<p style='margin:4px 0;line-height:1.6;'>{line}</p>")
-
-                    content_html = "\n".join(html_lines)
                     now_wib_str = datetime.now(WIB_TZ).strftime('%d %B %Y, %H:%M WIB')
-                    full_html = f"""
-                    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;max-width:820px;margin:0 auto;padding:16px;">
-                        <div style="background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%);padding:20px 24px;border-radius:14px;color:#ffffff;box-shadow:0 4px 12px rgba(79,70,229,0.2);">
-                            <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;opacity:0.85;">SAP AI Monitoring Digest</div>
-                            <h1 style="margin:6px 0 0 0;font-size:20px;font-weight:700;color:#ffffff;">{title}</h1>
-                            <p style="margin:4px 0 0 0;font-size:12px;opacity:0.9;">Eksekusi otomatis pada {now_wib_str}</p>
-                        </div>
-                        <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:24px;margin-top:16px;box-shadow:0 1px 3px rgba(0,0,0,0.05);font-size:13.5px;">
-                            {content_html}
-                        </div>
-                        <div style="margin-top:16px;text-align:center;font-size:11px;color:#94a3b8;">
-                            Laporan ini dieksekusi dan dikirimkan secara otomatis oleh modul Scheduled Monitoring SAP AI Assistant.
-                        </div>
-                    </div>
-                    """
+                    full_html = build_monitoring_email_html(title, result_text, now_wib_str)
 
                     mail_res = await mcp_manager.call_tool(
                         server_name="email",
@@ -193,7 +324,7 @@ async def execute_task(task: dict) -> dict:
                         arguments={
                             "to": to_str,
                             "subject": f"[SAP AI Monitoring] {title}",
-                            "body": result_text,
+                            "body": full_html,
                             "html": full_html,
                         }
                     )
