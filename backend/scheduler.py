@@ -172,14 +172,19 @@ def build_monitoring_email_html(title: str, markdown_text: str, now_wib_str: str
         raw_html,
     )
 
-    # 4. Inline code, badges, dan backticks
+    # 4. Inline code, badges, dan code blocks
+    raw_html = re.sub(
+        r"<pre>",
+        r'<pre style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px;overflow-x:auto;font-family:Consolas,Monaco,monospace;font-size:12px;color:#0f172a;line-height:1.5;margin:12px 0;">',
+        raw_html,
+    )
     raw_html = re.sub(
         r"<code>(.*?)</code>",
         r'<code style="background-color:#f1f5f9;color:#4338ca;padding:2px 5px;border-radius:4px;font-family:Consolas,Monaco,monospace;font-size:11.5px;border:1px solid #e2e8f0;">\1</code>',
         raw_html,
     )
 
-    # 5. Paragraf, Lists, dan Dividers
+    # 5. Paragraf, Lists, Blockquotes, dan Dividers
     raw_html = re.sub(
         r"<p>",
         r'<p style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13.5px;color:#334155;line-height:1.6;margin:6px 0 10px 0;">',
@@ -196,6 +201,21 @@ def build_monitoring_email_html(title: str, markdown_text: str, now_wib_str: str
         raw_html,
     )
     raw_html = re.sub(r"<li>", r'<li style="margin-bottom:5px;">', raw_html)
+    raw_html = re.sub(
+        r"<blockquote>",
+        r'<blockquote style="border-left:4px solid #4f46e5;background-color:#f8fafc;padding:10px 16px;margin:12px 0;color:#475569;font-size:13px;border-radius:0 6px 6px 0;">',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<strong\b([^>]*)>",
+        r'<strong\1 style="color:#0f172a;font-weight:700;">',
+        raw_html,
+    )
+    raw_html = re.sub(
+        r"<a\s+([^>]+)>",
+        r'<a \1 style="color:#4f46e5;font-weight:600;text-decoration:underline;">',
+        raw_html,
+    )
     raw_html = re.sub(
         r"<hr\s*/?>",
         r'<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0;" />',
