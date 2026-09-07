@@ -858,6 +858,14 @@ def _m0019_scheduled_tasks(conn):
     """))
 
 
+def _m0020_scheduled_tasks_email_text(conn):
+    """Mendukung multiple email penerima tanpa batas panjang karakter."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.scheduled_tasks
+        ALTER COLUMN email_to TYPE TEXT;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -878,6 +886,7 @@ MIGRATIONS = [
     ("0017_dynamic_mcp_servers", _m0017_dynamic_mcp_servers),
     ("0018_seed_mcp_email_server", _m0018_seed_mcp_email_server),
     ("0019_scheduled_tasks", _m0019_scheduled_tasks),
+    ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
 ]
 
 

@@ -1672,8 +1672,8 @@ const ChatLayout = () => {
                         <Globe className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
                         <span className="truncate">{t('settings.tabLanguage') || 'Bahasa'}</span>
                       </div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sunken text-content font-bold font-mono shrink-0">
-                        {language === 'id' ? '🇮🇩 ID' : '🇬🇧 EN'}
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-surface-sunken border border-line/60 text-content-muted font-bold font-mono shrink-0 uppercase tracking-wider">
+                        {language === 'id' ? 'ID' : 'EN'}
                       </span>
                     </button>
 

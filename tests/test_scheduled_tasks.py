@@ -31,26 +31,53 @@ def test_scheduler_should_run():
     task_hourly_due = {"is_active": True, "last_run_at": seventy_mins_ago, "cron_expression": "hourly"}
     assert should_run(task_hourly_due, now) is True
 
+    # 6. Specific time (daily@HH:MM) in WIB (UTC+7)
+    # Set target to 08:00 WIB
+    wib_tz = timezone(timedelta(hours=7))
+    now_wib = now.astimezone(wib_tz)
+    
+    # Target in future today -> should NOT run
+    future_hour = (now_wib.hour + 2) % 24
+    if future_hour > now_wib.hour: # safely in the future today
+        task_future = {"is_active": True, "last_run_at": None, "cron_expression": f"daily@{future_hour:02d}:00"}
+        assert should_run(task_future, now) is False
+
+    # Target in past today, not run today -> should run
+    past_hour = (now_wib.hour - 1)
+    if past_hour >= 0:
+        task_past_due = {"is_active": True, "last_run_at": (now - timedelta(days=1)).isoformat(), "cron_expression": f"daily@{past_hour:02d}:00"}
+        assert should_run(task_past_due, now) is True
+
+    # 7. Interval task (interval_2h)
+    task_interval = {"is_active": True, "last_run_at": (now - timedelta(hours=3)).isoformat(), "cron_expression": "interval_2h"}
+    assert should_run(task_interval, now) is True
+
+    task_interval_not_yet = {"is_active": True, "last_run_at": (now - timedelta(hours=1)).isoformat(), "cron_expression": "interval_2h"}
+    assert should_run(task_interval_not_yet, now) is False
+
+
 
 def test_scheduled_tasks_database_crud(db):
-    # Buat task baru
+    # Buat task baru dengan multiple recipients
     task = db.create_scheduled_task(
         user_id="test_user",
         title="Test PO Monitoring",
         prompt="Cek PO belum rilis",
-        cron_expression="daily",
-        email_to="tester@example.com",
+        cron_expression="daily@08:00",
+        email_to="tester1@example.com, tester2@example.com; tester3@example.com",
         is_active=True
     )
     assert task is not None
     assert task["title"] == "Test PO Monitoring"
+    assert task["cron_expression"] == "daily@08:00"
     assert task["is_active"] is True
     task_id = task["id"]
 
     # Ambil task
     fetched = db.get_scheduled_task(task_id)
     assert fetched["id"] == task_id
-    assert fetched["email_to"] == "tester@example.com"
+    assert "tester1@example.com" in fetched["email_to"]
+    assert "tester2@example.com" in fetched["email_to"]
 
     # Update task
     updated = db.update_scheduled_task(task_id, title="Updated PO Monitoring", is_active=False)

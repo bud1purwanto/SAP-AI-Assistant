@@ -4,23 +4,70 @@ import {
   Bell,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock,
+  Copy,
   Edit2,
+  FileText,
   Loader2,
   Mail,
   Play,
   Plus,
   RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 
-const CRON_PRESETS = [
-  { value: 'daily', labelId: 'Setiap Hari (Daily Digest)' },
-  { value: 'hourly', labelId: 'Setiap Jam (Hourly)' },
-  { value: 'every_30m', labelId: 'Setiap 30 Menit' },
+const SAP_TEMPLATES = [
+  {
+    id: 'po_unreleased',
+    label: '📦 PO Belum Rilis',
+    title: 'Rekap Harian PO Belum Rilis',
+    prompt: 'Cek daftar Purchase Order (PO) di SAP yang masih berstatus belum rilis (pending approval). Tampilkan nomor PO, vendor, nilai, dan approver berikutnya dalam tabel ringkas.',
+    type: 'daily',
+    time: '08:00',
+    interval: 'interval_1h',
+  },
+  {
+    id: 'invoice_due',
+    label: '⚠️ Invoice Jatuh Tempo',
+    title: 'Early Warning Invoice Vendor Jatuh Tempo',
+    prompt: 'Identifikasi invoice vendor yang akan jatuh tempo dalam 7 hari ke depan pada modul SAP FI/MM. Rangkum total tagihan dan daftar invoice prioritas.',
+    type: 'workdays',
+    time: '08:30',
+    interval: 'interval_1h',
+  },
+  {
+    id: 'idoc_rfc_error',
+    label: '⚙️ IDoc & RFC Error',
+    title: 'Monitoring IDoc & RFC Gagal',
+    prompt: 'Periksa status IDoc yang berstatus error (status 51 / 68) dan background RFC job yang failed dalam 24 jam terakhir. Jelaskan indikasi penyebab kegagalan.',
+    type: 'interval',
+    time: '08:00',
+    interval: 'interval_2h',
+  },
+  {
+    id: 'critical_stock',
+    label: '📊 Stok Material Kritis',
+    title: 'Laporan Stok Material Kritis',
+    prompt: 'Cek ketersediaan stok material pada plant utama yang berada di bawah tingkat safety stock (tabel MARC/MARD). Urutkan berdasarkan prioritas pengadaan.',
+    type: 'daily',
+    time: '07:30',
+    interval: 'interval_1h',
+  },
+];
+
+const INTERVAL_OPTIONS = [
+  { value: 'interval_30m', label: 'Setiap 30 Menit' },
+  { value: 'interval_1h', label: 'Setiap 1 Jam' },
+  { value: 'interval_2h', label: 'Setiap 2 Jam' },
+  { value: 'interval_4h', label: 'Setiap 4 Jam' },
+  { value: 'interval_6h', label: 'Setiap 6 Jam' },
+  { value: 'interval_12h', label: 'Setiap 12 Jam' },
 ];
 
 export default function ScheduledTasksModal({ isOpen, onClose }) {
@@ -35,11 +82,19 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [formTitle, setFormTitle] = useState('');
   const [formPrompt, setFormPrompt] = useState('');
-  const [formCron, setFormCron] = useState('daily');
   const [formEmail, setFormEmail] = useState('');
   const [formActive, setFormActive] = useState(true);
+
+  // Penjadwalan State
+  const [scheduleType, setScheduleType] = useState('daily'); // 'daily' | 'workdays' | 'interval' | 'custom'
+  const [scheduleTime, setScheduleTime] = useState('08:00');
+  const [scheduleInterval, setScheduleInterval] = useState('interval_1h');
+  const [scheduleCustomCron, setScheduleCustomCron] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [runningTaskId, setRunningTaskId] = useState(null);
+  const [expandedResultTaskId, setExpandedResultTaskId] = useState(null);
+  const [copiedResultId, setCopiedResultId] = useState(null);
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -65,8 +120,11 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     setEditingTaskId(null);
     setFormTitle('');
     setFormPrompt('');
-    setFormCron('daily');
     setFormEmail('');
+    setScheduleType('daily');
+    setScheduleTime('08:00');
+    setScheduleInterval('interval_1h');
+    setScheduleCustomCron('');
     setFormActive(true);
   };
 
@@ -75,14 +133,61 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     setIsFormOpen(true);
   };
 
+  const parseCronExpression = (cronExpr) => {
+    const cron = (cronExpr || 'daily@08:00').trim().toLowerCase();
+    if (cron.startsWith('daily@')) {
+      return { type: 'daily', time: cron.split('@')[1] || '08:00', interval: 'interval_1h', custom: '' };
+    }
+    if (cron === 'daily') {
+      return { type: 'daily', time: '08:00', interval: 'interval_1h', custom: '' };
+    }
+    if (cron.startsWith('workdays@')) {
+      return { type: 'workdays', time: cron.split('@')[1] || '08:00', interval: 'interval_1h', custom: '' };
+    }
+    if (['interval_30m', 'every_30m', '30m', 'interval_1h', 'hourly', '1h', 'interval_2h', 'interval_4h', 'interval_6h', 'interval_12h'].includes(cron)) {
+      let intVal = cron;
+      if (cron === 'every_30m' || cron === '30m') intVal = 'interval_30m';
+      else if (cron === 'hourly' || cron === '1h') intVal = 'interval_1h';
+      return { type: 'interval', time: '08:00', interval: intVal, custom: '' };
+    }
+    return { type: 'custom', time: '08:00', interval: 'interval_1h', custom: cronExpr };
+  };
+
   const handleOpenEdit = (task) => {
     setEditingTaskId(task.id);
     setFormTitle(task.title || '');
     setFormPrompt(task.prompt || '');
-    setFormCron(task.cron_expression || 'daily');
     setFormEmail(task.email_to || '');
     setFormActive(task.is_active);
+
+    const parsed = parseCronExpression(task.cron_expression);
+    setScheduleType(parsed.type);
+    setScheduleTime(parsed.time);
+    setScheduleInterval(parsed.interval);
+    setScheduleCustomCron(parsed.custom);
+
     setIsFormOpen(true);
+  };
+
+  const handleApplyTemplate = (tmpl) => {
+    setFormTitle(tmpl.title);
+    setFormPrompt(tmpl.prompt);
+    setScheduleType(tmpl.type);
+    if (tmpl.time) setScheduleTime(tmpl.time);
+    if (tmpl.interval) setScheduleInterval(tmpl.interval);
+  };
+
+  const computeCronPayload = () => {
+    if (scheduleType === 'daily') {
+      return `daily@${scheduleTime || '08:00'}`;
+    }
+    if (scheduleType === 'workdays') {
+      return `workdays@${scheduleTime || '08:00'}`;
+    }
+    if (scheduleType === 'interval') {
+      return scheduleInterval || 'interval_1h';
+    }
+    return (scheduleCustomCron || 'daily@08:00').trim();
   };
 
   const handleSubmitForm = async (e) => {
@@ -92,23 +197,20 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     setIsSubmitting(true);
     setError(null);
     try {
+      const cronPayload = computeCronPayload();
+      const payload = {
+        title: formTitle.trim(),
+        prompt: formPrompt.trim(),
+        cron_expression: cronPayload,
+        email_to: formEmail.trim() || null,
+        is_active: formActive,
+      };
+
       if (editingTaskId) {
-        await api.updateScheduledTask(editingTaskId, {
-          title: formTitle,
-          prompt: formPrompt,
-          cron_expression: formCron,
-          email_to: formEmail || null,
-          is_active: formActive,
-        });
+        await api.updateScheduledTask(editingTaskId, payload);
         setSuccessMsg('Pemantauan berhasil diperbarui.');
       } else {
-        await api.createScheduledTask({
-          title: formTitle,
-          prompt: formPrompt,
-          cron_expression: formCron,
-          email_to: formEmail || null,
-          is_active: formActive,
-        });
+        await api.createScheduledTask(payload);
         setSuccessMsg('Pemantauan baru berhasil ditambahkan.');
       }
       resetForm();
@@ -121,49 +223,13 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     }
   };
 
-  const handleDelete = async (taskId) => {
-    if (!window.confirm('Hapus pemantauan terjadwal ini?')) return;
-    try {
-      await api.deleteScheduledTask(taskId);
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    } catch (err) {
-      setError(err.message || 'Gagal menghapus pemantauan');
-    }
-  };
 
-  const handleToggleActive = async (task) => {
-    try {
-      const nextActive = !task.is_active;
-      await api.updateScheduledTask(task.id, { is_active: nextActive });
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, is_active: nextActive } : t))
-      );
-    } catch (err) {
-      setError(err.message || 'Gagal mengubah status');
-    }
-  };
-
-  const handleRunNow = async (taskId) => {
-    setRunningTaskId(taskId);
-    try {
-      await api.runScheduledTask(taskId);
-      setSuccessMsg('Tugas berhasil dipicu dan sedang berjalan di latar belakang.');
-      setTimeout(() => {
-        setSuccessMsg('');
-        fetchTasks();
-      }, 4000);
-    } catch (err) {
-      setError(err.message || 'Gagal menjalankan tugas');
-    } finally {
-      setRunningTaskId(null);
-    }
-  };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border border-line bg-surface shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border border-line bg-surface shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface-raised">
           <div className="flex items-center gap-2.5">
@@ -175,7 +241,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                 {t('scheduled.title')}
               </h2>
               <p className="text-xs text-content-muted">
-                Otomasi eksekusi query SAP & laporan harian via Email
+                Otomasi eksekusi query SAP & laporan terjadwal via Email (Multi-Penerima)
               </p>
             </div>
           </div>
@@ -228,21 +294,43 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
           {isFormOpen && (
             <form
               onSubmit={handleSubmitForm}
-              className="p-4 rounded-2xl border border-line bg-surface-raised space-y-3.5 animate-in fade-in duration-150"
+              className="p-4 sm:p-5 rounded-2xl border border-line bg-surface-raised space-y-4 animate-in fade-in duration-150"
             >
               <div className="flex items-center justify-between pb-2 border-b border-line">
-                <span className="text-xs font-bold text-content">
+                <span className="text-xs font-bold text-content flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-accent" />
                   {editingTaskId ? 'Edit Pemantauan' : 'Tambah Pemantauan Baru'}
                 </span>
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="text-xs text-content-muted hover:text-content"
+                  className="text-xs text-content-muted hover:text-content cursor-pointer"
                 >
                   Batal
                 </button>
               </div>
 
+              {/* Quick Template Picker */}
+              <div>
+                <div className="flex items-center gap-1.5 text-[11px] text-content-muted font-medium mb-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-accent" />
+                  <span>{t('scheduled.quickTemplates')}:</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {SAP_TEMPLATES.map((tmpl) => (
+                    <button
+                      key={tmpl.id}
+                      type="button"
+                      onClick={() => handleApplyTemplate(tmpl)}
+                      className="px-2.5 py-1 rounded-lg text-[11px] bg-surface hover:bg-surface-hover border border-line hover:border-accent/40 text-content transition-all cursor-pointer"
+                    >
+                      {tmpl.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Judul & Prompt */}
               <div>
                 <label className="block text-xs font-medium text-content mb-1">
                   {t('scheduled.taskName')}
@@ -271,36 +359,114 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-content mb-1">
-                    {t('scheduled.cron')}
-                  </label>
-                  <select
-                    value={formCron}
-                    onChange={(e) => setFormCron(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface focus:border-accent focus:outline-none text-content"
-                  >
-                    {CRON_PRESETS.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.labelId}
-                      </option>
-                    ))}
-                  </select>
+              {/* Penjadwalan: Frekuensi & Jam Spesifik */}
+              <div className="p-3.5 rounded-xl border border-line bg-surface space-y-3">
+                <label className="block text-xs font-semibold text-content">
+                  {t('scheduled.cron')}
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-content-muted mb-1">
+                      {t('scheduled.frequency')}
+                    </label>
+                    <select
+                      value={scheduleType}
+                      onChange={(e) => setScheduleType(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface-raised focus:border-accent focus:outline-none text-content"
+                    >
+                      <option value="daily">📅 Setiap Hari (Harian)</option>
+                      <option value="workdays">💼 Hari Kerja (Senin - Jumat)</option>
+                      <option value="interval">⏱️ Interval Berkala</option>
+                      <option value="custom">⚙️ Kustom (Cron Expression)</option>
+                    </select>
+                  </div>
+
+                  {/* Input spesifik berdasarkan pilihan frekuensi */}
+                  {(scheduleType === 'daily' || scheduleType === 'workdays') && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-content-muted mb-1">
+                        {t('scheduled.executionTime')} (Format 24 Jam)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          required
+                          value={scheduleTime}
+                          onChange={(e) => setScheduleTime(e.target.value)}
+                          className="flex-1 px-3 py-2 text-xs rounded-xl border border-line bg-surface-raised focus:border-accent focus:outline-none text-content"
+                        />
+                        <span className="text-[11px] text-content-muted font-medium">WIB</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {scheduleType === 'interval' && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-content-muted mb-1">
+                        {t('scheduled.interval')}
+                      </label>
+                      <select
+                        value={scheduleInterval}
+                        onChange={(e) => setScheduleInterval(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface-raised focus:border-accent focus:outline-none text-content"
+                      >
+                        {INTERVAL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {scheduleType === 'custom' && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-content-muted mb-1">
+                        {t('scheduled.customCron')}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="misal: 0 8 * * 1-5"
+                        value={scheduleCustomCron}
+                        onChange={(e) => setScheduleCustomCron(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface-raised focus:border-accent focus:outline-none text-content font-mono"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-content mb-1">
-                    {t('scheduled.emailTo')} (Opsional)
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="nama@perusahaan.com"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface focus:border-accent focus:outline-none text-content"
-                  />
+                <div className="text-[11px] text-content-subtle pt-1 border-t border-line/40">
+                  {scheduleType === 'daily' && (
+                    <span>💡 Pemantauan dijalankan sekali setiap hari pada pukul {scheduleTime} WIB.</span>
+                  )}
+                  {scheduleType === 'workdays' && (
+                    <span>💡 Pemantauan dijalankan setiap hari kerja (Senin - Jumat) pukul {scheduleTime} WIB.</span>
+                  )}
+                  {scheduleType === 'interval' && (
+                    <span>💡 Pemantauan diulang secara otomatis setiap interval yang dipilih.</span>
+                  )}
+                  {scheduleType === 'custom' && (
+                    <span>💡 Menggunakan format ekspresi cron kustom standar Linux/Unix.</span>
+                  )}
                 </div>
+              </div>
+
+              {/* Email Penerima (Multiple support) */}
+              <div>
+                <label className="block text-xs font-medium text-content mb-1">
+                  {t('scheduled.emailTo')} (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder={t('scheduled.emailPlaceholder')}
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-line bg-surface focus:border-accent focus:outline-none text-content"
+                />
+                <p className="text-[11px] text-content-subtle mt-1">
+                  {t('scheduled.emailHint')}
+                </p>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
@@ -309,10 +475,10 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                   id="formActive"
                   checked={formActive}
                   onChange={(e) => setFormActive(e.target.checked)}
-                  className="rounded border-line text-accent focus:ring-accent"
+                  className="rounded border-line text-accent focus:ring-accent cursor-pointer"
                 />
-                <label htmlFor="formActive" className="text-xs text-content select-none">
-                  Aktifkan pemantauan ini
+                <label htmlFor="formActive" className="text-xs text-content select-none cursor-pointer">
+                  Aktifkan pemantauan ini secara otomatis
                 </label>
               </div>
 
@@ -320,14 +486,14 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="px-3.5 py-1.5 rounded-xl border border-line text-xs font-medium text-content-muted hover:text-content bg-surface hover:bg-surface-hover transition-colors"
+                  className="px-3.5 py-1.5 rounded-xl border border-line text-xs font-medium text-content-muted hover:text-content bg-surface hover:bg-surface-hover transition-colors cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="inline-flex items-center gap-1 px-4 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all shadow-xs cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all shadow-xs cursor-pointer"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Simpan Pemantauan</span>
@@ -352,100 +518,163 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
             </div>
           ) : (
             <div className="space-y-3">
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="p-4 rounded-2xl border border-line bg-surface-raised hover:border-accent/40 transition-all space-y-2.5"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold text-content">
-                          {task.title}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                            task.is_active
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                              : 'bg-surface-sunken text-content-muted border-line'
-                          }`}
+              {tasks.map((task) => {
+                const badge = getScheduleBadgeInfo(task.cron_expression);
+                const BadgeIcon = badge.icon;
+                const isExpanded = expandedResultTaskId === task.id;
+
+                return (
+                  <div
+                    key={task.id}
+                    className="p-4 rounded-2xl border border-line bg-surface-raised hover:border-accent/40 transition-all space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-content">
+                            {task.title}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActive(task)}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer transition-all ${
+                              task.is_active
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                : 'bg-surface-sunken text-content-muted border-line hover:bg-surface-hover'
+                            }`}
+                            title="Klik untuk mengubah status aktif/nonaktif"
+                          >
+                            {task.is_active ? t('scheduled.active') : t('scheduled.inactive')}
+                          </button>
+                          <span
+                            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border ${badge.className}`}
+                          >
+                            <BadgeIcon className="w-3 h-3 shrink-0" />
+                            <span>{badge.label}</span>
+                          </span>
+                        </div>
+                        <p className="text-xs text-content-secondary line-clamp-2">
+                          {task.prompt}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleRunNow(task.id)}
+                          disabled={runningTaskId === task.id}
+                          className="p-1.5 rounded-lg text-content-muted hover:text-accent hover:bg-surface transition-colors cursor-pointer"
+                          title={t('scheduled.runNow')}
                         >
-                          {task.is_active ? t('scheduled.active') : t('scheduled.inactive')}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-[11px] text-content-muted font-mono bg-surface-sunken px-2 py-0.5 rounded-md">
-                          <Clock className="w-3 h-3" />
-                          {task.cron_expression}
+                          <Play
+                            className={`w-3.5 h-3.5 ${
+                              runningTaskId === task.id ? 'animate-spin text-accent' : ''
+                            }`}
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(task)}
+                          className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface transition-colors cursor-pointer"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(task.id)}
+                          className="p-1.5 rounded-lg text-content-muted hover:text-rose-500 hover:bg-surface transition-colors cursor-pointer"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Metadata & Status */}
+                    <div className="flex items-center justify-between text-[11px] text-content-muted pt-2 border-t border-line/50 flex-wrap gap-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        {task.email_to && (
+                          <span
+                            className="flex items-center gap-1 text-content-muted font-medium truncate max-w-xs"
+                            title={task.email_to}
+                          >
+                            <Mail className="w-3 h-3 shrink-0 text-accent" />
+                            <span className="truncate">{task.email_to}</span>
+                          </span>
+                        )}
+                        <span>
+                          {t('scheduled.lastRun')}:{' '}
+                          {task.last_run_at ? new Date(task.last_run_at).toLocaleString('id-ID') : '-'}
                         </span>
                       </div>
-                      <p className="text-xs text-content-secondary line-clamp-2">
-                        {task.prompt}
-                      </p>
+
+                      <div className="flex items-center gap-2">
+                        {task.last_status && (
+                          <span
+                            className={`font-mono text-[10px] uppercase font-semibold ${
+                              task.last_status === 'success'
+                                ? 'text-emerald-500'
+                                : task.last_status === 'running'
+                                ? 'text-amber-500'
+                                : 'text-rose-500'
+                            }`}
+                          >
+                            ● {task.last_status}
+                          </span>
+                        )}
+
+                        {task.last_result && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedResultTaskId(isExpanded ? null : task.id)
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-medium text-accent hover:underline cursor-pointer ml-1"
+                          >
+                            <FileText className="w-3 h-3" />
+                            <span>{isExpanded ? t('scheduled.hideResult') : t('scheduled.viewResult')}</span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-3 h-3" />
+                            ) : (
+                              <ChevronDown className="w-3 h-3" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleRunNow(task.id)}
-                        disabled={runningTaskId === task.id}
-                        className="p-1.5 rounded-lg text-content-muted hover:text-accent hover:bg-surface transition-colors cursor-pointer"
-                        title={t('scheduled.runNow')}
-                      >
-                        <Play
-                          className={`w-3.5 h-3.5 ${
-                            runningTaskId === task.id ? 'animate-spin text-accent' : ''
-                          }`}
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(task)}
-                        className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface transition-colors cursor-pointer"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(task.id)}
-                        className="p-1.5 rounded-lg text-content-muted hover:text-rose-500 hover:bg-surface transition-colors cursor-pointer"
-                        title="Hapus"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Metadata & Status */}
-                  <div className="flex items-center justify-between text-[11px] text-content-muted pt-2 border-t border-line/50 flex-wrap gap-2">
-                    <div className="flex items-center gap-3">
-                      {task.email_to && (
-                        <span className="flex items-center gap-1 text-content-muted">
-                          <Mail className="w-3 h-3" />
-                          {task.email_to}
-                        </span>
-                      )}
-                      <span>
-                        {t('scheduled.lastRun')}:{' '}
-                        {task.last_run_at ? new Date(task.last_run_at).toLocaleString('id-ID') : '-'}
-                      </span>
-                    </div>
-
-                    {task.last_status && (
-                      <span
-                        className={`font-mono text-[10px] uppercase font-semibold ${
-                          task.last_status === 'success'
-                            ? 'text-emerald-500'
-                            : task.last_status === 'running'
-                            ? 'text-amber-500'
-                            : 'text-rose-500'
-                        }`}
-                      >
-                        ● {task.last_status}
-                      </span>
+                    {/* Expandable Result Snippet */}
+                    {isExpanded && task.last_result && (
+                      <div className="mt-2 p-3 rounded-xl bg-surface border border-line text-xs font-mono text-content-secondary space-y-2 animate-in fade-in duration-100">
+                        <div className="flex items-center justify-between text-[10px] text-content-muted pb-1 border-b border-line/40">
+                          <span className="font-semibold uppercase tracking-wider">Hasil Eksekusi AI Terakhir:</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyResult(task.id, task.last_result)}
+                            className="inline-flex items-center gap-1 text-content hover:text-accent cursor-pointer"
+                          >
+                            {copiedResultId === task.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-500" />
+                                <span className="text-emerald-500">Tersalin</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Salin</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <div className="max-h-60 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                          {task.last_result}
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
