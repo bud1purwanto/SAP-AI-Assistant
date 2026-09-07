@@ -262,6 +262,14 @@ export const api = {
   saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
   deleteMySapCredential: (target) =>
     apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
+
+  // Dynamic MCP Servers
+  adminMcpServers: () => apiFetch('/api/admin/mcp/servers'),
+  adminCreateMcpServer: (payload) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: payload }),
+  adminUpdateMcpServer: (id, payload) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+  adminDeleteMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  adminResetMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
+  adminTestMcpConnection: (payload) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: payload }),
 };
 
 /**

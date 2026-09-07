@@ -721,6 +721,115 @@ def _m0016_force_change_password(conn):
     """))
 
 
+def _m0017_dynamic_mcp_servers(conn):
+    """Tabel server MCP dinamis untuk konfigurasi multi-gateway."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.mcp_servers (
+            id VARCHAR(64) PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            url TEXT NOT NULL,
+            transport_type VARCHAR(32) NOT NULL DEFAULT 'http',
+            auth_token TEXT,
+            headers JSONB NOT NULL DEFAULT '{}'::jsonb,
+            icon VARCHAR(64) DEFAULT 'Server',
+            is_system BOOLEAN NOT NULL DEFAULT FALSE,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            display_order INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    """))
+
+    # Seed default core gateways jika tabel masih kosong
+    count = conn.execute(text("SELECT count(*) FROM ai_assistant.mcp_servers")).scalar()
+    if count == 0:
+        rows = conn.execute(text("""
+            SELECT key, value FROM ai_assistant.system_config 
+            WHERE key IN ('mcp_sap_config_json', 'mcp_rag_config_json', 'mcp_sql_config_json', 'mcp_email_config_json')
+        """)).fetchall()
+        cfg_map = {r[0]: r[1] for r in rows if r[1]}
+
+        import json
+
+        def _extract_url_token(json_str, def_url, def_token):
+            if not json_str:
+                return def_url, def_token
+            try:
+                data = json.loads(json_str)
+                srvs = data.get("mcpServers", {})
+                srv = list(srvs.values())[0] if srvs else (data if "url" in data else {})
+                url = srv.get("url") or def_url
+                token = def_token
+                headers = srv.get("headers", {})
+                if "Authorization" in headers:
+                    auth = headers["Authorization"]
+                    token = auth.replace("Bearer ", "").strip() if auth.startswith("Bearer ") else auth
+                return url, token
+            except Exception:
+                return def_url, def_token
+
+        sap_url, sap_token = _extract_url_token(cfg_map.get("mcp_sap_config_json"), "http://192.168.1.162:8091/mcp", "Trias123")
+        rag_url, rag_token = _extract_url_token(cfg_map.get("mcp_rag_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
+        sql_url, sql_token = _extract_url_token(cfg_map.get("mcp_sql_config_json") or cfg_map.get("mcp_email_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
+        email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
+
+        conn.execute(text("""
+            INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
+            VALUES 
+                ('sap', 'SAP ERP Gateway', 'Live Data, Tabel & ABAP Code SAP', :sap_url, 'http', :sap_token, 'Database', TRUE, TRUE, 1),
+                ('rag', 'RAG Knowledge Gateway', 'Vector DB, SOP & Tech Docs', :rag_url, 'http', :rag_token, 'BookOpen', TRUE, TRUE, 2),
+                ('sql', 'SQL & Database Gateway', 'Relational SQL & Query Tools', :sql_url, 'http', :sql_token, 'Server', TRUE, TRUE, 3),
+                ('email', 'Email Gateway', 'Email, Calendar & Mail Archive Gateway', :email_url, 'http', :email_token, 'Mail', TRUE, TRUE, 4)
+            ON CONFLICT (id) DO NOTHING;
+        """), {
+            "sap_url": sap_url, "sap_token": sap_token,
+            "rag_url": rag_url, "rag_token": rag_token,
+            "sql_url": sql_url, "sql_token": sql_token,
+            "email_url": email_url, "email_token": email_token,
+        })
+
+
+def _m0018_seed_mcp_email_server(conn):
+    """Seed default Email Gateway ke ai_assistant.mcp_servers jika belum ada."""
+    rows = conn.execute(text("""
+        SELECT key, value FROM ai_assistant.system_config 
+        WHERE key IN ('mcp_email_config_json', 'mcp_sql_config_json')
+    """)).fetchall()
+    cfg_map = {r[0]: r[1] for r in rows if r[1]}
+
+    import json
+
+    def _extract_url_token(json_str, def_url, def_token):
+        if not json_str:
+            return def_url, def_token
+        try:
+            data = json.loads(json_str)
+            srvs = data.get("mcpServers", {})
+            srv = list(srvs.values())[0] if srvs else (data if "url" in data else {})
+            url = srv.get("url") or def_url
+            token = def_token
+            headers = srv.get("headers", {})
+            if "Authorization" in headers:
+                auth = headers["Authorization"]
+                token = auth.replace("Bearer ", "").strip() if auth.startswith("Bearer ") else auth
+            return url, token
+        except Exception:
+            return def_url, def_token
+
+    email_url, email_token = _extract_url_token(
+        cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"),
+        "http://192.168.1.162:8090/mcp",
+        "Trias123"
+    )
+
+    conn.execute(text("""
+        INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
+        VALUES ('email', 'Email Gateway', 'Email, Calendar & Mail Archive Gateway', :email_url, 'http', :email_token, 'Mail', TRUE, TRUE, 4)
+        ON CONFLICT (id) DO NOTHING;
+    """), {"email_url": email_url, "email_token": email_token})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -738,6 +847,8 @@ MIGRATIONS = [
     ("0014_users_role_integrity", _m0014_users_role_integrity),
     ("0015_role_suspended_flag", _m0015_role_suspended_flag),
     ("0016_force_change_password", _m0016_force_change_password),
+    ("0017_dynamic_mcp_servers", _m0017_dynamic_mcp_servers),
+    ("0018_seed_mcp_email_server", _m0018_seed_mcp_email_server),
 ]
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
@@ -52,6 +52,80 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [topUsersPeriod, setTopUsersPeriod] = useState('month');
   const [topUsersList, setTopUsersList] = useState([]);
   const [topUsersLoading, setTopUsersLoading] = useState(false);
+
+  // Dynamic Live MCP Servers for Dashboard Overview
+  const liveMcpServers = useMemo(() => {
+    const dbServers = stats?.mcp_servers || [];
+    const statusMap = stats?.mcp_status || {};
+
+    if (dbServers.length > 0) {
+      const existingIds = new Set();
+      const list = dbServers.map((s) => {
+        existingIds.add(s.id);
+        const live = statusMap[s.id] || {};
+        const isOnline = live.status === 'online' || live.online === true;
+        const isDisabled = s.enabled === false || live.status === 'disabled';
+        return {
+          id: s.id,
+          name: s.name || live.name || s.id,
+          description: s.description || live.description || '',
+          enabled: s.enabled !== false,
+          is_system: !!s.is_system,
+          display_order: s.display_order ?? 99,
+          icon: s.icon || live.icon || 'Server',
+          status: isDisabled ? 'disabled' : (isOnline ? 'online' : (live.status || 'offline')),
+          online: !isDisabled && isOnline,
+          tools_count: live.tools_count ?? live.tool_count ?? s.tools_count ?? s.tool_count ?? 0,
+          active_server: live.active_server || s.active_server || (s.id === 'rag' ? 'Vector & Doc' : (s.id === 'email' ? 'Mail Archive' : '')),
+          error: live.error || s.error || null,
+        };
+      });
+
+      // Include servers detected in statusMap not in dbServers
+      Object.entries(statusMap).forEach(([id, live]) => {
+        if (!existingIds.has(id) && live) {
+          const isOnline = live.status === 'online' || live.online === true;
+          const isDisabled = live.enabled === false || live.status === 'disabled';
+          list.push({
+            id,
+            name: live.name || id,
+            description: live.description || '',
+            enabled: live.enabled !== false,
+            is_system: !!live.is_system,
+            display_order: live.display_order ?? 99,
+            icon: live.icon || 'Server',
+            status: isDisabled ? 'disabled' : (isOnline ? 'online' : (live.status || 'offline')),
+            online: !isDisabled && isOnline,
+            tools_count: live.tools_count ?? live.tool_count ?? 0,
+            active_server: live.active_server || '',
+            error: live.error || null,
+          });
+        }
+      });
+
+      return list.sort((a, b) => (a.display_order ?? 99) - (b.display_order ?? 99));
+    }
+
+    // Fallback if stats.mcp_servers is not yet loaded
+    return Object.entries(statusMap).map(([id, live]) => {
+      const isOnline = live.status === 'online' || live.online === true;
+      const isDisabled = live.enabled === false || live.status === 'disabled';
+      return {
+        id,
+        name: live.name || id,
+        description: live.description || '',
+        enabled: live.enabled !== false,
+        is_system: !!live.is_system,
+        display_order: live.display_order ?? 99,
+        icon: live.icon || 'Server',
+        status: isDisabled ? 'disabled' : (isOnline ? 'online' : (live.status || 'offline')),
+        online: !isDisabled && isOnline,
+        tools_count: live.tools_count ?? live.tool_count ?? 0,
+        active_server: live.active_server || (id === 'rag' ? 'Vector & Doc' : (id === 'email' ? 'Mail Archive' : '')),
+        error: live.error || null,
+      };
+    }).sort((a, b) => (a.display_order ?? 99) - (b.display_order ?? 99));
+  }, [stats?.mcp_servers, stats?.mcp_status]);
 
   // Feedback State — daftar jawaban yang dinilai pengguna
   const [feedbackKind, setFeedbackKind] = useState('dislike');
@@ -130,7 +204,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [savingBatas, setSavingBatas] = useState(false);
   const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
-  const fetchStats = async (period = topUsersPeriod) => {
+  const fetchStats = useCallback(async (period = topUsersPeriod) => {
     setStatsLoading(true);
     try {
       const data = await api.adminStats(period, 10);
@@ -143,7 +217,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     } finally {
       setStatsLoading(false);
     }
-  };
+  }, [topUsersPeriod]);
 
   const handleTopUsersPeriodChange = async (newPeriod) => {
     setTopUsersPeriod(newPeriod);
@@ -1047,82 +1121,59 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content mb-2.5 sm:mb-3.5 flex items-center gap-1.5 font-display">
                     <Server className="w-3.5 h-3.5 text-accent" /> {language === 'en' ? 'Live MCP Servers' : 'Status Server MCP'}
                   </h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-                    {/* MCP SAP Card */}
-                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-xs sm:text-sm text-content truncate">SAP Gateway</span>
-                        {(stats?.mcp_status?.sap?.status === 'online' || stats?.mcp_status?.sap?.online === true) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sap?.error || ''}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
-                          </span>
-                        )}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
+                    {statsLoading && !stats ? (
+                      [1, 2, 3, 4].map((i) => (
+                        <div key={i} className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 animate-pulse space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="h-4 bg-line/60 rounded w-24" />
+                            <div className="h-4 bg-line/60 rounded-full w-12" />
+                          </div>
+                          <div className="h-3 bg-line/40 rounded w-32" />
+                        </div>
+                      ))
+                    ) : liveMcpServers.length === 0 ? (
+                      <div className="col-span-full py-4 text-center text-xs text-content-muted">
+                        {language === 'en' ? 'No MCP servers registered' : 'Belum ada server MCP terdaftar'}
                       </div>
-                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
-                        {stats?.mcp_status?.sap?.tools_count ?? stats?.mcp_status?.sap?.tool_count ?? 0} tools • {stats?.mcp_status?.sap?.active_server || 'Default'}
-                      </p>
-                    </div>
-
-                    {/* MCP RAG Card */}
-                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-xs sm:text-sm text-content truncate">RAG Knowledge</span>
-                        {(stats?.mcp_status?.rag?.status === 'online' || stats?.mcp_status?.rag?.online === true) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.rag?.error || ''}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
-                        {stats?.mcp_status?.rag?.tools_count ?? stats?.mcp_status?.rag?.tool_count ?? 0} tools • Vector & Doc
-                      </p>
-                    </div>
-
-                    {/* MCP SQL Card */}
-                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-xs sm:text-sm text-content truncate">SQL Database</span>
-                        {(stats?.mcp_status?.sql?.status === 'online' || stats?.mcp_status?.sql?.online === true) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.sql?.error || ''}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
-                        {stats?.mcp_status?.sql?.tools_count ?? stats?.mcp_status?.sql?.tool_count ?? 0} tools • {stats?.mcp_status?.sql?.active_server || 'Database'}
-                      </p>
-                    </div>
-
-                    {/* MCP Email Card */}
-                    <div className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line transition-all">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-xs sm:text-sm text-content truncate">Email Gateway</span>
-                        {(stats?.mcp_status?.email?.status === 'online' || stats?.mcp_status?.email?.online === true) ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0" title={stats?.mcp_status?.email?.error || ''}>
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
-                        {stats?.mcp_status?.email?.tools_count ?? stats?.mcp_status?.email?.tool_count ?? 0} tools • {stats?.mcp_status?.email?.active_server || 'Mail Archive'}
-                      </p>
-                    </div>
+                    ) : (
+                      liveMcpServers.map((srv) => (
+                        <div
+                          key={srv.id}
+                          onClick={() => setActiveTab('mcp')}
+                          className="p-2.5 sm:p-3.5 rounded-lg sm:rounded-xl bg-surface-sunken/60 border border-line/80 hover:border-line hover:bg-surface-sunken transition-all cursor-pointer group"
+                          title={language === 'en' ? `Configure ${srv.name} in MCP Connections` : `Konfigurasi ${srv.name} di Koneksi MCP`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-xs sm:text-sm text-content truncate group-hover:text-primary transition-colors">
+                              {srv.name}
+                            </span>
+                            {srv.status === 'disabled' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-content-subtle/15 text-content-muted border border-line shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-content-muted" /> {language === 'en' ? 'Disabled' : 'Nonaktif'}
+                              </span>
+                            ) : srv.online ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Online
+                              </span>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0"
+                                title={srv.error || (language === 'en' ? 'Server unreachable' : 'Server tidak dapat dijangkau')}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] sm:text-[11px] text-content-muted mt-1 truncate">
+                            {srv.status === 'disabled'
+                              ? (language === 'en' ? 'Disabled in settings' : 'Dinonaktifkan di pengaturan')
+                              : `${srv.tools_count} tools • ${srv.active_server || srv.description || (srv.online ? 'Active' : 'Offline')}`
+                            }
+                          </p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -2253,6 +2304,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 fetchStats={fetchStats}
                 statsLoading={statsLoading}
                 language={language}
+                onRefreshMcpServers={onRefreshMcpServers}
               />
             )}
 

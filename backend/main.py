@@ -91,6 +91,12 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
+    list_mcp_servers,
+    get_mcp_server,
+    create_mcp_server,
+    update_mcp_server,
+    delete_mcp_server,
+    reset_mcp_server_to_default,
 )
 from mcp_manager import mcp_manager
 import access_control
@@ -350,6 +356,37 @@ class ConfigUpdate(BaseModel):
     ai_suggestions_enabled: bool = None
 
 
+class CreateMcpServerRequest(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = ""
+    url: str
+    transport_type: Optional[str] = "http"
+    auth_token: Optional[str] = ""
+    headers: Optional[dict] = None
+    icon: Optional[str] = "Server"
+    enabled: Optional[bool] = True
+
+
+class UpdateMcpServerRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    url: Optional[str] = None
+    transport_type: Optional[str] = None
+    auth_token: Optional[str] = None
+    headers: Optional[dict] = None
+    icon: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+class TestMcpConnectionRequest(BaseModel):
+    server_id: Optional[str] = None
+    url: Optional[str] = None
+    auth_token: Optional[str] = None
+    headers: Optional[dict] = None
+    transport_type: Optional[str] = "http"
+
+
 @app.get("/api/config")
 async def get_config(user: dict = Depends(get_current_user)):
     profile = get_user_by_username(user["username"])
@@ -561,6 +598,22 @@ async def get_admin_stats_endpoint(
     except Exception as e:
         logger.warning(f"Auto-sync resources gagal: {e}")
     stats["mcp_status"] = mcp_st
+    try:
+        servers = list_mcp_servers(enabled_only=False)
+        for s in servers:
+            sid = s["id"]
+            st = mcp_st.get(sid, {})
+            s["online"] = st.get("online", False)
+            s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
+            s["tool_count"] = st.get("tool_count", 0)
+            s["tools_count"] = st.get("tools_count", s["tool_count"])
+            s["active_server"] = st.get("active_server", "-")
+            if "error" in st:
+                s["error"] = st["error"]
+        stats["mcp_servers"] = servers
+    except Exception as ex:
+        logger.warning(f"Gagal memuat list mcp_servers untuk stats: {ex}")
+        stats["mcp_servers"] = []
     return stats
 
 
@@ -1566,6 +1619,95 @@ async def toggle_admin_access_master_endpoint(req: AdminToggleAccessMasterReques
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal mengubah status master switch akses MCP.")
     return {"status": "success", "mcp_access_control_enabled": req.enabled}
+
+
+# --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS ---
+
+@app.get("/api/admin/mcp/servers")
+async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mengambil daftar seluruh server MCP yang terdaftar beserta status live terkini."""
+    servers = list_mcp_servers(enabled_only=False)
+    status_map = await mcp_manager.check_servers_status()
+    for s in servers:
+        sid = s["id"]
+        st = status_map.get(sid, {})
+        s["online"] = st.get("online", False)
+        s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
+        s["tool_count"] = st.get("tool_count", 0)
+        s["active_server"] = st.get("active_server", "-")
+        if "error" in st:
+            s["error"] = st["error"]
+    return {"servers": servers}
+
+
+@app.post("/api/admin/mcp/servers")
+async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
+    """Menambahkan gateway server MCP baru ke database."""
+    res = create_mcp_server(req.dict())
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    mcp_manager.remove_client(req.id)
+    return res
+
+
+@app.put("/api/admin/mcp/servers/{server_id}")
+async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerRequest, admin: dict = Depends(require_superadmin)):
+    """Memperbarui metadata, deskripsi, URL, atau token server MCP."""
+    update_data = {k: v for k, v in req.dict().items() if v is not None}
+    res = update_mcp_server(server_id, update_data)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    mcp_manager.remove_client(server_id)
+    return res
+
+
+@app.delete("/api/admin/mcp/servers/{server_id}")
+async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
+    """Menghapus server MCP kustom dari sistem (server sistem bawaan dilindungi)."""
+    res = delete_mcp_server(server_id)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    mcp_manager.remove_client(server_id)
+    return res
+
+
+@app.post("/api/admin/mcp/servers/{server_id}/reset")
+async def reset_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
+    """Mengembalikan server MCP sistem ke konfigurasi default bawaan pabrik."""
+    res = reset_mcp_server_to_default(server_id)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    mcp_manager.remove_client(server_id)
+    return res
+
+
+@app.post("/api/admin/mcp/test")
+async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admin: dict = Depends(require_superadmin)):
+    """Uji konektivitas real-time ke gateway MCP (latensi ms, status online, dan pendeteksian tools)."""
+    url = req.url
+    auth_token = req.auth_token or ""
+    headers = req.headers or {}
+    transport = req.transport_type or "http"
+    if req.server_id:
+        srv = get_mcp_server(req.server_id)
+        if srv:
+            url = srv.get("url") or url
+            if not req.auth_token:
+                auth_token = srv.get("auth_token") or ""
+            if not req.headers:
+                headers = srv.get("headers") or {}
+            transport = srv.get("transport_type") or transport
+
+    if not url:
+        raise HTTPException(status_code=400, detail="URL endpoint MCP wajib diisi untuk pengetesan koneksi.")
+
+    result = await mcp_manager.test_connection(
+        url=url,
+        auth_token=auth_token,
+        headers=headers,
+        transport_type=transport
+    )
+    return result
 
 
 # --- CHAT ---
