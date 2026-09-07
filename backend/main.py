@@ -1647,6 +1647,12 @@ async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: d
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     mcp_manager.remove_client(req.id)
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+        access_control.clear_access_cache()
+    except Exception as ex:
+        logger.warning(f"Auto-sync access resources setelah create server MCP gagal: {ex}")
     return res
 
 
@@ -1658,6 +1664,12 @@ async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerR
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     mcp_manager.remove_client(server_id)
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+        access_control.clear_access_cache()
+    except Exception as ex:
+        logger.warning(f"Auto-sync access resources setelah update server MCP gagal: {ex}")
     return res
 
 
@@ -1668,6 +1680,12 @@ async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     mcp_manager.remove_client(server_id)
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+        access_control.clear_access_cache()
+    except Exception as ex:
+        logger.warning(f"Auto-sync access resources setelah delete server MCP gagal: {ex}")
     return res
 
 
@@ -1678,6 +1696,12 @@ async def reset_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     mcp_manager.remove_client(server_id)
+    try:
+        st = await mcp_manager.check_servers_status()
+        access_control.sync_resources_from_mcp(st)
+        access_control.clear_access_cache()
+    except Exception as ex:
+        logger.warning(f"Auto-sync access resources setelah reset server MCP gagal: {ex}")
     return res
 
 

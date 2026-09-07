@@ -189,3 +189,52 @@ def test_admin_stats_dynamic_mcp(client, admin_auth):
     assert "stats-custom-mcp" not in clean_ids
 
 
+def test_dynamic_mcp_access_control_auto_sync(client, admin_auth):
+    """Pengujian bahwa server MCP baru otomatis masuk ke Resource Katalog, Role Matrix, dan User Overrides."""
+    custom_srv = {
+        "id": "postgres-prod",
+        "name": "PostgreSQL Production DB",
+        "description": "Database PostgreSQL Transaksional",
+        "url": "http://127.0.0.1:8997/mcp",
+        "enabled": True,
+    }
+
+    # 1. Daftarkan server MCP baru
+    create_res = client.post("/api/admin/mcp/servers", json=custom_srv, headers=admin_auth)
+    assert create_res.status_code == 200
+
+    try:
+        # 2. Periksa katalog sumber daya mcp_resources
+        res_list = client.get("/api/admin/access/resources", headers=admin_auth).json()["resources"]
+        res_keys = [r["resource_key"] for r in res_list]
+        assert "sql:postgres-prod" in res_keys
+        pg_res = next(r for r in res_list if r["resource_key"] == "sql:postgres-prod")
+        assert pg_res["label"] == "PostgreSQL Production DB"
+        assert pg_res["kind"] == "sql"
+        assert pg_res["is_production"] is True
+
+        # 3. Periksa User Overrides (GET /api/admin/access/users/{username})
+        user_matrix = client.get("/api/admin/access/users/TRSTDEV", headers=admin_auth).json()
+        u_res_keys = [r["resource_key"] for r in user_matrix["resources"]]
+        assert "sql:postgres-prod" in u_res_keys
+        u_pg_res = next(r for r in user_matrix["resources"] if r["resource_key"] == "sql:postgres-prod")
+        # Default state harus inherit
+        assert u_pg_res["state"] == "inherit"
+
+        # 4. Periksa Role Matrix (GET /api/admin/access/roles)
+        role_matrix = client.get("/api/admin/access/roles", headers=admin_auth).json()
+        matrix_res_keys = [r["resource_key"] for r in role_matrix["resources"]]
+        assert "sql:postgres-prod" in matrix_res_keys
+
+    finally:
+        # 5. Hapus server MCP dan verifikasi soft-archive dari active resources
+        del_res = client.delete("/api/admin/mcp/servers/postgres-prod", headers=admin_auth)
+        assert del_res.status_code == 200
+
+        # Verifikasi sudah di-archive (tidak muncul lagi di active resources)
+        res_after = client.get("/api/admin/access/resources", headers=admin_auth).json()["resources"]
+        after_keys = [r["resource_key"] for r in res_after]
+        assert "sql:postgres-prod" not in after_keys
+
+
+

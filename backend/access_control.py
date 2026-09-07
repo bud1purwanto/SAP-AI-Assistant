@@ -241,6 +241,14 @@ def load_aliases_from_db(force_refresh: bool = False):
                 rk_lower = rk_str.lower()
                 sub = rk_lower.split(":", 1)[1] if ":" in rk_lower else rk_lower
                 prefix = rk_str.split(":", 1)[0].lower()
+
+                if kind == "service" or prefix == "service":
+                    _DYNAMIC_GENERAL_MAP[rk_lower] = rk_str
+                    _DYNAMIC_GENERAL_MAP[sub] = rk_str
+                    if label:
+                        _DYNAMIC_GENERAL_MAP[str(label).lower().strip()] = rk_str
+                    continue
+
                 target_map = _DYNAMIC_SQL_MAP if (kind == "sql" or prefix == "sql") else _DYNAMIC_SAP_MAP
 
                 target_map[rk_lower] = rk_str
@@ -433,22 +441,69 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
             "is_production": is_prod,
         })
 
+    # 4. Custom Dynamic MCP Servers
+    custom_servers = {}
+    try:
+        from database import list_mcp_servers
+        db_servers = list_mcp_servers(enabled_only=False)
+        for s in db_servers:
+            sid = str(s.get("id") or "").strip().lower()
+            if sid and sid not in ("sap", "rag", "sql", "email"):
+                custom_servers[sid] = s
+    except Exception as ex:
+        logger.warning(f"Gagal membaca custom mcp_servers untuk sync: {ex}")
+
+    for sid, s_info in (status_dict or {}).items():
+        sid_clean = str(sid).strip().lower()
+        if sid_clean not in ("sap", "rag", "sql", "email") and sid_clean not in custom_servers:
+            custom_servers[sid_clean] = {
+                "id": sid_clean,
+                "name": s_info.get("name") or sid_clean,
+                "description": s_info.get("description", ""),
+                "enabled": s_info.get("enabled", True),
+            }
+
+    for sid, srv in custom_servers.items():
+        name = (srv.get("name") or sid).strip()
+        srv_lower = f"{sid} {name}".lower()
+        is_sql_type = any(db_kw in srv_lower for db_kw in ["sql", "postgres", "mysql", "oracle", "mariadb", "database"])
+        kind = "sql" if is_sql_type else "service"
+        can_key = f"{kind}:{sid}"
+
+        is_prod = bool(
+            "prod" in srv_lower
+            or "production" in srv_lower
+            or "prd" in srv_lower
+            or "prp" in srv_lower
+        )
+        is_archived = not bool(srv.get("enabled", True))
+
+        resources_to_sync.append({
+            "key": can_key,
+            "kind": kind,
+            "label": name,
+            "sid": "",
+            "client": "",
+            "is_production": is_prod,
+            "archived": is_archived,
+        })
+
     try:
         with engine.begin() as conn:
             for item in resources_to_sync:
                 conn.execute(
                     text("""
                     INSERT INTO ai_assistant.mcp_resources
-                        (resource_key, kind, label, sid, client, is_production, last_seen_at)
+                        (resource_key, kind, label, sid, client, is_production, last_seen_at, archived)
                     VALUES
-                        (:k, :kind, :label, :sid, :cli, :prod, :now)
+                        (:k, :kind, :label, :sid, :cli, :prod, :now, :archived)
                     ON CONFLICT (resource_key) DO UPDATE SET
                         label = EXCLUDED.label,
                         sid = CASE WHEN EXCLUDED.sid <> '' THEN EXCLUDED.sid ELSE ai_assistant.mcp_resources.sid END,
                         client = CASE WHEN EXCLUDED.client <> '' THEN EXCLUDED.client ELSE ai_assistant.mcp_resources.client END,
                         is_production = EXCLUDED.is_production,
                         last_seen_at = :now,
-                        archived = FALSE
+                        archived = EXCLUDED.archived
                 """),
                     {
                         "k": item["key"],
@@ -457,10 +512,26 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
                         "sid": item["sid"],
                         "cli": item["client"],
                         "prod": item["is_production"],
+                        "archived": item.get("archived", False),
                         "now": now,
                     },
                 )
                 upserted_keys.append(item["key"])
+
+            # Non-destructively archive any custom dynamic resources that were removed from mcp_servers
+            active_keys = [item["key"] for item in resources_to_sync]
+            if active_keys:
+                conn.execute(
+                    text("""
+                    UPDATE ai_assistant.mcp_resources
+                    SET archived = TRUE
+                    WHERE kind IN ('service', 'sql')
+                      AND resource_key NOT IN ('service:rag', 'service:email')
+                      AND NOT (resource_key = ANY(CAST(:active_keys AS text[])))
+                      AND resource_key NOT LIKE 'sap:%'
+                    """),
+                    {"active_keys": active_keys}
+                )
     except Exception as e:
         logger.error(f"Gagal sinkronisasi mcp_resources dari MCP: {e}")
 
@@ -662,13 +733,22 @@ def assert_can_use(username: str, role: Union[str, List[str], None], active_serv
 
 
 def allowed_connectors(username: str, role: Union[str, List[str], None]) -> Set[str]:
-    """Mengembalikan daftar konektor utama ('sap', 'sql', 'rag', 'email') yang boleh diakses."""
+    """Mengembalikan daftar konektor utama ('sap', 'sql', 'rag', 'email', dan dynamic servers) yang boleh diakses."""
+    all_custom_ids = set()
+    try:
+        from database import list_mcp_servers
+        all_custom_ids = {str(s["id"]).strip().lower() for s in list_mcp_servers(enabled_only=True) if s.get("id")}
+    except Exception:
+        pass
+
+    default_all = {"sap", "sql", "rag", "email"} | all_custom_ids
+
     if not is_access_control_enabled():
-        return {"sap", "sql", "rag", "email"}
+        return default_all
 
     roles = normalize_roles(role)
     if "superadmin" in roles:
-        return {"sap", "sql", "rag", "email"}
+        return default_all
 
     access = resolve_access(username, roles)
     connectors = set()
@@ -680,16 +760,23 @@ def allowed_connectors(username: str, role: Union[str, List[str], None]) -> Set[
             connectors.add("sap")
         elif rk.startswith("sql:"):
             connectors.add("sql")
+            sub = rk.split(":", 1)[1] if ":" in rk else ""
+            if sub:
+                connectors.add(sub)
         elif rk == "service:rag":
             connectors.add("rag")
         elif rk == "service:email":
             connectors.add("email")
+        elif rk.startswith("service:") or rk.startswith("mcp:"):
+            sub = rk.split(":", 1)[1] if ":" in rk else ""
+            if sub:
+                connectors.add(sub)
 
     return connectors
 
 
 def filter_servers_for_user(status_dict: dict, username: str, role: Union[str, List[str], None] = "user") -> dict:
-    """Memfilter sub-servers SAP dan SQL dalam status response agar hanya menampilkan server yang diizinkan."""
+    """Memfilter sub-servers SAP, SQL, dan dynamic MCP dalam status response agar hanya menampilkan server yang diizinkan."""
     if not is_access_control_enabled():
         return status_dict
 
@@ -738,6 +825,14 @@ def filter_servers_for_user(status_dict: dict, username: str, role: Union[str, L
     if "email" in res:
         email_perm = access.get("service:email")
         res["email"]["allowed"] = bool(email_perm and email_perm.get("allowed"))
+
+    # Filter Custom Dynamic MCP Servers
+    for s_key in list(res.keys()):
+        if s_key in ("sap", "sql", "rag", "email"):
+            continue
+        c_perm = access.get(f"service:{s_key}") or access.get(f"sql:{s_key}")
+        if isinstance(res[s_key], dict):
+            res[s_key]["allowed"] = bool(c_perm and c_perm.get("allowed"))
 
     return res
 

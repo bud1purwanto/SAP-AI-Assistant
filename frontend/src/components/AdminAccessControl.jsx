@@ -491,7 +491,7 @@ export default function AdminAccessControl({
   });
   const sapResources = filteredResources.filter((r) => r.kind === 'sap');
   const sqlResources = filteredResources.filter((r) => r.kind === 'sql');
-  const serviceResources = filteredResources.filter((r) => r.kind === 'service');
+  const serviceResources = filteredResources.filter((r) => r.kind === 'service' || (!['sap', 'sql'].includes(r.kind)));
 
   const filteredUsers = usersList.filter((u) => {
     const q = searchUser.toLowerCase();
