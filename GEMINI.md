@@ -24,3 +24,12 @@ Aturan ini wajib dipatuhi oleh semua asisten AI (Antigravity/Gemini/Agents) dala
 ## 4. Integritas Copywriting & Desain
 - Jangan pernah mengubah kata, istilah, atau copywriting yang sudah ada (misalnya kata *Enterprise*, nama modul, dsb.) kecuali diminta langsung oleh pengguna.
 - Fokus modifikasi adalah pada perbaikan fungsional, arsitektur, dan kerapian tampilan antarmuka (UI/UX).
+
+## 5. Standar Wajib Multibahasa (Multilanguage / i18n)
+- Setiap fitur baru, komponen UI, notifikasi, dan artefak WAJIB mendukung Multibahasa (minimal Bahasa Indonesia `id` dan English `en`).
+- Dilarang keras meng-hardcode teks antarmuka secara statis; wajib menggunakan hook `useLanguage()` dan mendaftarkan kunci ke kamus `frontend/src/lib/i18n.js`.
+
+## 6. Desain Antarmuka Dinamis & Responsif (Mobile & Desktop)
+- Seluruh tampilan komponen, form, modal, tabel, dan diagram WAJIB responsif dan dinamis, menyesuaikan layar HP (Mobile) maupun Desktop secara rapi.
+- Gunakan prinsip mobile-first / responsive breakpoints Tailwind CSS (`sm:`, `md:`, `lg:`) serta hindari overflow horizontal atau elemen terpotong pada layar kecil.
+

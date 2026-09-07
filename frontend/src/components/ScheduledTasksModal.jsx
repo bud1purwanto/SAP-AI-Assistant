@@ -223,7 +223,123 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     }
   };
 
+  const handleDelete = async (taskId) => {
+    if (!window.confirm('Hapus pemantauan terjadwal ini?')) return;
+    try {
+      await api.deleteScheduledTask(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    } catch (err) {
+      setError(err.message || 'Gagal menghapus pemantauan');
+    }
+  };
 
+  const handleToggleActive = async (task) => {
+    try {
+      const nextActive = !task.is_active;
+      await api.updateScheduledTask(task.id, { is_active: nextActive });
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, is_active: nextActive } : t))
+      );
+    } catch (err) {
+      setError(err.message || 'Gagal mengubah status');
+    }
+  };
+
+  const handleRunNow = async (taskId) => {
+    setRunningTaskId(taskId);
+    try {
+      await api.runScheduledTask(taskId);
+      setSuccessMsg('Tugas berhasil dipicu dan sedang berjalan di latar belakang.');
+      setTimeout(() => {
+        setSuccessMsg('');
+        fetchTasks();
+      }, 4000);
+    } catch (err) {
+      setError(err.message || 'Gagal menjalankan tugas');
+    } finally {
+      setRunningTaskId(null);
+    }
+  };
+
+  const handleCopyResult = (taskId, text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedResultId(taskId);
+    setTimeout(() => setCopiedResultId(null), 2000);
+  };
+
+  const getScheduleBadgeInfo = (cronExpr) => {
+    const str = (cronExpr || 'daily@08:00').trim().toLowerCase();
+    if (str.startsWith('daily@')) {
+      const time = str.split('@')[1] || '08:00';
+      return {
+        label: `Setiap Hari • ${time} WIB`,
+        icon: Calendar,
+        className: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+      };
+    }
+    if (str === 'daily') {
+      return {
+        label: 'Setiap Hari • 08:00 WIB',
+        icon: Calendar,
+        className: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20',
+      };
+    }
+    if (str.startsWith('workdays@')) {
+      const time = str.split('@')[1] || '08:00';
+      return {
+        label: `Hari Kerja • ${time} WIB`,
+        icon: Calendar,
+        className: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/20',
+      };
+    }
+    if (str === 'interval_30m' || str === 'every_30m' || str === '30m') {
+      return {
+        label: 'Setiap 30 Menit',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    if (str === 'interval_1h' || str === 'hourly' || str === '1h') {
+      return {
+        label: 'Setiap 1 Jam',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    if (str === 'interval_2h') {
+      return {
+        label: 'Setiap 2 Jam',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    if (str === 'interval_4h') {
+      return {
+        label: 'Setiap 4 Jam',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    if (str === 'interval_6h') {
+      return {
+        label: 'Setiap 6 Jam',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    if (str === 'interval_12h') {
+      return {
+        label: 'Setiap 12 Jam',
+        icon: Clock,
+        className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+      };
+    }
+    return {
+      label: cronExpr,
+      icon: Clock,
+      className: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20',
+    };
+  };
 
   if (!isOpen) return null;
 
