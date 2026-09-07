@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, KeyRound, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -97,7 +97,7 @@ const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
-  const { t, language, isEn } = useLanguage();
+  const { t, language, setLanguage, isEn } = useLanguage();
   const [user, setUser] = useState(() => getStoredUser() || GUEST_USER);
   const isGuest = user.role === 'guest';
 
@@ -157,6 +157,7 @@ const ChatLayout = () => {
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('persona');
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
@@ -1478,152 +1479,242 @@ const ChatLayout = () => {
             </button>
           )}
 
-          <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
-            <div className="flex items-center gap-2.5 min-w-0 pr-1">
-              <div className="relative shrink-0">
-                <div
-                  className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-1 ring-white/20 select-none"
-                  title={user.full_name || user.username}
-                >
-                  {getUserInitials(user)}
+          {isGuest ? (
+            /* Tampilan Tamu (Guest): Langsung tombol Tema + tombol Masuk Akun tanpa dropdown/menu gerigi */
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
+              <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                <div className="relative shrink-0">
+                  <div
+                    className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 text-white flex items-center justify-center font-bold text-xs shadow-xs select-none"
+                    title="Guest"
+                  >
+                    GU
+                  </div>
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
+                    title="Online"
+                  />
                 </div>
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
-                  title="Online"
-                />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold truncate text-content leading-tight">
+                    Guest
+                  </div>
+                  <div className="mt-1 flex items-center">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border bg-slate-100 dark:bg-slate-800/60 text-content-muted border-line/60">
+                      Guest
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="min-w-0">
-                <div
-                  className="text-xs font-semibold truncate text-content leading-tight"
-                  title={user.full_name ? `${user.full_name} (@${user.username})` : user.username}
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Tombol Langsung Dark / Light mode */}
+                <button
+                  type="button"
+                  onClick={() => cycleTheme()}
+                  className="w-8 h-8 rounded-xl border border-transparent hover:border-line/60 text-content-muted hover:text-content hover:bg-surface-hover/80 transition-all cursor-pointer flex items-center justify-center"
+                  title={t('nav.theme')}
+                  aria-label="Ganti tema tampilan"
                 >
-                  {user.full_name || user.username}
-                </div>
-                <div className="mt-1 flex items-center">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
-                    {getUserRoleLabel(user.role, isEn)}
-                  </span>
-                </div>
+                  <ThemeIcon className="w-4 h-4" aria-hidden="true" />
+                </button>
+
+                {/* Tombol Langsung Masuk / Login */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomLoginMsg('');
+                    setIsLoginModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-contrast hover:bg-accent/90 text-xs font-semibold transition-all shadow-xs cursor-pointer active:scale-95"
+                  title={t('sidebar.loginPrompt')}
+                >
+                  <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>{t('sidebar.loginPrompt')}</span>
+                </button>
               </div>
             </div>
-
-            {/* 1 Tombol Ringkas & Cantik Dropup Trigger */}
-            <div className="relative shrink-0" ref={userMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsUserMenuOpen((prev) => !prev)}
-                className={`w-8 h-8 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
-                  isUserMenuOpen
-                    ? 'bg-accent/15 border-accent/30 text-accent shadow-xs'
-                    : 'border-transparent text-content-subtle hover:text-content hover:bg-surface-hover/80 hover:border-line/60'
-                }`}
-                aria-label="Opsi Pengguna"
-                aria-haspopup="true"
-                aria-expanded={isUserMenuOpen}
-                title="Opsi & Pengaturan Akun"
-              >
-                <MoreVertical className="w-4 h-4" aria-hidden="true" />
-              </button>
-
-              {/* Dropdown Ke Atas (Dropup Menu) */}
-              {isUserMenuOpen && (
-                <div
-                  className="absolute bottom-full right-0 mb-2.5 w-60 rounded-2xl bg-surface-raised border border-line shadow-2xl py-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 backdrop-blur-xl"
-                  role="menu"
-                >
-                  {/* Header Profil Singkat */}
-                  <div className="px-3 py-2 border-b border-line/60 mb-1">
-                    <div className="text-xs font-semibold text-content truncate">
-                      {user.full_name || user.username}
-                    </div>
-                    <div className="text-[11px] text-content-muted font-mono truncate mt-0.5">
-                      @{user.username}
-                    </div>
-                  </div>
-
-                  {/* Pengaturan Sistem */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      setIsSettingsOpen(true);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
-                    role="menuitem"
+          ) : (
+            /* Tampilan User Terdaftar: Profil Card + Dropup Menu (...) */
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
+              <div className="flex items-center gap-2.5 min-w-0 pr-1">
+                <div className="relative shrink-0">
+                  <div
+                    className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-1 ring-white/20 select-none"
+                    title={user.full_name || user.username}
                   >
-                    <Settings className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
-                    <span>{t('nav.settings')}</span>
-                  </button>
+                    {getUserInitials(user)}
+                  </div>
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
+                    title="Online"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <div
+                    className="text-xs font-semibold truncate text-content leading-tight"
+                    title={user.full_name ? `${user.full_name} (@${user.username})` : user.username}
+                  >
+                    {user.full_name || user.username}
+                  </div>
+                  <div className="mt-1 flex items-center">
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
+                      {getUserRoleLabel(user.role, isEn)}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-                  {/* Peringatan & Tugas Terjadwal (Monitoring) */}
-                  {!isGuest && (
+              {/* 1 Tombol Ringkas & Cantik Dropup Trigger */}
+              <div className="relative shrink-0" ref={userMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                  className={`w-8 h-8 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
+                    isUserMenuOpen
+                      ? 'bg-accent/15 border-accent/30 text-accent shadow-xs'
+                      : 'border-transparent text-content-subtle hover:text-content hover:bg-surface-hover/80 hover:border-line/60'
+                  }`}
+                  aria-label="Opsi Pengguna"
+                  aria-haspopup="true"
+                  aria-expanded={isUserMenuOpen}
+                  title="Opsi & Pengaturan Akun"
+                >
+                  <MoreVertical className="w-4 h-4" aria-hidden="true" />
+                </button>
+
+                {/* Dropdown Ke Atas (Dropup Menu) */}
+                {isUserMenuOpen && (
+                  <div
+                    className="absolute bottom-full right-0 mb-2.5 w-64 rounded-2xl bg-surface-raised border border-line shadow-2xl py-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 backdrop-blur-xl"
+                    role="menu"
+                  >
+                    {/* Header Profil Singkat */}
+                    <div className="px-3.5 py-2 border-b border-line/60 mb-1">
+                      <div className="text-xs font-semibold text-content truncate">
+                        {user.full_name || user.username}
+                      </div>
+                      <div className="text-[11px] text-content-muted font-mono truncate mt-0.5">
+                        @{user.username}
+                      </div>
+                    </div>
+
+                    {/* Persona & Preferensi Pribadi */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setSettingsTab('persona');
+                        setIsSettingsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <Bot className="w-3.5 h-3.5 text-accent shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t('settings.tabPersona')}</span>
+                    </button>
+
+                    {/* Keamanan & Sandi */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setSettingsTab('security');
+                        setIsSettingsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t('settings.tabSecurity')}</span>
+                    </button>
+
+                    {/* SAP Login */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setSettingsTab('sapCreds');
+                        setIsSettingsOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <Server className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t('settings.tabSap') || 'SAP Login'}</span>
+                    </button>
+
+                    {/* Peringatan & Tugas Terjadwal (Monitoring) */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
                         setIsScheduledTasksOpen(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
                     >
                       <Bell className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
-                      <span>{t('scheduled.title')}</span>
+                      <span className="truncate">{t('scheduled.menuTitle') || t('scheduled.title')}</span>
                     </button>
-                  )}
 
-                  {/* Ganti Tema Tampilan */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      cycleTheme();
-                    }}
-                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
-                    role="menuitem"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <ThemeIcon className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
-                      <span className="truncate">{t('nav.theme')}</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted capitalize shrink-0 font-medium font-mono">
-                      {theme}
-                    </span>
-                  </button>
-
-                  <div className="my-1 border-t border-line/60" />
-
-                  {/* Masuk / Keluar */}
-                  {isGuest ? (
+                    {/* Ganti Bahasa (Langsung klik ganti) */}
                     <button
                       type="button"
                       onClick={() => {
-                        setIsUserMenuOpen(false);
-                        setCustomLoginMsg('');
-                        setIsLoginModalOpen(true);
+                        setLanguage(language === 'id' ? 'en' : 'id');
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-accent hover:bg-accent-soft transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                      title={t('settings.tabLanguage')}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Globe className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                        <span className="truncate">{t('settings.tabLanguage') || 'Bahasa'}</span>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sunken text-content font-bold font-mono shrink-0">
+                        {language === 'id' ? '🇮🇩 ID' : '🇬🇧 EN'}
+                      </span>
+                    </button>
+
+                    {/* Ganti Tema Tampilan */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cycleTheme();
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
                     >
-                      <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                      <span>{t('sidebar.loginPrompt')}</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ThemeIcon className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                        <span className="truncate">{t('nav.theme')}</span>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted capitalize shrink-0 font-medium font-mono">
+                        {theme}
+                      </span>
                     </button>
-                  ) : (
+
+                    <div className="my-1 border-t border-line/60" />
+
+                    {/* Keluar */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
                         setConfirmLogoutOpen(true);
                       }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-danger hover:bg-danger-soft transition-colors cursor-pointer text-left"
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-danger hover:bg-danger-soft transition-colors cursor-pointer text-left"
                       role="menuitem"
                     >
                       <LogOut className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                       <span>{t('sidebar.logout')}</span>
                     </button>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </aside>
 
@@ -2221,6 +2312,7 @@ const ChatLayout = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         user={user}
+        initialTab={settingsTab}
       />
 
       <ScheduledTasksModal

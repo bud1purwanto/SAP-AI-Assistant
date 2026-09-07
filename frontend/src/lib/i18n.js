@@ -135,7 +135,8 @@ export const TRANSLATIONS = {
     'chart.hoverDetail': 'Hover over chart for details',
 
     // Scheduled Monitoring & Daily Digest
-    'scheduled.title': 'Scheduled Monitoring & Digest',
+    'scheduled.title': 'Scheduled Monitoring',
+    'scheduled.menuTitle': 'Monitoring',
     'scheduled.addTask': 'Add Scheduled Task',
     'scheduled.taskName': 'Task Name',
     'scheduled.prompt': 'Monitoring Prompt / Query',
@@ -208,6 +209,7 @@ export const TRANSLATIONS = {
     'settings.tabPersona': 'Persona & Preferences',
     'settings.tabLanguage': 'Language / Bahasa',
     'settings.tabSecurity': 'Security & Password',
+    'settings.tabSap': 'SAP Login',
     'settings.tabRouter': 'AI Provider',
     'settings.tabMcp': 'MCP Connections',
     'settings.languageSelect': 'Interface Language',
@@ -516,7 +518,8 @@ export const TRANSLATIONS = {
     'chart.hoverDetail': 'Arahkan kursor ke grafik untuk detail',
 
     // Scheduled Monitoring & Daily Digest
-    'scheduled.title': 'Peringatan & Rekap Terjadwal',
+    'scheduled.title': 'Monitoring Terjadwal',
+    'scheduled.menuTitle': 'Monitoring',
     'scheduled.addTask': 'Tambah Pemantauan Terjadwal',
     'scheduled.taskName': 'Nama Pemantauan',
     'scheduled.prompt': 'Prompt / Permintaan SAP',
@@ -589,6 +592,7 @@ export const TRANSLATIONS = {
     'settings.tabPersona': 'Persona & Profil',
     'settings.tabLanguage': 'Bahasa / Language',
     'settings.tabSecurity': 'Keamanan & Sandi',
+    'settings.tabSap': 'Akun SAP (Login)',
     'settings.tabRouter': 'AI Provider',
     'settings.tabMcp': 'Koneksi Data',
     'settings.languageSelect': 'Bahasa Antarmuka (Interface Language)',
