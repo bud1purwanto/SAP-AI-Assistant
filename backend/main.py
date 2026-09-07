@@ -412,7 +412,7 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
     if not client_to_test:
         client_to_test = "100"
 
-    # 3. Uji via MCP SAP Gateway (set_active_server & get_system_info)
+    # 3. Uji via MCP SAP Gateway (set_active_server, get_system_info, USR02, dan SUSR_LOGIN_CHECK_RFC)
     try:
         sap_creds = {
             "sap_user": user_to_test,
@@ -428,6 +428,12 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
         )
         if res.is_error:
             err_text = res.content[0].text if res.content else "Unknown error from SAP Gateway"
+            err_lower = err_text.lower()
+            if "logon" in err_lower or "password" in err_lower or "152" in err_lower or "auth" in err_lower or "user" in err_lower:
+                return {
+                    "success": False,
+                    "message": f"Autentikasi gagal: Username atau password tidak sesuai untuk user SAP '{user_to_test}' pada server '{target}'."
+                }
             return {"success": False, "message": f"Koneksi ke SAP '{target}' gagal: {err_text}"}
         
         server_info = {}
@@ -447,10 +453,157 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
                 
         srv_name = server_info.get("active_server") or target
         srv_sid = f" (SID: {server_info.get('sid')})" if server_info.get("sid") else ""
+
+        # 4. Validasi keberadaan user dan status lock pada tabel USR02
+        user_upper = user_to_test.upper()
+        try:
+            where_cond = f"BNAME = '{user_upper}'"
+            if client_to_test:
+                where_cond += f" AND MANDT = '{client_to_test}'"
+
+            usr_res = await mcp_manager.call_tool(
+                server_name="sap",
+                tool_name="read_table",
+                arguments={
+                    "table": "USR02",
+                    "fields": ["MANDT", "BNAME", "UFLAG", "GLTGV", "GLTGB"],
+                    "where": [where_cond],
+                    "rowcount": 1
+                },
+                sap_target=target,
+                sap_credentials=sap_creds
+            )
+            if usr_res.is_error:
+                err_text = usr_res.content[0].text if usr_res.content else ""
+                err_lower = err_text.lower()
+                if "logon" in err_lower or "password" in err_lower or "152" in err_lower or "auth" in err_lower:
+                    return {
+                        "success": False,
+                        "message": f"Autentikasi gagal: Password tidak sesuai untuk user SAP '{user_upper}' pada server '{srv_name}'."
+                    }
+            elif usr_res.content and usr_res.content[0].text:
+                try:
+                    import json, datetime
+                    usr_data = json.loads(usr_res.content[0].text)
+                    rows = usr_data.get("rows", [])
+                    if not rows:
+                        return {
+                            "success": False,
+                            "message": f"User SAP '{user_upper}' tidak terdaftar pada server '{srv_name}' (Client {client_to_test})."
+                        }
+                    row = rows[0]
+                    user_row = row
+                    uflag_val = str(row.get("UFLAG", "0")).strip()
+                    if uflag_val != "0" and uflag_val != "":
+                        lock_reason = "dalam status terkunci"
+                        if uflag_val == "64":
+                            lock_reason = "dikunci oleh Administrator (UFLAG: 64)"
+                        elif uflag_val == "128":
+                            lock_reason = "terkunci karena salah memasukkan password berkali-kali (UFLAG: 128)"
+                        return {
+                            "success": False,
+                            "message": f"User SAP '{user_upper}' {lock_reason} pada server '{srv_name}'."
+                        }
+
+                    # Cek masa berlaku akun (GLTGV: Valid from, GLTGB: Valid to)
+                    today_str = datetime.date.today().strftime("%Y%m%d")
+                    gltgv = (row.get("GLTGV") or "").strip()
+                    gltgb = (row.get("GLTGB") or "").strip()
+                    if gltgv and gltgv != "00000000" and today_str < gltgv:
+                        return {
+                            "success": False,
+                            "message": f"Masa berlaku akun user SAP '{user_upper}' belum aktif (Aktif mulai {gltgv})."
+                        }
+                    if gltgb and gltgb != "00000000" and today_str > gltgb:
+                        return {
+                            "success": False,
+                            "message": f"Masa berlaku akun user SAP '{user_upper}' telah berakhir pada {gltgb}."
+                        }
+                except Exception:
+                    pass
+        except Exception as ex:
+            logger.debug(f"Pengecekan USR02 dilewati: {ex}")
+
+        # 5. Uji otentikasi live password via Function Module SUSR_LOGIN_CHECK_RFC
+        try:
+            login_res = await mcp_manager.call_tool(
+                server_name="sap",
+                tool_name="call_function",
+                arguments={
+                    "function_name": "SUSR_LOGIN_CHECK_RFC",
+                    "parameters": {
+                        "BNAME": user_upper,
+                        "PASSWORD": pass_to_test,
+                        "USE_NEW_EXCEPTION": 1
+                    }
+                },
+                sap_target=target,
+                sap_credentials=sap_creds
+            )
+            if login_res.is_error:
+                err_raw = login_res.content[0].text if login_res.content else ""
+                # Password salah
+                if "152" in err_raw or "WRONG_PASSWORD" in err_raw:
+                    return {
+                        "success": False,
+                        "message": f"Password tidak sesuai untuk user SAP '{user_upper}' pada server '{srv_name}'."
+                    }
+                # Akun terkunci karena percobaan berulang
+                if "200" in err_raw or "PASSWORD_ATTEMPTS_LIMITED" in err_raw:
+                    return {
+                        "success": False,
+                        "message": f"User SAP '{user_upper}' terkunci karena salah memasukkan password berkali-kali pada server '{srv_name}'."
+                    }
+                # Akun dikunci admin
+                if "158" in err_raw or "USER_LOCKED" in err_raw:
+                    return {
+                        "success": False,
+                        "message": f"User SAP '{user_upper}' dikunci oleh Administrator pada server '{srv_name}'."
+                    }
+                # Masa berlaku akun habis
+                if "148" in err_raw or "USER_NOT_ACTIVE" in err_raw:
+                    return {
+                        "success": False,
+                        "message": f"Masa berlaku akun user SAP '{user_upper}' tidak aktif pada server '{srv_name}'."
+                    }
+                # Password cocok namun berstatus Initial Password atau Expired di SAP
+                if "000" in err_raw or "PASSWORD_EXPIRED" in err_raw or "292" in err_raw:
+                    pwd_state = str(user_row.get("PWDSTATE", "") if user_row else "").strip()
+                    extra_note = ""
+                    if pwd_state == "1":
+                        extra_note = " (Catatan: Password berstatus Initial Password dan perlu diubah saat login pertama di SAP GUI)"
+                    elif pwd_state == "3":
+                        extra_note = " (Catatan: Password telah kedaluwarsa di SAP dan perlu diganti)"
+                    return {
+                        "success": True,
+                        "message": f"Koneksi dan autentikasi kredensial user SAP '{user_upper}' pada server '{srv_name}'{srv_sid} berhasil terverifikasi!{extra_note}",
+                        "server_info": {
+                            **server_info,
+                            "user": user_upper,
+                            "client": client_to_test,
+                            "authenticated": True
+                        }
+                    }
+                # Galat lainnya
+                return {
+                    "success": False,
+                    "message": f"Autentikasi kredensial user SAP '{user_upper}' gagal: {err_raw}"
+                }
+        except Exception as ex:
+            return {
+                "success": False,
+                "message": f"Gagal memverifikasi password SAP: {str(ex)}"
+            }
+
         return {
             "success": True,
-            "message": f"Koneksi ke server SAP '{srv_name}'{srv_sid} berhasil terhubung!",
-            "server_info": server_info
+            "message": f"Koneksi dan autentikasi kredensial user SAP '{user_upper}' pada server '{srv_name}'{srv_sid} berhasil terverifikasi!",
+            "server_info": {
+                **server_info,
+                "user": user_upper,
+                "client": client_to_test,
+                "authenticated": True
+            }
         }
     except Exception as ex:
         logger.error(f"Gagal menguji koneksi SAP ke '{target}': {ex}")

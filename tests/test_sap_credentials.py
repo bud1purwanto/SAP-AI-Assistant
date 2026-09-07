@@ -63,6 +63,36 @@ def test_test_sap_credential_endpoint_validation(db, client, admin_auth):
     assert "Password SAP wajib diisi" in resp.json()["detail"]
 
 
+def test_test_sap_credential_endpoint_real_rejection(db, client, admin_auth):
+    # Testing with nonexistent user returns success: False with helpful reason
+    resp = client.post("/api/me/sap-credentials/test", json={
+        "target": "dev",
+        "sap_user": "NONEXISTENT_USER_999",
+        "sap_password": "WRONG_PASSWORD_XYZ",
+        "sap_client": "130"
+    }, headers=admin_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+    assert "tidak terdaftar" in data["message"] or "gagal" in data["message"].lower()
+
+
+def test_test_sap_credential_endpoint_wrong_password(db, client, admin_auth):
+    # Testing with real user TRST-BUDI but wrong password returns success: False
+    resp = client.post("/api/me/sap-credentials/test", json={
+        "target": "dev",
+        "sap_user": "TRST-BUDI",
+        "sap_password": "WRONG_PASSWORD_XYZ",
+        "sap_client": "130"
+    }, headers=admin_auth)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+    assert "tidak sesuai" in data["message"] or "terkunci" in data["message"].lower() or "gagal" in data["message"].lower()
+
+
+
+
 def test_duplicate_target_prevention(db, client, admin_auth):
     target = "sandbox-test-dup"
     # First save
