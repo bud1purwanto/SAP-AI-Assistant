@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -83,6 +83,8 @@ export default function AdminAccessControl({
   const [mobileUserSelectorOpen, setMobileUserSelectorOpen] = useState(false);
   const [userResources, setUserResources] = useState([]);
   const [userDirty, setUserDirty] = useState(false);
+  const [userResSearch, setUserResSearch] = useState('');
+  const [userResCategory, setUserResCategory] = useState('all'); // 'all' | 'overrides' | 'sap' | 'sql' | 'service'
 
   // Bulk Action State
   const [isBulkOpen, setIsBulkOpen] = useState(false);
@@ -510,6 +512,33 @@ export default function AdminAccessControl({
     return 0;
   });
 
+  const userResourceCounts = useMemo(() => {
+    const overrides = userResources.filter((r) => r.state && r.state !== 'inherit').length;
+    const sap = userResources.filter((r) => r.kind === 'sap' || r.resource_type === 'sap_rfc').length;
+    const sql = userResources.filter((r) => r.kind === 'sql' || r.resource_type === 'sql_db').length;
+    const service = userResources.filter((r) => r.kind === 'service' || (!['sap', 'sql'].includes(r.kind) && !['sap_rfc', 'sql_db'].includes(r.resource_type))).length;
+    return { all: userResources.length, overrides, sap, sql, service };
+  }, [userResources]);
+
+  const filteredUserResources = useMemo(() => {
+    return userResources.filter((r) => {
+      if (userResCategory === 'overrides' && r.state === 'inherit') return false;
+      if (userResCategory === 'sap' && !(r.kind === 'sap' || r.resource_type === 'sap_rfc')) return false;
+      if (userResCategory === 'sql' && !(r.kind === 'sql' || r.resource_type === 'sql_db')) return false;
+      if (userResCategory === 'service' && (r.kind === 'sap' || r.resource_type === 'sap_rfc' || r.kind === 'sql' || r.resource_type === 'sql_db')) return false;
+
+      if (userResSearch.trim()) {
+        const q = userResSearch.toLowerCase();
+        const match =
+          (r.resource_key || '').toLowerCase().includes(q) ||
+          (r.label || '').toLowerCase().includes(q) ||
+          (r.sid || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [userResources, userResCategory, userResSearch]);
+
   if (initialLoading) {
     return (
       <div className="space-y-3 sm:space-y-3.5 animate-fadeIn">
@@ -668,12 +697,12 @@ export default function AdminAccessControl({
 
       {/* 2. SUB-NAVIGATION BAR & CONTROLS */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 border-b border-line pb-2.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 p-0.5 bg-surface-sunken rounded-xl border border-line/60 self-start">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+          <div className="flex items-center gap-1 p-0.5 bg-surface-sunken rounded-xl border border-line/60 self-stretch sm:self-start w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setActiveSubTab('roles')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'roles'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
@@ -686,7 +715,7 @@ export default function AdminAccessControl({
             <button
               type="button"
               onClick={() => setActiveSubTab('users')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'users'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
@@ -702,7 +731,7 @@ export default function AdminAccessControl({
                 setActiveSubTab('audit');
                 loadAuditLogs();
               }}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeSubTab === 'audit'
                   ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
@@ -715,7 +744,7 @@ export default function AdminAccessControl({
 
           {/* Action Bar for Unsaved Role Changes */}
           {activeSubTab === 'roles' && modifiedRoles.size > 0 && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-accent/10 border border-accent/30 text-xs animate-fadeIn">
+            <div className="inline-flex items-center justify-between sm:justify-start gap-1.5 px-2.5 py-1 rounded-lg bg-accent/10 border border-accent/30 text-xs animate-fadeIn w-full sm:w-auto">
               <span className="flex items-center gap-1 text-accent font-bold text-xs">
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                 <span>
@@ -723,46 +752,48 @@ export default function AdminAccessControl({
                   {isEn ? (modifiedRoles.size > 1 ? 'roles modified' : 'role modified') : 'peran diubah'}
                 </span>
               </span>
-              <div className="h-3 w-px bg-accent/25" />
-              <button
-                type="button"
-                onClick={loadRoleMatrix}
-                disabled={saving}
-                className="px-2 py-0.5 rounded text-[11px] font-semibold bg-surface hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
-              >
-                {isEn ? 'Cancel' : 'Batal'}
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAllModifiedRoles}
-                disabled={saving}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-accent text-white hover:bg-accent/90 shadow-xs cursor-pointer transition-all active:scale-95"
-              >
-                <Save className="w-3 h-3" />
-                <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save All' : 'Simpan Semua')}</span>
-              </button>
+              <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                <div className="h-3 w-px bg-accent/25" />
+                <button
+                  type="button"
+                  onClick={loadRoleMatrix}
+                  disabled={saving}
+                  className="px-2 py-0.5 rounded text-[11px] font-semibold bg-surface hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
+                >
+                  {isEn ? 'Cancel' : 'Batal'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllModifiedRoles}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-accent text-white hover:bg-accent/90 shadow-xs cursor-pointer transition-all active:scale-95"
+                >
+                  <Save className="w-3 h-3" />
+                  <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save All' : 'Simpan Semua')}</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
 
         {/* Right side controls for Roles tab: Search + View Switcher */}
         {activeSubTab === 'roles' && (
-          <div className="flex items-center gap-2 self-start md:self-auto w-full md:w-auto">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 self-stretch sm:self-auto w-full md:w-auto">
             {/* Inline Resource Search */}
-            <div className="relative flex-1 md:w-56">
+            <div className="relative flex-1 sm:w-48 md:w-56">
               <Search className="w-3 h-3 text-content-subtle absolute left-2.5 top-2.5" />
               <input
                 type="text"
                 value={roleResSearch}
                 onChange={(e) => setRoleResSearch(e.target.value)}
                 placeholder={isEn ? 'Search resource / SID...' : 'Cari resource / SID...'}
-                className="w-full pl-7 pr-6 py-1 text-xs rounded-lg bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
+                className="w-full pl-7 pr-6 py-1.5 sm:py-1 text-xs rounded-lg bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
               />
               {roleResSearch && (
                 <button
                   type="button"
                   onClick={() => setRoleResSearch('')}
-                  className="absolute right-2 top-1.5 text-content-subtle hover:text-content cursor-pointer"
+                  className="absolute right-2 top-2 sm:top-1.5 text-content-subtle hover:text-content cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -770,11 +801,11 @@ export default function AdminAccessControl({
             </div>
 
             {/* View Switcher */}
-            <div className="inline-flex rounded-lg p-0.5 bg-surface-sunken border border-line text-xs font-semibold shrink-0">
+            <div className="inline-flex rounded-lg p-0.5 bg-surface-sunken border border-line text-xs font-semibold shrink-0 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setRoleViewMode('grid')}
-                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                className={`flex-1 sm:flex-initial text-center px-2.5 py-1.5 sm:py-1 rounded-md transition-all cursor-pointer ${
                   roleViewMode === 'grid'
                     ? 'bg-surface text-accent shadow-xs font-bold'
                     : 'text-content-subtle hover:text-content'
@@ -785,7 +816,7 @@ export default function AdminAccessControl({
               <button
                 type="button"
                 onClick={() => setRoleViewMode('cards')}
-                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                className={`flex-1 sm:flex-initial text-center px-2.5 py-1.5 sm:py-1 rounded-md transition-all cursor-pointer ${
                   roleViewMode === 'cards'
                     ? 'bg-surface text-accent shadow-xs font-bold'
                     : 'text-content-subtle hover:text-content'
@@ -815,7 +846,7 @@ export default function AdminAccessControl({
               <table className="w-full text-left border-separate border-spacing-0 min-w-[1100px]">
                 <thead className="sticky top-0 z-20 shadow-xs">
                   <tr>
-                    <th className="sticky top-0 left-0 z-30 py-4 px-4 w-[340px] min-w-[320px] text-xs font-bold uppercase tracking-wider text-content bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
+                    <th className="sticky top-0 left-0 z-30 py-4 px-4 w-[260px] min-w-[240px] md:w-[340px] md:min-w-[320px] text-xs font-bold uppercase tracking-wider text-content bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
                       {t('access.resource')}
                     </th>
                     {activeRoles.map((r) => {
@@ -933,36 +964,64 @@ export default function AdminAccessControl({
           {/* VIEW B: ROLE CARDS (DETAIL PER PERAN) */}
           {roleViewMode === 'cards' && (
             <div className="space-y-5">
-              {/* Role Picker Pills */}
-              <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-surface border border-line">
-                {activeRoles.map((r) => {
-                  const isSel = selectedRoleCard === r.role;
-                  const Icon = r.icon;
-                  const isMod = modifiedRoles.has(r.role);
-                  return (
-                    <button
-                      key={r.role}
-                      type="button"
-                      onClick={() => setSelectedRoleCard(r.role)}
-                      className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        isSel
-                          ? 'bg-accent text-white shadow-sm'
-                          : 'text-content-muted hover:text-content hover:bg-surface-hover'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{r.label}</span>
-                      {isMod && <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-surface animate-pulse" />}
-                    </button>
-                  );
-                })}
+              {/* Role Picker Dropdown */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-surface border border-line shadow-xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {(() => {
+                    const currentRoleObj = activeRoles.find((r) => r.role === selectedRoleCard) || activeRoles[0];
+                    const Icon = currentRoleObj?.icon || Shield;
+                    const isMod = currentRoleObj && modifiedRoles.has(currentRoleObj.role);
+                    return (
+                      <>
+                        <div className="w-9 h-9 rounded-xl bg-accent/15 border border-accent/30 text-accent flex items-center justify-center shrink-0">
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-content truncate">
+                              {currentRoleObj?.label}
+                            </span>
+                            {isMod && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                <span>{isEn ? 'Modified' : 'Diubah'}</span>
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-content-muted truncate mt-0.5">
+                            {currentRoleObj?.desc}
+                          </p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className="relative w-full sm:w-64 shrink-0">
+                  <select
+                    value={selectedRoleCard}
+                    onChange={(e) => setSelectedRoleCard(e.target.value)}
+                    className="w-full text-xs font-bold py-2 pl-3 pr-8 rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none cursor-pointer appearance-none shadow-2xs"
+                    aria-label={isEn ? 'Select Role' : 'Pilih Peran'}
+                  >
+                    {activeRoles.map((r) => {
+                      const isModified = modifiedRoles.has(r.role);
+                      return (
+                        <option key={r.role} value={r.role}>
+                          {r.label} {isModified ? `(● ${isEn ? 'Modified' : 'Diubah'})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
+                </div>
               </div>
 
               {/* Cards for the selected role */}
-              <div className="p-5 rounded-2xl border border-line bg-surface space-y-6">
+              <div className="p-4 sm:p-5 rounded-2xl border border-line bg-surface space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-line">
                   <div>
-                    <h3 className="text-base font-bold text-content flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-content flex items-center gap-2 flex-wrap">
                       <span>{isEn ? 'Specific Permissions for' : 'Perizinan Khusus untuk'}</span>
                       <span className="text-accent underline decoration-accent/40 underline-offset-4">
                         {activeRoles.find((r) => r.role === selectedRoleCard)?.label}
@@ -974,18 +1033,18 @@ export default function AdminAccessControl({
                   </div>
 
                   {selectedRoleCard !== 'superadmin' && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleQuickGrantAllRead(selectedRoleCard)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-pointer transition-all"
+                        className="flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 cursor-pointer transition-all"
                       >
                         {isEn ? 'Grant All Read' : 'Beri Semua Izin Baca'}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleQuickResetRole(selectedRoleCard)}
-                        className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
+                        className="flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
                       >
                         {isEn ? 'Clear (Deny All)' : 'Kosongkan (Deny All)'}
                       </button>
@@ -1038,28 +1097,87 @@ export default function AdminAccessControl({
           <div className="md:col-span-1 space-y-3">
             {/* Mobile Compact Selected User Header */}
             {selectedUser && (
-              <div className="md:hidden flex items-center justify-between p-3 rounded-xl bg-surface border border-line shadow-xs">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-accent/15 border border-accent/30 text-accent font-bold text-xs flex items-center justify-center shrink-0">
-                    <User className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-content truncate">
-                      {usersList.find((x) => x.username === selectedUser)?.full_name || selectedUser}
-                    </p>
-                    <div className="flex items-center gap-1.5 text-[10px] text-content-muted font-mono">
-                      <span>@{selectedUser}</span>
+              <div className="md:hidden p-3.5 rounded-2xl bg-surface border border-line shadow-xs space-y-3">
+                {/* User info row */}
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {/* User Avatar Squircle */}
+                    {(() => {
+                      const selU = usersList.find((x) => x.username === selectedUser);
+                      const primaryRole = (selU?.roles && selU.roles[0]) || selU?.role || 'user';
+                      const theme = getRoleTheme(primaryRole);
+                      return (
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${theme.bg} ${theme.text} ${theme.border}`}>
+                          {selU ? getUserInitials(selU) : <User className="w-4 h-4" />}
+                        </div>
+                      );
+                    })()}
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-xs font-bold text-content truncate leading-tight">
+                          {usersList.find((x) => x.username === selectedUser)?.full_name || selectedUser}
+                        </p>
+                        <span className="text-[10px] font-mono text-accent px-1.5 py-0.2 rounded-md bg-accent/10 border border-accent/25">
+                          @{selectedUser}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-content-muted mt-0.5 flex-wrap">
+                        <span>{isEn ? 'Role:' : 'Peran:'}</span>
+                        {(() => {
+                          const selU = usersList.find((x) => x.username === selectedUser);
+                          const roles = selU?.roles && selU.roles.length > 0 ? selU.roles : [selU?.role || 'user'];
+                          return (
+                            <span className="font-semibold text-content uppercase tracking-wider">
+                              {roles.join(' + ')}
+                            </span>
+                          );
+                        })()}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Switch User Button */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileUserSelectorOpen(!mobileUserSelectorOpen)}
+                    className="px-2.5 py-1.5 rounded-xl bg-surface-sunken hover:bg-surface text-accent text-xs font-semibold border border-line flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                  >
+                    <span>{mobileUserSelectorOpen ? (isEn ? 'Close' : 'Tutup') : (isEn ? 'Switch User' : 'Ganti User')}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileUserSelectorOpen ? 'rotate-180' : ''}`} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileUserSelectorOpen(!mobileUserSelectorOpen)}
-                  className="px-2.5 py-1.5 rounded-lg bg-surface-sunken hover:bg-surface text-accent text-xs font-semibold border border-line flex items-center gap-1 shrink-0 cursor-pointer"
-                >
-                  <span>{mobileUserSelectorOpen ? (isEn ? 'Close' : 'Tutup') : (isEn ? 'Switch User' : 'Ganti User')}</span>
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileUserSelectorOpen ? 'rotate-180' : ''}`} />
-                </button>
+
+                {/* Status & Save Override Action */}
+                <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-line/60">
+                  <div className="text-[11px]">
+                    {userDirty ? (
+                      <span className="inline-flex items-center gap-1.5 text-amber-400 font-bold">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                        <span>{isEn ? 'Unsaved changes' : 'Perubahan belum disimpan'}</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-content-subtle">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>{isEn ? 'Overrides synced' : 'Izin tersinkronisasi'}</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveUserAccess}
+                    disabled={!userDirty || saving}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                      userDirty
+                        ? 'bg-accent text-white hover:bg-accent/90 animate-pulse'
+                        : 'bg-surface-sunken text-content-subtle border border-line cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save Override' : 'Simpan Override')}</span>
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1196,7 +1314,8 @@ export default function AdminAccessControl({
           <div className="md:col-span-2 space-y-4">
             {selectedUser ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-surface border border-line shadow-xs">
+                {/* Desktop User Header Card (hidden on mobile to prevent duplicate headers) */}
+                <div className="hidden md:flex items-center justify-between p-4 rounded-2xl bg-surface border border-line shadow-xs">
                   <div>
                     <h3 className="text-sm font-bold text-content flex items-center gap-2 flex-wrap">
                       <span>{isEn ? 'Access Override:' : 'Override Hak Akses:'}</span>
@@ -1223,7 +1342,7 @@ export default function AdminAccessControl({
                     type="button"
                     onClick={handleSaveUserAccess}
                     disabled={!userDirty || saving}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                    className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer shrink-0 ${
                       userDirty
                         ? 'bg-accent text-white hover:bg-accent/90'
                         : 'bg-surface-sunken text-content-subtle border border-line cursor-not-allowed opacity-60'
@@ -1234,8 +1353,256 @@ export default function AdminAccessControl({
                   </button>
                 </div>
 
-                {/* Matrix Table */}
-                <div className="relative overflow-auto max-h-[calc(100vh-320px)] min-h-[350px] rounded-2xl border border-line bg-surface shadow-xs">
+                {/* Resource Category Filter Chips & Quick Search */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    {/* Filter Chips */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setUserResCategory('all')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          userResCategory === 'all'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'bg-surface border border-line text-content-muted hover:text-content'
+                        }`}
+                      >
+                        {isEn ? 'All' : 'Semua'} ({userResourceCounts.all})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserResCategory('overrides')}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          userResCategory === 'overrides'
+                            ? 'bg-amber-500 text-black shadow-xs font-extrabold'
+                            : 'bg-surface border border-line text-content-muted hover:text-content'
+                        }`}
+                      >
+                        {userResourceCounts.overrides > 0 && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        )}
+                        <span>{isEn ? 'Overrides' : 'Override'} ({userResourceCounts.overrides})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserResCategory('sap')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          userResCategory === 'sap'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'bg-surface border border-line text-content-muted hover:text-content'
+                        }`}
+                      >
+                        SAP ERP ({userResourceCounts.sap})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserResCategory('sql')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          userResCategory === 'sql'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'bg-surface border border-line text-content-muted hover:text-content'
+                        }`}
+                      >
+                        SQL ({userResourceCounts.sql})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUserResCategory('service')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          userResCategory === 'service'
+                            ? 'bg-accent text-white shadow-xs'
+                            : 'bg-surface border border-line text-content-muted hover:text-content'
+                        }`}
+                      >
+                        Services ({userResourceCounts.service})
+                      </button>
+                    </div>
+
+                    {/* Quick Search Resource Input */}
+                    <div className="relative w-full sm:w-56 shrink-0">
+                      <Search className="w-3.5 h-3.5 text-content-subtle absolute left-2.5 top-2.5" />
+                      <input
+                        type="text"
+                        value={userResSearch}
+                        onChange={(e) => setUserResSearch(e.target.value)}
+                        placeholder={isEn ? 'Filter resource / SID...' : 'Cari resource / SID...'}
+                        className="w-full pl-7 pr-7 py-1.5 text-xs rounded-xl bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
+                      />
+                      {userResSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setUserResSearch('')}
+                          className="absolute right-2.5 top-2 text-content-subtle hover:text-content cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile Cards View (visible on mobile screens) */}
+                <div className="md:hidden space-y-3">
+                  {filteredUserResources.length > 0 ? (
+                    filteredUserResources.map((res) => {
+                      const isProd = res.is_production;
+                      const isAllow = res.state === 'allow';
+                      const isDeny = res.state === 'deny';
+                      const isInherit = res.state === 'inherit' || !res.state;
+
+                      return (
+                        <div
+                          key={res.resource_key}
+                          className={`p-3.5 rounded-2xl border transition-all space-y-3 shadow-xs ${
+                            isAllow
+                              ? 'bg-emerald-500/5 border-emerald-500/35'
+                              : isDeny
+                              ? 'bg-rose-500/5 border-rose-500/35'
+                              : 'bg-surface border-line'
+                          }`}
+                        >
+                          {/* Resource Header */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <h4 className="font-bold text-xs text-content">{res.label || res.resource_key}</h4>
+                                {isProd && (
+                                  <span className="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-danger/20 text-danger border border-danger/40 leading-none">
+                                    PRD
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-content-subtle font-mono mt-0.5 truncate">
+                                {res.resource_key} {res.sid ? `(${res.sid})` : ''}
+                              </p>
+                            </div>
+
+                            {/* Status badge */}
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase shrink-0 ${
+                                isAllow
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : isDeny
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                                  : 'bg-surface-sunken text-content-muted border border-line'
+                              }`}
+                            >
+                              {isAllow
+                                ? (isEn ? 'Override: Allow' : 'Override: Izinkan')
+                                : isDeny
+                                ? (isEn ? 'Override: Deny' : 'Override: Blokir')
+                                : (isEn ? 'Role Template' : 'Template Peran')}
+                            </span>
+                          </div>
+
+                          {/* Tri-state buttons (Full-width 3 columns) */}
+                          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-surface-sunken border border-line text-xs font-bold text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleUserStateChange(res.resource_key, 'inherit')}
+                              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                isInherit
+                                  ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
+                                  : 'text-content-subtle hover:text-content'
+                              }`}
+                              title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
+                            >
+                              <Shield className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{t('access.stateInherit')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUserStateChange(res.resource_key, 'allow')}
+                              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                isAllow
+                                  ? 'bg-emerald-500 text-white shadow-xs font-extrabold'
+                                  : 'text-content-subtle hover:text-emerald-400'
+                              }`}
+                            >
+                              <Check className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{t('access.stateAllow')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUserStateChange(res.resource_key, 'deny')}
+                              className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                isDeny
+                                  ? 'bg-danger text-white shadow-xs font-extrabold'
+                                  : 'text-content-subtle hover:text-danger'
+                              }`}
+                            >
+                              <X className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{t('access.stateDeny')}</span>
+                            </button>
+                          </div>
+
+                          {/* Controls Row: Write Access & Expiry Date */}
+                          {!isDeny ? (
+                            <div className="flex flex-col xs:flex-row items-stretch xs:items-center justify-between gap-2 pt-2.5 border-t border-line/60">
+                              <button
+                                type="button"
+                                onClick={() => handleUserWriteToggle(res.resource_key)}
+                                className={`flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                  res.can_write
+                                    ? isProd
+                                      ? 'bg-danger/25 text-danger border-danger/50 font-black'
+                                      : 'bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-xs'
+                                    : 'bg-surface-sunken text-content-subtle border-line hover:text-content'
+                                }`}
+                              >
+                                <PenTool className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  {res.can_write
+                                    ? (isEn ? 'Write Access: ON' : 'Hak Tulis: ON')
+                                    : (isEn ? 'Write Access: OFF' : 'Hak Tulis: OFF')}
+                                </span>
+                              </button>
+
+                              <div className="flex-1 flex items-center justify-end gap-1.5">
+                                <span className="text-[10px] text-content-subtle whitespace-nowrap shrink-0">
+                                  {isEn ? 'Valid Until:' : 'Berlaku:'}
+                                </span>
+                                <input
+                                  type="date"
+                                  value={res.valid_until ? res.valid_until.slice(0, 10) : ''}
+                                  onChange={(e) => handleUserExpiryChange(res.resource_key, e.target.value)}
+                                  className="w-full text-xs px-2.5 py-1.5 rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="pt-2 border-t border-line/40 text-center text-[11px] text-rose-400 font-medium">
+                              {isEn ? 'Access explicitly denied for this user' : 'Akses diblokir khusus untuk pengguna ini'}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-8 text-center rounded-2xl border border-line bg-surface-sunken/40">
+                      <p className="text-xs text-content-muted">
+                        {isEn ? 'No resources match your filter.' : 'Tidak ada resource yang cocok dengan filter.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserResCategory('all');
+                          setUserResSearch('');
+                        }}
+                        className="mt-2 text-xs text-accent font-bold hover:underline cursor-pointer"
+                      >
+                        {isEn ? 'Reset Filter' : 'Reset Filter'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Desktop Matrix Table (visible on md: and up) */}
+                <div className="hidden md:block relative overflow-auto max-h-[calc(100vh-320px)] min-h-[350px] rounded-2xl border border-line bg-surface shadow-xs">
                   <table className="w-full text-left border-separate border-spacing-0 text-xs min-w-[700px]">
                     <thead className="sticky top-0 z-20 shadow-xs">
                       <tr className="bg-surface-sunken text-content-subtle text-[11px] font-bold uppercase tracking-wider">
@@ -1254,7 +1621,7 @@ export default function AdminAccessControl({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/60">
-                      {userResources.map((res) => {
+                      {filteredUserResources.map((res) => {
                         const isProd = res.is_production;
                         return (
                           <tr key={res.resource_key} className="hover:bg-surface-hover/50 transition-colors group">
@@ -1270,83 +1637,114 @@ export default function AdminAccessControl({
                               <span className="text-[10px] text-content-subtle font-mono">{res.resource_key}</span>
                             </td>
 
-                              {/* Tri-state buttons */}
-                              <td className="py-3 px-3">
-                                <div className="inline-flex rounded-xl p-0.5 bg-surface-sunken border border-line text-[10px] font-bold">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUserStateChange(res.resource_key, 'inherit')}
-                                    className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
-                                      res.state === 'inherit'
-                                        ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
-                                        : 'text-content-subtle hover:text-content'
-                                    }`}
-                                    title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
-                                  >
-                                    {t('access.stateInherit')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUserStateChange(res.resource_key, 'allow')}
-                                    className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
-                                      res.state === 'allow'
-                                        ? 'bg-emerald-500 text-white shadow-xs font-extrabold'
-                                        : 'text-content-subtle hover:text-emerald-400'
-                                    }`}
-                                  >
-                                    {t('access.stateAllow')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUserStateChange(res.resource_key, 'deny')}
-                                    className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
-                                      res.state === 'deny'
-                                        ? 'bg-danger text-white shadow-xs font-extrabold'
-                                        : 'text-content-subtle hover:text-danger'
-                                    }`}
-                                  >
-                                    {t('access.stateDeny')}
-                                  </button>
-                                </div>
-                              </td>
-
-                              {/* Can Write Toggle */}
-                              <td className="py-3 px-3 text-center">
+                            {/* Tri-state buttons */}
+                            <td className="py-3 px-3">
+                              <div className="inline-flex rounded-xl p-0.5 bg-surface-sunken border border-line text-[10px] font-bold">
                                 <button
                                   type="button"
-                                  onClick={() => handleUserWriteToggle(res.resource_key)}
-                                  disabled={res.state === 'deny'}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                                    res.can_write
-                                      ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-xs'
-                                      : 'bg-surface-sunken text-content-subtle border-line hover:text-content'
+                                  onClick={() => handleUserStateChange(res.resource_key, 'inherit')}
+                                  className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                    res.state === 'inherit'
+                                      ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
+                                      : 'text-content-subtle hover:text-content'
+                                  }`}
+                                  title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
+                                >
+                                  {t('access.stateInherit')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUserStateChange(res.resource_key, 'allow')}
+                                  className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                    res.state === 'allow'
+                                      ? 'bg-emerald-500 text-white shadow-xs font-extrabold'
+                                      : 'text-content-subtle hover:text-emerald-400'
                                   }`}
                                 >
-                                  <PenTool className="w-3 h-3" />
-                                  <span>
-                                    {res.can_write
-                                      ? (isEn ? 'Write Active' : 'Write Aktif')
-                                      : (isEn ? 'Inactive' : 'Nonaktif')}
-                                  </span>
+                                  {t('access.stateAllow')}
                                 </button>
-                              </td>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUserStateChange(res.resource_key, 'deny')}
+                                  className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                    res.state === 'deny'
+                                      ? 'bg-danger text-white shadow-xs font-extrabold'
+                                      : 'text-content-subtle hover:text-danger'
+                                  }`}
+                                >
+                                  {t('access.stateDeny')}
+                                </button>
+                              </div>
+                            </td>
 
-                              {/* Valid Until Input */}
-                              <td className="py-3 px-3">
-                                <input
-                                  type="date"
-                                  value={res.valid_until ? res.valid_until.slice(0, 10) : ''}
-                                  onChange={(e) => handleUserExpiryChange(res.resource_key, e.target.value)}
-                                  className="text-xs px-2.5 py-1.5 rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none"
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                            {/* Can Write Toggle */}
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleUserWriteToggle(res.resource_key)}
+                                disabled={res.state === 'deny'}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                                  res.can_write
+                                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/40 shadow-xs'
+                                    : 'bg-surface-sunken text-content-subtle border-line hover:text-content'
+                                }`}
+                              >
+                                <PenTool className="w-3.5 h-3.5" />
+                                <span>
+                                  {res.can_write
+                                    ? (isEn ? 'Write Active' : 'Write Aktif')
+                                    : (isEn ? 'Inactive' : 'Nonaktif')}
+                                </span>
+                              </button>
+                            </td>
+
+                            {/* Valid Until Input */}
+                            <td className="py-3 px-3">
+                              <input
+                                type="date"
+                                value={res.valid_until ? res.valid_until.slice(0, 10) : ''}
+                                onChange={(e) => handleUserExpiryChange(res.resource_key, e.target.value)}
+                                className="text-xs px-2.5 py-1.5 rounded-xl bg-surface-sunken border border-line text-content focus:border-accent focus:outline-none"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
+
+                {/* Floating Bottom Save Bar on Mobile */}
+                {userDirty && (
+                  <div className="md:hidden fixed bottom-4 left-4 right-4 z-40 flex items-center justify-between gap-2 p-3 rounded-2xl bg-surface/95 border border-accent/40 shadow-2xl backdrop-blur-md animate-in slide-in-from-bottom-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                      <span className="text-xs font-bold text-content truncate">
+                        {isEn ? 'Unsaved Override Changes' : 'Perubahan Belum Disimpan'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => loadUserAccess(selectedUser)}
+                        disabled={saving}
+                        className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content-subtle hover:text-content border border-line cursor-pointer transition-all"
+                      >
+                        {isEn ? 'Cancel' : 'Batal'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveUserAccess}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-accent text-white hover:bg-accent/90 shadow-md cursor-pointer transition-all"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{saving ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save' : 'Simpan')}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="flex flex-col items-center justify-center p-16 text-center rounded-2xl border border-line bg-surface-sunken/40">
                 <div className="p-3 rounded-2xl bg-surface border border-line text-content-subtle mb-3">
@@ -1666,7 +2064,7 @@ export default function AdminAccessControl({
     const isProd = res.is_production;
     return (
       <tr key={res.resource_key} className="hover:bg-surface-hover/60 transition-colors group">
-        <td className="sticky left-0 z-10 py-3 px-4 w-[340px] min-w-[320px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
+        <td className="sticky left-0 z-10 py-3 px-4 w-[260px] min-w-[240px] md:w-[340px] md:min-w-[320px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
           <div className="flex items-center gap-2">
             <span className="font-bold text-xs text-content whitespace-nowrap">{res.label || res.resource_key}</span>
             {isProd && (

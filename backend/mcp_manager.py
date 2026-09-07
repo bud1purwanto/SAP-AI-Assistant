@@ -919,9 +919,10 @@ class MCPManager:
             # Custom Dynamic MCP Servers Tools
             try:
                 from database import list_mcp_servers
-                custom_servers = [s for s in list_mcp_servers(enabled_only=True) if s["id"] not in ("sap", "rag", "sql")]
+                custom_servers = [s for s in list_mcp_servers(enabled_only=True) if s["id"] not in ("sap", "rag", "sql", "email")]
                 for cs in custom_servers:
                     cs_id = cs["id"]
+                    cs_name = cs.get("name") or cs_id
                     if allowed_connectors is not None and cs_id not in allowed_connectors:
                         continue
                     if server_filter not in ("all", cs_id) and not server_filter.startswith(f"{cs_id}:"):
@@ -930,7 +931,7 @@ class MCPManager:
                         cs_client = self.get_client(cs_id)
                         cs_tools = await cs_client.list_tools(http_client)
                         for t in cs_tools:
-                            tools.append({"server": cs_id, "tool": t})
+                            tools.append({"server": cs_id, "server_name": cs_name, "tool": t})
                     except Exception as e:
                         logger.warning(f"Error fetching tools from custom MCP '{cs_id}': {e}")
             except Exception as ex:

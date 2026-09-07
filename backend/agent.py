@@ -868,6 +868,27 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             tool_inventory.append("layanan MCP SQL Database")
     if has_email:
         tool_inventory.append("layanan MCP Email")
+
+    custom_srv_map = {}
+    for item in all_mcp_tools:
+        srv_id = item["server"]
+        if srv_id not in ("sap", "rag", "sql", "email", "database"):
+            if srv_id not in custom_srv_map:
+                custom_srv_map[srv_id] = item.get("server_name") or srv_id
+
+    for cs_id, cs_name in custom_srv_map.items():
+        tool_inventory.append(f"layanan MCP {cs_name}")
+
+    custom_mcp_guidance = ""
+    if custom_srv_map:
+        srv_lines = []
+        for cs_id, cs_name in custom_srv_map.items():
+            srv_lines.append(f"   -> **{cs_name}** (tool berawalan `{cs_id}__`): Gunakan tool ini jika pengguna meminta data, query, atau tindakan pada sistem {cs_name}.")
+        custom_mcp_guidance = (
+            f"**D. Permintaan ke Layanan Tambahan / Custom Enterprise MCP**\n"
+            f"{chr(10).join(srv_lines)}\n\n"
+        )
+
     inventory_line = " dan ".join(tool_inventory) if tool_inventory else "tidak ada sumber data eksternal"
 
     # SUSUNAN PROMPT DAN CACHING
@@ -963,7 +984,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"   -> Sebutkan nama berkas ketika jawaban Anda bersumber dari lampiran tersebut.\n"
         f"   -> Bila lampiran bertentangan dengan data sistem, sampaikan perbedaannya, jangan "
         f"memilih diam-diam salah satunya.\n\n"
-        f"**D. Permintaan umum di luar data sistem** — menulis, meringkas, menerjemahkan, "
+        f"{custom_mcp_guidance}"
+        f"**Permintaan umum di luar data sistem** — menulis, meringkas, menerjemahkan, "
         f"menghitung, menyusun tabel/laporan, membuat berkas Excel/CSV, menjelaskan konsep, "
         f"membantu kode, brainstorming, atau sekadar menyapa.\n"
         f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool sistem "
@@ -1309,7 +1331,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             
             # Cek apakah LLM mencoba menulis panggilan tool dalam teks alih-alih function call native
             # Pola seperti: sap__read_table({"table": "AUFK"}) atau rag__rag_search({"query": "..."})
-            text_tool_match = re.search(r'(?:call:\s*)?(sap__[a-zA-Z0-9_]+|rag__[a-zA-Z0-9_]+|email__[a-zA-Z0-9_]+)\s*\(\s*({.*?})\s*\)', raw_content, flags=re.DOTALL)
+            text_tool_match = re.search(r'(?:call:\s*)?([a-zA-Z0-9_]+__[a-zA-Z0-9_]+)\s*\(\s*({.*?})\s*\)', raw_content, flags=re.DOTALL)
             if text_tool_match and iteration < max_iterations:
                 t_name = text_tool_match.group(1)
                 t_args_str = text_tool_match.group(2)
@@ -1356,8 +1378,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     if tool_result.is_error:
                         res_str = f"Execution Error: {res_str or tool_result.content}"
                         
+                    source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
                     sources.append(SourceReference(
-                        type=server_name.upper() if server_name in ("sap", "sql", "email", "rag") else "MCP",
+                        type=source_type,
                         name=f"Tool: {actual_tool_name}",
                         content=res_str[:500] if len(res_str) > 500 else res_str
                     ))
@@ -1613,7 +1636,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         )
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
-                source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else "MCP"
+                source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
                 sources.append(SourceReference(
                     type=source_type,
                     name=f"Tool: {mcp_name}",
