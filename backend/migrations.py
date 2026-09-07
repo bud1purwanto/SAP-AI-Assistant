@@ -830,6 +830,34 @@ def _m0018_seed_mcp_email_server(conn):
     """), {"email_url": email_url, "email_token": email_token})
 
 
+def _m0019_scheduled_tasks(conn):
+    """Tabel pemantauan & rekap terjadwal (Scheduled Tasks / Daily Digest)."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.scheduled_tasks (
+            id VARCHAR(64) PRIMARY KEY,
+            user_id VARCHAR(50) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            prompt TEXT NOT NULL,
+            cron_expression VARCHAR(64) NOT NULL DEFAULT 'daily',
+            email_to VARCHAR(255),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            last_run_at TIMESTAMPTZ,
+            last_status VARCHAR(64),
+            last_result TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_user
+        ON ai_assistant.scheduled_tasks(user_id);
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_active
+        ON ai_assistant.scheduled_tasks(is_active);
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -849,6 +877,7 @@ MIGRATIONS = [
     ("0016_force_change_password", _m0016_force_change_password),
     ("0017_dynamic_mcp_servers", _m0017_dynamic_mcp_servers),
     ("0018_seed_mcp_email_server", _m0018_seed_mcp_email_server),
+    ("0019_scheduled_tasks", _m0019_scheduled_tasks),
 ]
 
 

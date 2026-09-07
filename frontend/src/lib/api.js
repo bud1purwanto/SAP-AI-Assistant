@@ -270,6 +270,13 @@ export const api = {
   adminDeleteMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   adminResetMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
   adminTestMcpConnection: (payload) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: payload }),
+
+  // Scheduled Tasks & Monitoring
+  getScheduledTasks: () => apiFetch('/api/scheduled-tasks'),
+  createScheduledTask: (payload) => apiFetch('/api/scheduled-tasks', { method: 'POST', body: payload }),
+  updateScheduledTask: (id, payload) => apiFetch(`/api/scheduled-tasks/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+  deleteScheduledTask: (id) => apiFetch(`/api/scheduled-tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  runScheduledTask: (id) => apiFetch(`/api/scheduled-tasks/${encodeURIComponent(id)}/run`, { method: 'POST' }),
 };
 
 /**

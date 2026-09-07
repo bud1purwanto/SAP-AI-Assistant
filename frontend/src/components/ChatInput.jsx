@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bell,
   BookOpen,
   Download,
   FileSpreadsheet,
@@ -133,6 +134,15 @@ const SLASH_COMMANDS = [
     insertOnly: false,
   },
   {
+    cmd: '/schedule',
+    title: '/schedule',
+    desc: 'Buka jadwal pemantauan otomatis SAP & digest harian',
+    descEn: 'Open automated SAP monitoring & daily digest schedule',
+    icon: Bell,
+    badge: 'Jadwal',
+    insertOnly: false,
+  },
+  {
     cmd: '/clear',
     title: '/clear',
     desc: 'Bersihkan percakapan aktif / mulai sesi baru',
@@ -171,6 +181,7 @@ const ChatInput = ({
   onSelectMode,
   suggestions = null,
   onClearChat,
+  onOpenScheduledTasks,
 }) => {
   const { t, language } = useLanguage();
   const [input, setInput] = useState('');
@@ -199,6 +210,17 @@ const ChatInput = ({
 
   const selectSlashCommand = (item) => {
     if (!item) return;
+    if (item.cmd === '/schedule') {
+      setInput('');
+      setDismissedSlash(false);
+      if (onOpenScheduledTasks) {
+        onOpenScheduledTasks();
+      } else {
+        onSendMessage('/schedule', attachments);
+      }
+      return;
+    }
+
     if (item.cmd === '/clear') {
       setInput('');
       setDismissedSlash(false);

@@ -77,3 +77,19 @@ class ChatResponse(BaseModel):
         default=None,
         description="Sisa kuota token harian pengguna setelah permintaan ini",
     )
+
+
+class ScheduledTaskCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    prompt: str = Field(..., min_length=1)
+    cron_expression: str = Field(default="daily", max_length=64)
+    email_to: Optional[str] = Field(default=None, max_length=255)
+    is_active: bool = Field(default=True)
+
+
+class ScheduledTaskUpdate(BaseModel):
+    title: Optional[str] = None
+    prompt: Optional[str] = None
+    cron_expression: Optional[str] = None
+    email_to: Optional[str] = None
+    is_active: Optional[bool] = None

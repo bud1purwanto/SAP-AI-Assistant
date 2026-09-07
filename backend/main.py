@@ -21,6 +21,7 @@ from auth import (
 )
 from auth import require_superadmin as require_superadmin_token
 from config import settings, _EPHEMERAL_JWT_SECRET
+import database
 from database import (
     add_chat_message,
     attach_uploads_to_session,
@@ -100,7 +101,7 @@ from database import (
 )
 from mcp_manager import mcp_manager
 import access_control
-from models import ChatRequest, ChatResponse, UsageStats
+from models import ChatRequest, ChatResponse, UsageStats, ScheduledTaskCreate, ScheduledTaskUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +145,14 @@ async def lifespan(app: FastAPI):
     # listener ini membuat perubahan role dari satu worker langsung terlihat di
     # worker lain, alih-alih menunggu TTL cache 30 detik.
     role_listener = access_control.start_role_change_listener()
+    from scheduler import run_scheduler_loop
+    scheduler_task = asyncio.create_task(run_scheduler_loop())
     try:
         yield
     finally:
         cleanup.cancel()
         role_listener.cancel()
+        scheduler_task.cancel()
 
 
 app = FastAPI(title="Enterprise SAP Chat Assistant", lifespan=lifespan)
@@ -2205,6 +2209,82 @@ async def download_artifact(artifact_id: str, user: dict = Depends(get_current_u
         media_type=item["content_type"],
         headers={"Content-Disposition": f'attachment; filename="{item["filename"]}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Scheduled Tasks Endpoints (Peringatan & Rekap Terjadwal)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/scheduled-tasks")
+async def get_scheduled_tasks_endpoint(user: dict = Depends(get_current_user)):
+    """Mengambil daftar tugas pemantauan terjadwal milik user."""
+    username = user.get("username")
+    roles = user.get("roles") or [user.get("role", "")]
+    is_admin = "admin" in roles or user.get("role") == "admin"
+    tasks = database.list_scheduled_tasks(user_id=None if is_admin else username)
+    return {"tasks": tasks}
+
+
+@app.post("/api/scheduled-tasks")
+async def create_scheduled_task_endpoint(req: ScheduledTaskCreate, user: dict = Depends(get_current_user)):
+    """Membuat tugas pemantauan baru."""
+    username = user.get("username")
+    task = database.create_scheduled_task(
+        user_id=username,
+        title=req.title,
+        prompt=req.prompt,
+        cron_expression=req.cron_expression,
+        email_to=req.email_to,
+        is_active=req.is_active,
+    )
+    return {"task": task}
+
+
+@app.put("/api/scheduled-tasks/{task_id}")
+async def update_scheduled_task_endpoint(task_id: str, req: ScheduledTaskUpdate, user: dict = Depends(get_current_user)):
+    """Memperbarui konfigurasi tugas pemantauan."""
+    task = database.get_scheduled_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tugas terjadwal tidak ditemukan")
+    username = user.get("username")
+    roles = user.get("roles") or [user.get("role", "")]
+    if task["user_id"] != username and "admin" not in roles:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = database.update_scheduled_task(task_id, **fields)
+    return {"task": updated}
+
+
+@app.delete("/api/scheduled-tasks/{task_id}")
+async def delete_scheduled_task_endpoint(task_id: str, user: dict = Depends(get_current_user)):
+    """Menghapus tugas pemantauan terjadwal."""
+    task = database.get_scheduled_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tugas terjadwal tidak ditemukan")
+    username = user.get("username")
+    roles = user.get("roles") or [user.get("role", "")]
+    if task["user_id"] != username and "admin" not in roles:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    success = database.delete_scheduled_task(task_id)
+    return {"success": success}
+
+
+@app.post("/api/scheduled-tasks/{task_id}/run")
+async def run_scheduled_task_endpoint(task_id: str, user: dict = Depends(get_current_user)):
+    """Menjalankan tugas pemantauan segera di latar belakang secara on-demand."""
+    task = database.get_scheduled_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tugas terjadwal tidak ditemukan")
+    username = user.get("username")
+    roles = user.get("roles") or [user.get("role", "")]
+    if task["user_id"] != username and "admin" not in roles:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    from scheduler import execute_task
+    asyncio.create_task(execute_task(task))
+    return {"message": "Pemantauan sedang dijalankan di latar belakang"}
 
 
 if __name__ == "__main__":

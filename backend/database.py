@@ -3734,3 +3734,169 @@ def delete_user_sap_credential(username: str, target: str) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Scheduled Tasks / Monitoring & Daily Digest
+# ---------------------------------------------------------------------------
+
+def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list[dict]:
+    """Mengambil daftar tugas pemantauan terjadwal."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        query = """
+            SELECT id, user_id, title, prompt, cron_expression, email_to,
+                   is_active, last_run_at, last_status, last_result,
+                   created_at, updated_at
+            FROM ai_assistant.scheduled_tasks
+            WHERE 1=1
+        """
+        params = {}
+        if user_id:
+            query += " AND user_id = :u"
+            params["u"] = user_id
+        if only_active:
+            query += " AND is_active = TRUE"
+        query += " ORDER BY created_at DESC"
+        
+        rows = conn.execute(text(query), params).fetchall()
+        return [
+            {
+                "id": r[0],
+                "user_id": r[1],
+                "title": r[2],
+                "prompt": r[3],
+                "cron_expression": r[4],
+                "email_to": r[5],
+                "is_active": bool(r[6]),
+                "last_run_at": _iso(r[7]),
+                "last_status": r[8],
+                "last_result": r[9],
+                "created_at": _iso(r[10]),
+                "updated_at": _iso(r[11]),
+            }
+            for r in rows
+        ]
+
+
+def get_scheduled_task(task_id: str) -> dict | None:
+    """Mengambil satu tugas terjadwal berdasarkan ID."""
+    if not task_id:
+        return None
+    engine = get_engine()
+    with engine.connect() as conn:
+        r = conn.execute(text("""
+            SELECT id, user_id, title, prompt, cron_expression, email_to,
+                   is_active, last_run_at, last_status, last_result,
+                   created_at, updated_at
+            FROM ai_assistant.scheduled_tasks
+            WHERE id = :tid
+        """), {"tid": task_id}).fetchone()
+        if not r:
+            return None
+        return {
+            "id": r[0],
+            "user_id": r[1],
+            "title": r[2],
+            "prompt": r[3],
+            "cron_expression": r[4],
+            "email_to": r[5],
+            "is_active": bool(r[6]),
+            "last_run_at": _iso(r[7]),
+            "last_status": r[8],
+            "last_result": r[9],
+            "created_at": _iso(r[10]),
+            "updated_at": _iso(r[11]),
+        }
+
+
+def create_scheduled_task(
+    user_id: str,
+    title: str,
+    prompt: str,
+    cron_expression: str = "daily",
+    email_to: str = None,
+    is_active: bool = True
+) -> dict:
+    """Membuat tugas pemantauan baru."""
+    import uuid
+    task_id = f"task_{uuid.uuid4().hex[:12]}"
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.scheduled_tasks (
+                id, user_id, title, prompt, cron_expression, email_to, is_active
+            ) VALUES (
+                :id, :user_id, :title, :prompt, :cron, :email_to, :is_active
+            )
+        """), {
+            "id": task_id,
+            "user_id": user_id,
+            "title": title.strip(),
+            "prompt": prompt.strip(),
+            "cron": cron_expression.strip(),
+            "email_to": email_to.strip() if email_to else None,
+            "is_active": is_active,
+        })
+        conn.commit()
+    return get_scheduled_task(task_id)
+
+
+def update_scheduled_task(task_id: str, **kwargs) -> dict | None:
+    """Memperbarui atribut tugas pemantauan terjadwal."""
+    task = get_scheduled_task(task_id)
+    if not task:
+        return None
+    allowed = {"title", "prompt", "cron_expression", "email_to", "is_active"}
+    updates = []
+    params = {"tid": task_id}
+    for k, v in kwargs.items():
+        if k in allowed:
+            updates.append(f"{k} = :{k}")
+            params[k] = v
+    if not updates:
+        return task
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text(f"""
+            UPDATE ai_assistant.scheduled_tasks
+            SET {', '.join(updates)}
+            WHERE id = :tid
+        """), params)
+        conn.commit()
+    return get_scheduled_task(task_id)
+
+
+def record_task_run(task_id: str, status: str, result: str = None):
+    """Mencatat riwayat eksekusi terakhir pemantauan."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE ai_assistant.scheduled_tasks
+            SET last_run_at = CURRENT_TIMESTAMP,
+                last_status = :status,
+                last_result = :result,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :tid
+        """), {
+            "tid": task_id,
+            "status": status[:64],
+            "result": result[:2000] if result else None,
+        })
+        conn.commit()
+
+
+def delete_scheduled_task(task_id: str) -> bool:
+    """Menghapus pemantauan terjadwal."""
+    if not task_id:
+        return False
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            DELETE FROM ai_assistant.scheduled_tasks
+            WHERE id = :tid
+        """), {"tid": task_id})
+        conn.commit()
+    return True
+
+
+

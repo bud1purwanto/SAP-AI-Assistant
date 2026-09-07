@@ -3,7 +3,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { BookOpen, Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Mail, Pencil, RefreshCw, Server, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, X } from 'lucide-react';
+import { BarChart3, BookOpen, Check, ChevronDown, ChevronUp, Columns2, Copy, Database, Download, FileSpreadsheet, FileText, FileType, Image as ImageIcon, Info, Mail, Pause, Pencil, Play, RefreshCw, Server, Sparkles, Terminal, ThumbsDown, ThumbsUp, User, Volume2, VolumeX, X } from 'lucide-react';
+import ActionCard from './ActionCard';
+import DataChart, { parseNumericValue } from './DataChart';
 import { api, fetchArtifactBlob, fetchAttachmentBlob } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
 import { useLanguage } from '../hooks/useLanguage';
@@ -261,6 +263,8 @@ const ScrollableTable = ({ children }) => {
   const { t } = useLanguage();
   const scrollRef = useRef(null);
   const [overflows, setOverflows] = useState(false);
+  const [tableData, setTableData] = useState(null);
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'chart'
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -275,21 +279,119 @@ const ScrollableTable = ({ children }) => {
     return () => observer.disconnect();
   }, []);
 
+  // Ekstrak data tabel dari DOM untuk opsi Visualisasi & CSV
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const table = el.querySelector('table');
+    if (!table) return;
+
+    const headers = Array.from(table.querySelectorAll('th')).map((th) => th.textContent.trim());
+    const rowElements = Array.from(table.querySelectorAll('tbody tr'));
+    const rows = rowElements.map((tr) =>
+      Array.from(tr.querySelectorAll('td')).map((td) => td.textContent.trim())
+    );
+
+    if (headers.length > 0 && rows.length >= 2) {
+      let hasNumeric = false;
+      for (let c = 0; c < headers.length; c++) {
+        let numCount = 0;
+        for (const r of rows) {
+          if (parseNumericValue(r[c]) !== null) numCount++;
+        }
+        if (numCount >= 2) {
+          hasNumeric = true;
+          break;
+        }
+      }
+      if (hasNumeric) {
+        setTableData({ headers, rows });
+      }
+    }
+  }, [children]);
+
+  const handleDownloadCsv = () => {
+    if (!tableData) return;
+    const csvContent = [
+      tableData.headers.map((h) => `"${String(h).replace(/"/g, '""')}"`).join(','),
+      ...tableData.rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tabel-data-${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="my-3.5 w-full max-w-full">
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto overscroll-x-contain rounded-2xl border border-line bg-surface-raised shadow-xs [scrollbar-width:thin]"
-      >
-        <table className="w-max min-w-full text-left text-xs border-collapse">
-          {children}
-        </table>
-      </div>
-      {overflows && (
-        <p className="mt-1.5 text-[11px] text-content-subtle flex items-center gap-1.5 px-1 select-none">
-          <span className="text-accent font-bold">⇄</span>
-          <span>{t('chat.scrollTableHint')}</span>
-        </p>
+      {tableData && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 p-0.5 rounded-xl bg-surface-sunken border border-line text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-surface-raised text-content font-semibold shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>{t('chart.table')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('chart')}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                viewMode === 'chart'
+                  ? 'bg-surface-raised text-accent font-semibold shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>{t('chart.chart')}</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDownloadCsv}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-content-muted hover:text-content bg-surface-sunken hover:bg-surface-hover border border-line rounded-xl transition-colors cursor-pointer"
+            title={t('chart.downloadCsv')}
+            aria-label={t('chart.downloadCsv')}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{t('chart.downloadCsv')}</span>
+          </button>
+        </div>
+      )}
+
+      {viewMode === 'chart' && tableData ? (
+        <DataChart headers={tableData.headers} rows={tableData.rows} />
+      ) : (
+        <>
+          <div
+            ref={scrollRef}
+            className="overflow-x-auto overscroll-x-contain rounded-2xl border border-line bg-surface-raised shadow-xs [scrollbar-width:thin]"
+          >
+            <table className="w-max min-w-full text-left text-xs border-collapse">
+              {children}
+            </table>
+          </div>
+          {overflows && (
+            <p className="mt-1.5 text-[11px] text-content-subtle flex items-center gap-1.5 px-1 select-none">
+              <span className="text-accent font-bold">⇄</span>
+              <span>{t('chat.scrollTableHint')}</span>
+            </p>
+          )}
+        </>
       )}
     </div>
   );
@@ -300,8 +402,10 @@ const ChatMessage = ({
   onBukaPanel,
   onEditMessage,
   onRegenerate,
+  onSendMessage,
   isStreaming = false,
   isRegenerating = false,
+  tts,
 }) => {
   const { t, language } = useLanguage();
   const [copied, setCopied] = useState(false);
@@ -365,15 +469,37 @@ const ChatMessage = ({
 
   const markdownComponents = useMemo(() => ({
     code({ node, className, children, ...props }) {
-      const match = /language-(\w+)/.exec(className || '');
+      const match = /language-([\w:-]+)/.exec(className || '');
       const codeString = String(children).replace(/\n$/, '');
+      const lang = (match ? match[1] : '').toLowerCase();
+
+      // Human-in-the-Loop Action Card
+      if (lang === 'action-card' || lang === 'action_card' || lang === 'actioncard' || lang === 'json:action-card') {
+        try {
+          const actionData = JSON.parse(codeString);
+          return <ActionCard action={actionData} onAction={onSendMessage} messageId={message.id} />;
+        } catch {
+          // Abaikan kesalahan parse JSON dan tampilkan sebagai kode biasa
+        }
+      }
+
+      // Auto BI Data Chart
+      if (lang === 'chart' || lang === 'datachart' || lang === 'json:chart') {
+        try {
+          const chartData = JSON.parse(codeString);
+          return <DataChart headers={chartData.headers} rows={chartData.rows} title={chartData.title} />;
+        } catch {
+          // Abaikan kesalahan parse JSON dan tampilkan sebagai kode biasa
+        }
+      }
+
       // react-markdown v10 tidak lagi mengirim prop `inline`, jadi keputusan
       // memakai aturan asli dari commit 3fb954d: potongan kode pendek satu baris
       // tampil sebagai badge inline, sisanya baru jadi panel Source Code.
       const isMultiLine = codeString.includes('\n');
       const isBlock = isMultiLine || codeString.length > 60;
 
-      if (match && match[1] === 'mermaid') {
+      if (lang === 'mermaid') {
         return <MermaidDiagram chart={codeString} isStreaming={isStreaming} />;
       }
 
@@ -608,6 +734,50 @@ const ChatMessage = ({
             )}
             
             <div className="flex items-center gap-1 bg-surface-sunken p-0.5 rounded-xl border border-line">
+              {tts && tts.isSupported && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => tts.speak(message.content, message.id || `msg-${message.timestamp || ''}`)}
+                    className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                      tts.activeMessageId === (message.id || `msg-${message.timestamp || ''}`) && tts.isSpeaking
+                        ? 'text-accent bg-surface-raised shadow-xs'
+                        : 'text-content-muted hover:text-content hover:bg-surface-raised'
+                    }`}
+                    title={
+                      tts.activeMessageId === (message.id || `msg-${message.timestamp || ''}`) && tts.isSpeaking
+                        ? (tts.isPaused ? t('chat.ttsResume') : t('chat.ttsPause'))
+                        : t('chat.ttsListen')
+                    }
+                    aria-label={
+                      tts.activeMessageId === (message.id || `msg-${message.timestamp || ''}`) && tts.isSpeaking
+                        ? (tts.isPaused ? t('chat.ttsResume') : t('chat.ttsPause'))
+                        : t('chat.ttsListen')
+                    }
+                  >
+                    {tts.activeMessageId === (message.id || `msg-${message.timestamp || ''}`) && tts.isSpeaking ? (
+                      tts.isPaused ? (
+                        <Play className="w-3.5 h-3.5 text-accent" />
+                      ) : (
+                        <Volume2 className="w-3.5 h-3.5 text-accent animate-pulse" />
+                      )
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                  {tts.activeMessageId === (message.id || `msg-${message.timestamp || ''}`) && tts.isSpeaking && (
+                    <button
+                      type="button"
+                      onClick={tts.stop}
+                      className="p-1.5 rounded-lg text-content-muted hover:text-rose-500 hover:bg-surface-raised transition-all cursor-pointer"
+                      title={t('chat.ttsStop')}
+                      aria-label={t('chat.ttsStop')}
+                    >
+                      <VolumeX className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>
+              )}
               {onRegenerate && (
                 <button
                   type="button"

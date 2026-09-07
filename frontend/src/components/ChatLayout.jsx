@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, BookOpen, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -10,6 +10,7 @@ import ConfirmModal from './ConfirmModal';
 import ForceChangePasswordModal from './ForceChangePasswordModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
+import ScheduledTasksModal from './ScheduledTasksModal';
 import QuotaBanner, { QuotaChip } from './QuotaBanner';
 import SidePanel from './SidePanel';
 import ThinkingIndicator from './ThinkingIndicator';
@@ -17,6 +18,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
 import { useTypewriterStream } from '../hooks/useTypewriterStream';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, getToken, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
@@ -155,6 +157,7 @@ const ChatLayout = () => {
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -190,6 +193,26 @@ const ChatLayout = () => {
       document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isServerDropdownOpen]);
+
+  // State dan ref untuk user dropup menu di footer sidebar
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutsideUserMenu = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutsideUserMenu);
+      document.addEventListener('touchstart', handleClickOutsideUserMenu);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideUserMenu);
+      document.removeEventListener('touchstart', handleClickOutsideUserMenu);
+    };
+  }, [isUserMenuOpen]);
 
   // Touch gesture listener untuk swipe buka/tutup sidebar di HP (mobile)
   useEffect(() => {
@@ -263,6 +286,13 @@ const ChatLayout = () => {
   const currentStream = sessionStreamMap[activeSessionKey] || '';
   const currentProgress = sessionProgressMap[activeSessionKey] || null;
   const currentSessionError = sessionErrorMap[activeSessionKey] || null;
+
+  // Text-to-Speech (TTS) untuk mendengarkan jawaban asisten
+  const tts = useTextToSpeech({ language });
+
+  useEffect(() => {
+    tts.stop();
+  }, [activeSessionKey]);
 
   // Identitas fungsi ini dijaga tetap sama: ia mengalir sampai ke peta
   // komponen markdown, dan perubahan identitasnya akan memicu render ulang
@@ -1477,41 +1507,120 @@ const ChatLayout = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-0.5 shrink-0">
+            {/* 1 Tombol Ringkas & Cantik Dropup Trigger */}
+            <div className="relative shrink-0" ref={userMenuRef}>
               <button
-                onClick={cycleTheme}
-                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-hover/80 transition-colors cursor-pointer"
-                aria-label={t('nav.theme')}
-                title={t('nav.theme')}
+                type="button"
+                onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                className={`w-8 h-8 rounded-xl border transition-all cursor-pointer flex items-center justify-center ${
+                  isUserMenuOpen
+                    ? 'bg-accent/15 border-accent/30 text-accent shadow-xs'
+                    : 'border-transparent text-content-subtle hover:text-content hover:bg-surface-hover/80 hover:border-line/60'
+                }`}
+                aria-label="Opsi Pengguna"
+                aria-haspopup="true"
+                aria-expanded={isUserMenuOpen}
+                title="Opsi & Pengaturan Akun"
               >
-                <ThemeIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                <MoreVertical className="w-4 h-4" aria-hidden="true" />
               </button>
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-1.5 text-content-subtle hover:text-content rounded-lg hover:bg-surface-hover/80 transition-colors cursor-pointer"
-                aria-label={t('nav.settings')}
-                title={t('nav.settings')}
-              >
-                <Settings className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              {isGuest ? (
-                <button
-                  onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-                  className="p-1.5 bg-accent text-accent-fg rounded-lg hover:brightness-110 transition-all shadow-xs cursor-pointer"
-                  aria-label={t('sidebar.loginPrompt')}
-                  title={t('sidebar.loginPrompt')}
+
+              {/* Dropdown Ke Atas (Dropup Menu) */}
+              {isUserMenuOpen && (
+                <div
+                  className="absolute bottom-full right-0 mb-2.5 w-60 rounded-2xl bg-surface-raised border border-line shadow-2xl py-1.5 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 backdrop-blur-xl"
+                  role="menu"
                 >
-                  <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
-                </button>
-              ) : (
-                <button
-                  onClick={() => setConfirmLogoutOpen(true)}
-                  className="p-1.5 text-content-subtle hover:text-danger rounded-lg hover:bg-danger-soft transition-colors cursor-pointer"
-                  aria-label={t('sidebar.logout')}
-                  title={t('sidebar.logout')}
-                >
-                  <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-                </button>
+                  {/* Header Profil Singkat */}
+                  <div className="px-3 py-2 border-b border-line/60 mb-1">
+                    <div className="text-xs font-semibold text-content truncate">
+                      {user.full_name || user.username}
+                    </div>
+                    <div className="text-[11px] text-content-muted font-mono truncate mt-0.5">
+                      @{user.username}
+                    </div>
+                  </div>
+
+                  {/* Pengaturan Sistem */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      setIsSettingsOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                    role="menuitem"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                    <span>{t('nav.settings')}</span>
+                  </button>
+
+                  {/* Peringatan & Tugas Terjadwal (Monitoring) */}
+                  {!isGuest && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setIsScheduledTasksOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <Bell className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                      <span>{t('scheduled.title')}</span>
+                    </button>
+                  )}
+
+                  {/* Ganti Tema Tampilan */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      cycleTheme();
+                    }}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
+                    role="menuitem"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ThemeIcon className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                      <span className="truncate">{t('nav.theme')}</span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted capitalize shrink-0 font-medium font-mono">
+                      {theme}
+                    </span>
+                  </button>
+
+                  <div className="my-1 border-t border-line/60" />
+
+                  {/* Masuk / Keluar */}
+                  {isGuest ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setCustomLoginMsg('');
+                        setIsLoginModalOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-accent hover:bg-accent-soft transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{t('sidebar.loginPrompt')}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsUserMenuOpen(false);
+                        setConfirmLogoutOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-danger hover:bg-danger-soft transition-colors cursor-pointer text-left"
+                      role="menuitem"
+                    >
+                      <LogOut className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{t('sidebar.logout')}</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1913,7 +2022,9 @@ const ChatLayout = () => {
               <ChatMessage
                 key={msg.id || `msg-${index}`}
                 message={msg}
+                tts={tts}
                 onBukaPanel={bukaPanel}
+                onSendMessage={handleSendMessage}
                 onRegenerate={
                   !isCurrentLoading &&
                   msg.role === 'assistant' &&
@@ -1937,6 +2048,7 @@ const ChatLayout = () => {
               <ChatMessage
                 message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
                 isStreaming
+                tts={tts}
               />
             )}
 
@@ -2085,6 +2197,7 @@ const ChatLayout = () => {
           selectedMode={selectedMode}
           suggestions={dynamicSuggestions}
           onClearChat={createNewSession}
+          onOpenScheduledTasks={() => setIsScheduledTasksOpen(true)}
           onSelectMode={(modeCode) => {
             setSelectedMode(modeCode);
             try {
@@ -2108,6 +2221,11 @@ const ChatLayout = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         user={user}
+      />
+
+      <ScheduledTasksModal
+        isOpen={isScheduledTasksOpen}
+        onClose={() => setIsScheduledTasksOpen(false)}
       />
 
       <AdminDashboard

@@ -1251,7 +1251,39 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"   - Bila pengguna meminta membuat dokumen/data transaksi baru (misal PO, SO, Material), gunakan tool BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).\n"
         f"   - Backend sistem dilengkapi fitur Atomic Auto-Commit otomatis: setiap kali memanggil BAPI mutasi (seperti `BAPI_PO_CREATE1`), sistem otomatis langsung mengeksekusi commit bila tidak ada error Type E/A.\n"
         f"   - Rujuk panduan keahlian modul (seperti Skill SAP MM) untuk template parameter teruji, kelengkapan header/item/schedule, dan format tabel rekapitulasi nomor dokumen baru.\n\n"
-
+        f"10. KONFIRMASI TINDAKAN INTERAKTIF (HUMAN-IN-THE-LOOP ACTION CARD):\n"
+        f"    - Ketika pengguna meminta tindakan yang berdampak (seperti mengirim email, forward email, pembaruan/pembatalan transaksi SAP, atau mutasi data penting):\n"
+        f"      * LANGSUNG tampilkan kartu konfirmasi interaktif (Action Card) pada respons pertama. JANGAN hanya membuatkan draf teks biasa lalu bertanya lagi apakah mau dikirim!\n"
+        f"      * Gunakan format blok ```action-card berikut:\n"
+        f"```action-card\n"
+        f"{{\n"
+        f'  "action_id": "<id_unik>",\n'
+        f'  "action_type": "email" | "sap_write" | "system",\n'
+        f'  "title": "<Judul Tindakan, misal: Konfirmasi Pengiriman Email>",\n'
+        f'  "summary": "<Penjelasan ringkas dampak aksi>",\n'
+        f'  "details": {{\n'
+        f'    "Penerima": "...",\n'
+        f'    "Subjek": "..."\n'
+        f'  }},\n'
+        f'  "confirm_prompt": "<Perintah persetujuan eksplisit untuk mengeksekusi aksi>",\n'
+        f'  "cancel_prompt": "<Perintah pembatalan eksplisit>"\n'
+        f"}}\n"
+        f"```\n"
+        f"    - KETIKA PENGGUNA MENGIRIMKAN `confirm_prompt` (misal 'Kirim email sekarang' / tombol Approve ditekan):\n"
+        f"      * Asisten WAJIB LANGSUNG memanggil tool eksekusi (seperti `send_email` atau BAPI RFC mutasi) saat itu juga!\n"
+        f"      * DILARANG KERAS memunculkan Action Card baru atau menanyakan konfirmasi ulang. Eksekusi tindakan langsung dan laporkan status hasilnya.\n"
+        f"    - KETIKA PENGGUNA MENGIRIMKAN `cancel_prompt`:\n"
+        f"      * Asisten mengonfirmasi bahwa tindakan telah dibatalkan dan tidak ada perintah yang dijalankan ke server.\n\n"
+        f"11. STANDAR PENGIRIMAN & PENERUSAN (FORWARD) EMAIL VIA MCP:\n"
+        f"    - WAJIB FORMAT HTML RAPI (Parameter `html` atau tag HTML di `body`):\n"
+        f"      Microsoft Outlook / Exchange secara otomatis menghapus baris baru (extra line breaks) pada plain-text sehingga teks email akan menyatu dan hancur tanpa jeda paragraf. Saat memanggil tool `send_email`, SELALU gunakan format HTML terstruktur:\n"
+        f"      * Gunakan blok header penerusan (Forward Header) yang rapi dengan garis pembatas: `<b>Dari:</b> ...<br/><b>Tanggal:</b> ...<br/><b>Subjek:</b> ...<br/><b>Kepada:</b> ...`.\n"
+        f"      * Bungkus setiap paragraf dalam tag `<p style=\"margin: 0 0 12px 0; font-family: Segoe UI, Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #1e293b;\">`.\n"
+        f"      * Gunakan `<ul>` dan `<li>` untuk daftar rincian.\n"
+        f"    - TRANSPARANSI LAMPIRAN (ATTACHMENTS):\n"
+        f"      Gateway email MCP saat ini hanya mendukung penerusan metadata teks & pengunduh gambar, dan belum mendukung pengunduhan/penerusan otomatis berkas dokumen biner (.pdf, .xlsx, .docx) dari mailbox Exchange. Bila email asli memiliki lampiran berkas dokumen, asisten WAJIB:\n"
+        f"      1. Menginformasikan secara jelas di Action Card bahwa lampiran fisik (.pdf/.xlsx) tidak ikut diteruskan otomatis.\n"
+        f"      2. Mencantumkan daftar lampiran asli di dalam badan email (misal: '📎 Lampiran asli: CR...pdf, Aegis...xlsx - silakan akses di email sumber').\n\n"
         f"{ARTIFACT_PROMPT}\n"
     )
 
