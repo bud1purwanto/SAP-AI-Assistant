@@ -295,9 +295,10 @@ async def change_password_endpoint(
 
 class UserSapCredentialRequest(BaseModel):
     target: str
-    sap_user: str
-    sap_password: str
+    sap_user: str = ""
+    sap_password: Optional[str] = None
     sap_client: str = "100"
+    is_update: bool = False
 
 
 @app.get("/api/me/sap-credentials")
@@ -307,17 +308,191 @@ async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
     return list_user_sap_credentials(user["username"])
 
 
+@app.get("/api/me/sap-credentials/available-servers")
+async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
+    """Mengambil daftar server SAP terdaftar dengan status otorisasi dan konfigurasi kredensial pengguna."""
+    username = user["username"]
+    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
+    if not user_roles:
+        user_roles = ["user"]
+    
+    # 1. Ambil status live dan sub_servers dari MCP SAP
+    raw_status = await mcp_manager.check_servers_status()
+    sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
+    
+    # 2. Ambil resolusi akses RBAC pengguna
+    user_access = access_control.resolve_access(username, user_roles)
+    is_superadmin = "superadmin" in access_control.normalize_roles(user_roles)
+    
+    # 3. Ambil target kredensial yang sudah pernah disimpan pengguna
+    user_creds = database.list_user_sap_credentials(username)
+    saved_targets = {c.get("target", "").lower().strip() for c in user_creds if c.get("target")}
+
+    servers = []
+    for srv in sap_subs:
+        name = srv.get("name", "")
+        sid = srv.get("sid", "")
+        client = str(srv.get("client") or "100")
+        env = srv.get("environment", "development")
+        prod_warn = bool(srv.get("production_warning", False))
+        
+        # Cari alias kanonikal
+        aliases = srv.get("aliases") or []
+        primary_alias = aliases[0] if aliases else name.lower().replace(" ", "-")
+        
+        # Pengecekan otorisasi RBAC
+        can_key = access_control.canonical_resource_key(f"sap:{primary_alias}")
+        perm = user_access.get(can_key)
+        is_allowed = is_superadmin or bool(perm and perm.get("allowed"))
+        
+        # Cek apakah sudah tersimpan di database pengguna
+        has_credential = (
+            primary_alias.lower() in saved_targets or
+            name.lower() in saved_targets or
+            any(a.lower() in saved_targets for a in aliases)
+        )
+        
+        servers.append({
+            "name": name,
+            "alias": primary_alias,
+            "aliases": aliases,
+            "sid": sid,
+            "client": client,
+            "environment": env,
+            "production_warning": prod_warn,
+            "is_allowed": is_allowed,
+            "has_credential": has_credential,
+        })
+        
+    return {
+        "servers": servers,
+        "saved_targets": list(saved_targets),
+    }
+
+
+@app.post("/api/me/sap-credentials/test")
+async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
+    """Uji konektivitas live ke server SAP menggunakan kredensial yang dimasukkan."""
+    target = (req.target or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
+    
+    username = user["username"]
+    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
+    
+    # 1. Pastikan pengguna berhak mengakses target SAP ini (RBAC check)
+    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
+        try:
+            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
+        except HTTPException:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengakses server SAP '{target}'."
+            )
+            
+    # 2. Siapkan username dan password: jika kosong saat pengujian, coba gunakan yang tersimpan
+    user_to_test = (req.sap_user or "").strip()
+    pass_to_test = (req.sap_password or "").strip()
+    client_to_test = (req.sap_client or "").strip()
+
+    if not user_to_test or not pass_to_test:
+        existing = database.get_user_sap_credential(username, target)
+        if existing:
+            if not user_to_test and existing.get("sap_user"):
+                user_to_test = existing["sap_user"]
+            if not pass_to_test and existing.get("sap_password"):
+                pass_to_test = existing["sap_password"]
+            if not client_to_test and existing.get("sap_client"):
+                client_to_test = existing["sap_client"]
+
+    if not user_to_test:
+        raise HTTPException(status_code=400, detail="Username SAP wajib diisi untuk melakukan pengujian.")
+    if not pass_to_test:
+        raise HTTPException(status_code=400, detail="Password SAP wajib diisi untuk melakukan pengujian.")
+    if not client_to_test:
+        client_to_test = "100"
+
+    # 3. Uji via MCP SAP Gateway (set_active_server & get_system_info)
+    try:
+        sap_creds = {
+            "sap_user": user_to_test,
+            "sap_password": pass_to_test,
+            "sap_client": client_to_test
+        }
+        res = await mcp_manager.call_tool(
+            server_name="sap",
+            tool_name="get_system_info",
+            arguments={},
+            sap_target=target,
+            sap_credentials=sap_creds
+        )
+        if res.is_error:
+            err_text = res.content[0].text if res.content else "Unknown error from SAP Gateway"
+            return {"success": False, "message": f"Koneksi ke SAP '{target}' gagal: {err_text}"}
+        
+        server_info = {}
+        if res.content and res.content[0].text:
+            try:
+                import json
+                data = json.loads(res.content[0].text)
+                server_info = {
+                    "active_server": data.get("active_server", target),
+                    "sid": data.get("sid", ""),
+                    "environment": data.get("environment", ""),
+                    "host": data.get("host", ""),
+                    "connected": True
+                }
+            except Exception:
+                pass
+                
+        srv_name = server_info.get("active_server") or target
+        srv_sid = f" (SID: {server_info.get('sid')})" if server_info.get("sid") else ""
+        return {
+            "success": True,
+            "message": f"Koneksi ke server SAP '{srv_name}'{srv_sid} berhasil terhubung!",
+            "server_info": server_info
+        }
+    except Exception as ex:
+        logger.error(f"Gagal menguji koneksi SAP ke '{target}': {ex}")
+        return {"success": False, "message": f"Koneksi ke SAP gagal: {str(ex)}"}
+
+
 @app.post("/api/me/sap-credentials")
 async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
     """Simpan kredensial login SAP pribadi terenkripsi untuk target tertentu."""
-    from database import save_user_sap_credential
+    from database import save_user_sap_credential, get_user_sap_credential
+    username = user["username"]
     target = (req.target or "").strip()
     sap_user = (req.sap_user or "").strip()
     if not target or not sap_user:
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
+        
+    # Pastikan hak otorisasi server
+    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
+    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
+        try:
+            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
+        except HTTPException:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengonfigurasi kredensial server SAP '{target}'."
+            )
+
+    # Cek apakah target sudah ada jika bukan is_update
+    existing = get_user_sap_credential(username, target)
+    if existing and not req.is_update:
+        # Jika bukan update, jangan izinkan duplikasi
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kredensial untuk target SAP '{target}' sudah tersimpan. Silakan gunakan tombol Edit untuk memperbaruinya."
+        )
+
+    # Jika kredensial baru (bukan edit) dan password kosong, tolak
+    if not existing and not (req.sap_password or "").strip():
+        raise HTTPException(status_code=400, detail="Password SAP wajib diisi untuk kredensial baru.")
     
     ok = save_user_sap_credential(
-        username=user["username"],
+        username=username,
         target=target,
         sap_user=sap_user,
         sap_password=req.sap_password,

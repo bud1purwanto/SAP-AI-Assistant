@@ -3629,14 +3629,27 @@ def decrypt_fernet(encrypted_data: str) -> Optional[str]:
         return None
 
 
-def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: str, sap_client: str = "100") -> bool:
-    """Save encrypted SAP credentials for a specific user and SAP target."""
+def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
+    """Save encrypted SAP credentials for a specific user and SAP target.
+    
+    If sap_password is empty/None and an existing credential exists for this target,
+    the existing password is preserved (useful for edit mode).
+    """
     clean_user = (username or "").strip()
     clean_target = (target or "").strip()
-    if not clean_user or not clean_target:
+    clean_sap_user = (sap_user or "").strip()
+    if not clean_user or not clean_target or not clean_sap_user:
         return False
     
-    plain_payload = f"{sap_user}\t{sap_password}\t{sap_client}"
+    password_to_store = (sap_password or "").strip()
+    if not password_to_store:
+        existing = get_user_sap_credential(clean_user, clean_target)
+        if existing and existing.get("sap_password"):
+            password_to_store = existing["sap_password"]
+        else:
+            return False  # Password is required for new credentials
+    
+    plain_payload = f"{clean_sap_user}\t{password_to_store}\t{(sap_client or '100').strip()}"
     enc = encrypt_fernet(plain_payload)
     
     engine = get_engine()
@@ -3662,8 +3675,22 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
     with engine.connect() as conn:
         row = conn.execute(text("""
             SELECT encrypted_data FROM ai_assistant.user_sap_credentials
-            WHERE username = :u AND target = :t
+            WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:t)
         """), {"u": clean_user, "t": clean_target}).fetchone()
+
+        # Fallback pencarian bila target disimpan dengan alias kanonikal lain
+        if not row:
+            try:
+                import access_control
+                can_key = access_control.canonical_resource_key(f"sap:{clean_target}")
+                sub = can_key.split(":", 1)[1] if ":" in can_key else can_key
+                if sub.lower() != clean_target.lower():
+                    row = conn.execute(text("""
+                        SELECT encrypted_data FROM ai_assistant.user_sap_credentials
+                        WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:sub)
+                    """), {"u": clean_user, "sub": sub}).fetchone()
+            except Exception:
+                pass
     
     if not row or not row[0]:
         return None

@@ -1553,7 +1553,7 @@ const ChatLayout = () => {
                 <div className="min-w-0">
                   <div
                     className="text-xs font-semibold truncate text-content leading-tight"
-                    title={user.full_name ? `${user.full_name} (@${user.username})` : user.username}
+                    title={user.full_name ? `${user.full_name} (${user.username})` : user.username}
                   >
                     {user.full_name || user.username}
                   </div>
@@ -1590,12 +1590,26 @@ const ChatLayout = () => {
                     role="menu"
                   >
                     {/* Header Profil Singkat */}
-                    <div className="px-3.5 py-2 border-b border-line/60 mb-1">
-                      <div className="text-xs font-semibold text-content truncate">
-                        {user.full_name || user.username}
-                      </div>
-                      <div className="text-[11px] text-content-muted font-mono truncate mt-0.5">
-                        @{user.username}
+                    <div className="px-3.5 py-3 border-b border-line/60 mb-1 bg-surface-sunken/40 rounded-t-2xl">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-accent-hover text-accent-contrast font-bold text-xs flex items-center justify-center shadow-xs shrink-0 select-none">
+                          {getUserInitials(user)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-content truncate leading-tight tracking-tight">
+                            {user.full_name || user.username}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-content-secondary bg-surface border border-line/70 tracking-wide font-sans leading-none">
+                              {user.username}
+                            </span>
+                            {user.role && (
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(user.role)}`}>
+                                {getUserRoleLabel(user.role, isEn)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -1610,7 +1624,7 @@ const ChatLayout = () => {
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
                     >
-                      <Bot className="w-3.5 h-3.5 text-accent shrink-0" aria-hidden="true" />
+                      <Bot className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
                       <span className="truncate">{t('settings.tabPersona')}</span>
                     </button>
 

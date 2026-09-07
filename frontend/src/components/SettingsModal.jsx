@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
+  Activity,
   AlertCircle, 
   Bot, 
   CheckCircle2, 
+  ChevronDown,
   Cpu, 
   Database, 
+  Edit2,
   Eye, 
   EyeOff, 
   Globe, 
   KeyRound, 
+  Loader2,
   Lock, 
   Save, 
   Server, 
@@ -16,7 +20,8 @@ import {
   Sparkles, 
   Trash2, 
   User as UserIcon, 
-  X 
+  X,
+  XCircle
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
@@ -58,7 +63,16 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
   // SAP Per-user credentials state
   const [sapCreds, setSapCreds] = useState([]);
   const [loadingSapCreds, setLoadingSapCreds] = useState(false);
-  const [sapTarget, setSapTarget] = useState('dev');
+  const [availableSapServers, setAvailableSapServers] = useState([]);
+  const [loadingSapServers, setLoadingSapServers] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingTarget, setEditingTarget] = useState(null);
+  const [testingSap, setTestingSap] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [isTargetDropdownOpen, setIsTargetDropdownOpen] = useState(false);
+  const targetDropdownRef = useRef(null);
+
+  const [sapTarget, setSapTarget] = useState('');
   const [sapUser, setSapUser] = useState('');
   const [sapPass, setSapPass] = useState('');
   const [showSapPass, setShowSapPass] = useState(false);
@@ -67,7 +81,33 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
   const [savingSapCred, setSavingSapCred] = useState(false);
 
   useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (targetDropdownRef.current && !targetDropdownRef.current.contains(e.target)) {
+        setIsTargetDropdownOpen(false);
+      }
+    };
+    if (isTargetDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isTargetDropdownOpen]);
+
+  const loadSapServers = useCallback(async () => {
+    setLoadingSapServers(true);
+    try {
+      const res = await api.availableSapServers();
+      const list = Array.isArray(res?.servers) ? res.servers : [];
+      setAvailableSapServers(list);
+    } catch (err) {
+      console.error('Failed to load available SAP servers', err);
+    } finally {
+      setLoadingSapServers(false);
+    }
+  }, []);
+
+  useEffect(() => {
     if (isOpen) {
+      setIsTargetDropdownOpen(false);
       if (initialTab) {
         setActiveTab(initialTab);
       }
@@ -76,6 +116,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       setSaveStatus('');
       setPassMessage({ type: '', text: '' });
       setSapCredMsg({ type: '', text: '' });
+      setTestResult(null);
+      setIsEditMode(false);
+      setEditingTarget(null);
 
       if (user?.username && user?.role !== 'guest') {
         api.getConfig()
@@ -102,6 +145,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
           })
           .catch(err => console.error("Failed to load config", err));
 
+        loadSapServers();
         setLoadingSapCreds(true);
         api.mySapCredentials()
           .then(data => setSapCreds(Array.isArray(data) ? data : []))
@@ -109,7 +153,27 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
           .finally(() => setLoadingSapCreds(false));
       }
     }
-  }, [isOpen, initialTab, user]);
+  }, [isOpen, initialTab, user, loadSapServers]);
+
+  useEffect(() => {
+    if (!isEditMode && availableSapServers.length > 0) {
+      const savedList = sapCreds.map(c => (c.target || '').toLowerCase());
+      const currentExists = availableSapServers.some(s => s.alias === sapTarget || s.name === sapTarget);
+      const isAlreadySaved = savedList.includes((sapTarget || '').toLowerCase());
+      if (!currentExists || isAlreadySaved || !sapTarget) {
+        const firstAvailable = availableSapServers.find(s => s.is_allowed && !savedList.includes((s.alias || '').toLowerCase()))
+          || availableSapServers.find(s => s.is_allowed)
+          || availableSapServers[0];
+        if (firstAvailable) {
+          const tKey = firstAvailable.alias || firstAvailable.name;
+          setSapTarget(tKey);
+          if (firstAvailable.client) {
+            setSapClient(firstAvailable.client);
+          }
+        }
+      }
+    }
+  }, [availableSapServers, sapCreds, isEditMode]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -157,6 +221,89 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       setPassMessage({ type: 'error', text: err.message || t('security.failed') });
     } finally {
       setIsChangingPass(false);
+    }
+  };
+
+  const handleStartEdit = (cred) => {
+    setIsEditMode(true);
+    setEditingTarget(cred.target);
+    setSapTarget(cred.target);
+    setSapUser(cred.sap_user || '');
+    setSapPass('');
+    setSapClient(cred.sap_client || '100');
+    setSapCredMsg({ type: '', text: '' });
+    setTestResult(null);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditMode(false);
+    setEditingTarget(null);
+    setSapPass('');
+    setSapCredMsg({ type: '', text: '' });
+    setTestResult(null);
+    const savedList = sapCreds.map(c => (c.target || '').toLowerCase());
+    const firstAvailable = availableSapServers.find(s => s.is_allowed && !savedList.includes((s.alias || '').toLowerCase()))
+      || availableSapServers.find(s => s.is_allowed)
+      || availableSapServers[0];
+    if (firstAvailable) {
+      setSapTarget(firstAvailable.alias || firstAvailable.name);
+      if (firstAvailable.client) setSapClient(firstAvailable.client);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!sapTarget) return;
+    setTestingSap(true);
+    setTestResult(null);
+    try {
+      const res = await api.testSapConnection({
+        target: sapTarget,
+        sap_user: sapUser || undefined,
+        sap_password: sapPass || undefined,
+        sap_client: sapClient || undefined
+      });
+      setTestResult(res);
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: err.message || t('settings.sapTestFailed')
+      });
+    } finally {
+      setTestingSap(false);
+    }
+  };
+
+  const handleSaveSapCredential = async (e) => {
+    e.preventDefault();
+    setSavingSapCred(true);
+    setSapCredMsg({ type: '', text: '' });
+    try {
+      await api.saveMySapCredential({
+        target: sapTarget,
+        sap_user: sapUser,
+        sap_password: sapPass || undefined,
+        sap_client: sapClient || '100',
+        is_update: isEditMode
+      });
+      const successMsg = isEditMode
+        ? (t('settings.sapUpdatedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil diperbarui.`)
+        : (t('settings.sapSavedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil disimpan.`);
+      setSapCredMsg({ type: 'success', text: successMsg });
+      setSapPass('');
+      setIsEditMode(false);
+      setEditingTarget(null);
+      setTestResult(null);
+
+      const updated = await api.mySapCredentials();
+      setSapCreds(Array.isArray(updated) ? updated : []);
+      await loadSapServers();
+    } catch (err) {
+      setSapCredMsg({ 
+        type: 'error', 
+        text: err.message || t('settings.sapSaveFailed') 
+      });
+    } finally {
+      setSavingSapCred(false);
     }
   };
 
@@ -487,10 +634,10 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
               <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-xs text-content-secondary space-y-1">
                 <p className="font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  Kredensial SAP Pribadi (Terenkripsi AES)
+                  {t('settings.sapAESTitle')}
                 </p>
                 <p className="text-[11px] text-content-muted leading-relaxed">
-                  Masukkan akun SAP Anda untuk koneksi RFC. Password disimpan terenkripsi dengan aman dan hanya digunakan saat Anda menjalankan fungsi SAP.
+                  {t('settings.sapAESDesc')}
                 </p>
               </div>
 
@@ -505,57 +652,197 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                 </div>
               )}
 
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                setSavingSapCred(true);
-                setSapCredMsg({ type: '', text: '' });
-                try {
-                  await api.saveMySapCredential({
-                    target: sapTarget,
-                    sap_user: sapUser,
-                    sap_password: sapPass,
-                    sap_client: sapClient || '100'
-                  });
-                  setSapCredMsg({ 
-                    type: 'success', 
-                    text: `Kredensial SAP '${sapTarget}' berhasil disimpan.` 
-                  });
-                  setSapPass('');
-                  const updated = await api.mySapCredentials();
-                  setSapCreds(Array.isArray(updated) ? updated : []);
-                } catch (err) {
-                  setSapCredMsg({ type: 'error', text: err.message || 'Gagal menyimpan kredensial SAP.' });
-                } finally {
-                  setSavingSapCred(false);
-                }
-              }} className="space-y-3.5 bg-surface-sunken p-4 rounded-2xl border border-line">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">Target Sistem SAP</label>
-                    <input
-                      type="text"
-                      required
-                      value={sapTarget}
-                      onChange={e => setSapTarget(e.target.value)}
-                      placeholder="misal: dev, prd, qa"
-                      className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                    />
+              {testResult && (
+                <div className={`p-3.5 rounded-2xl text-xs flex items-start justify-between gap-2.5 ${
+                  testResult.success
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                }`}>
+                  <div className="flex items-start gap-2.5">
+                    {testResult.success ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-0.5">
+                      <p className="font-semibold">{testResult.message}</p>
+                      {testResult.server_info && (
+                        <p className="text-[11px] opacity-80 font-mono">
+                          {testResult.server_info.active_server && `Server: ${testResult.server_info.active_server}`}
+                          {testResult.server_info.sid && ` • SID: ${testResult.server_info.sid}`}
+                          {testResult.server_info.client && ` • Client: ${testResult.server_info.client}`}
+                        </p>
+                      )}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setTestResult(null)}
+                    className="text-content-muted hover:text-content p-0.5 cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveSapCredential} className="space-y-3.5 bg-surface-sunken p-4 rounded-2xl border border-line">
+                {isEditMode && (
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-line text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>{language === 'en' ? `Editing Target: ${editingTarget}` : `Mode Edit Target: ${editingTarget}`}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="text-xs text-content-muted hover:text-content underline cursor-pointer"
+                    >
+                      {t('settings.sapBtnCancel')}
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative z-20" ref={targetDropdownRef}>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
+                      {t('settings.sapTargetSystem')}
+                    </label>
+                    <button
+                      type="button"
+                      disabled={isEditMode || loadingSapServers}
+                      onClick={() => setIsTargetDropdownOpen(prev => !prev)}
+                      className={`w-full flex items-center justify-between gap-2 bg-surface border rounded-xl px-3.5 py-2 text-xs text-left transition-all ${
+                        isTargetDropdownOpen
+                          ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+                          : 'border-line hover:border-emerald-500/50'
+                      } ${isEditMode || loadingSapServers ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 truncate">
+                        <Server className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span className="truncate font-medium text-content">
+                          {loadingSapServers
+                            ? t('settings.sapLoadingServers')
+                            : (availableSapServers.find(s => s.alias === sapTarget || s.name === sapTarget)?.name || sapTarget || t('settings.sapSelectTarget'))}
+                        </span>
+                      </div>
+                      <ChevronDown className={`w-3.5 h-3.5 text-content-muted shrink-0 transition-transform duration-200 ${
+                        isTargetDropdownOpen ? 'rotate-180 text-emerald-500' : ''
+                      }`} />
+                    </button>
+
+                    {/* Custom Dropdown Popover */}
+                    {isTargetDropdownOpen && (
+                      <div className="absolute left-0 top-[calc(100%+4px)] w-full rounded-2xl bg-surface-raised/95 backdrop-blur-xl border border-line shadow-2xl p-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 max-h-60 overflow-y-auto custom-scrollbar">
+                        {loadingSapServers ? (
+                          <div className="p-3 text-xs text-content-muted flex items-center justify-center gap-2">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                            <span>{t('settings.sapLoadingServers')}</span>
+                          </div>
+                        ) : availableSapServers.length === 0 ? (
+                          <div className="p-3 text-xs text-content-muted italic text-center">
+                            {t('settings.sapSelectTarget')}
+                          </div>
+                        ) : (
+                          <>
+                            {/* 1. Server Tersedia untuk Anda */}
+                            {availableSapServers.some(s => s.is_allowed) && (
+                              <div className="mb-1">
+                                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                                  {t('settings.sapAvailableForYou')}
+                                </div>
+                                <div className="space-y-0.5">
+                                  {availableSapServers.filter(s => s.is_allowed).map(s => {
+                                    const srvKey = s.alias || s.name;
+                                    const isSelected = sapTarget === srvKey;
+                                    const isConfigured = s.has_credential;
+                                    const isCurrentEditing = isEditMode && editingTarget === srvKey;
+                                    const isDisabled = isConfigured && !isCurrentEditing;
+
+                                    return (
+                                      <button
+                                        key={srvKey}
+                                        type="button"
+                                        disabled={isDisabled}
+                                        onClick={() => {
+                                          setSapTarget(srvKey);
+                                          if (s.client) setSapClient(s.client);
+                                          setIsTargetDropdownOpen(false);
+                                        }}
+                                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors text-left ${
+                                          isSelected
+                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
+                                            : isDisabled
+                                            ? 'opacity-40 cursor-not-allowed text-content-muted'
+                                            : 'text-content hover:bg-surface-hover cursor-pointer'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-emerald-500' : 'bg-transparent'}`} />
+                                          <span className="truncate">{s.name || srvKey}</span>
+                                        </div>
+                                        {isConfigured && (
+                                          <span className="text-[10px] text-content-muted font-normal shrink-0">
+                                            {t('settings.sapAlreadyConfigured')}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 2. Server Terbatas (Tidak Ada Izin) */}
+                            {availableSapServers.some(s => !s.is_allowed) && (
+                              <div className="pt-1 border-t border-line/60">
+                                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
+                                  {t('settings.sapRestrictedServers')}
+                                </div>
+                                <div className="space-y-0.5">
+                                  {availableSapServers.filter(s => !s.is_allowed).map(s => {
+                                    const srvKey = s.alias || s.name;
+                                    return (
+                                      <div
+                                        key={srvKey}
+                                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-content-muted opacity-50 cursor-not-allowed select-none"
+                                        title={t('settings.sapNoAccess')}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <Lock className="w-3 h-3 text-content-subtle shrink-0" />
+                                          <span className="truncate">{s.name || srvKey}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div>
-                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">Client SAP (Mandant)</label>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
+                      {t('settings.sapClient')}
+                    </label>
                     <input
                       type="text"
                       value={sapClient}
                       onChange={e => setSapClient(e.target.value)}
-                      placeholder="misal: 100, 130"
+                      placeholder="100, 130"
                       className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">SAP Username</label>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
+                      {t('settings.sapUsername')}
+                    </label>
                     <input
                       type="text"
                       required
@@ -565,21 +852,25 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                       className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono"
                     />
                   </div>
+
                   <div>
-                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">SAP Password</label>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
+                      {t('settings.sapPassword')}
+                    </label>
                     <div className="relative">
                       <input
                         type={showSapPass ? "text" : "password"}
-                        required
+                        required={!isEditMode}
                         value={sapPass}
                         onChange={e => setSapPass(e.target.value)}
-                        placeholder="••••••••"
+                        placeholder={isEditMode ? t('settings.sapPassEditPlaceholder') : t('settings.sapPassPlaceholder')}
                         className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 pr-9 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono"
                       />
                       <button
                         type="button"
                         onClick={() => setShowSapPass(!showSapPass)}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-0.5 cursor-pointer"
+                        title={showSapPass ? "Hide password" : "Show password"}
                       >
                         {showSapPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
@@ -587,52 +878,130 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                   </div>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={savingSapCred}
-                  className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>{savingSapCred ? 'Menyimpan...' : 'Simpan Kredensial SAP'}</span>
-                </button>
+                {/* Tombol Aksi Form */}
+                <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={testingSap || !sapTarget || (!isEditMode && (!sapUser || !sapPass))}
+                    className="w-full sm:w-auto sm:flex-1 py-2.5 px-4 bg-surface hover:bg-surface-sunken border border-line hover:border-emerald-500/50 text-content rounded-xl text-xs font-semibold shadow-sm transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {testingSap ? (
+                      <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin" />
+                    ) : (
+                      <Activity className="w-3.5 h-3.5 text-emerald-500" />
+                    )}
+                    <span>{testingSap ? t('settings.sapTesting') : t('settings.sapBtnTest')}</span>
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={savingSapCred || !sapTarget || !sapUser || (!isEditMode && !sapPass)}
+                    className="w-full sm:w-auto sm:flex-1 py-2.5 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {savingSapCred ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Save className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {savingSapCred 
+                        ? (language === 'en' ? 'Saving...' : 'Menyimpan...') 
+                        : (isEditMode ? t('settings.sapBtnUpdate') : t('settings.sapBtnSave'))}
+                    </span>
+                  </button>
+
+                  {isEditMode && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="w-full sm:w-auto py-2.5 px-3 bg-surface hover:bg-surface-sunken border border-line text-content-muted hover:text-content rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>{t('settings.sapBtnCancel')}</span>
+                    </button>
+                  )}
+                </div>
               </form>
 
               {/* Daftar Kredensial Tersimpan */}
               <div className="space-y-2 pt-1">
-                <h4 className="text-[11px] font-bold text-content-secondary uppercase tracking-wider">Target SAP Tersimpan</h4>
+                <h4 className="text-[11px] font-bold text-content-secondary uppercase tracking-wider">
+                  {t('settings.sapSavedTargets')}
+                </h4>
                 {loadingSapCreds ? (
-                  <p className="text-xs text-content-muted">Memuat kredensial tersimpan...</p>
+                  <p className="text-xs text-content-muted">{language === 'en' ? 'Loading saved credentials...' : 'Memuat kredensial tersimpan...'}</p>
                 ) : sapCreds.length === 0 ? (
-                  <p className="text-xs text-content-muted italic">Belum ada kredensial target SAP khusus yang disimpan.</p>
+                  <p className="text-xs text-content-muted italic">{t('settings.sapNoCreds')}</p>
                 ) : (
                   <div className="space-y-1.5">
-                    {sapCreds.map((c) => (
-                      <div key={c.target} className="flex items-center justify-between p-3 bg-surface-sunken border border-line rounded-2xl text-xs">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Server className="w-4 h-4 text-emerald-500 shrink-0" />
-                          <div className="min-w-0">
-                            <span className="font-bold text-content uppercase tracking-wider">{c.target}</span>
-                            <span className="text-content-muted ml-2">({c.sap_user || '—'}, Client {c.sap_client || '—'})</span>
+                    {sapCreds.map((c) => {
+                      const isEditing = isEditMode && editingTarget === c.target;
+                      return (
+                        <div 
+                          key={c.target} 
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-2xl text-xs gap-2 sm:gap-0 transition-colors ${
+                            isEditing 
+                              ? 'bg-emerald-500/10 border-2 border-emerald-500' 
+                              : 'bg-surface-sunken border border-line hover:border-line-hover'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <Server className={`w-4 h-4 shrink-0 ${isEditing ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500'}`} />
+                            <div className="min-w-0 flex items-center flex-wrap gap-1.5">
+                              <span className="font-bold text-content uppercase tracking-wider">{c.target}</span>
+                              <span className="text-content-muted">
+                                ({c.sap_user || '—'}, Client {c.sap_client || '—'})
+                              </span>
+                              {isEditing && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                                  {language === 'en' ? 'Editing' : 'Sedang Diedit'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(c)}
+                              className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer ${
+                                isEditing 
+                                  ? 'bg-emerald-500 text-white shadow-sm' 
+                                  : 'text-content-secondary hover:text-content hover:bg-surface border border-line'
+                              }`}
+                              title={t('settings.sapEdit')}
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>{t('settings.sapEdit')}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const confirmPrompt = t('settings.sapDeleteConfirm', { target: c.target }) || `Hapus kredensial tersimpan untuk target '${c.target}'?`;
+                                if (!window.confirm(confirmPrompt)) return;
+                                try {
+                                  await api.deleteMySapCredential(c.target);
+                                  setSapCreds(prev => prev.filter(x => x.target !== c.target));
+                                  if (isEditMode && editingTarget === c.target) {
+                                    handleCancelEdit();
+                                  }
+                                  await loadSapServers();
+                                } catch (err) {
+                                  alert(err.message || 'Gagal menghapus');
+                                }
+                              }}
+                              className="text-xs text-rose-500 hover:text-rose-600 font-semibold px-2 py-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900 transition-colors flex items-center gap-1 cursor-pointer"
+                              title={t('settings.sapDelete')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">{t('settings.sapDelete')}</span>
+                            </button>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!window.confirm(`Hapus kredensial tersimpan untuk target '${c.target}'?`)) return;
-                            try {
-                              await api.deleteMySapCredential(c.target);
-                              setSapCreds(prev => prev.filter(x => x.target !== c.target));
-                            } catch (err) {
-                              alert(err.message || 'Gagal menghapus');
-                            }
-                          }}
-                          className="text-xs text-rose-500 hover:text-rose-600 font-bold p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Hapus kredensial ini"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -259,7 +259,9 @@ export const api = {
 
   // Per-user SAP Credentials
   mySapCredentials: () => apiFetch('/api/me/sap-credentials'),
+  availableSapServers: () => apiFetch('/api/me/sap-credentials/available-servers'),
   saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
+  testSapConnection: (payload) => apiFetch('/api/me/sap-credentials/test', { method: 'POST', body: payload }),
   deleteMySapCredential: (target) =>
     apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
 
