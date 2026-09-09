@@ -271,6 +271,7 @@ async def login(req: LoginRequest, request: Request):
         "force_change_password": user.get("force_change_password", False),
         "division_code": user.get("division_code"),
         "division_name": user.get("division_name"),
+        "job_level": user.get("job_level", "staff"),
     }
 
 
@@ -1124,6 +1125,7 @@ class AdminCreateUserRequest(BaseModel):
     roles: Optional[List[str]] = None
     assistant_persona: str = ""
     division_code: Optional[str] = None
+    job_level: Optional[str] = "staff"
 
 
 @app.post("/api/admin/users")
@@ -1152,6 +1154,7 @@ async def create_user_endpoint(
         full_name=req.full_name,
         roles=clean_roles,
         division_code=req.division_code,
+        job_level=req.job_level or "staff",
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -1198,6 +1201,7 @@ class AdminUpdateUserRequest(BaseModel):
     full_name: Optional[str] = None
     force_change_password: Optional[bool] = None
     division_code: Optional[str] = None
+    job_level: Optional[str] = None
 
 
 @app.put("/api/admin/users/{username}")
@@ -1241,6 +1245,8 @@ async def update_user_endpoint(
         force_change_password=req.force_change_password,
         division_code=req.division_code,
         update_division=(req.division_code is not None),
+        job_level=req.job_level,
+        update_job_level=(req.job_level is not None),
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -2448,6 +2454,7 @@ async def _run_chat(
         user_role = profile["role"]
         user_persona = profile["assistant_persona"]
         user_division = profile.get("division_code")
+        user_job_level = profile.get("job_level", "staff")
 
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
@@ -2522,11 +2529,14 @@ async def _run_chat(
         "on_token": on_token,
     }
     div_to_pass = user_division if not is_guest else None
+    job_level_to_pass = user_job_level if not is_guest else "staff"
     try:
         import inspect
         sig = inspect.signature(process_chat)
         if "division_code" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
             call_kwargs["division_code"] = div_to_pass
+        if "job_level" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            call_kwargs["job_level"] = job_level_to_pass
     except (ValueError, TypeError):
         pass
 

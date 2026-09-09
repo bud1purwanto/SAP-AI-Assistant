@@ -192,6 +192,7 @@ def test_division_persona_prompt_injection(db, monkeypatch):
     prompt = captured.get("prompt", "")
     assert "KONTEKS & PERAN DIVISI: Internal Audit (IA)" in prompt
     assert "AFILIASI DIVISI PENGGUNA: Divisi Internal Audit (IA)" in prompt
-    assert "Tag dokumen yang diizinkan untuk divisi ini: [ALL,IA]" in prompt
+    assert "Tag dokumen yang berhak diakses (berdasarkan divisi dan tingkat jabatan): [" in prompt
+    assert "IA" in prompt
     assert "Preferensi User Poin-Poin" in prompt
 

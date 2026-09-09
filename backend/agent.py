@@ -395,8 +395,16 @@ async def _noop_progress(**kwargs):
     """Penerima progres bawaan untuk pemanggil yang tidak memerlukannya."""
 
 
+LEVEL_PERSONA_GUIDES = {
+    "staff": "Fokus pada panduan teknis operasional harian, kepatuhan SOP rinci, instruksi kerja langkah demi langkah (step-by-step), dan akurasi eksekusi data transaksi SAP.",
+    "leader": "Fokus pada koordinasi operasional tim, validasi transaksi bisnis SAP, monitoring kelancaran alur kerja, penanganan kendala harian (troubleshooting), dan eskalasi terstruktur.",
+    "manager": "Fokus pada ringkasan eksekutif (executive summary), analisa indikator kinerja (KPI), manajemen risiko bisnis, pertimbangan strategis / budgeting, dan rekomendasi efisiensi proses.",
+}
+
+
 async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] = "user", user_persona: str = "",
-                       username: str = "Guest", on_progress=None, on_token=None, division_code: Optional[str] = None) -> ChatResponse:
+                       username: str = "Guest", on_progress=None, on_token=None, division_code: Optional[str] = None,
+                       job_level: Optional[str] = "staff") -> ChatResponse:
     # 0.0 Penanganan Cepat Perintah Slash (Slash Commands)
     raw_message = (chat_req.message or "").strip()
     raw_lower = raw_message.lower()
@@ -1440,14 +1448,32 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if not has_rag:
         konteks.append("- CATATAN: Koneksi ke server RAG sedang TERPUTUS.\n")
 
+    clean_job_level = (job_level or "staff").strip().lower()
+    if clean_job_level not in LEVEL_PERSONA_GUIDES:
+        clean_job_level = "staff"
+
+    level_label = {"staff": "Staff / Pelaksana", "leader": "Leader / Supervisor", "manager": "Manager / Head"}.get(clean_job_level, clean_job_level.title())
+
+    try:
+        from database import compute_user_rag_tags
+        effective_rag_tags = compute_user_rag_tags(division_code, clean_job_level, rag_allowed_tags)
+    except Exception as e:
+        logger.warning(f"Gagal menghitung tag RAG: {e}")
+        effective_rag_tags = [rag_allowed_tags] if rag_allowed_tags else ["ALL"]
+
+    tags_str = ", ".join(effective_rag_tags)
+
+    level_div_notes = [
+        f"- TINGKAT JABATAN PENGGUNA: {clean_job_level.upper()} ({level_label}).\n",
+        f"  - PANDUAN PERSONA TINGKAT JABATAN: {LEVEL_PERSONA_GUIDES[clean_job_level]}\n",
+    ]
     if division_code and division_data:
-        div_note = [f"- AFILIASI DIVISI PENGGUNA: Divisi {division_name} ({division_code}).\n"]
-        if rag_allowed_tags:
-            div_note.append(
-                f"  - KEBIJAKAN AKSES DOKUMEN / RAG DIVISI: Tag dokumen yang diizinkan untuk divisi ini: [{rag_allowed_tags}]. "
-                f"Patuhi wewenang dokumen ini dan hindari menyajikan informasi di luar lingkup dokumen divisi yang diizinkan.\n"
-            )
-        konteks.append("".join(div_note))
+        level_div_notes.append(f"- AFILIASI DIVISI PENGGUNA: Divisi {division_name} ({division_code}).\n")
+    level_div_notes.append(
+        f"  - KEBIJAKAN AKSES DOKUMEN / RAG: Tag dokumen yang berhak diakses (berdasarkan divisi dan tingkat jabatan): [{tags_str}]. "
+        f"Patuhi wewenang dokumen ini dan hindari menyajikan informasi di luar lingkup tag tersebut.\n"
+    )
+    konteks.append("".join(level_div_notes))
 
     if personal_persona:
         konteks.append(

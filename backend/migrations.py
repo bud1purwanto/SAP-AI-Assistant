@@ -951,6 +951,30 @@ def _m0021_master_data_divisions(conn):
             """), {"c": c, "n": n, "d": d, "p": p, "r": r, "en": en, "s": s})
 
 
+def _m0022_user_job_levels(conn):
+    """Tambahkan kolom job_level (staff, leader, manager) pada ai_assistant.users."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.users
+        ADD COLUMN IF NOT EXISTS job_level VARCHAR(32) DEFAULT 'staff';
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_users_job_level ON ai_assistant.users (job_level);
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.users
+        SET job_level = 'staff'
+        WHERE job_level IS NULL OR job_level = '';
+    """))
+    # Superadmin disetel ke level manager untuk akses penuh ke seluruh dokumen
+    conn.execute(text("""
+        UPDATE ai_assistant.users
+        SET job_level = 'manager'
+        WHERE LOWER(role) = 'superadmin' OR username IN (
+            SELECT username FROM ai_assistant.user_roles WHERE LOWER(role) = 'superadmin'
+        );
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -973,6 +997,7 @@ MIGRATIONS = [
     ("0019_scheduled_tasks", _m0019_scheduled_tasks),
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
     ("0021_master_data_divisions", _m0021_master_data_divisions),
+    ("0022_user_job_levels", _m0022_user_job_levels),
 ]
 
 

@@ -138,8 +138,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '' });
-  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '', division_code: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff' });
+  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '', division_code: '', job_level: 'staff' });
   const [resetModalUser, setResetModalUser] = useState(null);
   const [resetPasswordForm, setResetPasswordForm] = useState({
     password: '',
@@ -491,11 +491,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         roles: selectedRoles,
         role: selectedRoles[0] || 'user',
         division_code: newUserForm.division_code || null,
+        job_level: newUserForm.job_level || 'staff',
       };
       await api.adminCreateUser(payload);
       
       setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -517,6 +518,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         roles: selectedRoles,
         role: selectedRoles[0] || 'user',
         division_code: editUserForm.division_code || null,
+        job_level: editUserForm.job_level || 'staff',
       };
       await api.adminUpdateUser(targetUsername, payload);
       setActionSuccess(language === 'en' ? `User '${targetUsername}' updated successfully!` : `User '${targetUsername}' berhasil diupdate!`);
@@ -1303,6 +1305,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <th className="px-4 py-3">Username</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Division' : 'Divisi'}</th>
+                          <th className="px-4 py-3">{t('admin.jobLevel')}</th>
                           <th className="px-4 py-3">Role</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
                           <th className="px-4 py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
@@ -1315,6 +1318,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               <td className="px-4 py-3.5"><div className="h-4 w-28 bg-surface-sunken rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-4 w-36 bg-surface-sunken/80 rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-5 w-16 bg-surface-sunken/60 rounded-md" /></td>
+                              <td className="px-4 py-3.5"><div className="h-5 w-14 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-5 w-20 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-4 w-40 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5 text-right"><div className="h-6 w-16 bg-surface-sunken/50 rounded-md ml-auto" /></td>
@@ -1357,6 +1361,26 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                 ) : (
                                   <span className="italic text-content-subtle text-xs">—</span>
                                 )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {(() => {
+                                  const lvl = (u.job_level || 'staff').toLowerCase();
+                                  const styleMap = {
+                                    staff: 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/25',
+                                    leader: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25',
+                                    manager: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/25',
+                                  };
+                                  const labelMap = {
+                                    staff: t('admin.levelStaff'),
+                                    leader: t('admin.levelLeader'),
+                                    manager: t('admin.levelManager'),
+                                  };
+                                  return (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border ${styleMap[lvl] || styleMap.staff}`}>
+                                      {labelMap[lvl] || lvl.toUpperCase()}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                   <div className="flex flex-wrap items-center gap-1 max-w-xs">
@@ -1415,6 +1439,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                       assistant_persona: u.assistant_persona || '',
                                       password: '',
                                       division_code: u.division_code || '',
+                                      job_level: u.job_level || 'staff',
                                     });
                                   }}
                                   className="p-1.5 text-content-subtle hover:text-accent hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
@@ -1522,6 +1547,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             {language === 'en'
                               ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
                               : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {t('admin.jobLevel')}
+                          </label>
+                          <select
+                            value={newUserForm.job_level || 'staff'}
+                            onChange={(e) => setNewUserForm({ ...newUserForm, job_level: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                          >
+                            <option value="staff">{t('admin.levelStaff')} (Staff)</option>
+                            <option value="leader">{t('admin.levelLeader')}</option>
+                            <option value="manager">{t('admin.levelManager')}</option>
+                          </select>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {t('admin.jobLevelDesc')}
                           </p>
                         </div>
 
@@ -1665,6 +1708,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             {language === 'en'
                               ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
                               : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {t('admin.jobLevel')}
+                          </label>
+                          <select
+                            value={editUserForm.job_level || 'staff'}
+                            onChange={(e) => setEditUserForm({ ...editUserForm, job_level: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                          >
+                            <option value="staff">{t('admin.levelStaff')} (Staff)</option>
+                            <option value="leader">{t('admin.levelLeader')}</option>
+                            <option value="manager">{t('admin.levelManager')}</option>
+                          </select>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {t('admin.jobLevelDesc')}
                           </p>
                         </div>
 

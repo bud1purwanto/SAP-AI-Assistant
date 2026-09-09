@@ -451,7 +451,7 @@ def authenticate_user(username: str, password: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
-                       u.division_code, d.name AS division_name
+                       u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant.users u
                 LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
@@ -505,6 +505,7 @@ def authenticate_user(username: str, password: str):
                     "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
+                    "job_level": getattr(row, "job_level", None) or "staff",
                 }
     except Exception as e:
         logger.error(f"Error authenticate_user: {e}")
@@ -665,7 +666,7 @@ def get_user_by_username(username: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
-                       u.division_code, d.name AS division_name
+                       u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant.users u
                 LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
@@ -698,6 +699,7 @@ def get_user_by_username(username: str):
                     "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
+                    "job_level": getattr(row, "job_level", None) or "staff",
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
@@ -1903,7 +1905,7 @@ def list_all_users():
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
-                       u.division_code, d.name AS division_name
+                       u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant.users u
                 LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 ORDER BY u.role DESC, u.username ASC
@@ -1932,6 +1934,7 @@ def list_all_users():
                     "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                     "division_code": r.division_code or None,
                     "division_name": getattr(r, "division_name", None) or None,
+                    "job_level": getattr(r, "job_level", None) or "staff",
                 }
                 for r in rows
             ]
@@ -1939,8 +1942,8 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None):
-    """Buat user baru di database dengan dukungan banyak peran dan divisi."""
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
+    """Buat user baru di database dengan dukungan banyak peran, divisi, dan level jabatan."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -1958,12 +1961,15 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
             primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
 
             div_clean = division_code.strip().upper() if division_code and division_code.strip() else None
+            jl_clean = (job_level or "staff").strip().lower()
+            if jl_clean not in ("staff", "leader", "manager"):
+                jl_clean = "staff"
 
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code)
-                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc)
+                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
+                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc, :jl)
             """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona, "fcp": force_change_password, "dc": div_clean})
+                   "r": primary_role, "persona": persona, "fcp": force_change_password, "dc": div_clean, "jl": jl_clean})
 
             for r in clean_roles:
                 conn.execute(text("""
@@ -2009,12 +2015,13 @@ def reset_user_password_by_admin(username: str, new_password: str, force_change:
 
 def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
                          full_name: str = None, roles: list = None, force_change_password: bool = None,
-                         division_code: str = None, update_division: bool = False):
-    """Admin mengupdate data user (role, roles, persona, division, dan optional reset password)."""
+                         division_code: str = None, update_division: bool = False,
+                         job_level: str = None, update_job_level: bool = False):
+    """Admin mengupdate data user (role, roles, persona, division, job_level, dan optional reset password)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username, role, assistant_persona, division_code FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
+            existing = conn.execute(text("SELECT username, role, assistant_persona, division_code, job_level FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if not existing:
                 return {"success": False, "message": "User tidak ditemukan."}
 
@@ -2063,6 +2070,12 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 div_clean = division_code.strip().upper() if division_code and division_code.strip() else None
                 updates.append("division_code = :dc")
                 params["dc"] = div_clean
+            if update_job_level:
+                jl_clean = (job_level or "staff").strip().lower()
+                if jl_clean not in ("staff", "leader", "manager"):
+                    jl_clean = "staff"
+                updates.append("job_level = :jl")
+                params["jl"] = jl_clean
             if password:
                 updates.append("password_hash = :pass")
                 updates.append("password = NULL")
@@ -2292,6 +2305,53 @@ def delete_division(code: str) -> dict:
     except Exception as e:
         logger.error(f"Error delete_division: {e}")
         return {"success": False, "message": str(e)}
+
+JOB_LEVELS = ["staff", "leader", "manager"]
+
+def compute_user_rag_tags(
+    division_code: Optional[str] = None,
+    job_level: Optional[str] = "staff",
+    division_allowed_tags: Optional[str] = None,
+) -> List[str]:
+    """Menghitung daftar tag RAG yang berhak diakses user secara hirarkis.
+    
+    Tingkat jabatan mewarisi tag di bawahnya (Hierarchical Clearance Inheritance):
+    - staff   : mewarisi tag staff
+    - leader  : mewarisi tag staff + leader
+    - manager : mewarisi tag staff + leader + manager (akses penuh)
+    """
+    lvl = (job_level or "staff").strip().lower()
+    if lvl not in JOB_LEVELS:
+        lvl = "staff"
+
+    # Hirarki level
+    allowed_levels = {"staff"}
+    if lvl in ("leader", "manager"):
+        allowed_levels.add("leader")
+    if lvl == "manager":
+        allowed_levels.add("manager")
+
+    # Ambil base tags dari divisi atau default
+    base_tags: set = set()
+    if division_allowed_tags:
+        for t in division_allowed_tags.split(","):
+            clean = t.strip().upper()
+            if clean:
+                base_tags.add(clean)
+    else:
+        base_tags.add("ALL")
+        if division_code and division_code.strip():
+            base_tags.add(division_code.strip().upper())
+
+    # Bangun tag terwariskan
+    effective: set = set()
+    for b in base_tags:
+        effective.add(b)
+        for al in allowed_levels:
+            effective.add(f"{b}:{al.upper()}")
+            effective.add(f"{b}_{al.upper()}")
+
+    return sorted(list(effective))
 
 def delete_user_by_admin(username: str):
     """Hapus user beserta sesi chat-nya (kecuali akun superadmin itu sendiri)."""

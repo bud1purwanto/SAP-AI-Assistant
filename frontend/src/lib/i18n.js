@@ -439,6 +439,11 @@ export const TRANSLATIONS = {
     'admin.divisionDeleteConfirmTitle': 'Delete Division',
     'admin.divisionDeleteConfirmMsg': 'Are you sure you want to delete division "{code}"?',
     'admin.divisionDeleteImpactWarning': '{count} user(s) currently assigned to this division will be reset to No Division. No user accounts will be deleted.',
+    'admin.jobLevel': 'Job Level',
+    'admin.levelStaff': 'Staff',
+    'admin.levelLeader': 'Leader / Supervisor',
+    'admin.levelManager': 'Manager / Head',
+    'admin.jobLevelDesc': 'Job level within the division. Determines hierarchical RAG document clearance and tailored response persona.',
 
     // Common
     'common.cancel': 'Cancel',
@@ -889,6 +894,11 @@ export const TRANSLATIONS = {
     'admin.divisionDeleteConfirmTitle': 'Hapus Divisi',
     'admin.divisionDeleteConfirmMsg': 'Apakah Anda yakin ingin menghapus divisi "{code}"?',
     'admin.divisionDeleteImpactWarning': '{count} pengguna yang saat ini terhubung akan dialihkan ke Tanpa Divisi. Akun pengguna tidak akan terhapus.',
+    'admin.jobLevel': 'Level Jabatan',
+    'admin.levelStaff': 'Staff',
+    'admin.levelLeader': 'Leader / SPV',
+    'admin.levelManager': 'Manager / Head',
+    'admin.jobLevelDesc': 'Level jabatan dalam divisi. Menentukan hierarki akses dokumen RAG dan persona respon AI.',
 
     // Common
     'common.cancel': 'Batal',
