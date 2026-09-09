@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, BookOpen, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
 import AdminAccessControl from './AdminAccessControl';
 import AdminRoles from './AdminRoles';
+import AdminDivisions from './AdminDivisions';
 import AdminChatAudit from './AdminChatAudit';
 import AdminMcpConfig from './AdminMcpConfig';
 import {
@@ -137,8 +138,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
-  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '' });
+  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '', division_code: '' });
   const [resetModalUser, setResetModalUser] = useState(null);
   const [resetPasswordForm, setResetPasswordForm] = useState({
     password: '',
@@ -148,6 +149,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     error: '',
   });
   const [masterRoles, setMasterRoles] = useState([]);
+  const [masterDivisions, setMasterDivisions] = useState([]);
 
   // Label & warna badge role diambil dari master roles (bukan hardcode per-kode),
   // agar role kustom yang admin buat lewat tab Roles ikut tampil dengan label dan
@@ -303,6 +305,17 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const fetchMasterDivisions = async () => {
+    try {
+      const data = await api.getAvailableDivisions();
+      if (Array.isArray(data)) {
+        setMasterDivisions(data);
+      }
+    } catch (err) {
+      console.warn("Gagal memuat master divisi:", err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin') {
       setActionSuccess('');
@@ -312,6 +325,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       fetchSkills();
       fetchConfig();
       fetchMasterRoles();
+      fetchMasterDivisions();
     }
   }, [isOpen, user?.role]);
 
@@ -476,11 +490,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         ...newUserForm,
         roles: selectedRoles,
         role: selectedRoles[0] || 'user',
+        division_code: newUserForm.division_code || null,
       };
       await api.adminCreateUser(payload);
       
       setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '' });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -501,6 +516,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         ...editUserForm,
         roles: selectedRoles,
         role: selectedRoles[0] || 'user',
+        division_code: editUserForm.division_code || null,
       };
       await api.adminUpdateUser(targetUsername, payload);
       setActionSuccess(language === 'en' ? `User '${targetUsername}' updated successfully!` : `User '${targetUsername}' berhasil diupdate!`);
@@ -734,6 +750,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
       groupName: language === 'en' ? 'Users & Quotas' : 'Pengguna & Kuota',
       tabs: [
         { id: 'users', icon: Users, label: t('admin.tabUsers') },
+        { id: 'divisions', icon: Building2, label: t('admin.tabDivisions') || (language === 'en' ? 'Divisions' : 'Divisi') },
         { id: 'roles', icon: UserCog, label: language === 'en' ? 'Roles' : 'Peran' },
         { id: 'access', icon: ShieldCheck, label: t('admin.tabAccess') },
         { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
@@ -1285,6 +1302,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         <tr>
                           <th className="px-4 py-3">Username</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
+                          <th className="px-4 py-3">{language === 'en' ? 'Division' : 'Divisi'}</th>
                           <th className="px-4 py-3">Role</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
                           <th className="px-4 py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
@@ -1296,6 +1314,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             <tr key={i} className="animate-pulse">
                               <td className="px-4 py-3.5"><div className="h-4 w-28 bg-surface-sunken rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-4 w-36 bg-surface-sunken/80 rounded-md" /></td>
+                              <td className="px-4 py-3.5"><div className="h-5 w-16 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-5 w-20 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5"><div className="h-4 w-40 bg-surface-sunken/60 rounded-md" /></td>
                               <td className="px-4 py-3.5 text-right"><div className="h-6 w-16 bg-surface-sunken/50 rounded-md ml-auto" /></td>
@@ -1325,6 +1344,19 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               </td>
                               <td className="px-4 py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal text-xs">
                                 {u.full_name || <span className="italic text-content-subtle">—</span>}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {u.division_code ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
+                                    title={u.division_name ? `${u.division_code} - ${u.division_name}` : u.division_code}
+                                  >
+                                    <Building2 className="w-3 h-3 shrink-0 opacity-70" />
+                                    <span>{u.division_code}</span>
+                                  </span>
+                                ) : (
+                                  <span className="italic text-content-subtle text-xs">—</span>
+                                )}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                   <div className="flex flex-wrap items-center gap-1 max-w-xs">
@@ -1382,6 +1414,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                       full_name: u.full_name || '',
                                       assistant_persona: u.assistant_persona || '',
                                       password: '',
+                                      division_code: u.division_code || '',
                                     });
                                   }}
                                   className="p-1.5 text-content-subtle hover:text-accent hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
@@ -1416,7 +1449,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           ))
                         ) : (
                           <tr>
-                            <td colSpan="5" className="text-center py-8 text-content-subtle text-xs">
+                            <td colSpan="6" className="text-center py-8 text-content-subtle text-xs">
                               {language === 'en' ? 'No matching users found.' : 'Tidak ada data user yang sesuai.'}
                             </td>
                           </tr>
@@ -1467,6 +1500,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder="e.g. Andi Wijaya"
                           />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {language === 'en' ? 'Division' : 'Divisi'}
+                          </label>
+                          <select
+                            value={newUserForm.division_code || ''}
+                            onChange={(e) => setNewUserForm({ ...newUserForm, division_code: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                          >
+                            <option value="">{language === 'en' ? '-- No Division (General / Cross-divisional) --' : '-- Tanpa Divisi (Umum / Lintas Divisi) --'}</option>
+                            {masterDivisions.map((d) => (
+                              <option key={d.code} value={d.code}>
+                                {d.code} - {d.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
+                              : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
+                          </p>
                         </div>
 
                         <div>
@@ -1587,6 +1643,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
                             placeholder="e.g. Andi Wijaya"
                           />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-content-muted mb-1">
+                            {language === 'en' ? 'Division' : 'Divisi'}
+                          </label>
+                          <select
+                            value={editUserForm.division_code || ''}
+                            onChange={(e) => setEditUserForm({ ...editUserForm, division_code: e.target.value })}
+                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
+                          >
+                            <option value="">{language === 'en' ? '-- No Division (General / Cross-divisional) --' : '-- Tanpa Divisi (Umum / Lintas Divisi) --'}</option>
+                            {masterDivisions.map((d) => (
+                              <option key={d.code} value={d.code}>
+                                {d.code} - {d.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
+                              : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
+                          </p>
                         </div>
 
                         <div>
@@ -1794,6 +1873,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 )}
               </div>
+            )}
+
+            {/* TAB: MASTER DIVISIONS */}
+            {activeTab === 'divisions' && (
+              <AdminDivisions onRefreshDivisions={fetchMasterDivisions} />
             )}
 
             {/* TAB: MASTER ROLES */}

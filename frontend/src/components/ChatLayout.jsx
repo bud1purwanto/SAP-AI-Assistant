@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, KeyRound, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, KeyRound, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -1557,10 +1557,19 @@ const ChatLayout = () => {
                   >
                     {user.full_name || user.username}
                   </div>
-                  <div className="mt-1 flex items-center">
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
                       {getUserRoleLabel(user.role, isEn)}
                     </span>
+                    {user.division_code && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
+                        title={user.division_name ? `${user.division_code} - ${user.division_name}` : user.division_code}
+                      >
+                        <Building2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                        <span>{user.division_code}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1606,6 +1615,15 @@ const ChatLayout = () => {
                             {user.role && (
                               <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(user.role)}`}>
                                 {getUserRoleLabel(user.role, isEn)}
+                              </span>
+                            )}
+                            {user.division_code && (
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border leading-none bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25 font-mono"
+                                title={user.division_name ? `${user.division_code} - ${user.division_name}` : user.division_code}
+                              >
+                                <Building2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                                <span>{user.division_code}</span>
                               </span>
                             )}
                           </div>
@@ -1658,7 +1676,7 @@ const ChatLayout = () => {
                       <span className="truncate">{t('settings.tabSap') || 'SAP Login'}</span>
                     </button>
 
-                    {/* Peringatan & Tugas Terjadwal (Monitoring) */}
+                    {/* Peringatan & Tugas Terjadwal (Scheduling) */}
                     <button
                       type="button"
                       onClick={() => {
@@ -1668,7 +1686,7 @@ const ChatLayout = () => {
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
                     >
-                      <Bell className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
+                      <Calendar className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
                       <span className="truncate">{t('scheduled.menuTitle') || t('scheduled.title')}</span>
                     </button>
 

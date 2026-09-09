@@ -350,14 +350,14 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface-raised">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg">
-              <Bell className="w-5 h-5" />
+              <Calendar className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-content font-display">
                 {t('scheduled.title')}
               </h2>
               <p className="text-xs text-content-muted">
-                Otomasi eksekusi query SAP & laporan terjadwal via Email (Multi-Penerima)
+                {language === 'en' ? 'Automated SAP query execution & scheduled reports via Email (Multi-Recipient)' : 'Otomasi eksekusi query SAP & laporan terjadwal via Email (Multi-Penerima)'}
               </p>
             </div>
           </div>

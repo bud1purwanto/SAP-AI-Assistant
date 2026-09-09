@@ -4,7 +4,7 @@ import logging
 import time
 import re
 from datetime import datetime
-from typing import Union
+from typing import Optional, Union, List, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 import access_control
@@ -396,7 +396,7 @@ async def _noop_progress(**kwargs):
 
 
 async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] = "user", user_persona: str = "",
-                       username: str = "Guest", on_progress=None, on_token=None) -> ChatResponse:
+                       username: str = "Guest", on_progress=None, on_token=None, division_code: Optional[str] = None) -> ChatResponse:
     # 0.0 Penanganan Cepat Perintah Slash (Slash Commands)
     raw_message = (chat_req.message or "").strip()
     raw_lower = raw_message.lower()
@@ -1287,12 +1287,27 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"{ARTIFACT_PROMPT}\n"
     )
 
-    # --- PERSONA BERLAPIS ---
+    # --- PERSONA BERLAPIS & DIVISI ---
     # Persona global (diatur admin) berlaku sebagai dasar untuk semua user;
+    # persona divisi berlaku untuk user yang terafiliasi dengan divisi tertentu;
     # persona milik user diterapkan di atasnya sebagai penyesuaian pribadi.
-    # Sebelumnya persona user MENGGANTIKAN persona global sepenuhnya.
     global_persona = (sys_cfg.get("global_assistant_persona") or settings.assistant_persona or "").strip()
     personal_persona = (user_persona or "").strip()
+
+    division_data = None
+    division_persona = ""
+    division_name = ""
+    rag_allowed_tags = ""
+    if division_code:
+        try:
+            from database import get_division
+            division_data = get_division(division_code)
+            if division_data:
+                division_persona = (division_data.get("persona") or "").strip()
+                division_name = division_data.get("name") or division_code
+                rag_allowed_tags = (division_data.get("rag_allowed_tags") or "").strip()
+        except Exception as e:
+            logger.warning(f"Gagal memuat divisi '{division_code}': {e}")
 
     if global_persona:
         system_prompt += (
@@ -1300,6 +1315,14 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"{global_persona}\n"
             f"----------------------------------------------------------------\n"
             f"Patuhi karakter dan gaya komunikasi persona organisasi di atas secara konsisten pada setiap balasan.\n"
+        )
+
+    if division_persona:
+        system_prompt += (
+            f"\n--- KONTEKS & PERAN DIVISI: {division_name} ({division_code}) ---\n"
+            f"{division_persona}\n"
+            f"----------------------------------------------------------------\n"
+            f"Patuhi fokus dan perspektif kerja Divisi {division_name} di atas secara konsisten.\n"
         )
 
     # --- KATALOG SKILL & SPESIALISASI DINAMIS (SELECTIVE SKILL INJECTION) ---
@@ -1417,19 +1440,28 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if not has_rag:
         konteks.append("- CATATAN: Koneksi ke server RAG sedang TERPUTUS.\n")
 
+    if division_code and division_data:
+        div_note = [f"- AFILIASI DIVISI PENGGUNA: Divisi {division_name} ({division_code}).\n"]
+        if rag_allowed_tags:
+            div_note.append(
+                f"  - KEBIJAKAN AKSES DOKUMEN / RAG DIVISI: Tag dokumen yang diizinkan untuk divisi ini: [{rag_allowed_tags}]. "
+                f"Patuhi wewenang dokumen ini dan hindari menyajikan informasi di luar lingkup dokumen divisi yang diizinkan.\n"
+            )
+        konteks.append("".join(div_note))
+
     if personal_persona:
         konteks.append(
-            f"\n--- PREFERENSI PRIBADI PENGGUNA INI (penyesuaian di atas persona organisasi) ---\n"
+            f"\n--- PREFERENSI PRIBADI PENGGUNA INI (penyesuaian di atas persona organisasi & divisi) ---\n"
             f"{personal_persona}\n"
             f"------------------------------------------------------------------------------\n"
         )
-        if global_persona:
+        if global_persona or division_persona:
             konteks.append(
-                "CARA MENGGABUNGKAN: patuhi persona organisasi sebagai dasar, lalu terapkan "
+                "CARA MENGGABUNGKAN: patuhi persona organisasi dan divisi sebagai dasar, lalu terapkan "
                 "preferensi pribadi pengguna di atasnya. Bila keduanya bertentangan pada hal "
                 "yang sama (misal gaya bahasa atau panjang jawaban), preferensi pribadi yang "
                 "menang — KECUALI menyangkut aturan keakuratan data, keamanan, atau kepatuhan, "
-                "yang selalu mengikuti persona organisasi.\n"
+                "yang selalu mengikuti persona organisasi dan wewenang divisi.\n"
             )
         else:
             konteks.append("Patuhi preferensi di atas secara konsisten pada setiap balasan.\n")

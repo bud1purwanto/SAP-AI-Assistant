@@ -866,6 +866,91 @@ def _m0020_scheduled_tasks_email_text(conn):
     """))
 
 
+def _m0021_master_data_divisions(conn):
+    """Tabel master data divisi, konfigurasi persona divisi, dan kolom division_code pada tabel users."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.divisions (
+            code VARCHAR(40) PRIMARY KEY,
+            name VARCHAR(120) NOT NULL,
+            description VARCHAR(255) NOT NULL DEFAULT '',
+            persona TEXT NOT NULL DEFAULT '',
+            rag_allowed_tags TEXT NOT NULL DEFAULT '',
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_divisions_enabled_sort
+        ON ai_assistant.divisions(enabled, sort_order);
+    """))
+
+    # Tambah kolom division_code pada users jika belum ada
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.users
+        ADD COLUMN IF NOT EXISTS division_code VARCHAR(40);
+    """))
+
+    # Foreign key non-destruktif
+    has_fk = conn.execute(text("""
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_schema = 'ai_assistant'
+          AND table_name = 'users'
+          AND constraint_name = 'fk_users_division'
+    """)).fetchone()
+    if not has_fk:
+        try:
+            conn.execute(text("""
+                ALTER TABLE ai_assistant.users
+                ADD CONSTRAINT fk_users_division
+                FOREIGN KEY (division_code)
+                REFERENCES ai_assistant.divisions(code)
+                ON DELETE SET NULL;
+            """))
+        except Exception as e:
+            logger.warning(f"Gagal menambahkan FK fk_users_division: {e}")
+
+    # Seed default divisions jika masih kosong
+    count = conn.execute(text("SELECT count(*) FROM ai_assistant.divisions")).scalar()
+    if count == 0:
+        seed_divisions = [
+            (
+                "IT",
+                "Information Technology",
+                "Dukungan teknis sistem SAP, ABAP, arsitektur data, integrasi, dan infrastruktur.",
+                "Anda adalah AI Assistant yang berorientasi pada aspek teknis Divisi Information Technology (IT). Berikan penjelasan mendalam tentang struktur teknis SAP, optimasi query/ABAP, pemecahan masalah konektivitas MCP/RFC, dan arsitektur sistem.",
+                "ALL,IT",
+                True,
+                10,
+            ),
+            (
+                "IA",
+                "Internal Audit",
+                "Pemeriksaan kepatuhan proses bisnis, Segregation of Duties (SOD), jejak audit, dan verifikasi kontrol internal.",
+                "Anda adalah AI Assistant yang mendukung Divisi Internal Audit (IA). Prioritaskan akurasi kepatuhan prosedur SAP, integritas data, jejak audit (audit trail), prinsip Segregation of Duties (SOD), serta identifikasi potensi anomali atau risiko kepatuhan.",
+                "ALL,IA",
+                True,
+                20,
+            ),
+            (
+                "HR",
+                "Human Resources",
+                "Manajemen SDM, modul SAP HCM, administrasi personalia, dan kebijakan ketenagakerjaan.",
+                "Anda adalah AI Assistant yang mendukung Divisi Human Resources (HR). Bantu dalam pemrosesan data personalia, struktur organisasi modul SAP HCM, rekapitulasi kehadiran, dan kebijakan perusahaan dengan menjunjung tinggi etika kerahasiaan data karyawan.",
+                "ALL,HR",
+                True,
+                30,
+            ),
+        ]
+        for c, n, d, p, r, en, s in seed_divisions:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
+                VALUES (:c, :n, :d, :p, :r, :en, :s)
+                ON CONFLICT (code) DO NOTHING
+            """), {"c": c, "n": n, "d": d, "p": p, "r": r, "en": en, "s": s})
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -887,6 +972,7 @@ MIGRATIONS = [
     ("0018_seed_mcp_email_server", _m0018_seed_mcp_email_server),
     ("0019_scheduled_tasks", _m0019_scheduled_tasks),
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
+    ("0021_master_data_divisions", _m0021_master_data_divisions),
 ]
 
 

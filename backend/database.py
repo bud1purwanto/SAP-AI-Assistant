@@ -133,6 +133,24 @@ def init_db():
             conn.execute(text(
                 "ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"
             ))
+            conn.execute(text(
+                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS division_code VARCHAR(40)"
+            ))
+
+            # 2c. Buat Tabel ai_assistant.divisions
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.divisions (
+                    code VARCHAR(40) PRIMARY KEY,
+                    name VARCHAR(120) NOT NULL,
+                    description VARCHAR(255) NOT NULL DEFAULT '',
+                    persona TEXT NOT NULL DEFAULT '',
+                    rag_allowed_tags TEXT NOT NULL DEFAULT '',
+                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                    sort_order INTEGER NOT NULL DEFAULT 100,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
 
             # 3. Buat Tabel ai_assistant.system_config
             conn.execute(text("""
@@ -432,9 +450,11 @@ def authenticate_user(username: str, password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, password, password_hash, full_name, role, assistant_persona, force_change_password
-                FROM ai_assistant.users
-                WHERE LOWER(username) = LOWER(:u)
+                SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                       u.division_code, d.name AS division_name
+                FROM ai_assistant.users u
+                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                WHERE LOWER(u.username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
 
             if not row:
@@ -483,6 +503,8 @@ def authenticate_user(username: str, password: str):
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or "",
                     "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
+                    "division_code": row.division_code or None,
+                    "division_name": getattr(row, "division_name", None) or None,
                 }
     except Exception as e:
         logger.error(f"Error authenticate_user: {e}")
@@ -642,9 +664,11 @@ def get_user_by_username(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, full_name, role, assistant_persona, force_change_password
-                FROM ai_assistant.users
-                WHERE LOWER(username) = LOWER(:u)
+                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                       u.division_code, d.name AS division_name
+                FROM ai_assistant.users u
+                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                WHERE LOWER(u.username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
             if row:
                 role_rows = conn.execute(text("""
@@ -672,6 +696,8 @@ def get_user_by_username(username: str):
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or "",
                     "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
+                    "division_code": row.division_code or None,
+                    "division_name": getattr(row, "division_name", None) or None,
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
@@ -1876,9 +1902,11 @@ def list_all_users():
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT username, full_name, role, assistant_persona, force_change_password
-                FROM ai_assistant.users
-                ORDER BY role DESC, username ASC
+                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                       u.division_code, d.name AS division_name
+                FROM ai_assistant.users u
+                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                ORDER BY u.role DESC, u.username ASC
             """)).fetchall()
 
             role_rows = conn.execute(text("""
@@ -1902,6 +1930,8 @@ def list_all_users():
                     "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
                     "assistant_persona": r.assistant_persona or "",
                     "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
+                    "division_code": r.division_code or None,
+                    "division_name": getattr(r, "division_name", None) or None,
                 }
                 for r in rows
             ]
@@ -1909,8 +1939,8 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False):
-    """Buat user baru di database dengan dukungan banyak peran."""
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None):
+    """Buat user baru di database dengan dukungan banyak peran dan divisi."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -1927,11 +1957,13 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
                 clean_roles = ["user"]
             primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
 
+            div_clean = division_code.strip().upper() if division_code and division_code.strip() else None
+
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password)
-                VALUES (:u, :p, :fn, :r, :persona, :fcp)
+                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code)
+                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc)
             """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona, "fcp": force_change_password})
+                   "r": primary_role, "persona": persona, "fcp": force_change_password, "dc": div_clean})
 
             for r in clean_roles:
                 conn.execute(text("""
@@ -1976,12 +2008,13 @@ def reset_user_password_by_admin(username: str, new_password: str, force_change:
         return {"success": False, "message": str(e)}
 
 def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
-                         full_name: str = None, roles: list = None, force_change_password: bool = None):
-    """Admin mengupdate data user (role, roles, persona, dan optional reset password)."""
+                         full_name: str = None, roles: list = None, force_change_password: bool = None,
+                         division_code: str = None, update_division: bool = False):
+    """Admin mengupdate data user (role, roles, persona, division, dan optional reset password)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username, role, assistant_persona FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
+            existing = conn.execute(text("SELECT username, role, assistant_persona, division_code FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if not existing:
                 return {"success": False, "message": "User tidak ditemukan."}
 
@@ -2026,6 +2059,10 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
             if full_name is not None:
                 updates.append("full_name = :fn")
                 params["fn"] = full_name.strip()
+            if update_division:
+                div_clean = division_code.strip().upper() if division_code and division_code.strip() else None
+                updates.append("division_code = :dc")
+                params["dc"] = div_clean
             if password:
                 updates.append("password_hash = :pass")
                 updates.append("password = NULL")
@@ -2045,6 +2082,215 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
             return {"success": True, "message": f"User '{username}' berhasil diperbarui."}
     except Exception as e:
         logger.error(f"Error update_user_by_admin: {e}")
+        return {"success": False, "message": str(e)}
+
+
+# --- MASTER DATA DIVISIONS ---
+
+def list_divisions(enabled_only: bool = False) -> list[dict]:
+    """Mengambil daftar semua divisi beserta jumlah pengguna yang terhubung."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            where_clause = "WHERE d.enabled = TRUE" if enabled_only else ""
+            sql = f"""
+                SELECT d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
+                       d.enabled, d.sort_order, d.created_at, d.updated_at,
+                       COUNT(u.username) AS user_count
+                FROM ai_assistant.divisions d
+                LEFT JOIN ai_assistant.users u ON LOWER(u.division_code) = LOWER(d.code)
+                {where_clause}
+                GROUP BY d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
+                         d.enabled, d.sort_order, d.created_at, d.updated_at
+                ORDER BY d.sort_order ASC, d.code ASC
+            """
+            rows = conn.execute(text(sql)).fetchall()
+            return [
+                {
+                    "code": r.code,
+                    "name": r.name,
+                    "description": r.description or "",
+                    "persona": r.persona or "",
+                    "rag_allowed_tags": r.rag_allowed_tags or "",
+                    "enabled": bool(r.enabled),
+                    "sort_order": r.sort_order,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                    "user_count": int(r.user_count or 0),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error list_divisions: {e}")
+        return []
+
+def get_division(code: str) -> Optional[dict]:
+    """Mengambil satu divisi berdasarkan code."""
+    if not code:
+        return None
+    code_clean = code.strip().upper()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
+                       d.enabled, d.sort_order, d.created_at, d.updated_at,
+                       COUNT(u.username) AS user_count
+                FROM ai_assistant.divisions d
+                LEFT JOIN ai_assistant.users u ON LOWER(u.division_code) = LOWER(d.code)
+                WHERE LOWER(d.code) = LOWER(:c)
+                GROUP BY d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
+                         d.enabled, d.sort_order, d.created_at, d.updated_at
+            """), {"c": code_clean}).fetchone()
+            if not row:
+                return None
+            return {
+                "code": row.code,
+                "name": row.name,
+                "description": row.description or "",
+                "persona": row.persona or "",
+                "rag_allowed_tags": row.rag_allowed_tags or "",
+                "enabled": bool(row.enabled),
+                "sort_order": row.sort_order,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "user_count": int(row.user_count or 0),
+            }
+    except Exception as e:
+        logger.error(f"Error get_division: {e}")
+        return None
+
+def create_division(code: str, name: str, description: str = "", persona: str = "",
+                    rag_allowed_tags: str = "", enabled: bool = True, sort_order: int = 100) -> dict:
+    """Membuat divisi baru."""
+    code_clean = (code or "").strip().upper()
+    name_clean = (name or "").strip()
+    if not code_clean:
+        return {"success": False, "message": "Kode divisi wajib diisi."}
+    if not name_clean:
+        return {"success": False, "message": "Nama divisi wajib diisi."}
+    
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT code FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                {"c": code_clean}
+            ).fetchone()
+            if existing:
+                return {"success": False, "message": f"Divisi dengan kode '{code_clean}' sudah ada."}
+
+            conn.execute(text("""
+                INSERT INTO ai_assistant.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
+                VALUES (:c, :n, :d, :p, :r, :en, :so)
+            """), {
+                "c": code_clean,
+                "n": name_clean,
+                "d": (description or "").strip(),
+                "p": (persona or "").strip(),
+                "r": (rag_allowed_tags or "").strip(),
+                "en": bool(enabled),
+                "so": int(sort_order or 100),
+            })
+            conn.commit()
+            return {"success": True, "message": f"Divisi '{name_clean}' ({code_clean}) berhasil dibuat."}
+    except Exception as e:
+        logger.error(f"Error create_division: {e}")
+        return {"success": False, "message": str(e)}
+
+def update_division(code: str, name: str = None, description: str = None,
+                    persona: str = None, rag_allowed_tags: str = None,
+                    enabled: bool = None, sort_order: int = None) -> dict:
+    """Memperbarui informasi divisi."""
+    code_clean = (code or "").strip().upper()
+    if not code_clean:
+        return {"success": False, "message": "Kode divisi tidak valid."}
+    
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT code FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                {"c": code_clean}
+            ).fetchone()
+            if not existing:
+                return {"success": False, "message": f"Divisi '{code_clean}' tidak ditemukan."}
+
+            updates = ["updated_at = CURRENT_TIMESTAMP"]
+            params = {"c": code_clean}
+
+            if name is not None:
+                updates.append("name = :n")
+                params["n"] = name.strip()
+            if description is not None:
+                updates.append("description = :d")
+                params["d"] = description.strip()
+            if persona is not None:
+                updates.append("persona = :p")
+                params["p"] = persona.strip()
+            if rag_allowed_tags is not None:
+                updates.append("rag_allowed_tags = :r")
+                params["r"] = rag_allowed_tags.strip()
+            if enabled is not None:
+                updates.append("enabled = :en")
+                params["en"] = bool(enabled)
+            if sort_order is not None:
+                updates.append("sort_order = :so")
+                params["so"] = int(sort_order)
+
+            sql = f"UPDATE ai_assistant.divisions SET {', '.join(updates)} WHERE LOWER(code) = LOWER(:c)"
+            conn.execute(text(sql), params)
+            conn.commit()
+            return {"success": True, "message": f"Divisi '{code_clean}' berhasil diperbarui."}
+    except Exception as e:
+        logger.error(f"Error update_division: {e}")
+        return {"success": False, "message": str(e)}
+
+def get_division_impact(code: str) -> dict:
+    """Menghitung dampak penghapusan divisi (berapa user yang terhubung)."""
+    code_clean = (code or "").strip().upper()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            users = conn.execute(
+                text("SELECT username, full_name, role FROM ai_assistant.users WHERE LOWER(division_code) = LOWER(:c)"),
+                {"c": code_clean}
+            ).fetchall()
+            return {
+                "code": code_clean,
+                "user_count": len(users),
+                "users": [{"username": u.username, "full_name": u.full_name, "role": u.role} for u in users],
+            }
+    except Exception as e:
+        logger.error(f"Error get_division_impact: {e}")
+        return {"code": code_clean, "user_count": 0, "users": []}
+
+def delete_division(code: str) -> dict:
+    """Menghapus divisi (melepas asosiasi divisi dari user menjadi NULL terlebih dahulu)."""
+    code_clean = (code or "").strip().upper()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT code, name FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                {"c": code_clean}
+            ).fetchone()
+            if not existing:
+                return {"success": False, "message": "Divisi tidak ditemukan."}
+
+            # Lepas asosiasi user agar data user tidak hilang (ON DELETE SET NULL)
+            conn.execute(
+                text("UPDATE ai_assistant.users SET division_code = NULL WHERE LOWER(division_code) = LOWER(:c)"),
+                {"c": code_clean}
+            )
+            conn.execute(
+                text("DELETE FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                {"c": code_clean}
+            )
+            conn.commit()
+            return {"success": True, "message": f"Divisi '{existing.name}' ({code_clean}) berhasil dihapus."}
+    except Exception as e:
+        logger.error(f"Error delete_division: {e}")
         return {"success": False, "message": str(e)}
 
 def delete_user_by_admin(username: str):

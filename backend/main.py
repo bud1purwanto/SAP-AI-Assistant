@@ -98,6 +98,12 @@ from database import (
     update_mcp_server,
     delete_mcp_server,
     reset_mcp_server_to_default,
+    list_divisions,
+    get_division,
+    create_division,
+    update_division,
+    delete_division,
+    get_division_impact,
 )
 from mcp_manager import mcp_manager
 import access_control
@@ -263,6 +269,8 @@ async def login(req: LoginRequest, request: Request):
         "roles": user_roles,
         "assistant_persona": user["assistant_persona"],
         "force_change_password": user.get("force_change_password", False),
+        "division_code": user.get("division_code"),
+        "division_name": user.get("division_name"),
     }
 
 
@@ -1115,6 +1123,7 @@ class AdminCreateUserRequest(BaseModel):
     role: str = "user"
     roles: Optional[List[str]] = None
     assistant_persona: str = ""
+    division_code: Optional[str] = None
 
 
 @app.post("/api/admin/users")
@@ -1142,6 +1151,7 @@ async def create_user_endpoint(
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
+        division_code=req.division_code,
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -1187,6 +1197,7 @@ class AdminUpdateUserRequest(BaseModel):
     password: Optional[str] = None
     full_name: Optional[str] = None
     force_change_password: Optional[bool] = None
+    division_code: Optional[str] = None
 
 
 @app.put("/api/admin/users/{username}")
@@ -1195,7 +1206,7 @@ async def update_user_endpoint(
     req: AdminUpdateUserRequest,
     admin: dict = Depends(require_superadmin),
 ):
-    """Memperbarui user (role, persona, atau reset password)."""
+    """Memperbarui user (role, persona, divisi, atau reset password)."""
     available_roles = get_available_roles(enabled_only=True)
     clean_roles = None
     if req.roles is not None:
@@ -1228,6 +1239,8 @@ async def update_user_endpoint(
         full_name=req.full_name,
         roles=clean_roles,
         force_change_password=req.force_change_password,
+        division_code=req.division_code,
+        update_division=(req.division_code is not None),
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
@@ -1245,6 +1258,106 @@ async def delete_user_endpoint(username: str, admin: dict = Depends(require_supe
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     access_control.invalidate_effective_roles_cache(username)
+    return res
+
+
+# --- MASTER DATA DIVISIONS ENDPOINTS ---
+
+class AdminCreateDivisionRequest(BaseModel):
+    code: str
+    name: str
+    description: str = ""
+    persona: str = ""
+    rag_allowed_tags: str = ""
+    enabled: bool = True
+    sort_order: int = 100
+
+
+class AdminUpdateDivisionRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    persona: Optional[str] = None
+    rag_allowed_tags: Optional[str] = None
+    enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+@app.get("/api/divisions")
+async def get_active_divisions_endpoint(user: dict = Depends(get_current_user)):
+    """Mengambil daftar divisi aktif untuk pilihan dropdown pengguna/antarmuka."""
+    return list_divisions(enabled_only=True)
+
+
+@app.get("/api/admin/divisions")
+async def get_admin_divisions_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mendapatkan seluruh daftar divisi untuk manajemen Super Admin."""
+    return list_divisions(enabled_only=False)
+
+
+@app.post("/api/admin/divisions")
+async def create_admin_division_endpoint(
+    req: AdminCreateDivisionRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Membuat divisi baru."""
+    if not req.code or not req.code.strip():
+        raise HTTPException(status_code=400, detail="Kode divisi wajib diisi.")
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=400, detail="Nama divisi wajib diisi.")
+
+    res = create_division(
+        code=req.code.strip(),
+        name=req.name.strip(),
+        description=req.description or "",
+        persona=req.persona or "",
+        rag_allowed_tags=req.rag_allowed_tags or "",
+        enabled=req.enabled,
+        sort_order=req.sort_order,
+    )
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@app.put("/api/admin/divisions/{code}")
+async def update_admin_division_endpoint(
+    code: str,
+    req: AdminUpdateDivisionRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Memperbarui divisi yang sudah ada."""
+    res = update_division(
+        code=code,
+        name=req.name,
+        description=req.description,
+        persona=req.persona,
+        rag_allowed_tags=req.rag_allowed_tags,
+        enabled=req.enabled,
+        sort_order=req.sort_order,
+    )
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@app.get("/api/admin/divisions/{code}/impact")
+async def get_admin_division_impact_endpoint(
+    code: str,
+    admin: dict = Depends(require_superadmin),
+):
+    """Mengecek dampak penghapusan divisi (jumlah user yang terhubung)."""
+    return get_division_impact(code)
+
+
+@app.delete("/api/admin/divisions/{code}")
+async def delete_admin_division_endpoint(
+    code: str,
+    admin: dict = Depends(require_superadmin),
+):
+    """Menghapus divisi (melepas asosiasi divisi dari user secara aman)."""
+    res = delete_division(code)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
@@ -2334,6 +2447,7 @@ async def _run_chat(
         user_roles = profile.get("roles") or [profile["role"]]
         user_role = profile["role"]
         user_persona = profile["assistant_persona"]
+        user_division = profile.get("division_code")
 
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
@@ -2402,13 +2516,25 @@ async def _run_chat(
             f"Riwayat sesi {active_session_id}: {len(chat_req.history)} pesan diambil dari database."
         )
 
+    call_kwargs = {
+        "username": user["username"],
+        "on_progress": on_progress,
+        "on_token": on_token,
+    }
+    div_to_pass = user_division if not is_guest else None
+    try:
+        import inspect
+        sig = inspect.signature(process_chat)
+        if "division_code" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            call_kwargs["division_code"] = div_to_pass
+    except (ValueError, TypeError):
+        pass
+
     response = await process_chat(
         chat_req,
         user_roles if not is_guest else user_role,
         user_persona,
-        username=user["username"],
-        on_progress=on_progress,
-        on_token=on_token,
+        **call_kwargs,
     )
 
     if not is_guest and active_session_id:

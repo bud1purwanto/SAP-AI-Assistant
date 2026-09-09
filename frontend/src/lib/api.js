@@ -209,6 +209,15 @@ export const api = {
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, { method: 'POST', body: payload }),
   adminDeleteUser: (username) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+  adminDivisions: () => apiFetch('/api/admin/divisions'),
+  adminCreateDivision: (payload) => apiFetch('/api/admin/divisions', { method: 'POST', body: payload }),
+  adminUpdateDivision: (code, payload) =>
+    apiFetch(`/api/admin/divisions/${encodeURIComponent(code)}`, { method: 'PUT', body: payload }),
+  adminDeleteDivision: (code) =>
+    apiFetch(`/api/admin/divisions/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  adminDivisionImpact: (code) =>
+    apiFetch(`/api/admin/divisions/${encodeURIComponent(code)}/impact`),
+  getAvailableDivisions: () => apiFetch('/api/divisions'),
   adminRoles: () => apiFetch('/api/admin/roles'),
   adminCreateRole: (payload) => apiFetch('/api/admin/roles', { method: 'POST', body: payload }),
   adminCloneRole: (sourceCode, payload) =>

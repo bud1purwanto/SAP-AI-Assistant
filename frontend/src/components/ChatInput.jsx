@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   BookOpen,
+  Calendar,
   Download,
   FileSpreadsheet,
   FileText,
@@ -136,9 +137,9 @@ const SLASH_COMMANDS = [
   {
     cmd: '/schedule',
     title: '/schedule',
-    desc: 'Buka jadwal pemantauan otomatis SAP & digest harian',
-    descEn: 'Open automated SAP monitoring & daily digest schedule',
-    icon: Bell,
+    desc: 'Buka penjadwalan otomatis SAP & digest harian',
+    descEn: 'Open automated SAP scheduling & daily digest',
+    icon: Calendar,
     badge: 'Jadwal',
     insertOnly: false,
   },
