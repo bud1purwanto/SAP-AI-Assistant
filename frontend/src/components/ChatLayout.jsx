@@ -1558,9 +1558,14 @@ const ChatLayout = () => {
                     {user.full_name || user.username}
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
-                      {getUserRoleLabel(user.role, isEn)}
-                    </span>
+                    {(() => {
+                      const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                      return (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(displayRole)}`}>
+                          {getUserRoleLabel(displayRole, isEn)}
+                        </span>
+                      );
+                    })()}
                     {user.division_code && (
                       <span
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
@@ -1612,11 +1617,14 @@ const ChatLayout = () => {
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-content-secondary bg-surface border border-line/70 tracking-wide font-sans leading-none">
                               {user.username}
                             </span>
-                            {user.role && (
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(user.role)}`}>
-                                {getUserRoleLabel(user.role, isEn)}
-                              </span>
-                            )}
+                            {(() => {
+                              const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                              return (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(displayRole)}`}>
+                                  {getUserRoleLabel(displayRole, isEn)}
+                                </span>
+                              );
+                            })()}
                             {user.division_code && (
                               <span
                                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border leading-none bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25 font-mono"

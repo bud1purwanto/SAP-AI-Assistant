@@ -495,7 +495,13 @@ def authenticate_user(username: str, password: str):
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
-                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+                # Pastikan role primer dari tabel users (atau superadmin jika ada) menjadi peran utama dan urutan pertama
+                if row.role and any(r.lower() == row.role.lower() for r in roles):
+                    roles = [row.role] + [r for r in roles if r.lower() != row.role.lower()]
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else row.role
+                else:
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
@@ -689,7 +695,13 @@ def get_user_by_username(username: str):
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
-                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+                # Pastikan role primer dari tabel users (atau superadmin jika ada) menjadi peran utama dan urutan pertama
+                if row.role and any(r.lower() == row.role.lower() for r in roles):
+                    roles = [row.role] + [r for r in roles if r.lower() != row.role.lower()]
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else row.role
+                else:
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
@@ -1924,20 +1936,26 @@ def list_all_users():
                     roles_by_user[u_key] = []
                 roles_by_user[u_key].append(rr.role)
 
-            return [
-                {
+            result = []
+            for r in rows:
+                u_roles = list(roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]))
+                if r.role and any(x.lower() == r.role.lower() for x in u_roles):
+                    u_roles = [r.role] + [x for x in u_roles if x.lower() != r.role.lower()]
+                    p_role = "superadmin" if "superadmin" in [x.lower() for x in u_roles] else r.role
+                else:
+                    p_role = "superadmin" if "superadmin" in [x.lower() for x in u_roles] else u_roles[0]
+                result.append({
                     "username": r.username,
                     "full_name": r.full_name or "",
-                    "role": r.role,
-                    "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
+                    "role": p_role,
+                    "roles": u_roles,
                     "assistant_persona": r.assistant_persona or "",
                     "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                     "division_code": r.division_code or None,
                     "division_name": getattr(r, "division_name", None) or None,
                     "job_level": getattr(r, "job_level", None) or "staff",
-                }
-                for r in rows
-            ]
+                })
+            return result
     except Exception as e:
         logger.error(f"Error list_all_users: {e}")
         return []
