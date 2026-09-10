@@ -782,7 +782,7 @@ const ChatLayout = () => {
     setDeleteConfirmState({
       isOpen: true,
       sessionId: sid,
-      title: session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'),
+      title: session.title || (language === 'en' ? 'AI Conversation' : 'Percakapan AI'),
       isLoading: false,
     });
   };
@@ -847,7 +847,7 @@ const ChatLayout = () => {
   const startRenameSession = (e, session) => {
     e.stopPropagation();
     setEditingSessionId(session.session_id || session.id);
-    setEditingTitle(session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'));
+    setEditingTitle(session.title || (language === 'en' ? 'AI Conversation' : 'Percakapan AI'));
   };
 
   const cancelRenameSession = (e) => {
@@ -1339,7 +1339,7 @@ const ChatLayout = () => {
                   className="w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover cursor-pointer"
                 >
                   <span className="block truncate text-xs font-semibold text-content">
-                    {hit.title || 'SAP Chat'}
+                    {hit.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}
                   </span>
                   {hit.snippet && (
                     <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-content-muted">
@@ -1434,7 +1434,7 @@ const ChatLayout = () => {
                           ) : (
                             <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content-muted'}`} aria-hidden="true" />
                           )}
-                          <span className="truncate">{session.title || 'SAP Chat'}</span>
+                          <span className="truncate">{session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}</span>
                         </button>
                         <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           <button

@@ -1184,7 +1184,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         )
 
     system_prompt = (
-        f"Anda adalah SAP & Enterprise Data AI Assistant: asisten kerja serbaguna untuk ekosistem SAP dan Database Enterprise.\n\n"
+        f"Anda adalah AI Assistant: asisten kerja serbaguna untuk kebutuhan Enterprise, Database, dan ekosistem SAP.\n\n"
         f"{forbidden_instruction}"
 
         f"## SPESIFIKASI LINGKUNGAN SISTEM (GLOBAL ENVIRONMENT BASELINE)\n"

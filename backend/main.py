@@ -1126,6 +1126,7 @@ class AdminCreateUserRequest(BaseModel):
     assistant_persona: str = ""
     division_code: Optional[str] = None
     job_level: Optional[str] = "staff"
+    force_change_password: bool = True
 
 
 @app.post("/api/admin/users")
@@ -1153,6 +1154,7 @@ async def create_user_endpoint(
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
+        force_change_password=req.force_change_password,
         division_code=req.division_code,
         job_level=req.job_level or "staff",
     )

@@ -1960,7 +1960,7 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = True, division_code: str = None, job_level: str = "staff"):
     """Buat user baru di database dengan dukungan banyak peran, divisi, dan level jabatan."""
     try:
         engine = get_engine()

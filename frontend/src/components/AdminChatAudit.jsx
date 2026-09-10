@@ -298,7 +298,7 @@ export default function AdminChatAudit({ masterRoles: _masterRoles = [], usersLi
     md += `---\n\n`;
 
     messages.forEach((m, idx) => {
-      const sender = m.role === 'user' ? `${selectedSession.username} (User)` : 'SAP AI Assistant';
+      const sender = m.role === 'user' ? `${selectedSession.username} (User)` : 'AI Assistant';
       const time = m.created_at ? m.created_at.replace('T', ' ').slice(0, 19) : '';
       md += `### ${idx + 1}. [${sender}] - ${time}\n\n`;
       md += `${m.content}\n\n`;
@@ -941,7 +941,7 @@ export default function AdminChatAudit({ masterRoles: _masterRoles = [], usersLi
 
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-content text-xs">
-                                {isUser ? selectedSession.username : 'SAP AI Assistant'}
+                                {isUser ? selectedSession.username : 'AI Assistant'}
                               </span>
                               {isUser ? (
                                 <span className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${getRoleBadgeStyle(role)}`}>

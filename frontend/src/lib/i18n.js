@@ -85,7 +85,7 @@ export const TRANSLATIONS = {
     'input.shiftEnterHint': 'Press Enter to send • Shift+Enter for new line • drag & drop files or paste images',
 
     // Chat Message & Assistant Response
-    'chat.assistantName': 'SAP Assistant',
+    'chat.assistantName': 'AI Assistant',
     'chat.you': 'You',
     'chat.copy': 'Copy',
     'chat.copied': 'Copied',
@@ -541,7 +541,7 @@ export const TRANSLATIONS = {
     'input.shiftEnterHint': 'Enter untuk mengirim • Shift + Enter baris baru • seret berkas ke sini atau tempel gambar',
 
     // Chat Message & Assistant Response
-    'chat.assistantName': 'Asisten SAP',
+    'chat.assistantName': 'AI Assistant',
     'chat.you': 'Anda',
     'chat.copy': 'Salin',
     'chat.copied': 'Tersalin',
