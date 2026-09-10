@@ -955,6 +955,7 @@ const ChatLayout = () => {
           active_server: activeServer,
           attachment_ids: attachments.map((a) => a.upload_id),
           mode: selectedMode || undefined,
+          language: language || 'id',
         },
         {
           signal: controller.signal,

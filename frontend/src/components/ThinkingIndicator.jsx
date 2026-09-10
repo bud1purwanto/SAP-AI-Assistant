@@ -1,25 +1,106 @@
 import React from 'react';
-import { Database, FileSearch, Loader2, RefreshCw, Sparkles, Square } from 'lucide-react';
+import {
+  BookOpen,
+  Database,
+  FileSearch,
+  FileSpreadsheet,
+  Loader2,
+  Mail,
+  RefreshCw,
+  Server,
+  Sparkles,
+  Square,
+} from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 
 /**
- * Indikator progres jawaban AI.
- *
- * Persentasenya berasal dari langkah yang benar-benar sudah dikerjakan agen
- * (`step` dari `max_steps`), bukan perkiraan waktu — jumlah langkah yang
- * dibutuhkan sebuah pertanyaan memang tidak diketahui di muka. Karena itu bar
- * tidak pernah mencapai 100% sebelum jawaban benar-benar selesai, dan
- * keterangan tahapnya yang menjadi informasi utama.
+ * Indikator progres jawaban AI yang real-time, bebas istilah teknis,
+ * dan selaras antara ikon, keterangan tindakan, serta status layanan.
  */
 
-const STAGE_ICON = {
-  connecting: Loader2,
-  reconnecting: RefreshCw,
-  reading: FileSearch,
-  thinking: Sparkles,
-  tool: Database,
-  building: FileSearch,
-  done: Sparkles,
+const resolveContext = (progress, t) => {
+  if (!progress) {
+    return {
+      Icon: Sparkles,
+      context: t('thinking.service_ai'),
+      isSpinning: false,
+    };
+  }
+
+  const stage = progress.stage;
+  const srv = (progress.server || '').toLowerCase();
+  const label = (progress.label || '').toLowerCase();
+
+  if (stage === 'connecting') {
+    return {
+      Icon: Loader2,
+      context: t('thinking.connecting'),
+      isSpinning: true,
+    };
+  }
+  if (stage === 'reconnecting') {
+    return {
+      Icon: RefreshCw,
+      context: t('thinking.reconnecting_hint'),
+      isSpinning: true,
+    };
+  }
+  if (stage === 'reading') {
+    return {
+      Icon: FileSearch,
+      context: t('thinking.service_doc'),
+      isSpinning: false,
+    };
+  }
+  if (stage === 'building') {
+    return {
+      Icon: FileSpreadsheet,
+      context: t('thinking.service_file'),
+      isSpinning: false,
+    };
+  }
+  if (stage === 'done') {
+    return {
+      Icon: Sparkles,
+      context: t('thinking.done'),
+      isSpinning: false,
+    };
+  }
+
+  if (stage === 'tool') {
+    if (srv === 'email' || label.includes('email') || label.includes('mail') || label.includes('pesan')) {
+      return {
+        Icon: Mail,
+        context: t('thinking.service_email'),
+        isSpinning: false,
+      };
+    }
+    if (srv === 'rag' || label.includes('sop') || label.includes('dokumen') || label.includes('referensi') || label.includes('knowledge')) {
+      return {
+        Icon: BookOpen,
+        context: t('thinking.service_rag'),
+        isSpinning: false,
+      };
+    }
+    if (srv === 'sql' || srv === 'database' || label.includes('database') || label.includes('basis data') || label.includes('kueri') || label.includes('query')) {
+      return {
+        Icon: Server,
+        context: t('thinking.service_sql'),
+        isSpinning: false,
+      };
+    }
+    return {
+      Icon: Database,
+      context: t('thinking.service_sap'),
+      isSpinning: false,
+    };
+  }
+
+  return {
+    Icon: Sparkles,
+    context: t('thinking.service_ai'),
+    isSpinning: false,
+  };
 };
 
 /** Bobot per tahap agar bar bergerak wajar, dibatasi 92% sampai benar-benar selesai. */
@@ -39,13 +120,7 @@ const computePercent = (progress) => {
 const ThinkingIndicator = ({ progress, onStop }) => {
   const { t } = useLanguage();
   const percent = computePercent(progress);
-  const Icon = STAGE_ICON[progress?.stage] || Sparkles;
-  const isSpinning = progress?.stage === 'connecting' || progress?.stage === 'reconnecting';
-
-  const stageKey = progress?.stage ? `thinking.${progress.stage}` : 'thinking.processing';
-  const hint = progress?.stage === 'reconnecting'
-    ? t('thinking.reconnecting_hint')
-    : t(stageKey);
+  const { Icon, context, isSpinning } = resolveContext(progress, t);
   const label = progress?.label || t('thinking.processing');
 
   return (
@@ -77,12 +152,16 @@ const ThinkingIndicator = ({ progress, onStop }) => {
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-0.5">
-          <span className="text-[11px] text-content-muted truncate">
-            {hint}
-            {progress?.step ? ` • ${t('thinking.step', { step: progress.step })}` : ''}
-          </span>
+          <div className="flex items-center gap-1.5 min-w-0 text-[11px] text-content-muted truncate">
+            <span className="relative flex h-1.5 w-1.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent/60 opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-accent" />
+            </span>
+            <span className="truncate font-medium">{context}</span>
+          </div>
           {onStop && (
             <button
+              type="button"
               onClick={onStop}
               className="flex items-center gap-1.5 text-[11px] font-semibold text-content-muted hover:text-rose-400 hover:bg-rose-500/10 border border-line/80 rounded-lg px-2.5 py-1 transition-all shrink-0 cursor-pointer active:scale-95"
             >

@@ -125,3 +125,16 @@ def test_tool_stage_names_the_table_being_read():
     assert _describe_tool("sap", "sap_read_table", {"table_name": "MARA"}) == "Membaca tabel MARA di SAP…"
     assert _describe_tool("rag", "search", {}) == "Mencari di dokumen internal…"
     assert "ABAP" in _describe_tool("sap", "read_program", {})
+
+    # Verifikasi bahasa Inggris
+    assert _describe_tool("sap", "read_table", {"table": "MARC"}, is_en=True) == "Reading SAP table MARC…"
+    assert _describe_tool("rag", "search", {}, is_en=True) == "Searching knowledge base & SOP…"
+
+    # Verifikasi server Email dan SQL tanpa istilah teknis "MCP"
+    assert "MCP" not in _describe_tool("email", "search_emails", {})
+    assert _describe_tool("email", "search_emails", {}) == "Mencari email terbaru…"
+    assert _describe_tool("email", "search_emails", {}, is_en=True) == "Searching recent emails…"
+    assert _describe_tool("email", "read_email", {}) == "Membaca isi email…"
+    assert _describe_tool("sql", "query", {}) == "Membaca data dari database…"
+    assert _describe_tool("sql", "query", {}, is_en=True) == "Querying database records…"
+

@@ -296,33 +296,61 @@ def tool_mengubah_program(tool_name: str) -> bool:
     return any(f in frasa for f in _FRASA_UBAH)
 
 
-def _describe_tool(server: str, tool_name: str, args: dict = None) -> str:
-    """Terjemahkan pemanggilan tool menjadi keterangan yang dipahami pengguna."""
+def _describe_tool(server: str, tool_name: str, args: dict = None, is_en: bool = False) -> str:
+    """Terjemahkan pemanggilan tool menjadi keterangan yang dipahami pengguna secara ramah & natural."""
     name = (tool_name or "").lower()
-    if server == "rag":
-        return "Mencari di dokumen internal…"
-    if server in ("sql", "database"):
-        if "query" in name or "read" in name:
-            return "Menjalankan query SQL database…"
-        return "Memproses layanan MCP SQL…"
-    if server == "email":
-        if "send" in name:
-            return "Mengirim email via MCP Email…"
-        return "Memproses layanan MCP Email…"
+    srv = (server or "").lower()
 
+    if srv == "email" or "email" in name or "mail" in name:
+        if "send" in name:
+            return "Sending email…" if is_en else "Mengirim email…"
+        if any(k in name for k in ("search", "list", "find", "filter", "inbox")):
+            return "Searching recent emails…" if is_en else "Mencari email terbaru…"
+        if any(k in name for k in ("read", "get", "body", "content")):
+            return "Reading email content…" if is_en else "Membaca isi email…"
+        if any(k in name for k in ("archive", "restore")):
+            return "Accessing email archive…" if is_en else "Mengakses arsip email…"
+        return "Checking emails…" if is_en else "Memeriksa email…"
+
+    if srv == "rag" or "rag" in name or "doc" in name:
+        if "answer" in name:
+            return "Analyzing reference documents…" if is_en else "Menganalisis dokumen referensi…"
+        return "Searching knowledge base & SOP…" if is_en else "Mencari di dokumen internal…"
+
+    if srv in ("sql", "database") or "sql" in name:
+        if any(k in name for k in ("query", "read", "select", "exec")):
+            return "Querying database records…" if is_en else "Membaca data dari database…"
+        if any(k in name for k in ("schema", "table", "column", "describe")):
+            return "Checking database structure…" if is_en else "Memeriksa struktur database…"
+        return "Processing database…" if is_en else "Memproses basis data…"
+
+    # Server SAP
     table = ""
     if isinstance(args, dict):
         table = args.get("table") or args.get("table_name") or ""
 
     if "read_table" in name:
-        return f"Membaca tabel {table} di SAP…" if table else "Membaca tabel data SAP…"
-    if "program" in name:
-        return "Membaca program ABAP…"
-    if "function" in name:
-        return "Menjalankan fungsi SAP…"
+        if table:
+            return f"Reading SAP table {table}…" if is_en else f"Membaca tabel {table} di SAP…"
+        return "Reading SAP table data…" if is_en else "Membaca tabel data SAP…"
+    if "program" in name or "source" in name:
+        prog = ""
+        if isinstance(args, dict):
+            prog = args.get("program_name") or args.get("name") or ""
+        if prog:
+            return f"Inspecting ABAP program {prog}…" if is_en else f"Membaca kode program {prog}…"
+        return "Reading ABAP program…" if is_en else "Membaca kode program ABAP…"
+    if "function" in name or "rfc" in name or "bapi" in name:
+        func = ""
+        if isinstance(args, dict):
+            func = args.get("function_name") or args.get("name") or ""
+        if func:
+            return f"Executing {func} in SAP…" if is_en else f"Menjalankan fungsi {func} di SAP…"
+        return "Executing SAP function…" if is_en else "Menjalankan fungsi SAP…"
     if "search" in name:
-        return "Mencari data di SAP…"
-    return "Mengambil data dari SAP…"
+        return "Searching data in SAP…" if is_en else "Mencari data di SAP…"
+    return "Fetching data from SAP…" if is_en else "Mengambil data dari SAP…"
+
 
 
 def _looks_like_vision_error(error: Exception) -> bool:
@@ -719,13 +747,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         fallback_provider = "openrouter"
         fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
 
+    is_en = getattr(chat_req, "language", "id") == "en"
+
     # Progres dilaporkan sebagai tahapan nyata (bukan perkiraan waktu): langkah
     # keberapa dari batas iterasi agen, beserta keterangan yang sedang dikerjakan.
     progress = on_progress or _noop_progress
 
-    async def report(stage: str, label: str, step: int = 0):
+    async def report(stage: str, label: str, step: int = 0, server: str = ""):
         try:
-            await progress(stage=stage, label=label, step=step, max_steps=MAX_ITERATIONS)
+            await progress(stage=stage, label=label, step=step, max_steps=MAX_ITERATIONS, server=server)
         except Exception as e:  # progres tidak boleh menjatuhkan percakapan
             logger.warning(f"Gagal mengirim progres: {e}")
 
@@ -875,7 +905,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         catat_pemakaian(merged)
         return merged
 
-    await report("connecting", "Menyiapkan permintaan…")
+    await report("connecting", "Connecting to assistant…" if is_en else "Menyiapkan permintaan…")
 
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih dan otorisasi pengguna)
     target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
@@ -1540,7 +1570,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             text_block, attachment_images = build_context_blocks(loaded)
             names = ", ".join(item["filename"] for item in loaded)
             logger.info(f"Menyertakan {len(loaded)} lampiran sebagai konteks: {names}")
-            await report("reading", f"Membaca lampiran ({len(loaded)} berkas)…")
+            await report("reading", f"Reading attachments ({len(loaded)} files)…" if is_en else f"Membaca lampiran ({len(loaded)} berkas)…")
 
             if text_block:
                 user_content = (
@@ -1574,7 +1604,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         iteration += 1
         await report(
             "thinking",
-            "Menganalisis pertanyaan…" if iteration == 1 else "Menyusun jawaban dari data…",
+            ("Analyzing question…" if iteration == 1 else "Formulating response…") if is_en
+            else ("Menganalisis pertanyaan…" if iteration == 1 else "Menyusun jawaban dari data…"),
             iteration,
         )
         active_primary = llm_primary_auto
@@ -1678,7 +1709,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     # Yang mengalir tadi adalah panggilan tool berbentuk teks,
                     # bukan jawaban untuk pengguna.
                     await reset_stream()
-                    await report("tool", _describe_tool(server_name, actual_tool_name, t_args), iteration)
+                    await report("tool", _describe_tool(server_name, actual_tool_name, t_args, is_en=is_en), iteration, server=server_name)
                     tool_result = await mcp_manager.call_tool(
                         server_name, actual_tool_name, t_args, sap_target=sap_target, sap_credentials=user_sap_credentials
                     )
@@ -1922,7 +1953,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 continue
             
             try:
-                await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)
+                await report("tool", _describe_tool(server_name, mcp_name, tool_args, is_en=is_en), iteration, server=server_name)
                 result = await mcp_manager.call_tool(
                     server_name, mcp_name, tool_args, sap_target=sap_target, sap_credentials=user_sap_credentials
                 )
@@ -1973,11 +2004,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
 
     if "```sap-artifact" in (reply_text or ""):
-        await report("building", "Menyiapkan berkas hasil…", max_iterations)
+        await report("building", "Generating document file…" if is_en else "Menyiapkan berkas hasil…", max_iterations)
 
     # Ubah blok spesifikasi berkas dari model menjadi berkas Excel/CSV sungguhan.
     reply_text, artifacts = extract_and_build(reply_text, owner=username)
-    await report("done", "Selesai", max_iterations)
+    await report("done", "Completed" if is_en else "Selesai", max_iterations)
 
     statistik = UsageStats(
         prompt_tokens=pemakaian["prompt"] if pemakaian["ada"] else None,
