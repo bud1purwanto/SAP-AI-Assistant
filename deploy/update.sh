@@ -57,9 +57,15 @@ cd "${PROJECT_DIR}/frontend"
 NODE_ENV=development npm install --include=dev
 npm run build
 
-echo "⚙️ [4/4] Merestart service backend..."
+echo "⚙️ [4/5] Merestart service backend..."
 sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
 
+echo "🌐 [5/5] Memperbarui konfigurasi Nginx & reload..."
+if [ -f "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" ]; then
+    sudo cp "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" /etc/nginx/sites-available/sap-ai 2>/dev/null || cp "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" /etc/nginx/sites-available/sap-ai 2>/dev/null || true
+    (sudo nginx -t 2>/dev/null && (sudo systemctl reload nginx 2>/dev/null || systemctl reload nginx 2>/dev/null || true)) || true
+fi
+
 echo "=========================================================="
-echo "✅ Update selesai & frontend berhasil dibangun!"
+echo "✅ Update selesai, Nginx diperbarui, & frontend berhasil dibangun!"
 echo "=========================================================="
