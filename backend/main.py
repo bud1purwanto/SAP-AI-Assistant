@@ -2382,35 +2382,51 @@ async def get_chat_suggestions_endpoint(
     refresh: bool = False,
     user: dict = Depends(get_current_user_optional),
 ):
-    """Kembalikan 3 saran pertanyaan personal berbasis role & riwayat chat user."""
-    import random
-    from agent import generate_chat_suggestions
-    from database import get_user_by_username, get_recent_user_queries
+    """Kembalikan 3 saran pertanyaan personal berbasis divisi, role, dan profil user."""
+    from agent import generate_chat_suggestions, get_static_suggestions
+    from database import get_user_by_username, get_recent_user_queries, get_division
 
     is_guest = user.get("is_guest", True)
     role = "guest"
     persona = ""
     recent_queries = []
+    username = ""
+    full_name = ""
+    division_code = ""
+    division_name = ""
+    division_persona = ""
+    job_level = "staff"
 
     if not is_guest and user.get("username"):
-        profile = get_user_by_username(user["username"])
+        username = user["username"]
+        profile = get_user_by_username(username)
         if profile:
             role = profile.get("role", "user")
             persona = profile.get("assistant_persona", "")
-        recent_queries = get_recent_user_queries(user["username"], limit=6)
+            full_name = profile.get("full_name", "")
+            division_code = profile.get("division_code") or ""
+            division_name = profile.get("division_name") or ""
+            job_level = profile.get("job_level") or "staff"
+            if division_code:
+                try:
+                    div_info = get_division(division_code)
+                    if div_info:
+                        division_persona = div_info.get("persona") or ""
+                        if not division_name:
+                            division_name = div_info.get("name") or ""
+                except Exception as e:
+                    logger.warning(f"Gagal mengambil persona divisi '{division_code}': {e}")
+        recent_queries = get_recent_user_queries(username, limit=6)
 
     sys_cfg = get_system_config()
     if not sys_cfg.get("ai_suggestions_enabled", True):
-        from agent import DEFAULT_SUGGESTIONS
-        lang_key = "en" if str(lang).lower().startswith("en") else "id"
-        role_key = (role or "").lower()
-        pool = (
-            DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
-            or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
-            or DEFAULT_SUGGESTIONS["id"]["default"]
+        fallback = get_static_suggestions(
+            division_code=division_code,
+            role=role,
+            lang=lang,
+            job_level=job_level,
         )
-        fallback = random.sample(pool, min(len(pool), 3)) if len(pool) >= 3 else pool
-        return {"suggestions": fallback, "dynamic": False}
+        return {"suggestions": list(fallback), "dynamic": False}
 
     suggestions = await generate_chat_suggestions(
         role=role,
@@ -2418,8 +2434,15 @@ async def get_chat_suggestions_endpoint(
         recent_queries=recent_queries,
         lang=lang,
         refresh=refresh,
+        username=username,
+        full_name=full_name,
+        division_code=division_code,
+        division_name=division_name,
+        division_persona=division_persona,
+        job_level=job_level,
     )
-    return {"suggestions": suggestions, "dynamic": True}
+    is_dynamic = getattr(suggestions, "is_dynamic", True)
+    return {"suggestions": list(suggestions), "dynamic": is_dynamic}
 
 
 async def _run_chat(

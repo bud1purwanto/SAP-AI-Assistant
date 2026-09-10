@@ -3385,8 +3385,20 @@ def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
         return False
 
 
-def get_modes_for_role(role: str) -> list[dict]:
+def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
     """Mengambil seluruh mode chat yang ada, beserta status `available` untuk role yang bersangkutan."""
+    if isinstance(role, (list, tuple, set)):
+        modes_by_code = {}
+        for r in role:
+            for m in get_modes_for_role(str(r)):
+                if m["code"] not in modes_by_code:
+                    modes_by_code[m["code"]] = dict(m)
+                elif m.get("available"):
+                    modes_by_code[m["code"]]["available"] = True
+        res = list(modes_by_code.values())
+        res.sort(key=lambda x: x.get("sort_order", 0))
+        return res
+
     try:
         cfg = get_system_config()
         master_enabled = cfg.get("chat_modes_enabled", True)
@@ -3397,17 +3409,17 @@ def get_modes_for_role(role: str) -> list[dict]:
             # berbeda dari 'enabled' yang hanya soal boleh-tidaknya ditetapkan ke user baru)
             role_meta = conn.execute(
                 text("SELECT suspended FROM ai_assistant.roles WHERE LOWER(code) = LOWER(:r)"),
-                {"r": role}
+                {"r": str(role)}
             ).fetchone()
             role_is_enabled = not role_meta.suspended if role_meta is not None else True
 
             modes = conn.execute(
-                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
+                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order, max_iterations FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
             ).fetchall()
 
             role_rows = conn.execute(
                 text("SELECT mode_code, enabled FROM ai_assistant.role_modes WHERE role = :r"),
-                {"r": role}
+                {"r": str(role)}
             ).fetchall()
             role_map = {r.mode_code: bool(r.enabled) for r in role_rows}
 
@@ -3416,7 +3428,7 @@ def get_modes_for_role(role: str) -> list[dict]:
                 mode_dict = dict(m._mapping)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
-                is_role_allowed = (role_map.get(mode_dict["code"], True if role == "superadmin" else False)) if role_is_enabled else False
+                is_role_allowed = (role_map.get(mode_dict["code"], True if str(role).lower() == "superadmin" else False)) if role_is_enabled else False
 
                 # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
                 # dan mode diaktifkan di level sistem, serta role memiliki izin.

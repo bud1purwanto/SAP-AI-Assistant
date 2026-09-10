@@ -436,9 +436,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # 0.0 Penanganan Cepat Perintah Slash (Slash Commands)
     raw_message = (chat_req.message or "").strip()
     raw_lower = raw_message.lower()
+    is_en = getattr(chat_req, "language", "id") == "en"
 
     if raw_lower in ("/", "/help", "/?", "/menu", "/commands", "/command"):
+        roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
+        user_roles_lower = [str(r).lower() for r in roles_list]
+        is_admin_or_dev = any(r in user_roles_lower for r in ("superadmin", "admin", "developer", "it", "basis"))
+        servers_row_id = "| `/servers` | Cek status live gateway MCP (SAP, RAG, SQL, Mail) | `/servers` |\n" if is_admin_or_dev else ""
+        servers_row_en = "| `/servers` | Check live status of MCP gateways (SAP, RAG, SQL, Mail) | `/servers` |\n" if is_admin_or_dev else ""
         reply_md = (
+            "### 🧭 Slash Commands Guide\n\n"
+            "You can use slash commands (`/`) to quickly access features, documents, and system automation:\n\n"
+            "| Command | Function | Example Usage |\n"
+            "| :--- | :--- | :--- |\n"
+            "| `/sop <topic>` | Search technical guides & internal SOP procedures | `/sop material reject handling` |\n"
+            "| `/email <instruction>` | Draft and format official business email reports | `/email to:spv@company.com subject:PO Summary` |\n"
+            "| `/export <format>` | Export last data table to Excel or CSV file | `/export excel` or `/export csv` |\n"
+            "| `/summary` | Summarize current chat discussion into a 3-point memo | `/summary` |\n"
+            "| `/skills` | Display catalog of active SOP domain skill modules | `/skills` |\n"
+            "| `/quota` | Check daily token consumption & account details | `/quota` |\n"
+            f"{servers_row_en}"
+            "| `/modes` | List AI reasoning modes & step limits | `/modes` |\n"
+            "| `/clear` | Clear active conversation and start a new session | `/clear` |\n"
+            "| `/help` | Display this command guide | `/help` |\n\n"
+            "💡 *Tip: Simply type `/` in the chat input to automatically open the interactive command popover.*"
+        ) if is_en else (
             "### 🧭 Panduan Pintasan Perintah (*Slash Commands*)\n\n"
             "Anda dapat menggunakan perintah garis miring (`/`) untuk mengakses fitur, dokumen, dan otomasi sistem secara cepat:\n\n"
             "| Perintah | Fungsi | Contoh Penggunaan |\n"
@@ -449,7 +471,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             "| `/summary` | Rangkum diskusi chat menjadi memo eksekutif 3 poin | `/summary` |\n"
             "| `/skills` | Tampilkan katalog modul keahlian & SOP domain aktif | `/skills` |\n"
             "| `/quota` | Periksa pemakaian token harian & informasi akun | `/quota` |\n"
-            "| `/servers` | Cek status live gateway MCP (SAP, RAG, SQL, Mail) | `/servers` |\n"
+            f"{servers_row_id}"
             "| `/modes` | Daftar mode penalaran AI & batas iterasi langkah | `/modes` |\n"
             "| `/clear` | Membersihkan percakapan aktif dan memulai sesi baru | `/clear` |\n"
             "| `/help` | Menampilkan panduan bantuan perintah ini | `/help` |\n\n"
@@ -459,7 +481,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             await on_token(reply_md)
         if on_progress:
             try:
-                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+                await on_progress(stage="done", label="Completed" if is_en else "Selesai", step=1, max_steps=1)
             except Exception:
                 pass
         return ChatResponse(reply=reply_md, sources=[])
@@ -471,9 +493,18 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         for sk in active_skills:
             tags_disp = f"`{sk.get('tags')}`" if sk.get("tags") else "*-*"
             rows_md.append(f"| **{sk['name']}** | {tags_disp} | {sk.get('description') or '-'} |")
-        table_str = "\n".join(rows_md) if rows_md else "| Belum ada skill aktif | - | - |"
+        table_str = "\n".join(rows_md) if rows_md else ("| No active skills found | - | - |" if is_en else "| Belum ada skill aktif | - | - |")
 
         reply_md = (
+            "### 📚 Active SOP & Domain Skills Catalog\n\n"
+            "Here are the active technical domain skills & SOP modules registered in the system:\n\n"
+            "| Skill Module | Keywords / Tags | Brief Description |\n"
+            "| :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 **How to Use Skills:**\n"
+            "1. **Automatic (*Smart Matching*)**: Ask directly (e.g., *'how to cancel slit roll'*, *'create zrep program'*). The system auto-matches relevant keywords.\n"
+            "2. **Explicit**: Prefix your prompt with `/skill <module_name> <question>` (e.g., `/skill pp how to cancel slitting order?`)."
+        ) if is_en else (
             "### 📚 Modul Panduan Keahlian & SOP Aktif (*Skills Catalog*)\n\n"
             "Berikut adalah modul keahlian & SOP teknis yang terdaftar di sistem:\n\n"
             "| Modul Keahlian | Kata Kunci / Tags | Deskripsi Ringkas |\n"
@@ -487,7 +518,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             await on_token(reply_md)
         if on_progress:
             try:
-                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+                await on_progress(stage="done", label="Completed" if is_en else "Selesai", step=1, max_steps=1)
             except Exception:
                 pass
         return ChatResponse(reply=reply_md, sources=[])
@@ -497,22 +528,28 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         sys_cfg = get_system_config()
         limit_enabled = bool(sys_cfg.get("token_limit_enabled"))
         roles_list = access_control.normalize_roles(user_role)
-        roles_disp = ", ".join(roles_list) if roles_list else "user"
+        is_unlimited = any(r in ("superadmin", "admin", "developer") for r in roles_list)
 
-        usage_info = get_token_usage(username) if username != "Guest" else {"total_tokens": 0, "requests": 0, "usage_date": "-"}
-        tokens_used = usage_info.get("total_tokens", 0)
-        requests_count = usage_info.get("requests", 0)
-        status_limit = "🛡️ Ditegakkan Aktif" if limit_enabled else "🟢 Bebas (Monitoring Saja)"
+        token_today = 0
+        limit_hari = int(sys_cfg.get("token_limit_per_day", 100000))
+        # Mengasumsikan user_id tersedia dalam scope
+        user_id = getattr(chat_req, "user_id", username)
+        if not is_unlimited and user_id:
+            token_today = get_token_usage(user_id=user_id, period="today")
+        sisa = max(0, limit_hari - token_today) if not is_unlimited else "∞ Unlimited"
+
+        roles_disp = ", ".join(f"`{r}`" for r in roles_list)
+        limit_disp = "Tanpa Batas (*Unlimited*)" if is_unlimited else f"{limit_hari:,} token/hari"
+        used_disp = f"{token_today:,} token" if not is_unlimited else "Tidak dibatasi"
+        sisa_disp = "∞ Unlimited" if is_unlimited else f"{sisa:,} token"
 
         reply_md = (
-            "### 📊 Ringkasan Akun & Status Kuota Pengguna\n\n"
-            f"- **Nama Pengguna**: `{username}`\n"
-            f"- **Peran / Roles**: `{roles_disp}`\n"
-            f"- **Pemakaian Token Hari Ini**: **{tokens_used:,} token**\n"
-            f"- **Jumlah Permintaan Hari Ini**: **{requests_count} pesan**\n"
-            f"- **Penegakan Batas Token**: {status_limit}\n"
-            f"- **Zona Waktu Server**: `Asia/Jakarta (WIB)`\n\n"
-            "💡 *Catatan: Pemakaian token direset otomatis setiap tengah malam pukul 00:00 WIB.*"
+            "### 👤 Informasi Akun & Kuota Pemakaian\n\n"
+            f"- **Peran (*Roles*)**: {roles_disp}\n"
+            f"- **Batas Kuota Harian**: {limit_disp}\n"
+            f"- **Pemakaian Hari Ini**: {used_disp}\n"
+            f"- **Sisa Kuota Tersedia**: **{sisa_disp}**\n\n"
+            f"💡 *Sistem reset kuota token harian berjalan otomatis setiap pukul 00:00 WIB.*"
         )
         if on_token:
             await on_token(reply_md)
@@ -523,41 +560,80 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 pass
         return ChatResponse(reply=reply_md, sources=[])
 
-    if raw_lower in ("/modes", "/mode"):
+    if raw_lower in ("/modes", "/mode", "/reasoning"):
         from database import get_modes_for_role
-        roles_list = access_control.normalize_roles(user_role)
+        roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
         modes = get_modes_for_role(roles_list)
         rows_md = []
         for m in modes:
-            default_badge = " *(Default)*" if m.get("is_default") else ""
-            rows_md.append(f"| **{m.get('name')}{default_badge}** | `{m.get('code')}` | {m.get('max_iterations', 6)} langkah | {m.get('description') or '-'} |")
-        table_str = "\n".join(rows_md) if rows_md else "| Belum ada mode aktif | - | - | - |"
+            default_badge = (" *(Default)*" if is_en else " *(Bawaan)*") if m.get("is_default") else ""
+            iters = m.get("max_iterations") or 15
+            unit = "steps" if is_en else "langkah"
+            rows_md.append(f"| **{m.get('name')}{default_badge}** | `{m.get('code')}` | {iters} {unit} | {m.get('description') or '-'} |")
+        table_str = "\n".join(rows_md) if rows_md else ("| No active modes available | - | - | - |" if is_en else "| Belum ada mode aktif | - | - | - |")
         reply_md = (
+            "### ⚡ Available AI Reasoning Modes\n\n"
+            "Here are the reasoning modes available for your account role:\n\n"
+            "| Mode Name | Code | Max Iterations | Description |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 *You can select your active mode directly from the mode dropdown next to the chat input.*"
+        ) if is_en else (
             "### ⚡ Mode Penalaran AI yang Tersedia\n\n"
             "Berikut adalah mode percakapan yang dapat digunakan untuk peran akun Anda:\n\n"
             "| Nama Mode | Kode | Batas Iterasi | Penjelasan |\n"
             "| :--- | :--- | :--- | :--- |\n"
             f"{table_str}\n\n"
-            "💡 *Anda dapat memilih mode langsung melalui pemilih mode di samping kiri kolom pesan.*"
+            "💡 *Anda dapat memilih mode yang aktif langsung dari pemilih mode di samping input percakapan.*"
         )
         if on_token:
             await on_token(reply_md)
         if on_progress:
             try:
-                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+                await on_progress(stage="done", label="Completed" if is_en else "Selesai", step=1, max_steps=1)
             except Exception:
                 pass
         return ChatResponse(reply=reply_md, sources=[])
 
     if raw_lower in ("/servers", "/server", "/status"):
+        roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
+        user_roles_lower = [str(r).lower() for r in roles_list]
+        is_admin_or_dev = any(r in user_roles_lower for r in ("superadmin", "admin", "developer", "it", "basis"))
+        if not is_admin_or_dev:
+            reply_md = (
+                "🔒 **Access Restricted**\n\n"
+                "The `/servers` command is reserved for System Administrators and IT Technical Specialists.\n\n"
+                "💡 *Please contact your IT administrator if you require gateway or server connectivity details.*"
+            ) if is_en else (
+                "🔒 **Akses Terbatas**\n\n"
+                "Perintah `/servers` hanya dapat diakses oleh Administrator Sistem dan Tim Teknis IT.\n\n"
+                "💡 *Silakan hubungi administrator IT Anda jika memerlukan informasi status gateway server.*"
+            )
+            if on_token:
+                await on_token(reply_md)
+            if on_progress:
+                try:
+                    await on_progress(stage="done", label="Completed" if is_en else "Selesai", step=1, max_steps=1)
+                except Exception:
+                    pass
+            return ChatResponse(reply=reply_md, sources=[])
+
         st = await mcp_manager.check_servers_status()
         rows_md = []
         for sid, sinfo in st.items():
-            st_badge = "🟢 Online" if sinfo.get("online") else ("⚪ Disabled" if sinfo.get("status") == "disabled" else "🔴 Offline")
+            st_badge = "🟢 Online" if sinfo.get("online") else (("⚪ Disabled" if is_en else "⚪ Nonaktif") if sinfo.get("status") == "disabled" else "🔴 Offline")
             tools_cnt = sinfo.get("tool_count", sinfo.get("tools_count", 0))
-            rows_md.append(f"| **{sinfo.get('name', sid)}** | `{sid}` | {st_badge} | {tools_cnt} tools |")
-        table_str = "\n".join(rows_md) if rows_md else "| Tidak ada server terdeteksi | - | - | - |"
+            tools_label = "tools" if is_en else "tool"
+            rows_md.append(f"| **{sinfo.get('name', sid)}** | `{sid}` | {st_badge} | {tools_cnt} {tools_label} |")
+        table_str = "\n".join(rows_md) if rows_md else ("| No gateway servers detected | - | - | - |" if is_en else "| Tidak ada server terdeteksi | - | - | - |")
         reply_md = (
+            "### 🖥️ Live MCP Gateway & Server Status\n\n"
+            "Here is the current connectivity and health status of connected MCP gateways and databases:\n\n"
+            "| Gateway Server | ID | Status | Tool Count |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            f"{table_str}\n\n"
+            "💡 *If any server is offline or disabled, please check server logs or contact System Administration.*"
+        ) if is_en else (
             "### 🖥️ Status Konektivitas Gateway Server MCP\n\n"
             "Berikut adalah status terkini gateway MCP dan database yang terhubung:\n\n"
             "| Gateway Server | ID | Status | Jumlah Tool |\n"
@@ -569,7 +645,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             await on_token(reply_md)
         if on_progress:
             try:
-                await on_progress(stage="done", label="Selesai", step=1, max_steps=1)
+                await on_progress(stage="done", label="Completed" if is_en else "Selesai", step=1, max_steps=1)
             except Exception:
                 pass
         return ChatResponse(reply=reply_md, sources=[])
@@ -2117,10 +2193,10 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "TrendingUp"
             },
             {
-                "title": "Optimasi Mode & Model AI",
-                "subtitle": "Rekomendasi konfigurasi model sistem",
-                "query": "Bagaimana rekomendasi pengaturan provider model AI dan mode chat terbaik untuk beban kerja saat ini?",
-                "icon": "Zap"
+                "title": "Ringkasan Eksekutif Operasional",
+                "subtitle": "Ikhtisar metrik bisnis, logistik & keuangan",
+                "query": "Tampilkan ringkasan eksekutif performa operasional pabrik, pemenuhan order, dan anomali sistem hari ini.",
+                "icon": "TrendingUp"
             },
             {
                 "title": "Monitoring Job SM37",
@@ -2135,10 +2211,314 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "Shield"
             },
             {
-                "title": "Kesehatan Database BA130",
-                "subtitle": "Periksa performa tabel dan ruang storage",
-                "query": "Periksa status kesehatan database, kueri berat, dan ketersediaan tabel pada instance BA130.",
+                "title": "Monitoring Server & Gateway",
+                "subtitle": "Kesehatan gateway MCP & performa layanan",
+                "query": "Bagaimana status kesehatan gateway layanan, konektivitas database, dan latensi respons sistem saat ini?",
+                "icon": "Shield"
+            }
+        ],
+        "pp": [
+            {
+                "title": "Cek Ketersediaan Stok",
+                "subtitle": "Lihat stok bahan baku dan WIP di plant",
+                "query": "Berapa ketersediaan stok material dan bahan baku di plant kita saat ini?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Order Produksi & Slitting",
+                "subtitle": "Pantau status pengerjaan dan konversi",
+                "query": "Tampilkan status Production Order aktif dan progress proses slitting hari ini.",
+                "icon": "Package"
+            },
+            {
+                "title": "Reservasi Komponen RESB",
+                "subtitle": "Cek ketersediaan part dan keterlambatan rilis",
+                "query": "Bagaimana cara memeriksa reservasi komponen di tabel RESB yang belum terbit (missing parts)?",
+                "icon": "Search"
+            },
+            {
+                "title": "Penanganan Scrap & Reject",
+                "subtitle": "SOP pencatatan scrap dan afval produksi",
+                "query": "Bagaimana prosedur pencatatan scrap dan material reject pada konfirmasi order produksi CO11N?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Kapasitas Work Center",
+                "subtitle": "Analisis utilisasi mesin di CR01/CM01",
+                "query": "Tunjukkan cara mengevaluasi beban kapasitas work center dan mesin produksi yang overload.",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Kalkulasi Kebutuhan MRP",
+                "subtitle": "Evaluasi Stock/Requirements List MD04",
+                "query": "Jelaskan langkah investigasi sinyal exception message dan shortage pada MRP list MD04.",
                 "icon": "Database"
+            }
+        ],
+        "fin": [
+            {
+                "title": "Rekonsiliasi Akun GR/IR",
+                "subtitle": "Analisis selisih nilai barang & faktur MIRO",
+                "query": "Tunjukkan langkah analisis selisih nilai akun kliring GR/IR pada verifikasi faktur MIRO.",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Saldo Hutang Vendor",
+                "subtitle": "Pantau open items hutang dagang di FBL1N",
+                "query": "Bagaimana cara memantau daftar hutang vendor (AP open items) yang mendekati jatuh tempo di FBL1N?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Realisasi Anggaran Biaya",
+                "subtitle": "Bandingkan budget vs aktual di Cost Center",
+                "query": "Tampilkan perbandingan realisasi anggaran biaya aktual terhadap rencana budget di Cost Center.",
+                "icon": "Database"
+            },
+            {
+                "title": "Pemeriksaan Jurnal Akuntansi",
+                "subtitle": "Verifikasi dokumen posting di FB03/FB01",
+                "query": "Bagaimana cara melacak histori dokumen jurnal keuangan dan log perubahan akun di FB03?",
+                "icon": "Search"
+            },
+            {
+                "title": "Saldo Piutang Pelanggan",
+                "subtitle": "Lacak tagihan jatuh tempo di FBL5N",
+                "query": "Tunjukkan ringkasan umur piutang pelanggan (aging AR) dan open invoice yang belum lunas.",
+                "icon": "Layers"
+            },
+            {
+                "title": "Penutupan Periode FI/CO",
+                "subtitle": "Checklist closing bulanan di MMPV/OB52",
+                "query": "Apa saja tahapan penting dan checklist tutup buku bulanan pada modul FI dan CO?",
+                "icon": "Shield"
+            }
+        ],
+        "proc": [
+            {
+                "title": "Status Purchase Order",
+                "subtitle": "Pantau PO terbuka dan jadwal pengiriman",
+                "query": "Tampilkan Purchase Order (PO) terbuka terbaru dan status penerimaan barangnya.",
+                "icon": "Search"
+            },
+            {
+                "title": "Approval PR Massal",
+                "subtitle": "Panduan rilis purchase requisition ME55",
+                "query": "Bagaimana prosedur approval rilis Purchase Requisition (PR) secara massal di transaksi ME55?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Evaluasi Performa Vendor",
+                "subtitle": "Pantau ketepatan waktu kirim dan mutu",
+                "query": "Bagaimana cara mengevaluasi performa pengiriman dan kualitas vendor di modul MM?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Penerimaan Barang MIGO",
+                "subtitle": "Troubleshooting kendala Goods Receipt",
+                "query": "Apa langkah penanganan saat terjadi kendala posting penerimaan barang (Goods Receipt) di MIGO?",
+                "icon": "Package"
+            },
+            {
+                "title": "Monitoring Kontrak Pembelian",
+                "subtitle": "Cek sisa kuota outline agreement ME33K",
+                "query": "Bagaimana cara memantau sisa nilai dan kuota kontrak pembelian (Outline Agreement) di SAP?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Master Data Material MM03",
+                "subtitle": "Periksa purchasing view dan lead time",
+                "query": "Jelaskan cara verifikasi data purchasing view, order unit, dan lead time supplier di MM03.",
+                "icon": "Layers"
+            }
+        ],
+        "sd": [
+            {
+                "title": "Analisis Delivery SD",
+                "subtitle": "Pantau outbound delivery dan status picking",
+                "query": "Bagaimana cara memeriksa status pengiriman outbound delivery di VL06O dan kendala picking?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Backlog Sales Order",
+                "subtitle": "Daftar pesanan pelanggan tertunda di VA05",
+                "query": "Tampilkan daftar Sales Order terbuka yang belum terkirim dan kendala alokasi stoknya.",
+                "icon": "Search"
+            },
+            {
+                "title": "Cek Stok Siap Kirim",
+                "subtitle": "Ketersediaan barang jadi di gudang FG",
+                "query": "Berapa ketersediaan stok barang jadi (Finished Goods) yang siap dikirim saat ini?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Status Faktur Penjualan",
+                "subtitle": "Monitoring billing document di VF01/VF04",
+                "query": "Bagaimana alur penyelesaian billing document dan kendala posting faktur ke piutang FI?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Manajemen Kredit Pelanggan",
+                "subtitle": "Cek credit limit blocked order di VKM1",
+                "query": "Bagaimana prosedur penanganan sales order yang terblokir batas kredit (credit check block)?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Pelacakan Pengiriman Barang",
+                "subtitle": "Pantau status PGI dan dokumen perjalanan",
+                "query": "Bagaimana cara memverifikasi status Post Goods Issue (PGI) dan dokumen pengiriman ekspedisi?",
+                "icon": "Package"
+            }
+        ],
+        "pm": [
+            {
+                "title": "Notifikasi Kerusakan Mesin",
+                "subtitle": "Pantau laporan kerusakan alat di IW28",
+                "query": "Tampilkan daftar notifikasi kerusakan mesin pending di transaksi IW28.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Jadwal Maintenance Mesin",
+                "subtitle": "Rencana pemeliharaan preventif di IP10",
+                "query": "Bagaimana cara mengecek jadwal pemeliharaan preventif (PM maintenance plan) pekan ini?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Ketersediaan Sparepart",
+                "subtitle": "Cek stok suku cadang pemeliharaan pabrik",
+                "query": "Berapa stok ketersediaan suku cadang kritis (spare parts) untuk perbaikan mesin saat ini?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Work Order Pemeliharaan",
+                "subtitle": "Alur rilis dan penyelesaian di IW32/IW38",
+                "query": "Bagaimana alur rilis, eksekusi, dan konfirmasi teknis Maintenance Order (TECO) di SAP?",
+                "icon": "Package"
+            },
+            {
+                "title": "Riwayat Kerusakan Alat",
+                "subtitle": "Analisis Mean Time Between Failures (MTBF)",
+                "query": "Bagaimana cara menarik laporan histori kerusakan equipment dan frekuensi downtime mesin?",
+                "icon": "Database"
+            },
+            {
+                "title": "SOP Kalibrasi & Safety",
+                "subtitle": "Panduan keselamatan kerja pemeliharaan",
+                "query": "Tampilkan prosedur SOP keselamatan kerja dan kalibrasi instrumen mesin pabrik.",
+                "icon": "FileSpreadsheet"
+            }
+        ],
+        "it": [
+            {
+                "title": "Status Koneksi RFC & Server",
+                "subtitle": "Diagnostik SM59 & ketersediaan gateway",
+                "query": "Periksa status koneksi SAP RFC dan kesehatan gateway server yang terhubung.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Monitoring Job SM37",
+                "subtitle": "Lacak batch job yang gagal atau delayed",
+                "query": "Tampilkan daftar background job yang berstatus canceled atau berjalan abnormal di SM37 hari ini.",
+                "icon": "Zap"
+            },
+            {
+                "title": "Analisis Dump ST22",
+                "subtitle": "Investigasi runtime error ABAP terbaru",
+                "query": "Bagaimana cara menganalisis short dump runtime error ST22 dan langkah isolasi bug-nya?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Analisis Lock SM12",
+                "subtitle": "Cek entri penguncian objek yang tertahan",
+                "query": "Bagaimana prosedur aman memeriksa dan menangani lock entries yang menggantung di transaksi SM12?",
+                "icon": "Database"
+            },
+            {
+                "title": "Audit Otorisasi SUIM",
+                "subtitle": "Tinjau akses user kritis dan role profil",
+                "query": "Bagaimana cara melakukan audit user aktif yang memiliki hak akses SAP_ALL atau profil kritis di SUIM?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Optimasi Query SQL",
+                "subtitle": "Tuning indeks tabel & FOR ALL ENTRIES",
+                "query": "Jelaskan best practice optimasi query Open SQL SAP dengan FOR ALL ENTRIES dan index table.",
+                "icon": "Code"
+            }
+        ],
+        "ia": [
+            {
+                "title": "Audit Pemisahan Tugas (SoD)",
+                "subtitle": "Pemeriksaan konflik otorisasi user",
+                "query": "Bagaimana cara memeriksa potensi konflik Segregation of Duties (SoD) pada role pengguna di SAP?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Selisih Akun GR/IR",
+                "subtitle": "Deteksi anomali invoice vs penerimaan barang",
+                "query": "Bagaimana prosedur audit selisih akun kliring GR/IR yang menggantung lebih dari 60 hari?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Log Perubahan Dokumen",
+                "subtitle": "Lacak riwayat perubahan di CDHDR/CDPOS",
+                "query": "Bagaimana cara melacak histori perubahan data master vendor dan PO di tabel CDHDR dan CDPOS?",
+                "icon": "Search"
+            },
+            {
+                "title": "Audit User Otorisasi Khusus",
+                "subtitle": "Tinjau pemegang akses SAP_ALL & DEBUG",
+                "query": "Tampilkan panduan audit berkala terhadap akun pengguna yang memiliki otorisasi istimewa.",
+                "icon": "Database"
+            },
+            {
+                "title": "Deteksi Anomali Transaksi",
+                "subtitle": "Identifikasi transaksi ganda dan deviasi",
+                "query": "Bagaimana metodologi mendeteksi pembayaran ganda atau deviasi harga material pengadaan?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Kepatuhan SOP Perusahaan",
+                "subtitle": "Review kepatuhan alur persetujuan PO/PR",
+                "query": "Tunjukkan checklist kepatuhan limit kewenangan otorisasi (approval hierarchy) pengadaan barang.",
+                "icon": "Layers"
+            }
+        ],
+        "hr": [
+            {
+                "title": "Rekap Presensi & Lembur",
+                "subtitle": "Pantau kehadiran dan overtime karyawan",
+                "query": "Bagaimana cara mengekstrak ringkasan presensi kehadiran dan jam lembur karyawan per departemen?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Pembaruan Master Karyawan",
+                "subtitle": "Panduan perubahan infotype di PA30",
+                "query": "Bagaimana prosedur pembaruan data master infotype karyawan (alamat, keluarga, bank) di PA30?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Siklus Penggajian (Payroll)",
+                "subtitle": "Checklist persiapan payroll bulanan",
+                "query": "Apa saja langkah verifikasi data sebelum menjalankan simulasi payroll bulanan karyawan?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Struktur Organisasi PPOME",
+                "subtitle": "Bagan departemen dan posisi jabatan",
+                "query": "Bagaimana cara memelihara struktur organisasi, posisi jabatan, dan unit kerja di PPOME?",
+                "icon": "Database"
+            },
+            {
+                "title": "Pengajuan Cuti Karyawan",
+                "subtitle": "Pantau saldo dan kuota cuti di PA20",
+                "query": "Bagaimana cara memeriksa sisa kuota cuti tahunan dan status persetujuan cuti di modul HR?",
+                "icon": "Search"
+            },
+            {
+                "title": "Audit Kepatuhan Ketenagakerjaan",
+                "subtitle": "Pemeriksaan data BPJS dan kepatuhan regulasi",
+                "query": "Tunjukkan checklist audit data kepesertaan jaminan ketenagakerjaan dan administrasi personalia.",
+                "icon": "Shield"
             }
         ],
         "default": [
@@ -2271,10 +2651,10 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "TrendingUp"
             },
             {
-                "title": "AI Modes & Provider Tuning",
-                "subtitle": "Recommended model routing configurations",
-                "query": "What are the recommended settings for AI model providers and chat modes for our workload?",
-                "icon": "Zap"
+                "title": "Executive Operations Summary",
+                "subtitle": "Overview of plant logistics & key business metrics",
+                "query": "Show an executive summary of today's plant operations, order fulfillment, and system anomalies.",
+                "icon": "TrendingUp"
             },
             {
                 "title": "SM37 Batch Job Monitor",
@@ -2289,10 +2669,314 @@ DEFAULT_SUGGESTIONS = {
                 "icon": "Shield"
             },
             {
-                "title": "Database Instance BA130",
-                "subtitle": "Inspect table growth and slow queries",
-                "query": "Check database health, long-running queries, and storage status for BA130 instance.",
+                "title": "Gateway & Server Health",
+                "subtitle": "MCP gateways health & service responsiveness",
+                "query": "What is the current health status of service gateways, database connections, and system latency?",
+                "icon": "Shield"
+            }
+        ],
+        "pp": [
+            {
+                "title": "Check Material Stock",
+                "subtitle": "View raw materials & WIP in plant",
+                "query": "What is the current stock availability of raw materials in our production plant?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Production & Slitting Orders",
+                "subtitle": "Monitor conversion and manufacturing progress",
+                "query": "Show active Production Orders and slitting operation progress for today.",
+                "icon": "Package"
+            },
+            {
+                "title": "RESB Component Reservations",
+                "subtitle": "Inspect missing parts and unreleased items",
+                "query": "How do I check component reservations in RESB table with material shortages?",
+                "icon": "Search"
+            },
+            {
+                "title": "Scrap & Reject Handling",
+                "subtitle": "SOP for recording scrap in production",
+                "query": "What is the procedure for recording scrap and rejects during confirmation in CO11N?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Work Center Capacity",
+                "subtitle": "Analyze machine load in CM01",
+                "query": "How can I evaluate work center capacity load and identify production machine bottlenecks?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "MRP Requirements Evaluation",
+                "subtitle": "Analyze exception messages in MD04",
+                "query": "Explain how to interpret MRP exception messages and shortage signals in MD04 list.",
                 "icon": "Database"
+            }
+        ],
+        "fin": [
+            {
+                "title": "GR/IR Account Clearance",
+                "subtitle": "Analyze price variances in MIRO",
+                "query": "What are the recommended steps to clear price variances in GR/IR clearing accounts in MIRO?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Vendor Payables Balance",
+                "subtitle": "Monitor AP open items in FBL1N",
+                "query": "How do I review open vendor liabilities approaching due dates in FBL1N?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Cost Center Budget Realization",
+                "subtitle": "Compare plan vs actual expenses",
+                "query": "Show comparison of actual expenditure against approved budget in Cost Centers.",
+                "icon": "Database"
+            },
+            {
+                "title": "Financial Document Audit",
+                "subtitle": "Verify posted journal entries in FB03",
+                "query": "How do I trace financial document history and account change logs in transaction FB03?",
+                "icon": "Search"
+            },
+            {
+                "title": "Customer Receivables Aging",
+                "subtitle": "Track overdue invoices in FBL5N",
+                "query": "Show summary of customer accounts receivable (AR aging) and overdue open items.",
+                "icon": "Layers"
+            },
+            {
+                "title": "FI/CO Period Closing",
+                "subtitle": "Monthly closing checklist in OB52",
+                "query": "What is the standard checklist for monthly financial period closing in SAP FI and CO?",
+                "icon": "Shield"
+            }
+        ],
+        "proc": [
+            {
+                "title": "Purchase Order Status",
+                "subtitle": "Track open POs and pending deliveries",
+                "query": "Show recent open Purchase Orders (PO) and their current delivery statuses.",
+                "icon": "Search"
+            },
+            {
+                "title": "Mass PR Release Approval",
+                "subtitle": "Purchase requisition release in ME55",
+                "query": "What is the procedure for mass releasing Purchase Requisitions (PR) in transaction ME55?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Vendor Performance Audit",
+                "subtitle": "Monitor on-time delivery & quality scores",
+                "query": "How do I evaluate supplier on-time delivery and quality ratings in SAP MM?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Goods Receipt in MIGO",
+                "subtitle": "Troubleshoot Goods Receipt posting issues",
+                "query": "What steps should I follow when facing Goods Receipt posting issues in MIGO?",
+                "icon": "Package"
+            },
+            {
+                "title": "Purchasing Contract Tracking",
+                "subtitle": "Inspect outline agreements in ME33K",
+                "query": "How do I monitor remaining target quantities and values in Purchasing Outline Agreements?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Material Master Purchasing",
+                "subtitle": "Review purchasing views and lead time",
+                "query": "Explain how to verify supplier purchasing views, order units, and lead times in MM03.",
+                "icon": "Layers"
+            }
+        ],
+        "sd": [
+            {
+                "title": "Outbound Delivery Flow",
+                "subtitle": "Monitor shipping & picking in VL06O",
+                "query": "How do I check open outbound deliveries and resolve picking bottlenecks in VL06O?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Sales Order Backlog",
+                "subtitle": "Review pending orders in VA05",
+                "query": "Show open sales orders pending delivery and identify inventory allocation constraints.",
+                "icon": "Search"
+            },
+            {
+                "title": "Available Stock to Sell",
+                "subtitle": "Finished goods stock ready for dispatch",
+                "query": "What is the available stock of Finished Goods ready for immediate dispatch?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Billing & Invoice Status",
+                "subtitle": "Monitor billing documents in VF04",
+                "query": "How do I process billing due lists and resolve invoice posting errors to FI?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Credit Limit Management",
+                "subtitle": "Manage blocked orders in VKM1",
+                "query": "What is the standard procedure to release sales orders blocked due to credit limits?",
+                "icon": "Shield"
+            },
+            {
+                "title": "Dispatch & PGI Tracking",
+                "subtitle": "Verify Post Goods Issue and shipments",
+                "query": "How do I verify Post Goods Issue (PGI) completion and tracking documents for customer shipments?",
+                "icon": "Package"
+            }
+        ],
+        "pm": [
+            {
+                "title": "Breakdown Notifications",
+                "subtitle": "Monitor pending maintenance alerts in IW28",
+                "query": "Show open equipment breakdown notifications and reported maintenance alerts in IW28.",
+                "icon": "Shield"
+            },
+            {
+                "title": "Preventive Maintenance Schedule",
+                "subtitle": "Review PM maintenance plan in IP10",
+                "query": "How do I inspect scheduled preventive maintenance plans and work orders for this week?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Maintenance Spare Parts",
+                "subtitle": "Check critical spare part inventory",
+                "query": "What is the stock availability of critical maintenance spare parts in the warehouse?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Maintenance Work Orders",
+                "subtitle": "Order execution and TECO status in IW32",
+                "query": "What is the workflow for releasing, confirming, and technically completing (TECO) work orders?",
+                "icon": "Package"
+            },
+            {
+                "title": "Equipment Downtime History",
+                "subtitle": "Analyze breakdown frequency & MTBF",
+                "query": "How do I extract equipment breakdown history and analyze plant downtime trends?",
+                "icon": "Database"
+            },
+            {
+                "title": "Calibration & Safety SOP",
+                "subtitle": "Work safety guidelines for technicians",
+                "query": "Show safety guidelines and standard operating procedures for plant equipment calibration.",
+                "icon": "FileSpreadsheet"
+            }
+        ],
+        "it": [
+            {
+                "title": "RFC Connectivity & Gateways",
+                "subtitle": "SM59 diagnostics & server availability",
+                "query": "Check SAP RFC connection status and active service gateway connectivity.",
+                "icon": "Shield"
+            },
+            {
+                "title": "SM37 Batch Job Monitor",
+                "subtitle": "Track failed or delayed background jobs",
+                "query": "List background jobs in SM37 that aborted or experienced abnormal delays today.",
+                "icon": "Zap"
+            },
+            {
+                "title": "Analyze ST22 Short Dump",
+                "subtitle": "Investigate latest ABAP runtime errors",
+                "query": "How do I systematically troubleshoot an ST22 runtime error short dump in SAP?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "SM12 Enqueue Lock Audit",
+                "subtitle": "Safely inspect lingering table locks",
+                "query": "How do I safely analyze and manage lingering enqueue locks in transaction SM12?",
+                "icon": "Database"
+            },
+            {
+                "title": "SUIM Authorization Audit",
+                "subtitle": "Review privileged roles and SAP_ALL",
+                "query": "Show guidelines to audit active users holding SAP_ALL authorizations in SUIM.",
+                "icon": "Layers"
+            },
+            {
+                "title": "SAP SQL Query Tuning",
+                "subtitle": "Table indexing & FOR ALL ENTRIES",
+                "query": "Explain best practices for optimizing Open SQL queries with FOR ALL ENTRIES and index keys.",
+                "icon": "Code"
+            }
+        ],
+        "ia": [
+            {
+                "title": "Segregation of Duties (SoD)",
+                "subtitle": "Detect user authorization conflicts",
+                "query": "How do I audit potential Segregation of Duties (SoD) conflicts across SAP user roles?",
+                "icon": "Shield"
+            },
+            {
+                "title": "GR/IR Aging Discrepancies",
+                "subtitle": "Audit stale clearing variances >60 days",
+                "query": "What is the audit procedure for unresolved GR/IR clearing balances aged over 60 days?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Document Change Logs",
+                "subtitle": "Inspect changes in CDHDR / CDPOS",
+                "query": "How do I track change audit logs for vendor master data and purchase orders in CDHDR/CDPOS?",
+                "icon": "Search"
+            },
+            {
+                "title": "Privileged User Audit",
+                "subtitle": "Review SAP_ALL & DEBUG privileges",
+                "query": "Provide a structured audit checklist for users assigned privileged authorizations in production.",
+                "icon": "Database"
+            },
+            {
+                "title": "Transaction Anomaly Detection",
+                "subtitle": "Identify duplicate invoices & price drift",
+                "query": "What methodologies detect duplicate payments or material price variances in SAP?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "SOP Compliance Review",
+                "subtitle": "Verify PR / PO approval hierarchy",
+                "query": "Show compliance review steps for verifying delegation of authority limits in procurement.",
+                "icon": "Layers"
+            }
+        ],
+        "hr": [
+            {
+                "title": "Attendance & Overtime",
+                "subtitle": "Monitor employee work hours and overtime",
+                "query": "How do I extract employee attendance summaries and overtime hours per department?",
+                "icon": "TrendingUp"
+            },
+            {
+                "title": "Employee Master Data",
+                "subtitle": "Infotype maintenance guide in PA30",
+                "query": "What is the procedure for updating employee master infotypes (address, bank details) in PA30?",
+                "icon": "Layers"
+            },
+            {
+                "title": "Payroll Preparation",
+                "subtitle": "Pre-payroll checklist and simulation",
+                "query": "What verification checks are required before running the monthly employee payroll simulation?",
+                "icon": "FileSpreadsheet"
+            },
+            {
+                "title": "Organizational Hierarchy",
+                "subtitle": "Manage positions & units in PPOME",
+                "query": "How do I maintain company organizational structures, reporting lines, and job positions in PPOME?",
+                "icon": "Database"
+            },
+            {
+                "title": "Leave Quota Management",
+                "subtitle": "Review annual leave balances in PA20",
+                "query": "How do I check employee leave quota entitlements and pending absence approvals in HR?",
+                "icon": "Search"
+            },
+            {
+                "title": "Labor Compliance Review",
+                "subtitle": "Statutory deductions and personnel audit",
+                "query": "Show audit checklist for statutory employee benefits, social security, and personnel files.",
+                "icon": "Shield"
             }
         ],
         "default": [
@@ -2336,6 +3020,87 @@ DEFAULT_SUGGESTIONS = {
     }
 }
 
+DIVISION_KEY_ALIASES = {
+    "pp": "pp",
+    "prod": "pp",
+    "produksi": "pp",
+    "production": "pp",
+    "manufacturing": "pp",
+    "pabrik": "pp",
+    "fin": "fin",
+    "finance": "fin",
+    "keuangan": "fin",
+    "accounting": "fin",
+    "akuntansi": "fin",
+    "fbl1n": "fin",
+    "proc": "proc",
+    "procurement": "proc",
+    "purchasing": "proc",
+    "pembelian": "proc",
+    "mm": "proc",
+    "sd": "sd",
+    "sales": "sd",
+    "penjualan": "sd",
+    "distribusi": "sd",
+    "distribution": "sd",
+    "pm": "pm",
+    "maintenance": "pm",
+    "pemeliharaan": "pm",
+    "it": "it",
+    "ti": "it",
+    "ict": "it",
+    "basis": "it",
+    "ia": "ia",
+    "audit": "ia",
+    "internal_audit": "ia",
+    "compliance": "ia",
+    "hr": "hr",
+    "hcm": "hr",
+    "sdm": "hr",
+    "personalia": "hr",
+}
+
+
+class SuggestionList(list):
+    """List turunan yang menyimpan status is_dynamic untuk membedakan saran LLM dan fallback statis."""
+    def __init__(self, items=None, is_dynamic: bool = True):
+        super().__init__(items or [])
+        self.is_dynamic = is_dynamic
+
+
+def get_static_suggestions(
+    division_code: str = "",
+    role: str = "guest",
+    lang: str = "id",
+    job_level: str = "staff",
+) -> SuggestionList:
+    """Mengambil 3 kartu saran statis yang paling relevan dengan divisi, peran, dan level pengguna."""
+    import random
+    lang_key = "en" if str(lang).lower().startswith("en") else "id"
+    div_clean = (division_code or "").strip().lower()
+    div_key = DIVISION_KEY_ALIASES.get(div_clean)
+    role_key = (role or "").strip().lower()
+
+    dict_lang = DEFAULT_SUGGESTIONS.get(lang_key) or DEFAULT_SUGGESTIONS["id"]
+
+    pool = None
+    if div_key and div_key in dict_lang:
+        pool = dict_lang[div_key]
+    elif role_key and role_key in dict_lang:
+        pool = dict_lang[role_key]
+    else:
+        pool = dict_lang.get("default") or DEFAULT_SUGGESTIONS["id"]["default"]
+
+    if pool and len(pool) >= 3:
+        first = pool[0]
+        rest = pool[1:]
+        chosen = [first] + random.sample(rest, 2)
+    else:
+        chosen = list(pool or [])
+
+    return SuggestionList(chosen, is_dynamic=False)
+
+
 FOCUS_THEMES = {
     "id": [
         "Investigasi Kendala, Error Troubleshooting & Isolasi Bug",
@@ -2362,32 +3127,28 @@ async def generate_chat_suggestions(
     recent_queries: list[str] | None = None,
     lang: str = "id",
     refresh: bool = False,
+    username: str = "",
+    full_name: str = "",
+    division_code: str = "",
+    division_name: str = "",
+    division_persona: str = "",
+    job_level: str = "staff",
 ) -> list[dict]:
-    """Hasilkan saran pertanyaan dinamis menggunakan LLM berdasarkan role & riwayat chat user."""
+    """Hasilkan saran pertanyaan dinamis menggunakan LLM berdasarkan divisi, peran, dan profil user."""
     import random
     lang_key = "en" if str(lang).lower().startswith("en") else "id"
     role_key = (role or "").lower()
-    pool = (
-        DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
-        or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
-        or DEFAULT_SUGGESTIONS["id"]["default"]
+
+    fallback_list = get_static_suggestions(
+        division_code=division_code,
+        role=role,
+        lang=lang,
+        job_level=job_level,
     )
-    if pool and len(pool) >= 3:
-        first = pool[0]
-        rest = pool[1:]
-        fallback_list = [first] + random.sample(rest, 2)
-    else:
-        fallback_list = pool
 
     try:
         from database import get_system_config
         sys_cfg = get_system_config()
-        provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
-        model_name = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
-        llm = _buat_llm(provider, model_name, sys_cfg, max_tokens=350, temperature=0.85)
-
-        if not llm:
-            return fallback_list
 
         queries_context = ""
         if recent_queries:
@@ -2403,9 +3164,7 @@ async def generate_chat_suggestions(
         selected_theme = random.choice(themes_list)
         random_seed = random.randint(1000, 999999)
 
-        # Deskripsi role diambil dari master ai_assistant.roles (label + description),
-        # bukan daftar contoh hardcode -- role kustom yang admin buat lewat tab Roles
-        # otomatis mendapat konteks yang benar untuk LLM tanpa perlu deploy ulang kode.
+        # Deskripsi role diambil dari master ai_assistant.roles (label + description)
         role_context = role_key or "guest"
         try:
             from database import get_role_by_code
@@ -2415,10 +3174,18 @@ async def generate_chat_suggestions(
         except Exception as e:
             logger.warning(f"Gagal mengambil deskripsi role '{role_key}' untuk saran chat: {e}")
 
+        user_identity = full_name or username or "User"
+        div_context = f"{division_name} ({division_code})" if (division_name and division_code) else (division_name or division_code or "Enterprise Logistics & Operations")
+        level_guide = LEVEL_PERSONA_GUIDES.get(job_level.lower(), LEVEL_PERSONA_GUIDES["staff"])
+
         prompt = f"""You are an expert Enterprise SAP ERP AI Assistant generating diverse chat starter prompt cards.
-Generate exactly 3 DISTINCT, ACTIONABLE, and HIGHLY RELEVANT chat prompt starter cards for this user:
+Generate exactly 3 DISTINCT, ACTIONABLE, and HIGHLY RELEVANT chat prompt starter cards tailored to this specific user:
+- User Identity: {user_identity}
+- User Division: {div_context}
+- Division Operational Focus: {division_persona or 'Standard divisional workflow and operational procedures'}
 - User Role: {role_context}
-- User Preferences / Persona: {persona or 'Standard user'}
+- User Job Level: {job_level.upper()} ({level_guide})
+- User Preferences / Persona: {persona or 'Standard enterprise user'}
 - Recent Topics / Inquiries Asked By User:
 {queries_context}
 
@@ -2427,13 +3194,13 @@ CREATIVE FOCUS ANGLE FOR THIS SET (Variasi Segar):
 - Variation Entropy Seed: #{random_seed}
 
 CRITICAL RULES FOR MAXIMUM VARIETY & APPLICABILITY:
-1. Ground every question firmly in SAP ERP enterprise operations and the user's role and topics.
+1. Ground every question firmly in SAP ERP enterprise operations and the user's specific division ({div_context}), role, and operational tasks.
 2. DO NOT repeat earlier suggestions word-for-word. Each refresh must reveal new dimensions of their workflow!
 3. Dedicate this set to explore the theme: "{selected_theme}".
 4. Make all 3 cards distinct in intent:
-   - Card 1: Diagnostic / Status / Health check (e.g. tracking, logs, active state).
-   - Card 2: Deep-dive / Root cause / Investigation inquiry (e.g. troubleshooting, analyzing exceptions).
-   - Card 3: Optimization / Best practice / Automation action (e.g. performance tuning, automation, security audit).
+   - Card 1: Diagnostic / Status / Health check (e.g. tracking, logs, active state, stock/open items).
+   - Card 2: Deep-dive / Root cause / Investigation inquiry (e.g. troubleshooting, analyzing exceptions, discrepancy checks).
+   - Card 3: Optimization / Best practice / Actionable procedure (e.g. workflow execution, automation, SOP steps, compliance).
 
 Format: Return a JSON list of 3 items. Each item MUST have:
 1. "title": Short punchy action title (2 to 4 words)
@@ -2444,27 +3211,45 @@ Format: Return a JSON list of 3 items. Each item MUST have:
 Language of title, subtitle, and query: {language_instruction}.
 Return ONLY valid JSON array with no markdown formatting around it."""
 
-        res = await asyncio.wait_for(
-            llm.ainvoke([HumanMessage(content=prompt)]),
-            timeout=15.0
-        )
-        content = _extract_text(res.content).strip()
-        if content.startswith("```"):
-            content = re.sub(r"^```(?:json)?\s*", "", content)
-            content = re.sub(r"\s*```$", "", content)
-        data = json.loads(content)
-        if isinstance(data, list) and len(data) >= 3:
-            cleaned = []
-            for item in data[:3]:
-                if isinstance(item, dict) and item.get("title") and item.get("query"):
-                    cleaned.append({
-                        "title": str(item["title"]).strip(),
-                        "subtitle": str(item.get("subtitle", "")).strip(),
-                        "query": str(item["query"]).strip(),
-                        "icon": str(item.get("icon") or "Layers").strip()
-                    })
-            if len(cleaned) == 3:
-                return cleaned
+        primary_provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
+        primary_model = sys_cfg.get("nine_router_model") if primary_provider == "nine_router" else (sys_cfg.get("openrouter_model") or "openrouter/auto")
+
+        fallback_provider = "openrouter" if primary_provider == "nine_router" else None
+        fallback_model = sys_cfg.get("openrouter_fallback_model") or sys_cfg.get("openrouter_model") or "openrouter/free"
+
+        providers_to_try = [(primary_provider, primary_model)]
+        if fallback_provider:
+            providers_to_try.append((fallback_provider, fallback_model))
+
+        for prov, mdl in providers_to_try:
+            try:
+                llm = _buat_llm(prov, mdl, sys_cfg, max_tokens=350, temperature=0.85)
+                if not llm:
+                    continue
+                res = await asyncio.wait_for(
+                    llm.ainvoke([HumanMessage(content=prompt)]),
+                    timeout=12.0
+                )
+                content = _extract_text(res.content).strip()
+                if content.startswith("```"):
+                    content = re.sub(r"^```(?:json)?\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content)
+                data = json.loads(content)
+                if isinstance(data, list) and len(data) >= 3:
+                    cleaned = []
+                    for item in data[:3]:
+                        if isinstance(item, dict) and item.get("title") and item.get("query"):
+                            cleaned.append({
+                                "title": str(item["title"]).strip(),
+                                "subtitle": str(item.get("subtitle", "")).strip(),
+                                "query": str(item["query"]).strip(),
+                                "icon": str(item.get("icon") or "Layers").strip()
+                            })
+                    if len(cleaned) == 3:
+                        return SuggestionList(cleaned, is_dynamic=True)
+            except Exception as prov_err:
+                logger.warning(f"Provider '{prov}' ({mdl}) gagal generate saran: {prov_err}")
+
     except Exception as e:
         logger.warning(f"Gagal generate dynamic suggestions via LLM, menggunakan fallback: {e}")
 

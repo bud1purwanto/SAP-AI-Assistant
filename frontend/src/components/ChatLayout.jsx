@@ -153,6 +153,7 @@ const ChatLayout = () => {
   });
 
   const [dynamicSuggestions, setDynamicSuggestions] = useState(null);
+  const [isDynamicSuggestions, setIsDynamicSuggestions] = useState(false);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -630,12 +631,15 @@ const ChatLayout = () => {
       const res = await api.getSuggestions(language, force);
       if (res?.suggestions && Array.isArray(res.suggestions) && res.suggestions.length >= 3) {
         setDynamicSuggestions(res.suggestions);
+        setIsDynamicSuggestions(res.dynamic !== false);
       } else {
         setDynamicSuggestions(null);
+        setIsDynamicSuggestions(false);
       }
     } catch (err) {
       console.warn('Gagal memuat saran dinamis LLM, fallback ke default:', err);
       setDynamicSuggestions(null);
+      setIsDynamicSuggestions(false);
     } finally {
       setIsSuggestionsLoading(false);
     }
@@ -643,7 +647,7 @@ const ChatLayout = () => {
 
   useEffect(() => {
     loadSuggestions();
-  }, [user.username, user.role, language, loadSuggestions]);
+  }, [user.username, user.role, user.division_code, language, loadSuggestions]);
 
   useEffect(() => {
     setSessions([]);
@@ -2233,7 +2237,7 @@ const ChatLayout = () => {
 
                   {/* Badge & Tombol Refresh Terpusat Simetris di Bawah Judul */}
                   <div className="flex items-center justify-center mt-2 mb-1.5">
-                    {dynamicSuggestions ? (
+                    {dynamicSuggestions && isDynamicSuggestions ? (
                       <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20 text-[10px] sm:text-[11px] font-semibold shadow-2xs">
                         <span className="flex items-center gap-1">
                           <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
@@ -2354,6 +2358,7 @@ const ChatLayout = () => {
         </div>
 
         <ChatInput
+          user={user}
           onSendMessage={handleSendMessage}
           isLoading={isCurrentLoading}
           modes={chatModesEnabled ? modesList : []}

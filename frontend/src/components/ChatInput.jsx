@@ -16,7 +16,6 @@ import {
   Paperclip,
   Send,
   Server,
-  Sliders,
   Sparkles,
   Square,
   Trash2,
@@ -124,15 +123,7 @@ const SLASH_COMMANDS = [
     icon: Server,
     badge: 'Gateway',
     insertOnly: false,
-  },
-  {
-    cmd: '/modes',
-    title: '/modes',
-    desc: 'Daftar mode penalaran AI & batas iterasi langkah',
-    descEn: 'List AI reasoning modes & step limits',
-    icon: Sliders,
-    badge: 'Mode',
-    insertOnly: false,
+    allowedRoles: ['superadmin', 'admin', 'developer', 'it', 'basis'],
   },
   {
     cmd: '/schedule',
@@ -174,7 +165,110 @@ const ROTATING_PLACEHOLDERS_EN = [
   'Try: /quota to check remaining daily token budget…',
 ];
 
+const DIVISION_PLACEHOLDERS_ID = {
+  pp: [
+    'Coba: Cek ketersediaan stok material dan WIP di plant…',
+    'Coba: /sop penanganan reject dan scrap produksi…',
+    'Coba: Status pemotongan slitting dan order produksi aktif…',
+    'Coba: Cek reservasi komponen yang belum dirilis di RESB…',
+  ],
+  fin: [
+    'Coba: Analisis selisih akun kliring GR/IR di MIRO…',
+    'Coba: Cek saldo hutang vendor terbuka di FBL1N…',
+    'Coba: Perbandingan anggaran budget vs realisasi cost center…',
+    'Coba: Checklist closing bulanan periode FI/CO…',
+  ],
+  proc: [
+    'Coba: Pantau Purchase Order terbuka yang mendekati deadline…',
+    'Coba: Prosedur approval rilis PR massal di ME55…',
+    'Coba: Evaluasi performa mutu dan ketepatan kirim vendor…',
+    'Coba: Cek status posting penerimaan barang MIGO…',
+  ],
+  sd: [
+    'Coba: Cek status outbound delivery dan picking di VL06O…',
+    'Coba: Daftar backlog sales order terbuka di VA05…',
+    'Coba: Ketersediaan stok barang jadi siap kirim…',
+    'Coba: Status penagihan faktur billing di VF01…',
+  ],
+  pm: [
+    'Coba: Pantau notifikasi kerusakan mesin pending di IW28…',
+    'Coba: Jadwal maintenance preventif alat dan mesin pabrik…',
+    'Coba: Cek ketersediaan suku cadang perbaikan mesin…',
+    'Coba: Alur rilis dan penyelesaian TECO work order IW32…',
+  ],
+  it: [
+    'Coba: Analisis short dump ST22 runtime error terbaru…',
+    'Coba: Cek background batch job yang abnormal di SM37…',
+    'Coba: Best practice optimasi query FOR ALL ENTRIES…',
+    'Coba: Investigasi entri penguncian objek di SM12…',
+  ],
+  ia: [
+    'Coba: Audit kepatuhan pemisahan tugas (SoD) pengguna…',
+    'Coba: Lacak riwayat perubahan dokumen di CDHDR/CDPOS…',
+    'Coba: Audit selisih nilai akun kliring GR/IR…',
+    'Coba: Tinjau user aktif dengan otorisasi istimewa…',
+  ],
+  hr: [
+    'Coba: Rekap data presensi dan jam lembur karyawan…',
+    'Coba: Panduan pembaruan master data infotype PA30…',
+    'Coba: Checklist verifikasi sebelum simulasi payroll…',
+    'Coba: Bagan hierarki struktur organisasi di PPOME…',
+  ],
+};
+
+const DIVISION_PLACEHOLDERS_EN = {
+  pp: [
+    'Try: Check material and WIP stock availability in plant…',
+    'Try: /sop production reject and scrap handling procedure…',
+    'Try: Status of active slitting and manufacturing orders…',
+    'Try: Inspect unreleased component reservations in RESB…',
+  ],
+  fin: [
+    'Try: Analyze price variances in GR/IR clearing accounts…',
+    'Try: Check open vendor payables approaching due dates…',
+    'Try: Compare cost center budget vs actual expenses…',
+    'Try: Standard monthly financial period closing checklist…',
+  ],
+  proc: [
+    'Try: Monitor open Purchase Orders approaching delivery…',
+    'Try: Mass PR release approval procedure in ME55…',
+    'Try: Evaluate supplier on-time delivery & quality score…',
+    'Try: Goods Receipt posting verification in MIGO…',
+  ],
+  sd: [
+    'Try: Check outbound delivery & picking status in VL06O…',
+    'Try: Review open sales order backlogs in VA05…',
+    'Try: Check available finished goods stock for delivery…',
+    'Try: Billing document and invoice posting status…',
+  ],
+  pm: [
+    'Try: Monitor pending machine breakdown alerts in IW28…',
+    'Try: Preventive maintenance schedule for plant machines…',
+    'Try: Check critical spare part stock for repairs…',
+    'Try: Maintenance work order release and TECO flow…',
+  ],
+  it: [
+    'Try: Analyze latest ST22 runtime error short dumps…',
+    'Try: Inspect delayed background batch jobs in SM37…',
+    'Try: Best practices for Open SQL query tuning…',
+    'Try: Safely investigate lingering table locks in SM12…',
+  ],
+  ia: [
+    'Try: Audit Segregation of Duties (SoD) user conflicts…',
+    'Try: Track document change audit trails in CDHDR/CDPOS…',
+    'Try: Audit unresolved GR/IR clearing balances…',
+    'Try: Review users assigned privileged authorizations…',
+  ],
+  hr: [
+    'Try: Summarize employee attendance & overtime hours…',
+    'Try: Infotype master data maintenance guide in PA30…',
+    'Try: Pre-payroll verification checklist and simulation…',
+    'Try: Department hierarchy structure in PPOME…',
+  ],
+};
+
 const ChatInput = ({
+  user = null,
   onSendMessage,
   isLoading,
   modes = [],
@@ -197,13 +291,26 @@ const ChatInput = ({
 
   const filteredCommands = useMemo(() => {
     if (!isSlashActive) return [];
-    if (!slashQuery) return SLASH_COMMANDS;
-    return SLASH_COMMANDS.filter((item) =>
+    const userRole = (user?.role || 'user').toLowerCase();
+    const userRoles = Array.isArray(user?.roles)
+      ? user.roles.map((r) => String(r).toLowerCase())
+      : [userRole];
+
+    const roleFiltered = SLASH_COMMANDS.filter((item) => {
+      if (item.cmd === '/modes') return false;
+      if (item.allowedRoles) {
+        return item.allowedRoles.some((r) => userRoles.includes(r.toLowerCase()));
+      }
+      return true;
+    });
+
+    if (!slashQuery) return roleFiltered;
+    return roleFiltered.filter((item) =>
       item.cmd.toLowerCase().includes(slashQuery) ||
-      item.desc.toLowerCase().includes(slashQuery) ||
+      (language === 'en' ? item.descEn : item.desc).toLowerCase().includes(slashQuery) ||
       item.badge.toLowerCase().includes(slashQuery)
     );
-  }, [isSlashActive, slashQuery]);
+  }, [isSlashActive, slashQuery, user, language]);
 
   useEffect(() => {
     setActiveSlashIndex(0);
@@ -261,24 +368,51 @@ const ChatInput = ({
   };
 
   const activePlaceholdersList = useMemo(() => {
-    const defaultList = language === 'en' ? ROTATING_PLACEHOLDERS_EN : ROTATING_PLACEHOLDERS_ID;
+    const isEn = language === 'en';
+    const defaultList = isEn ? ROTATING_PLACEHOLDERS_EN : ROTATING_PLACEHOLDERS_ID;
+
+    const rawDiv = (user?.division_code || '').trim().toLowerCase();
+    const divKey = rawDiv.startsWith('pp') || rawDiv.includes('prod') ? 'pp'
+      : rawDiv.startsWith('fin') || rawDiv.includes('acc') || rawDiv.includes('uang') ? 'fin'
+      : rawDiv.startsWith('proc') || rawDiv.startsWith('mm') || rawDiv.includes('beli') || rawDiv.includes('purchas') ? 'proc'
+      : rawDiv.startsWith('sd') || rawDiv.includes('sale') || rawDiv.includes('jual') ? 'sd'
+      : rawDiv.startsWith('pm') || rawDiv.includes('maint') ? 'pm'
+      : rawDiv.startsWith('it') || rawDiv.includes('basis') || rawDiv.includes('ict') ? 'it'
+      : rawDiv.startsWith('ia') || rawDiv.includes('audit') ? 'ia'
+      : rawDiv.startsWith('hr') || rawDiv.includes('hcm') || rawDiv.includes('sdm') ? 'hr'
+      : null;
+
+    const divDict = isEn ? DIVISION_PLACEHOLDERS_EN : DIVISION_PLACEHOLDERS_ID;
+    const divSpecificList = divKey && divDict[divKey] ? divDict[divKey] : [];
+
     if (suggestions && Array.isArray(suggestions) && suggestions.length > 0) {
       const dynamicList = suggestions
         .map((s) => {
           const q = s.query || s.title;
           if (!q) return null;
           const cleanQ = q.length > 55 ? `${q.slice(0, 52)}…` : q;
-          return language === 'en' ? `Try: ${cleanQ}` : `Coba: ${cleanQ}`;
+          return isEn ? `Try: ${cleanQ}` : `Coba: ${cleanQ}`;
         })
         .filter(Boolean);
+
       return [
-        language === 'en' ? 'Ask something about SAP…' : 'Tanyakan sesuatu tentang SAP…',
+        isEn ? 'Ask something about SAP…' : 'Tanyakan sesuatu tentang SAP…',
         ...dynamicList,
+        ...divSpecificList,
         ...defaultList.slice(1),
       ];
     }
+
+    if (divSpecificList.length > 0) {
+      return [
+        isEn ? 'Ask something about SAP…' : 'Tanyakan sesuatu tentang SAP…',
+        ...divSpecificList,
+        ...defaultList.slice(1),
+      ];
+    }
+
     return defaultList;
-  }, [suggestions, language]);
+  }, [suggestions, language, user]);
 
   useEffect(() => {
     if (input.trim()) return;
