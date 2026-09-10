@@ -742,7 +742,7 @@ export default function AdminMcpConfig({
             title={isEn ? 'Refresh status from servers' : 'Periksa status server'}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${statsLoading || serversLoading ? 'animate-spin' : ''}`} />
-            <span className="hidden xs:inline">{isEn ? 'Ping Status' : 'Cek Status'}</span>
+            <span className="hidden sm:inline">{isEn ? 'Ping Status' : 'Cek Status'}</span>
           </button>
 
           {/* Add New MCP Button */}

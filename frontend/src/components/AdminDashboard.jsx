@@ -1042,7 +1042,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     onClick={fetchStats}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer shrink-0"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Refresh'}</span>
+                    <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{language === 'en' ? 'Refresh' : 'Segarkan'}</span>
                   </button>
                 </div>
 
@@ -1319,7 +1319,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onClick={handleOpenAddUser}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New User' : 'User Baru'}</span><span className="xs:hidden">Baru</span>
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden sm:inline">{language === 'en' ? 'New User' : 'User Baru'}</span>
+                      <span className="sm:hidden">{language === 'en' ? 'New' : 'Baru'}</span>
                     </button>
                   </div>
                 </div>
@@ -2176,7 +2178,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onClick={() => setIsAddSkillOpen(true)}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New Skill' : 'Skill Baru'}</span><span className="xs:hidden">Baru</span>
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden sm:inline">{language === 'en' ? 'New Skill' : 'Skill Baru'}</span>
+                      <span className="sm:hidden">{language === 'en' ? 'New' : 'Baru'}</span>
                     </button>
                   </div>
                 </div>
@@ -2585,7 +2589,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       title={language === 'en' ? 'Refresh' : 'Muat ulang'}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${kuotaLoading ? 'animate-spin' : ''}`} />
-                      <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
+                      <span className="hidden sm:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
                     </button>
                   </div>
                 </div>
