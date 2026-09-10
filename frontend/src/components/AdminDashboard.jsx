@@ -530,6 +530,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const handleOpenAddUser = () => {
+    setNewUserForm({
+      username: '',
+      password: '',
+      full_name: '',
+      role: 'user',
+      roles: ['user'],
+      assistant_persona: '',
+      division_code: '',
+      job_level: 'staff',
+      force_change_password: true,
+      showPassword: false,
+    });
+    setActionError('');
+    setIsAddUserOpen(true);
+  };
+
   const handleOpenResetModal = (u) => {
     setResetModalUser(u);
     setResetPasswordForm({
@@ -1299,7 +1316,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       />
                     </div>
                     <button
-                      onClick={() => setIsAddUserOpen(true)}
+                      onClick={handleOpenAddUser}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
                       <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New User' : 'User Baru'}</span><span className="xs:hidden">Baru</span>
@@ -1598,6 +1615,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               required
                               value={newUserForm.password}
                               onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                              autoComplete="new-password"
                               className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all font-mono"
                               placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
                               minLength={8}
@@ -1926,6 +1944,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               type={resetPasswordForm.showPassword ? 'text' : 'password'}
                               value={resetPasswordForm.password}
                               onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, password: e.target.value, error: '' })}
+                              autoComplete="new-password"
                               className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content transition-all font-mono"
                               placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
                               required

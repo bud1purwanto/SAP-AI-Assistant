@@ -1218,6 +1218,8 @@ const ChatLayout = () => {
     selectedServer?.sid?.toLowerCase()?.includes('trp')
   );
 
+  const hasMultipleTargets = (sapSubServers.length + sqlSubServers.length) > 1;
+
   const ThemeIcon = THEME_ICON[theme];
 
   return (
@@ -1777,42 +1779,71 @@ const ChatLayout = () => {
               </label>
               {sapSubServers.length > 0 || sqlSubServers.length > 0 ? (
                 <div className="relative min-w-0 max-w-[13rem] xs:max-w-[15.5rem] sm:max-w-[18.5rem]" ref={serverDropdownRef}>
-                  <button
-                    id="sap-target"
-                    type="button"
-                    onClick={() => setIsServerDropdownOpen((prev) => !prev)}
-                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
-                      isProductionTarget
-                        ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
-                        : 'border-line text-content hover:border-line/80'
-                    }`}
-                    aria-label={t('nav.serverSelectAria')}
-                    aria-expanded={isServerDropdownOpen}
-                    aria-haspopup="listbox"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
-                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                        activeSystem === 'sql'
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                          : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                      }`}>
-                        {activeSystem.toUpperCase()}
-                      </span>
-                      <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                  {hasMultipleTargets ? (
+                    <button
+                      id="sap-target"
+                      type="button"
+                      onClick={() => setIsServerDropdownOpen((prev) => !prev)}
+                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
+                        isProductionTarget
+                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                          : 'border-line text-content hover:border-line/80'
+                      }`}
+                      aria-label={t('nav.serverSelectAria')}
+                      aria-expanded={isServerDropdownOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                          activeSystem === 'sql'
+                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                        }`}>
+                          {activeSystem.toUpperCase()}
+                        </span>
+                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isProductionTarget && (
+                          <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
+                            PRD
+                          </span>
+                        )}
+                        <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                      </div>
+                    </button>
+                  ) : (
+                    <div
+                      id="sap-target"
+                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium bg-surface-sunken select-none ${
+                        isProductionTarget
+                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                          : 'border-line text-content'
+                      }`}
+                      title={language === 'en' ? 'Active Target Environment' : 'Lingkungan Target Aktif'}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                          activeSystem === 'sql'
+                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                        }`}>
+                          {activeSystem.toUpperCase()}
+                        </span>
+                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                      </div>
                       {isProductionTarget && (
-                        <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
+                        <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight shrink-0">
                           PRD
                         </span>
                       )}
-                      <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
                     </div>
-                  </button>
+                  )}
 
                   {/* Custom Connected Systems Hub Dropdown Menu */}
-                  {isServerDropdownOpen && (
+                  {hasMultipleTargets && isServerDropdownOpen && (
                     <div className="absolute left-0 top-[calc(100%+6px)] w-72 sm:w-84 bg-surface-raised/95 border border-line rounded-2xl shadow-2xl p-2.5 z-50 animate-fadeIn backdrop-blur-xl">
                       
                       {/* Header Dropdown */}
@@ -2369,6 +2400,7 @@ const ChatLayout = () => {
       />
 
       <ForceChangePasswordModal
+        key={user?.username || 'force-change-pwd'}
         isOpen={Boolean(user && user.role !== 'guest' && user.force_change_password)}
         user={user}
         onSuccess={handleForcePasswordChanged}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Lock, LogOut } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
@@ -18,6 +18,19 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Pastikan form selalu bersih dan pesan sukses lama tidak tertinggal saat modal dibuka
+  useEffect(() => {
+    if (isOpen) {
+      setNewPassword('');
+      setConfirmPassword('');
+      setShowNew(false);
+      setShowConfirm(false);
+      setLoading(false);
+      setError('');
+      setSuccess('');
+    }
+  }, [isOpen, user?.username]);
 
   if (!isOpen) return null;
 
@@ -46,6 +59,12 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
             : 'Password pribadi berhasil disimpan! Mengalihkan...'
         );
         setTimeout(() => {
+          setNewPassword('');
+          setConfirmPassword('');
+          setShowNew(false);
+          setShowConfirm(false);
+          setError('');
+          setSuccess('');
           onSuccess?.();
         }, 800);
       } else {
@@ -120,6 +139,7 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder={isEn ? 'Enter your new secret password' : 'Buat password baru yang aman'}
+                autoComplete="new-password"
                 className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 pr-10 text-xs sm:text-sm text-content placeholder:text-content-subtle focus:outline-none focus:border-accent transition-colors"
               />
               <button
@@ -146,6 +166,7 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder={isEn ? 'Re-type your new password' : 'Ketik ulang password baru Anda'}
+                autoComplete="new-password"
                 className="w-full bg-surface border border-line rounded-xl px-3.5 py-2.5 pr-10 text-xs sm:text-sm text-content placeholder:text-content-subtle focus:outline-none focus:border-accent transition-colors"
               />
               <button
