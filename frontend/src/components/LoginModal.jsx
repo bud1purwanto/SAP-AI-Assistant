@@ -185,7 +185,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 ref={usernameRef}
                 type="text"
                 required
-                list="saved-sap-usernames"
+                list="saved-usernames"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -199,7 +199,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 className="w-full bg-surface-sunken border border-line rounded-xl pl-9 pr-3 py-2 text-xs sm:text-sm text-content focus:border-accent transition-all font-mono"
                 placeholder={t('login.usernamePlaceholder')}
               />
-              <datalist id="saved-sap-usernames">
+              <datalist id="saved-usernames">
                 {savedUsers.map((u) => (
                   <option key={u} value={u} />
                 ))}
