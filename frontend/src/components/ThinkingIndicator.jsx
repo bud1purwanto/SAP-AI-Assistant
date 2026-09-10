@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Database,
@@ -103,25 +103,91 @@ const resolveContext = (progress, t) => {
   };
 };
 
-/** Bobot per tahap agar bar bergerak wajar, dibatasi 92% sampai benar-benar selesai. */
-const computePercent = (progress) => {
-  if (!progress) return 8;
-  if (progress.stage === 'done') return 100;
-  if (progress.stage === 'reconnecting') return 75;
+/**
+ * Hitung target persentase secara dinamis berdasarkan tahap (stage),
+ * langkah aktif (step), dan batas iterasi mode (max_steps).
+ */
+const computeTargetPercent = (progress) => {
+  if (!progress) return 10;
+  const stage = progress.stage;
+  if (stage === 'done') return 100;
+  if (stage === 'reconnecting') return 75;
 
-  const max = progress.max_steps || 6;
-  const step = Math.min(progress.step || 0, max);
-  // Langkah pertama sudah menunjukkan kemajuan nyata; sisanya proporsional.
-  const base = 10 + (step / max) * 78;
-  const bonus = progress.stage === 'building' ? 6 : 0;
-  return Math.min(Math.round(base + bonus), 92);
+  // Baca max_steps secara dinamis dari setting mode yang aktif (fallback 15 jika tidak tersedia)
+  const maxSteps = Math.max(Number(progress.max_steps) || 15, 1);
+  const step = Math.max(Number(progress.step) || 0, 0);
+  const stepRatio = Math.min(step / maxSteps, 1);
+
+  switch (stage) {
+    case 'connecting':
+      return 15;
+    case 'reading':
+      return 25;
+    case 'thinking':
+      // Langkah awal (analisis pertanyaan sebelum panggil tool)
+      if (step <= 1) return 32;
+      // Langkah perumusan jawaban dari data: bergerak dinamis 62% - 88% sesuai stepRatio
+      return Math.min(Math.round(62 + stepRatio * 26), 88);
+    case 'tool':
+      // Eksekusi pengambilan data: bergerak dinamis 36% - 65% sesuai stepRatio
+      return Math.min(Math.round(36 + stepRatio * 28), 65);
+    case 'building':
+      // Menyiapkan berkas dokumen hasil (Excel/CSV/dokumen)
+      return 92;
+    default:
+      return 20;
+  }
 };
 
 const ThinkingIndicator = ({ progress, onStop }) => {
   const { t } = useLanguage();
-  const percent = computePercent(progress);
+  const targetPercent = computeTargetPercent(progress);
+  const [displayPercent, setDisplayPercent] = useState(() => Math.min(targetPercent, 12));
   const { Icon, context, isSpinning } = resolveContext(progress, t);
   const label = progress?.label || t('thinking.processing');
+
+  const targetRef = useRef(targetPercent);
+  const isDoneRef = useRef(progress?.stage === 'done');
+  const tickCountRef = useRef(0);
+
+  useEffect(() => {
+    targetRef.current = targetPercent;
+    isDoneRef.current = progress?.stage === 'done';
+  }, [targetPercent, progress?.stage]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDisplayPercent((prev) => {
+        const target = targetRef.current;
+        const isDone = isDoneRef.current;
+
+        // Bila proses selesai (done), percepat kenaikan urut hingga 100%
+        if (isDone) {
+          if (prev >= 100) return 100;
+          const delta = Math.max(1, Math.ceil((100 - prev) / 3));
+          return Math.min(prev + delta, 100);
+        }
+
+        // Naikkan secara urut dan bertahap menuju target
+        if (prev < target) {
+          const diff = target - prev;
+          const stepDelta = diff > 20 ? 2 : 1;
+          return Math.min(prev + stepDelta, target);
+        }
+
+        // Saat menunggu respon I/O (misal query SAP/Email lambat), lakukan perayap halus (micro-creep)
+        // setiap ~600ms (+1%) agar loading tidak membeku, dibatasi aman sebelum tahap selesai.
+        tickCountRef.current += 1;
+        if (tickCountRef.current % 12 === 0 && prev < 92 && prev < target + 6) {
+          return prev + 1;
+        }
+
+        return prev;
+      });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex items-start gap-3 my-3 animate-fadeIn" role="status" aria-live="polite">
@@ -133,21 +199,21 @@ const ThinkingIndicator = ({ progress, onStop }) => {
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs sm:text-sm text-content font-semibold font-display truncate">{label}</span>
           <span className="text-xs font-mono font-bold text-accent tabular-nums shrink-0">
-            {percent}%
+            {displayPercent}%
           </span>
         </div>
 
         <div
           className="h-1.5 w-full bg-surface-sunken rounded-full overflow-hidden border border-line/40"
           role="progressbar"
-          aria-valuenow={percent}
+          aria-valuenow={displayPercent}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label={`Progress: ${label}`}
         >
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${percent}%` }}
+            className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full transition-all duration-300 ease-out"
+            style={{ width: `${displayPercent}%` }}
           />
         </div>
 
