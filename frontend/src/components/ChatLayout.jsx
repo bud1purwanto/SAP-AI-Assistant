@@ -1469,10 +1469,10 @@ const ChatLayout = () => {
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/35 text-amber-300 hover:from-amber-500/25 hover:border-amber-500/50 hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/40 text-amber-800 dark:text-amber-300 hover:from-amber-500/25 hover:border-amber-500/60 hover:text-amber-950 dark:hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
             >
               <span className="flex items-center gap-2.5">
-                <span className="p-1 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform">
+                <span className="p-1 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 group-hover:scale-105 transition-transform">
                   <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
                 <span className="font-bold tracking-tight">{t('sidebar.adminPanel')}</span>
@@ -2057,11 +2057,11 @@ const ChatLayout = () => {
                               : 'bg-surface-sunken/30 border-line/30 opacity-50'
                           }`}>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <BookOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                               <span className="font-semibold text-[11px] text-content truncate">RAG Knowledge</span>
                             </div>
                             {mcpStatus?.rag?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Active' : 'Aktif'}
                               </span>
                             ) : (
@@ -2078,11 +2078,11 @@ const ChatLayout = () => {
                               : 'bg-surface-sunken/30 border-line/30 opacity-50'
                           }`}>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
                               <span className="font-semibold text-[11px] text-content truncate">Email</span>
                             </div>
                             {mcpStatus?.email?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Ready' : 'Siap'}
                               </span>
                             ) : (
