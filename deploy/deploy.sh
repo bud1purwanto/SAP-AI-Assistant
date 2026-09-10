@@ -132,14 +132,38 @@ server {
         proxy_buffering off;
     }
 
-    location ~* \.(?:css|js|jpg|jpeg|gif|png|ico|cur|gz|svg|svgz|mp4|ogg|ogv|webm|htc|woff|woff2)\$ {
+    # 1. PWA Service Worker & Manifest: JANGAN DI-CACHE!
+    location ~* ^/(?:sw\.js|registerSW\.js|manifest\.webmanifest|workbox-[a-f0-9]+\.js)\$ {
+        expires -1;
+        access_log off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+    }
+
+    # 2. Vite Build Assets (dist/assets): Hash unik, aman di-cache 1 tahun
+    location ^~ /assets/ {
         expires 1y;
         access_log off;
         add_header Cache-Control "public, immutable";
     }
 
+    # 3. Static Media / Font di root publik
+    location ~* \.(?:ico|png|svg|jpg|jpeg|gif|webp|woff|woff2)\$ {
+        expires 7d;
+        access_log off;
+        add_header Cache-Control "public";
+    }
+
+    # 4. Entry point SPA index.html: WAJIB NO-CACHE
+    location = /index.html {
+        expires -1;
+        access_log off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+    }
+
+    # 5. Frontend Single Page App (SPA) fallback
     location / {
         try_files \$uri \$uri/ /index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
     }
 
     access_log /var/log/nginx/sap-ai-access.log;
