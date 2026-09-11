@@ -2,10 +2,16 @@ import { useEffect, useState } from 'react';
 
 /**
  * Hook to detect whether the virtual on-screen keyboard is active on mobile devices.
- * Combines window.visualViewport height shrink detection with input focus tracking.
- *
- * Returns `true` only when on a mobile/touch device AND the virtual keyboard is open.
- * Returns `false` by default, or when on desktop, or when keyboard is closed.
+ * 
+ * Fundamental Rule:
+ * An on-screen virtual keyboard CANNOT be open unless an editable text field
+ * (input/textarea) is actively focused.
+ * 
+ * Therefore:
+ * 1. If NO text input is focused: Keyboard is guaranteed closed -> returns `false`.
+ *    (This prevents false positives from browser chrome bars like iOS Safari's URL/tab bars).
+ * 2. If a text input IS focused on a mobile/touch device: Keyboard is open -> returns `true`.
+ * 3. On desktop devices (fine pointer / mouse): Always returns `false`.
  */
 export function useVirtualKeyboard() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -13,26 +19,19 @@ export function useVirtualKeyboard() {
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
 
-    const checkIsMobile = () =>
-      window.matchMedia('(pointer: coarse)').matches || window.innerWidth < 640;
+    const isTouchDevice = () =>
+      window.matchMedia('(pointer: coarse)').matches ||
+      window.innerWidth < 768 ||
+      Boolean(navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
 
     const updateKeyboardState = () => {
-      if (!checkIsMobile()) {
+      // 1. On desktop devices, virtual keyboard is never active
+      if (!isTouchDevice()) {
         setIsKeyboardOpen(false);
         return;
       }
 
-      // 1. Check visualViewport height delta (reliable on modern iOS/Android)
-      let isShrunk = false;
-      if (window.visualViewport) {
-        const diff = window.innerHeight - window.visualViewport.height;
-        // On mobile, on-screen keyboards are at least 120px tall
-        if (diff > 120) {
-          isShrunk = true;
-        }
-      }
-
-      // 2. Check if an editable input/textarea inside the document currently has focus
+      // 2. Check if an editable input/textarea currently has focus
       const activeEl = document.activeElement;
       const isInputFocused = Boolean(
         activeEl &&
@@ -44,31 +43,29 @@ export function useVirtualKeyboard() {
           activeEl.type !== 'file'
       );
 
-      setIsKeyboardOpen(isShrunk || isInputFocused);
+      // If NO text field is focused, the virtual keyboard is definitely closed!
+      // This ensures that when the modal first opens, it is ALWAYS centered.
+      if (!isInputFocused) {
+        setIsKeyboardOpen(false);
+        return;
+      }
+
+      // If an input IS focused on mobile/touch, the user has opened the on-screen keyboard
+      setIsKeyboardOpen(true);
     };
 
-    // Initial check
+    // Initial check (guaranteed false on modal open because no input is focused yet)
     updateKeyboardState();
 
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', updateKeyboardState);
-      window.visualViewport.addEventListener('scroll', updateKeyboardState);
-    }
-    window.addEventListener('resize', updateKeyboardState);
     window.addEventListener('focusin', updateKeyboardState);
 
     const handleFocusOut = () => {
-      // Small timeout so if focus transfers between inputs, it doesn't flicker
-      setTimeout(updateKeyboardState, 60);
+      // Small delay so moving focus between inputs (e.g. username -> password) doesn't flicker
+      setTimeout(updateKeyboardState, 80);
     };
     window.addEventListener('focusout', handleFocusOut);
 
     return () => {
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', updateKeyboardState);
-        window.visualViewport.removeEventListener('scroll', updateKeyboardState);
-      }
-      window.removeEventListener('resize', updateKeyboardState);
       window.removeEventListener('focusin', updateKeyboardState);
       window.removeEventListener('focusout', handleFocusOut);
     };
@@ -78,4 +75,3 @@ export function useVirtualKeyboard() {
 }
 
 export default useVirtualKeyboard;
-

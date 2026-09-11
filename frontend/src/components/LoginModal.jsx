@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
-import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
 
 const SAVED_USERS_KEY = 'sap_assistant_saved_usernames';
 
@@ -57,7 +56,7 @@ function removeSavedUserFromStorage(usernameToRemove) {
 
 const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, onClose }) => {
   const { t } = useLanguage();
-  const isKeyboardOpen = useVirtualKeyboard();
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -71,13 +70,31 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
+  const formRef = useRef(null);
+  const blurTimeoutRef = useRef(null);
 
   // Inisialisasi saat modal dibuka
   useEffect(() => {
     if (!isOpen) {
       setIsClosing(false);
+      setIsInputFocused(false);
       return undefined;
     }
+
+    // Lock body scroll to prevent iOS Safari from shifting background
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    // Pastikan posisi scroll window tetap di (0, 0) agar fixed overlay tidak terdorong keluar layar di Safari iOS
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, 0);
+    }
+
+    // Pastikan tidak ada elemen luar (seperti chat input) yang masih memegang fokus
+    if (document.activeElement && typeof document.activeElement.blur === 'function') {
+      document.activeElement.blur();
+    }
+    setIsInputFocused(false);
 
     setUsername('');
     setPassword('');
@@ -91,11 +108,11 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
     // Fokus halus hanya pada layar non-touch / desktop agar tidak memicu pop keyboard tiba-tiba di mobile
     const isMobile = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    let focusTimer = null;
     if (!isMobile) {
-      const timer = setTimeout(() => {
+      focusTimer = setTimeout(() => {
         usernameRef.current?.focus();
       }, 120);
-      return () => clearTimeout(timer);
     }
 
     const onKeyDown = (e) => {
@@ -104,7 +121,11 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
       }
     };
     document.addEventListener('keydown', onKeyDown);
+
     return () => {
+      document.body.style.overflow = prevOverflow;
+      if (focusTimer) clearTimeout(focusTimer);
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
       document.removeEventListener('keydown', onKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,12 +215,14 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         }
       }}
       className={`fixed inset-0 bg-black/65 backdrop-blur-md z-50 flex ${
-        isKeyboardOpen ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
+        isInputFocused ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
       } justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain transition-all duration-250 ${
         isClosing ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
       }`}
       style={{
-        paddingTop: isKeyboardOpen
+        minHeight: '100dvh',
+        height: '100%',
+        paddingTop: isInputFocused
           ? 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.25rem)'
           : 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)',
         paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem)',
@@ -210,7 +233,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
     >
       <div
         className={`bg-surface-raised/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-[340px] xs:max-w-sm sm:max-w-md overflow-hidden border border-line/80 relative ${
-          isKeyboardOpen ? 'my-1 sm:my-auto' : 'my-auto'
+          isInputFocused ? 'my-1 sm:my-auto' : 'my-auto'
         } flex flex-col transition-all duration-250 ${
           isClosing ? 'animate-modal-content-out' : 'animate-modal-content'
         } ${shake ? 'animate-shake' : ''}`}
@@ -268,7 +291,21 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
         {/* Body Form */}
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
+          onFocus={() => {
+            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+            setIsInputFocused(true);
+          }}
+          onBlur={() => {
+            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+            blurTimeoutRef.current = setTimeout(() => {
+              const active = document.activeElement;
+              if (!formRef.current || !formRef.current.contains(active)) {
+                setIsInputFocused(false);
+              }
+            }, 100);
+          }}
           className="p-4 sm:p-6 pt-2 sm:pt-3 space-y-3 sm:space-y-4 overflow-y-auto custom-scrollbar flex-1 relative z-10"
         >
           {/* Custom Informational Message (misal saat wajib login atau timeout) */}

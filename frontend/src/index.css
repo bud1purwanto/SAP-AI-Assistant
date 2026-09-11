@@ -32,6 +32,7 @@
   --color-accent:           var(--accent);
   --color-accent-hover:     var(--accent-hover);
   --color-accent-fg:        var(--accent-fg);
+  --color-accent-contrast:  var(--accent-fg);
   --color-accent-soft:      var(--accent-soft);
   --color-accent-soft-fg:   var(--accent-soft-fg);
 

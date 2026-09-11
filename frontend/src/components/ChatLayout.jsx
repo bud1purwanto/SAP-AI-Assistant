@@ -1596,11 +1596,11 @@ const ChatLayout = () => {
                     setCustomLoginMsg('');
                     setIsLoginModalOpen(true);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-contrast hover:bg-accent/90 text-xs font-semibold transition-all shadow-xs cursor-pointer active:scale-95"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-accent via-indigo-600 to-accent hover:opacity-95 text-white text-xs font-bold transition-all shadow-sm shadow-accent/25 cursor-pointer active:scale-95"
                   title={t('sidebar.loginPrompt')}
                 >
-                  <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                  <span>{t('sidebar.loginPrompt')}</span>
+                  <LogIn className="w-3.5 h-3.5 shrink-0 text-white" aria-hidden="true" />
+                  <span className="text-white">{t('sidebar.loginPrompt')}</span>
                 </button>
               </div>
             </div>
@@ -1676,7 +1676,7 @@ const ChatLayout = () => {
                     {/* Header Profil Singkat */}
                     <div className="px-3.5 py-3 border-b border-line/60 mb-1 bg-surface-sunken/40 rounded-t-2xl">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-accent-hover text-accent-contrast font-bold text-xs flex items-center justify-center shadow-xs shrink-0 select-none">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-accent-hover text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0 select-none">
                           {getUserInitials(user)}
                         </div>
                         <div className="min-w-0 flex-1">

@@ -708,6 +708,11 @@ const ChatInput = ({
 
       <form
         onSubmit={handleSubmit}
+        onClick={() => {
+          if ((isGuest || user?.role === 'guest') && onRequireLogin) {
+            onRequireLogin();
+          }
+        }}
         className={`composer-form relative rounded-2xl sm:rounded-3xl border bg-surface-raised/95 backdrop-blur-md p-1.5 sm:p-2 shadow-lg transition-all ${
           isDragging
             ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/30'
@@ -784,6 +789,9 @@ const ChatInput = ({
             ref={textareaRef}
             rows={1}
             value={input}
+            readOnly={Boolean(isGuest || user?.role === 'guest')}
+            inputMode={isGuest || user?.role === 'guest' ? 'none' : undefined}
+            tabIndex={isGuest || user?.role === 'guest' ? -1 : undefined}
             onChange={(e) => {
               const val = e.target.value;
               setInput(val);
@@ -793,14 +801,48 @@ const ChatInput = ({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            onFocus={() => {
-              if ((isGuest || user?.role === 'guest') && onRequireLogin) {
-                onRequireLogin();
+            onPointerDown={(e) => {
+              if (isGuest || user?.role === 'guest') {
+                e.preventDefault();
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                if (onRequireLogin) {
+                  onRequireLogin();
+                }
+              }
+            }}
+            onTouchStart={(e) => {
+              if (isGuest || user?.role === 'guest') {
+                e.preventDefault();
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                  document.activeElement.blur();
+                }
+                if (onRequireLogin) {
+                  onRequireLogin();
+                }
+              }
+            }}
+            onClick={(e) => {
+              if (isGuest || user?.role === 'guest') {
+                e.preventDefault();
+                if (onRequireLogin) {
+                  onRequireLogin();
+                }
+              }
+            }}
+            onFocus={(e) => {
+              if (isGuest || user?.role === 'guest') {
+                e.preventDefault();
+                e.target?.blur();
+                if (onRequireLogin) {
+                  onRequireLogin();
+                }
               }
             }}
             placeholder={displayedPlaceholder}
             aria-label={activePlaceholder}
-            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"
+            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed cursor-text"
             disabled={isLoading}
           />
 
@@ -809,7 +851,13 @@ const ChatInput = ({
             <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if ((isGuest || user?.role === 'guest') && onRequireLogin) {
+                    onRequireLogin();
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
                 className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl text-content-muted hover:text-accent hover:bg-surface-hover flex items-center justify-center transition-colors shrink-0 cursor-pointer"
                 aria-label={t('input.attach')}
                 title={t('input.attach')}
@@ -819,7 +867,13 @@ const ChatInput = ({
 
               <button
                 type="button"
-                onClick={tekanMikrofon}
+                onClick={(e) => {
+                  if ((isGuest || user?.role === 'guest') && onRequireLogin) {
+                    onRequireLogin();
+                    return;
+                  }
+                  tekanMikrofon(e);
+                }}
                 className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl sm:rounded-2xl flex items-center justify-center transition-colors shrink-0 cursor-pointer ${
                   suara.mendengar
                     ? 'bg-danger/15 text-danger'

@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, Lock, LogOut, ShieldAlert } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
-import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
 
 /**
  * Modal wajib ganti password (blocking modal) yang tampil ketika akun user
@@ -10,7 +9,7 @@ import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
  */
 export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLogout }) {
   const { isEn } = useLanguage();
-  const isKeyboardOpen = useVirtualKeyboard();
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -21,8 +20,22 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const formRef = useRef(null);
+  const blurTimeoutRef = useRef(null);
+
   useEffect(() => {
     if (isOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+
+      if (typeof window !== 'undefined') {
+        window.scrollTo(0, 0);
+      }
+
+      if (document.activeElement && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+      setIsInputFocused(false);
       setNewPassword('');
       setConfirmPassword('');
       setShowNew(false);
@@ -30,6 +43,11 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
       setLoading(false);
       setError('');
       setSuccess('');
+
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+      };
     }
   }, [isOpen, user?.username]);
 
@@ -67,17 +85,19 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
   return (
     <div
       className={`fixed inset-0 z-[100] flex ${
-        isKeyboardOpen ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
+        isInputFocused ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
       } justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-md overflow-y-auto overscroll-contain transition-all duration-250 animate-modal-backdrop`}
       style={{
-        paddingTop: isKeyboardOpen
+        minHeight: '100dvh',
+        height: '100%',
+        paddingTop: isInputFocused
           ? 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.25rem)'
           : 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)',
         paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem)',
       }}
     >
       <div className={`bg-surface-raised/95 backdrop-blur-xl border border-line/80 rounded-2xl sm:rounded-3xl p-5 sm:p-6 max-w-md w-full shadow-2xl relative ${
-        isKeyboardOpen ? 'my-1 sm:my-auto' : 'my-auto'
+        isInputFocused ? 'my-1 sm:my-auto' : 'my-auto'
       } overflow-hidden animate-modal-content transition-all duration-250`}>
         {/* Ambient Top Glow Blobs */}
         <div className="absolute -top-20 -left-20 w-48 h-48 bg-amber-500/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -128,7 +148,24 @@ export default function ForceChangePasswordModal({ isOpen, user, onSuccess, onLo
         )}
 
         {/* Formulir Pengaturan Password */}
-        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs sm:text-sm mt-4 relative z-10">
+        <form
+          ref={formRef}
+          onSubmit={handleSubmit}
+          onFocus={() => {
+            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+            setIsInputFocused(true);
+          }}
+          onBlur={() => {
+            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+            blurTimeoutRef.current = setTimeout(() => {
+              const active = document.activeElement;
+              if (!formRef.current || !formRef.current.contains(active)) {
+                setIsInputFocused(false);
+              }
+            }, 100);
+          }}
+          className="space-y-3.5 text-xs sm:text-sm mt-4 relative z-10"
+        >
           {/* Password Baru Pribadi */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
