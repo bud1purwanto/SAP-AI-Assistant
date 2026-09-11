@@ -574,9 +574,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         return ChatResponse(reply=reply_md, sources=[])
 
     if raw_lower in ("/modes", "/mode", "/reasoning"):
-        from database import get_modes_for_role
+        from database import get_modes_for_user
         roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
-        modes = get_modes_for_role(roles_list)
+        modes = get_modes_for_user(username=user_id, roles=roles_list)
         rows_md = []
         for m in modes:
             default_badge = (" *(Default)*" if is_en else " *(Bawaan)*") if m.get("is_default") else ""
@@ -781,7 +781,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         get_system_config,
         get_chat_mode_by_code,
         get_default_chat_mode,
-        get_modes_for_role,
+        get_modes_for_user,
     )
     sys_cfg = get_system_config()
 
@@ -791,15 +791,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if chat_modes_enabled and chat_req.mode:
         target = get_chat_mode_by_code(chat_req.mode)
         if target and target.get("enabled"):
-            # Union seluruh role yang dimiliki user: mode tersedia bila SALAH SATU
-            # role mengizinkannya (sama seperti resolusi yang dipakai endpoint /api/modes).
+            # Periksa izin mode chat untuk user ini (User Override -> Role Union)
             roles_for_mode = access_control.normalize_roles(user_role)
-            mode_available = False
-            for r in roles_for_mode:
-                r_modes = get_modes_for_role(r)
-                if any(m["code"] == target["code"] and m.get("available") for m in r_modes):
-                    mode_available = True
-                    break
+            user_modes = get_modes_for_user(username=username, roles=roles_for_mode)
+            mode_available = any(m["code"] == target["code"] and m.get("available") for m in user_modes)
             if mode_available:
                 active_mode = target
             else:

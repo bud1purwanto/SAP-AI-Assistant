@@ -283,6 +283,11 @@ export const api = {
   adminRoleModes: () => apiFetch('/api/admin/modes/roles'),
   adminUpdateRoleMode: (payload) =>
     apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
+  adminModesUsersList: () => apiFetch('/api/admin/modes/users'),
+  adminUserModes: (username) =>
+    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`),
+  adminUpdateUserModes: (username, payload) =>
+    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
 
   // Access Control MCP
   adminAccessResources: () => apiFetch('/api/admin/access/resources'),
@@ -418,8 +423,18 @@ export async function chatWithProgress(payload, { onProgress, onToken, signal } 
 
   if (res.status === 401) {
     clearSession();
-    onUnauthorized();
-    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    let kickReason = null;
+    let isKicked = false;
+    try {
+      const errText = await res.text().catch(() => '');
+      if (errText) {
+        const errJson = JSON.parse(errText);
+        isKicked = errJson?.detail?.code === 'SESSION_KICKED' || (typeof errJson?.detail === 'string' && errJson.detail.includes('SESSION_KICKED'));
+        kickReason = errJson?.detail?.reason || (typeof errJson?.detail === 'string' ? errJson.detail : null);
+      }
+    } catch {}
+    onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
+    throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401);
   }
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');

@@ -402,6 +402,7 @@ export const TRANSLATIONS = {
     'kicked.modalBadge': 'Security Notification',
     'kicked.modalDesc': 'Your account was just logged in from another device or terminated by an administrator. For your security, this session has been closed.',
     'kicked.relogin': 'Sign In on This Device',
+    'kicked.returnHome': 'Return to Home',
 
     // Access Control MCP
     'access.title': 'MCP Access Control',
@@ -474,6 +475,21 @@ export const TRANSLATIONS = {
     'admin.roleModeAccess': 'Chat Mode Access per Role',
     'admin.roleModeAccessDesc': 'Determine which chat modes are available for each user role.',
     'admin.roleModeLockedNotice': 'Role access is locked because Chat Modes feature is currently disabled.',
+    'admin.tabRoleMatrix': 'Role Access Matrix',
+    'admin.tabUserOverrides': 'User Overrides',
+    'admin.userModesDesc': 'Override chat mode permissions for individual users (Inherit role baseline, Allow, or Deny).',
+    'admin.modeOverrideInherit': 'Inherit (Role)',
+    'admin.modeOverrideAllow': 'Allow',
+    'admin.modeOverrideDeny': 'Deny',
+    'admin.modeRoleBaseline': 'Role Baseline',
+    'admin.modeEffectiveAllowed': 'Effective Access',
+    'admin.modeEffectiveAllowedYes': 'Allowed',
+    'admin.modeEffectiveAllowedNo': 'Blocked',
+    'admin.saveUserModeOverrides': 'Save User Overrides',
+    'admin.noUserSelected': 'Select a user on the left to configure custom mode access overrides.',
+    'admin.noUsersFound': 'No users found matching your search.',
+    'admin.userOverridesCount': '{count} custom override(s)',
+    'admin.userOverridesReset': 'Reset All to Inherit',
 
     // Master Divisions
     'admin.divisionsTitle': 'Divisions & Personas',
@@ -919,6 +935,7 @@ export const TRANSLATIONS = {
     'kicked.modalBadge': 'Pemberitahuan Keamanan',
     'kicked.modalDesc': 'Akun Anda baru saja login di perangkat lain atau sesi diputuskan oleh Administrator. Demi keamanan data, sesi di perangkat ini dinonaktifkan.',
     'kicked.relogin': 'Login Kembali di Perangkat Ini',
+    'kicked.returnHome': 'Kembali ke Beranda',
 
     // Access Control MCP
     'access.title': 'Kontrol Akses Sumber Daya MCP',
@@ -991,6 +1008,21 @@ export const TRANSLATIONS = {
     'admin.roleModeAccess': 'Akses Mode Chat per Peran (Role)',
     'admin.roleModeAccessDesc': 'Tentukan mode chat mana saja yang dapat digunakan oleh masing-masing peran pengguna.',
     'admin.roleModeLockedNotice': 'Pengaturan akses terkunci karena fitur Mode Chat sedang dinonaktifkan secara global.',
+    'admin.tabRoleMatrix': 'Matriks Hak Akses Peran',
+    'admin.tabUserOverrides': 'Override Pengguna',
+    'admin.userModesDesc': 'Tentukan izin mode chat khusus per pengguna (Warisi template peran, Izinkan, atau Blokir).',
+    'admin.modeOverrideInherit': 'Warisi (Peran)',
+    'admin.modeOverrideAllow': 'Izinkan',
+    'admin.modeOverrideDeny': 'Blokir',
+    'admin.modeRoleBaseline': 'Bawaan Peran',
+    'admin.modeEffectiveAllowed': 'Akses Efektif',
+    'admin.modeEffectiveAllowedYes': 'Diizinkan',
+    'admin.modeEffectiveAllowedNo': 'Diblokir',
+    'admin.saveUserModeOverrides': 'Simpan Override Pengguna',
+    'admin.noUserSelected': 'Pilih pengguna di sebelah kiri untuk mengatur override mode chat.',
+    'admin.noUsersFound': 'Tidak ada pengguna yang cocok dengan pencarian.',
+    'admin.userOverridesCount': '{count} override khusus',
+    'admin.userOverridesReset': 'Reset Semua ke Warisi',
 
     // Master Divisi
     'admin.divisionsTitle': 'Master Divisi & Persona',

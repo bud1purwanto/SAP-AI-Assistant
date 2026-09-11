@@ -1072,6 +1072,27 @@ def _m0025_user_sessions_and_security_logs(conn):
     """))
 
 
+def _m0026_user_chat_modes(conn):
+    """Tabel override mode chat per user (user_modes).
+
+    Memungkinkan admin memberikan override izin (tri-state: inherit, allow, deny)
+    untuk mode chat tertentu kepada user individual, melampaui izin berbasis peran (role_modes).
+    """
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_modes (
+            username VARCHAR(100) NOT NULL,
+            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, mode_code)
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_modes_username
+        ON ai_assistant.user_modes (LOWER(username));
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -1098,6 +1119,7 @@ MIGRATIONS = [
     ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
     ("0024_chat_message_usage", _m0024_chat_message_usage),
     ("0025_user_sessions_and_security_logs", _m0025_user_sessions_and_security_logs),
+    ("0026_user_chat_modes", _m0026_user_chat_modes),
 ]
 
 

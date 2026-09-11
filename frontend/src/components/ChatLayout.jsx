@@ -384,18 +384,35 @@ const ChatLayout = () => {
     }
   };
 
-  // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
+  // --- Fungsi sentral reset tampilan & sesi ke Beranda (Home) secara bersih ---
+  const resetToHome = useCallback(() => {
+    setUser(GUEST_USER);
+    setSessions([]);
+    setCurrentSessionId(null);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
+    setIsAdminOpen(false);
+    setIsSettingsOpen(false);
+    setIsScheduledTasksOpen(false);
+    setIsiPanel(null);
+    setIsSidebarOpen(false);
+    setIsUserMenuOpen(false);
+    setError(null);
+    clearSession();
+    try {
+      window.history.replaceState(null, '', '/');
+    } catch {}
+  }, []);
+
+  // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu & pastikan kembali ke Home ---
   useEffect(() => {
     setUnauthorizedHandler((reason, code) => {
-      setUser(GUEST_USER);
-      setSessions([]);
-      setCurrentSessionId(null);
-      setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-      setSessionLoadingMap({});
-      setSessionProgressMap({});
-      setSessionErrorMap({});
+      resetToHome();
       fetchServers();
       fetchModes();
+
       if (code === 'SESSION_KICKED' || (reason && (reason.includes('perangkat lain') || reason.includes('Administrator') || reason.includes('diputuskan')))) {
         setKickedModalInfo({
           isOpen: true,
@@ -407,7 +424,7 @@ const ChatLayout = () => {
       }
     });
     return () => setUnauthorizedHandler(null);
-  }, [t, fetchServers, fetchModes]);
+  }, [t, fetchServers, fetchModes, resetToHome]);
 
   // --- Heartbeat pemantauan sesi & aktivitas real-time ---
   useEffect(() => {
@@ -433,8 +450,21 @@ const ChatLayout = () => {
     };
 
     pingHeartbeat();
-    const interval = setInterval(pingHeartbeat, 20000);
-    return () => clearInterval(interval);
+    const interval = setInterval(pingHeartbeat, 10000); // 10 detik agar deteksi kick lebih responsif
+
+    const handleFocus = () => {
+      if (!document.hidden) {
+        pingHeartbeat();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [isGuest, isCurrentLoading, isAdminOpen, isSettingsOpen, isScheduledTasksOpen, isiPanel]);
 
   useEffect(() => {
@@ -720,17 +750,12 @@ const ChatLayout = () => {
     const handleStorageChange = (e) => {
       if (e.key === 'sap_assistant_token' || e.key === 'sap_assistant_user') {
         const currentUser = getStoredUser() || GUEST_USER;
+        resetToHome();
         setUser(currentUser);
-        setSessions([]);
-        setCurrentSessionId(null);
-        setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-        setSessionLoadingMap({});
-        setSessionProgressMap({});
-        setSessionErrorMap({});
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    
+
     // ZERO-RELOAD AUTO-LOGIN LISTENER
     // Terima instruksi login langsung dari Dashboard PWA tanpa reload
     const handleDashboardMessage = (e) => {
@@ -753,15 +778,10 @@ const ChatLayout = () => {
                   force_change_password: Boolean(data.force_change_password),
                 };
                 saveSession(data.access_token, userData);
-                
+
                 // Update React State tanpa reload!
+                resetToHome();
                 setUser(userData);
-                setSessions([]);
-                setCurrentSessionId(null);
-                setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-                setSessionLoadingMap({});
-                setSessionProgressMap({});
-                setSessionErrorMap({});
                 api.quotaSaya().then(setKuota).catch(() => setKuota(null));
                 setIsLoginModalOpen(false);
                 setCustomLoginMsg('');
@@ -778,7 +798,7 @@ const ChatLayout = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('message', handleDashboardMessage);
     };
-  }, []);
+  }, [resetToHome]);
 
   // Sinkronkan kembali percakapan saat aplikasi dibuka kembali dari background/minimize di HP
   useEffect(() => {
@@ -1227,14 +1247,15 @@ const ChatLayout = () => {
     await handleSendMessage(cleaned, message.attachments || [], base);
   };
 
+  const handleCloseLoginModal = useCallback(() => {
+    setIsLoginModalOpen(false);
+    setCustomLoginMsg('');
+    resetToHome();
+  }, [resetToHome]);
+
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
     saveSession(token, userData);
-    setSessions([]);
-    setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-    setSessionLoadingMap({});
-    setSessionProgressMap({});
-    setSessionErrorMap({});
+    resetToHome();
     setUser(userData);
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     fetchServers();
@@ -1257,14 +1278,7 @@ const ChatLayout = () => {
 
   const handleLogout = () => {
     api.logout().catch(() => {});
-    clearSession();
-    setUser(GUEST_USER);
-    setSessions([]);
-    setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-    setSessionLoadingMap({});
-    setSessionProgressMap({});
-    setSessionErrorMap({});
+    resetToHome();
     fetchServers();
     fetchModes();
   };
@@ -2452,8 +2466,9 @@ const ChatLayout = () => {
       <LoginModal
         isOpen={isLoginModalOpen}
         onLoginSuccess={handleLoginSuccess}
+        onGuestContinue={handleCloseLoginModal}
         customMessage={customLoginMsg}
-        onClose={() => setIsLoginModalOpen(false)}
+        onClose={handleCloseLoginModal}
       />
 
       <SettingsModal
@@ -2519,7 +2534,13 @@ const ChatLayout = () => {
       {/* Modal Peringatan Sesi Terputus (Kicked by other device / admin) */}
       {kickedModalInfo.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-modal-backdrop" />
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md animate-modal-backdrop"
+            onClick={() => {
+              setKickedModalInfo({ isOpen: false, reason: '' });
+              resetToHome();
+            }}
+          />
           <div className="relative w-full max-w-md rounded-2xl bg-surface border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/20 text-center animate-modal-content overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-rose-500 to-transparent pointer-events-none" />
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/30">
@@ -2534,11 +2555,22 @@ const ChatLayout = () => {
             <p className="mt-2 text-xs sm:text-sm text-content-secondary leading-relaxed bg-surface-sunken/60 p-3.5 rounded-xl border border-line">
               {kickedModalInfo.reason || t('kicked.modalDesc')}
             </p>
-            <div className="mt-6 flex justify-center">
+            <div className="mt-6 flex flex-col-reverse sm:flex-row items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setKickedModalInfo({ isOpen: false, reason: '' });
+                  resetToHome();
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-line hover:bg-surface-hover text-content-secondary hover:text-content text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              >
+                {t('kicked.returnHome')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setKickedModalInfo({ isOpen: false, reason: '' });
+                  resetToHome();
                   setIsLoginModalOpen(true);
                 }}
                 className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer active:scale-95"

@@ -2,25 +2,38 @@ import React, { useEffect, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Edit3,
+  Filter,
   Key,
+  Layers,
   Lock,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
+  Search,
   Server,
+  Shield,
+  ShieldCheck,
   Sliders,
   Sparkles,
   Star,
   Trash2,
+  User,
+  UserCheck,
+  Users,
   X,
+  XCircle,
   Zap,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { renderModeIcon } from './ModeSelector';
+import { ROLE_COLOR_MAP, getRoleBadgeStyle, getRoleLabel } from '../lib/roles';
 
 const INITIAL_FORM = {
   code: '',
@@ -86,18 +99,46 @@ export default function AdminChatModes({
   const [newForm, setNewForm] = useState(INITIAL_FORM);
   const [editForm, setEditForm] = useState(INITIAL_FORM);
 
+  // Access Control Subtab: 'roles' | 'users'
+  const [activeAccessTab, setActiveAccessTab] = useState('roles');
+  const [modeUsersList, setModeUsersList] = useState([]);
+  const [selectedUser, setSelectedUser] = useState('');
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userSort, setUserSort] = useState('name_asc');
+  const [mobileUserSelectorOpen, setMobileUserSelectorOpen] = useState(false);
+  const [modeFilterCategory, setModeFilterCategory] = useState('all'); // 'all' | 'overrides'
+  const [modeFilterSearch, setModeFilterSearch] = useState('');
+  const [userModesMatrix, setUserModesMatrix] = useState(null);
+  const [userModesLoading, setUserModesLoading] = useState(false);
+  const [userModesDirty, setUserModesDirty] = useState(false);
+  const [savingUserModes, setSavingUserModes] = useState(false);
+
+  const getRoleTheme = (role) => {
+    const source = (masterRoles && masterRoles.length > 0) ? masterRoles : rolesList;
+    const meta = (source || []).find((r) => (r.code || '').toLowerCase() === (role || '').toLowerCase());
+    const c = ROLE_COLOR_MAP[(meta?.color || 'zinc').toLowerCase()] || ROLE_COLOR_MAP.zinc;
+    return { bg: c.bg, text: c.text, border: c.border };
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [modesRes, rolesRes, configRes] = await Promise.all([
+      const [modesRes, rolesRes, configRes, usersRes] = await Promise.all([
         api.adminModes(),
         api.adminRoleModes(),
         api.getConfig(),
+        api.adminModesUsersList().catch(() => []),
       ]);
       setModesList(modesRes?.modes || []);
       setMasterEnabled(Boolean(modesRes?.chat_modes_enabled));
       setRoleMatrix(rolesRes?.matrix || []);
       setRolesList(rolesRes?.roles || []);
+      const uList = Array.isArray(usersRes) ? usersRes : [];
+      setModeUsersList(uList);
+      if (uList.length > 0) {
+        setSelectedUser((prev) => prev || uList[0].username);
+      }
 
       if (configRes) {
         setNineRouterEnabled(configRes.nine_router_enabled !== undefined ? configRes.nine_router_enabled : true);
@@ -119,6 +160,123 @@ export default function AdminChatModes({
       setLoading(false);
       setInitialLoading(false);
     }
+  };
+
+  const loadUserMatrix = async (username) => {
+    if (!username) {
+      setUserModesMatrix(null);
+      return;
+    }
+    setUserModesLoading(true);
+    try {
+      const res = await api.adminUserModes(username);
+      setUserModesMatrix(res);
+      setUserModesDirty(false);
+    } catch (err) {
+      console.error(`Failed to load modes matrix for ${username}:`, err);
+      if (setActionError) setActionError(err.message || 'Failed to load user mode matrix');
+    } finally {
+      setUserModesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedUser) {
+      loadUserMatrix(selectedUser);
+    }
+  }, [selectedUser]);
+
+  const handleModeOverrideChange = (modeCode, newState) => {
+    if (!userModesMatrix || !userModesMatrix.modes) return;
+    const updatedModes = userModesMatrix.modes.map((m) => {
+      if (m.code !== modeCode) return m;
+
+      let effectiveAllowed = false;
+      let source = 'role';
+      if (newState === 'allow') {
+        effectiveAllowed = Boolean(m.system_enabled);
+        source = 'user_override';
+      } else if (newState === 'deny') {
+        effectiveAllowed = false;
+        source = 'user_override';
+      } else {
+        effectiveAllowed = Boolean(m.role_allowed) && Boolean(m.system_enabled);
+        source = 'role';
+      }
+
+      return {
+        ...m,
+        override_state: newState,
+        effective_allowed: effectiveAllowed,
+        source,
+      };
+    });
+
+    setUserModesMatrix({
+      ...userModesMatrix,
+      modes: updatedModes,
+    });
+    setUserModesDirty(true);
+  };
+
+  const handleSaveUserOverrides = async () => {
+    if (!selectedUser || !userModesMatrix || !userModesMatrix.modes) return;
+    setSavingUserModes(true);
+    if (setActionError) setActionError('');
+    if (setActionSuccess) setActionSuccess('');
+    try {
+      const items = userModesMatrix.modes.map((m) => ({
+        mode_code: m.code,
+        state: m.override_state || 'inherit',
+      }));
+
+      const res = await api.adminUpdateUserModes(selectedUser, { items });
+      if (res && res.matrix) {
+        setUserModesMatrix(res.matrix);
+      }
+      setUserModesDirty(false);
+      if (setActionSuccess) {
+        setActionSuccess(
+          language === 'en'
+            ? `Mode overrides for user @${selectedUser} saved successfully!`
+            : `Override mode chat untuk @${selectedUser} berhasil disimpan!`
+        );
+      }
+      const updatedUsers = await api.adminModesUsersList().catch(() => []);
+      if (Array.isArray(updatedUsers)) {
+        setModeUsersList(updatedUsers);
+      }
+      if (onRefreshModes) onRefreshModes();
+    } catch (err) {
+      if (setActionError) setActionError(err.message || 'Failed to save user mode overrides');
+    } finally {
+      setSavingUserModes(false);
+    }
+  };
+
+  const handleResetUserOverrides = () => {
+    if (!userModesMatrix || !userModesMatrix.modes) return;
+    const updatedModes = userModesMatrix.modes.map((m) => ({
+      ...m,
+      override_state: 'inherit',
+      effective_allowed: Boolean(m.role_allowed) && Boolean(m.system_enabled),
+      source: 'role',
+    }));
+    setUserModesMatrix({
+      ...userModesMatrix,
+      modes: updatedModes,
+    });
+    setUserModesDirty(true);
+  };
+
+  const getUserInitials = (u) => {
+    const name = (u?.full_name || u?.username || '').trim();
+    if (!name) return 'U';
+    const parts = name.split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
   };
 
   const handleSaveProviders = async (e) => {
@@ -391,6 +549,70 @@ export default function AdminChatModes({
     enabled: r.enabled,
     suspended: r.suspended,
   }));
+
+  const isEn = language === 'en';
+
+  const sortedAndFilteredUsers = (modeUsersList || [])
+    .filter((u) => {
+      if (userRoleFilter !== 'all') {
+        const uRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role || 'user'];
+        const matchesRole = uRoles.some((r) => r.toLowerCase() === userRoleFilter.toLowerCase());
+        if (!matchesRole) return false;
+      }
+      if (userSearchQuery.trim()) {
+        const q = userSearchQuery.toLowerCase();
+        const uName = (u.username || '').toLowerCase();
+        const fName = (u.full_name || '').toLowerCase();
+        return uName.includes(q) || fName.includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (userSort === 'name_asc') {
+        return (a.full_name || a.username).localeCompare(b.full_name || b.username);
+      }
+      if (userSort === 'name_desc') {
+        return (b.full_name || b.username).localeCompare(a.full_name || a.username);
+      }
+      if (userSort === 'username_asc') {
+        return a.username.localeCompare(b.username);
+      }
+      if (userSort === 'role') {
+        const roleA = (a.roles && a.roles[0]) || a.role || '';
+        const roleB = (b.roles && b.roles[0]) || b.role || '';
+        return roleA.localeCompare(roleB);
+      }
+      return 0;
+    });
+
+  const totalModeOverridesCount = (modeUsersList || []).reduce(
+    (acc, u) => acc + (u.override_count || 0),
+    0
+  );
+
+  const userModeCounts = {
+    all: userModesMatrix?.modes?.length || 0,
+    overrides: (userModesMatrix?.modes || []).filter(
+      (m) => m.override_state && m.override_state !== 'inherit'
+    ).length,
+  };
+
+  const filteredSelectedUserModes = (userModesMatrix?.modes || []).filter((mode) => {
+    if (modeFilterCategory === 'overrides') {
+      if (!mode.override_state || mode.override_state === 'inherit') {
+        return false;
+      }
+    }
+    if (modeFilterSearch.trim()) {
+      const q = modeFilterSearch.toLowerCase();
+      const matchName = (mode.name || '').toLowerCase().includes(q);
+      const matchCode = (mode.code || '').toLowerCase().includes(q);
+      const matchDesc = (mode.description || '').toLowerCase().includes(q);
+      const matchProvider = (mode.provider || '').toLowerCase().includes(q);
+      if (!matchName && !matchCode && !matchDesc && !matchProvider) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -954,118 +1176,829 @@ export default function AdminChatModes({
         )}
       </div>
 
-      {/* Role Access Matrix */}
-      <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* Access Control: Role Matrix vs User Overrides */}
+      <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-5">
+        {/* Header & Subtab Switcher */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-line/70">
           <div>
             <h4 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-content flex items-center gap-2 font-display">
               <Lock className="w-4 h-4 text-accent" />
-              {language === 'en' ? 'Role Access Matrix (Permissions)' : 'Matrix Hak Akses Per Peran'}
+              {language === 'en' ? 'Chat Mode Access Control' : 'Hak Akses Mode Chat'}
             </h4>
             <p className="text-xs text-content-muted mt-0.5">
-              {language === 'en'
-                ? 'Check/uncheck to permit roles to use each mode. Locked modes will be disabled in the composer.'
-                : 'Centang untuk mengizinkan role menggunakan mode chat. Mode yang terkunci akan tampil disable dengan gembok.'}
+              {activeAccessTab === 'roles'
+                ? (language === 'en'
+                    ? 'Check/uncheck to permit roles to use each mode. Locked modes will be disabled in the composer.'
+                    : 'Centang untuk mengizinkan role menggunakan mode chat. Mode yang terkunci akan tampil disable dengan gembok.')
+                : t('admin.userModesDesc')}
             </p>
           </div>
-          <span className="text-[11px] font-mono text-content-muted bg-surface-sunken px-2.5 py-1 rounded-lg border border-line/60">
-            {modesList.length} Modes × {activeRoles.length} Roles
-          </span>
+
+          {/* Subtab Toggle Buttons */}
+          <div className="flex items-center gap-1 p-0.5 bg-surface-sunken rounded-xl border border-line/60 self-stretch sm:self-start w-full sm:w-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveAccessTab('roles')}
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeAccessTab === 'roles'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{t('admin.tabRoleMatrix')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveAccessTab('users');
+                if (modeUsersList.length === 0) {
+                  api.adminModesUsersList().then((data) => {
+                    if (Array.isArray(data)) setModeUsersList(data);
+                    if (!selectedUser && data && data.length > 0) setSelectedUser(data[0].username);
+                  }).catch(() => {});
+                }
+              }}
+              className={`flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeAccessTab === 'users'
+                  ? 'bg-accent text-white shadow-xs'
+                  : 'text-content-muted hover:text-content'
+              }`}
+            >
+              <UserCheck className="w-3.5 h-3.5" />
+              <span>{t('admin.tabUserOverrides')}</span>
+              {totalModeOverridesCount > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    activeAccessTab === 'users'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  }`}
+                >
+                  {totalModeOverridesCount}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
-        {activeRoles.length === 0 ? (
-          <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <div className="flex-1 min-w-0 text-xs">
-              <p className="font-bold">
-                {language === 'en' ? 'Failed to load master roles' : 'Gagal memuat master peran'}
-              </p>
-              <p className="text-content-muted mt-0.5">
+        {/* SUBTAB 1: Role Access Matrix */}
+        {activeAccessTab === 'roles' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-content-muted">
                 {language === 'en'
-                  ? 'The role access matrix cannot be shown safely without confirmed role data.'
-                  : 'Matriks hak akses tidak ditampilkan karena data peran belum dipastikan valid.'}
-              </p>
+                  ? 'Role baseline matrix applies to all users assigned each role.'
+                  : 'Matriks izin bawaan berlaku untuk seluruh pengguna dengan peran terkait.'}
+              </span>
+              <span className="text-[11px] font-mono text-content-muted bg-surface-sunken px-2.5 py-1 rounded-lg border border-line/60">
+                {modesList.length} Modes × {activeRoles.length} Roles
+              </span>
             </div>
-          </div>
-        ) : (
-        <div className="overflow-x-auto custom-scrollbar border border-line/80 rounded-2xl bg-surface shadow-2xs">
-          <table className="w-full text-xs text-left">
-            <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted uppercase text-[10px] tracking-wider font-bold">
-              <tr>
-                <th className="py-3 px-4 min-w-[140px] sticky left-0 bg-surface-sunken z-10">Role</th>
-                    {modesList.map((m) => (
-                      <th key={m.code} className="py-3 px-3 text-center min-w-[110px]">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span>{renderModeIcon(m.icon, 'w-3.5 h-3.5')}</span>
-                          <span className="truncate max-w-[90px]">{m.name}</span>
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line/60">
-                  {activeRoles.map(({ role, label, enabled, suspended }) => (
-                    <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
-                      <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`font-semibold text-content text-xs ${suspended ? 'opacity-60 line-through' : ''}`}>{label}</span>
-                          {suspended && (
-                            <span
-                              className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1 py-0.2 rounded"
-                              title={
-                                language === 'en'
-                                  ? "This role is suspended. Its users fall back to 'Standard User' mode permissions."
-                                  : "Peran ini disuspend. Penggunanya otomatis memakai izin mode 'Standard User'."
-                              }
-                            >
-                              {language === 'en' ? 'Suspended → downgraded' : 'Disuspend → diturunkan'}
-                            </span>
-                          )}
-                          {!suspended && enabled === false && (
-                            <span
-                              className="text-[9px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded"
-                              title={
-                                language === 'en'
-                                  ? 'Hidden from new user assignments. Current holders keep full access.'
-                                  : 'Disembunyikan dari penetapan user baru. Pemegang saat ini tetap punya akses penuh.'
-                              }
-                            >
-                              {language === 'en' ? 'Not assignable' : 'Tak bisa dipilih'}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-content-subtle font-mono block">{role}</span>
-                      </td>
-                  {modesList.map((mode) => {
-                    const match = roleMatrix.find(
-                      (rm) => rm.role === role && rm.mode_code === mode.code
-                    );
-                    const isAllowed = match
-                      ? Boolean(match.allowed)
-                      : role === 'superadmin';
 
-                    return (
-                      <td key={mode.code} className="py-3 px-3 text-center">
+            {activeRoles.length === 0 ? (
+              <div className="flex items-center gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <div className="flex-1 min-w-0 text-xs">
+                  <p className="font-bold">
+                    {language === 'en' ? 'Failed to load master roles' : 'Gagal memuat master peran'}
+                  </p>
+                  <p className="text-content-muted mt-0.5">
+                    {language === 'en'
+                      ? 'The role access matrix cannot be shown safely without confirmed role data.'
+                      : 'Matriks hak akses tidak ditampilkan karena data peran belum dipastikan valid.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto custom-scrollbar border border-line/80 rounded-2xl bg-surface shadow-2xs">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted uppercase text-[10px] tracking-wider font-bold">
+                    <tr>
+                      <th className="py-3 px-4 min-w-[140px] sticky left-0 bg-surface-sunken z-10">Role</th>
+                      {modesList.map((m) => (
+                        <th key={m.code} className="py-3 px-3 text-center min-w-[110px]">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span>{renderModeIcon(m.icon, 'w-3.5 h-3.5')}</span>
+                            <span className="truncate max-w-[90px]">{m.name}</span>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line/60">
+                    {activeRoles.map(({ role, label, enabled, suspended }) => (
+                      <tr key={role} className="hover:bg-surface-hover/70 transition-colors">
+                        <td className="py-3 px-4 sticky left-0 bg-surface z-10 border-r border-line/60">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`font-semibold text-content text-xs ${suspended ? 'opacity-60 line-through' : ''}`}>{label}</span>
+                            {suspended && (
+                              <span
+                                className="text-[9px] font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-1 py-0.2 rounded"
+                                title={
+                                  language === 'en'
+                                    ? "This role is suspended. Its users fall back to 'Standard User' mode permissions."
+                                    : "Peran ini disuspend. Penggunanya otomatis memakai izin mode 'Standard User'."
+                                }
+                              >
+                                {language === 'en' ? 'Suspended → downgraded' : 'Disuspend → diturunkan'}
+                              </span>
+                            )}
+                            {!suspended && enabled === false && (
+                              <span
+                                className="text-[9px] font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded"
+                                title={
+                                  language === 'en'
+                                    ? 'Hidden from new user assignments. Current holders keep full access.'
+                                    : 'Disembunyikan dari penetapan user baru. Pemegang saat ini tetap punya akses penuh.'
+                                }
+                              >
+                                {language === 'en' ? 'Not assignable' : 'Tak bisa dipilih'}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-content-subtle font-mono block">{role}</span>
+                        </td>
+                        {modesList.map((mode) => {
+                          const match = roleMatrix.find(
+                            (rm) => rm.role === role && rm.mode_code === mode.code
+                          );
+                          const isAllowed = match
+                            ? Boolean(match.allowed)
+                            : role === 'superadmin';
+
+                          return (
+                            <td key={mode.code} className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleRoleAccess(role, mode.code, isAllowed)}
+                                className={`inline-flex items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${
+                                  isAllowed
+                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
+                                    : 'bg-surface-sunken border-line/60 text-content-subtle hover:bg-surface-hover opacity-40'
+                                }`}
+                                title={`${label} → ${mode.name}: ${isAllowed ? 'Allowed' : 'Forbidden'}`}
+                              >
+                                {isAllowed ? <Check className="w-4 h-4" /> : <Lock className="w-3.5 h-3.5" />}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* SUBTAB 2: User Overrides */}
+        {activeAccessTab === 'users' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* User Selector Column */}
+            <div className="md:col-span-1 space-y-3">
+              {/* Mobile Compact Selected User Header */}
+              {selectedUser && (
+                <div className="md:hidden p-3.5 rounded-2xl bg-surface border border-line shadow-xs space-y-3">
+                  {/* User info row */}
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {/* User Avatar Squircle */}
+                      {(() => {
+                        const selU = (modeUsersList || []).find((x) => x.username === selectedUser);
+                        const primaryRole = (selU?.roles && selU.roles[0]) || selU?.role || 'user';
+                        const theme = getRoleTheme(primaryRole);
+                        return (
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${theme.bg} ${theme.text} ${theme.border}`}>
+                            {selU ? getUserInitials(selU) : <User className="w-4 h-4" />}
+                          </div>
+                        );
+                      })()}
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs font-bold text-content truncate leading-tight">
+                            {(modeUsersList || []).find((x) => x.username === selectedUser)?.full_name || selectedUser}
+                          </p>
+                          <span className="text-[10px] font-mono text-accent px-1.5 py-0.2 rounded-md bg-accent/10 border border-accent/25">
+                            @{selectedUser}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-content-muted mt-0.5 flex-wrap">
+                          <span>{isEn ? 'Role:' : 'Peran:'}</span>
+                          {(() => {
+                            const selU = (modeUsersList || []).find((x) => x.username === selectedUser);
+                            const roles = selU?.roles && selU.roles.length > 0 ? selU.roles : [selU?.role || 'user'];
+                            return (
+                              <span className="font-semibold text-content uppercase tracking-wider">
+                                {roles.join(' + ')}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Switch User Button */}
+                    <button
+                      type="button"
+                      onClick={() => setMobileUserSelectorOpen(!mobileUserSelectorOpen)}
+                      className="px-2.5 py-1.5 rounded-xl bg-surface-sunken hover:bg-surface text-accent text-xs font-semibold border border-line flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
+                    >
+                      <span>{mobileUserSelectorOpen ? (isEn ? 'Close' : 'Tutup') : (isEn ? 'Switch User' : 'Ganti User')}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${mobileUserSelectorOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+
+                  {/* Status & Save Override Action */}
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-line/60">
+                    <div className="text-[11px]">
+                      {userModesDirty ? (
+                        <span className="inline-flex items-center gap-1.5 text-amber-400 font-bold">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          <span>{isEn ? 'Unsaved changes' : 'Perubahan belum disimpan'}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-content-subtle">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>{isEn ? 'Overrides synced' : 'Izin tersinkronisasi'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveUserOverrides}
+                      disabled={!userModesDirty || savingUserModes || userModesLoading}
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                        userModesDirty
+                          ? 'bg-accent text-white hover:bg-accent/90 animate-pulse'
+                          : 'bg-surface-sunken text-content-subtle border border-line cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{savingUserModes ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save Override' : 'Simpan Override')}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* User List Panel */}
+              <div className={`${selectedUser && !mobileUserSelectorOpen ? 'hidden md:block' : 'block'} space-y-3`}>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-content-subtle flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-accent" />
+                    <span>{isEn ? 'User List' : 'Daftar Pengguna'}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-surface-sunken text-content-muted border border-line font-mono font-normal">
+                      {sortedAndFilteredUsers.length === modeUsersList.length ? modeUsersList.length : `${sortedAndFilteredUsers.length}/${modeUsersList.length}`}
+                    </span>
+                  </h4>
+                </div>
+
+                {/* Search User Input */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-content-subtle absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    placeholder={isEn ? 'Search user…' : 'Cari pengguna…'}
+                    className="w-full pl-8 pr-7 py-2 text-xs rounded-xl bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none transition-colors"
+                  />
+                  {userSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setUserSearchQuery('')}
+                      className="absolute right-2.5 top-2.5 text-content-subtle hover:text-content cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Role Filter & Sort Controls */}
+                <div className="grid grid-cols-2 gap-2">
+                  {/* Role Filter */}
+                  <div className="relative">
+                    <select
+                      value={userRoleFilter}
+                      onChange={(e) => setUserRoleFilter(e.target.value)}
+                      className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
+                    >
+                      <option value="all">{isEn ? 'All Roles' : 'Semua Peran'}</option>
+                      {activeRoles.map((r) => (
+                        <option key={r.role} value={r.role}>{r.label}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+
+                  {/* Sort Order */}
+                  <div className="relative">
+                    <select
+                      value={userSort}
+                      onChange={(e) => setUserSort(e.target.value)}
+                      className="w-full text-[11px] py-1.5 pl-2.5 pr-6 rounded-xl bg-surface-sunken border border-line text-content font-medium focus:outline-none focus:border-accent cursor-pointer appearance-none truncate"
+                    >
+                      <option value="name_asc">{isEn ? 'Name (A-Z)' : 'Nama (A-Z)'}</option>
+                      <option value="name_desc">{isEn ? 'Name (Z-A)' : 'Nama (Z-A)'}</option>
+                      <option value="username_asc">{isEn ? 'Username (A-Z)' : 'Username (A-Z)'}</option>
+                      <option value="role">{isEn ? 'Sort by Role' : 'Urutkan Peran'}</option>
+                    </select>
+                    <ChevronDown className="w-3 h-3 text-content-subtle absolute right-2.5 top-2.5 pointer-events-none" />
+                  </div>
+                </div>
+
+                {/* Integrated Sleek User List */}
+                <div className="rounded-2xl border border-line bg-surface overflow-hidden shadow-xs">
+                  <div className="max-h-[360px] sm:max-h-[500px] overflow-y-auto divide-y divide-line/40 custom-scrollbar">
+                    {sortedAndFilteredUsers.length > 0 ? (
+                      sortedAndFilteredUsers.map((u) => {
+                        const isSel = selectedUser === u.username;
+                        const primaryRole = (u.roles && u.roles[0]) || u.role || 'user';
+                        const theme = getRoleTheme(primaryRole);
+                        return (
+                          <button
+                            key={u.username}
+                            type="button"
+                            onClick={() => {
+                              setSelectedUser(u.username);
+                              setMobileUserSelectorOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between p-2.5 sm:p-3 text-left transition-all cursor-pointer ${
+                              isSel
+                                ? 'bg-accent/10 border-l-4 border-l-accent border-y border-y-accent/20 font-medium'
+                                : 'hover:bg-surface-hover/80'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Avatar Squircle with Initials */}
+                              <div
+                                className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 border ${theme.bg} ${theme.text} ${theme.border}`}
+                              >
+                                {getUserInitials(u)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate font-semibold text-xs text-content leading-tight">
+                                  {u.full_name || u.username}
+                                </p>
+                                <p className="text-[10px] text-content-muted truncate font-mono">
+                                  @{u.username}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {u.override_count > 0 && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                  title={isEn ? `${u.override_count} mode override(s)` : `${u.override_count} override mode`}
+                                >
+                                  {u.override_count}
+                                </span>
+                              )}
+                              <span
+                                className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border leading-none ${theme.bg} ${theme.text} ${theme.border}`}
+                              >
+                                {getRoleLabel(primaryRole, isEn)}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="py-8 text-center text-xs text-content-subtle">
+                        {isEn ? 'No matching users found.' : 'Tidak ada pengguna cocok.'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: User Mode Matrix */}
+            <div className="md:col-span-2 space-y-4">
+              {selectedUser ? (
+                <div className="space-y-4">
+                  {/* Desktop User Header Card */}
+                  <div className="hidden md:flex items-center justify-between p-4 rounded-2xl bg-surface border border-line shadow-xs">
+                    <div>
+                      <h3 className="text-sm font-bold text-content flex items-center gap-2 flex-wrap">
+                        <span>{isEn ? 'Access Override:' : 'Override Hak Akses:'}</span>
+                        <span className="text-accent font-mono px-2 py-0.5 rounded-lg bg-accent/10 border border-accent/30">
+                          @{selectedUser}
+                        </span>
+                        {(() => {
+                          const selU = (modeUsersList || []).find((x) => x.username === selectedUser);
+                          const roles = selU?.roles && selU.roles.length > 0 ? selU.roles : [selU?.role || 'user'];
+                          return (
+                            <span className="text-xs text-content-muted font-normal">
+                              ({roles.map((r) => r.toUpperCase()).join(' + ')})
+                            </span>
+                          );
+                        })()}
+                      </h3>
+                      <p className="text-[11px] text-content-muted mt-1">
+                        {isEn
+                          ? "Select 'Inherit' to follow the role template, or specify custom Allow / Deny."
+                          : "Pilih 'Warisi' untuk mengikuti template Role, atau tentukan Izinkan / Blokir khusus."}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleResetUserOverrides}
+                        disabled={userModesLoading || savingUserModes}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-content-subtle hover:text-content bg-surface border border-line hover:bg-surface-hover transition-colors cursor-pointer"
+                        title={isEn ? 'Reset All to Inherit' : 'Reset Semua ke Warisi'}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>{isEn ? 'Reset All to Inherit' : 'Reset Semua ke Warisi'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveUserOverrides}
+                        disabled={!userModesDirty || savingUserModes || userModesLoading}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer ${
+                          userModesDirty
+                            ? 'bg-accent text-white hover:bg-accent/90'
+                            : 'bg-surface-sunken text-content-subtle border border-line cursor-not-allowed opacity-60'
+                        }`}
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>{savingUserModes ? (isEn ? 'Saving…' : 'Menyimpan…') : (isEn ? 'Save Override' : 'Simpan Override')}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter Chips & Quick Search */}
+                  <div className="space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      {/* Filter Chips */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
                         <button
                           type="button"
-                          onClick={() => handleToggleRoleAccess(role, mode.code, isAllowed)}
-                          className={`inline-flex items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${
-                            isAllowed
-                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25'
-                              : 'bg-surface-sunken border-line/60 text-content-subtle hover:bg-surface-hover opacity-40'
+                          onClick={() => setModeFilterCategory('all')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                            modeFilterCategory === 'all'
+                              ? 'bg-accent text-white shadow-xs'
+                              : 'bg-surface border border-line text-content-muted hover:text-content'
                           }`}
-                          title={`${label} → ${mode.name}: ${isAllowed ? 'Allowed' : 'Forbidden'}`}
                         >
-                          {isAllowed ? <Check className="w-4 h-4" /> : <Lock className="w-3.5 h-3.5" />}
+                          {isEn ? 'All' : 'Semua'} ({userModeCounts.all})
                         </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setModeFilterCategory('overrides')}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                            modeFilterCategory === 'overrides'
+                              ? 'bg-amber-500 text-black shadow-xs font-extrabold'
+                              : 'bg-surface border border-line text-content-muted hover:text-content'
+                          }`}
+                        >
+                          {userModeCounts.overrides > 0 && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          )}
+                          <span>{isEn ? 'Overrides' : 'Override'} ({userModeCounts.overrides})</span>
+                        </button>
+                      </div>
+
+                      {/* Quick Search Mode Input */}
+                      <div className="relative w-full sm:w-56 shrink-0">
+                        <Search className="w-3.5 h-3.5 text-content-subtle absolute left-2.5 top-2.5" />
+                        <input
+                          type="text"
+                          value={modeFilterSearch}
+                          onChange={(e) => setModeFilterSearch(e.target.value)}
+                          placeholder={isEn ? 'Filter mode...' : 'Cari mode...'}
+                          className="w-full pl-7 pr-7 py-1.5 text-xs rounded-xl bg-surface-sunken border border-line text-content placeholder:text-content-subtle focus:border-accent focus:outline-none"
+                        />
+                        {modeFilterSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setModeFilterSearch('')}
+                            className="absolute right-2.5 top-2 text-content-subtle hover:text-content cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Loading state */}
+                  {userModesLoading ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-2 text-content-muted">
+                      <RefreshCw className="w-6 h-6 animate-spin text-accent" />
+                      <p className="text-xs">{isEn ? 'Loading mode matrix…' : 'Memuat matriks mode…'}</p>
+                    </div>
+                  ) : filteredSelectedUserModes.length === 0 ? (
+                    <div className="p-8 text-center rounded-2xl border border-line bg-surface-sunken/40">
+                      <p className="text-xs text-content-muted">
+                        {isEn ? 'No chat modes match your filter.' : 'Tidak ada mode chat yang cocok dengan filter.'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModeFilterCategory('all');
+                          setModeFilterSearch('');
+                        }}
+                        className="mt-2 text-xs text-accent font-bold hover:underline cursor-pointer"
+                      >
+                        {isEn ? 'Reset Filter' : 'Reset Filter'}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Mobile Cards View (visible on mobile screens, hidden on desktop) */}
+                      <div className="md:hidden space-y-3">
+                        {filteredSelectedUserModes.map((mode) => {
+                          const isInherit = mode.override_state === 'inherit' || !mode.override_state;
+                          const isAllow = mode.override_state === 'allow';
+                          const isDeny = mode.override_state === 'deny';
+                          const effective = Boolean(mode.effective_allowed);
+                          const roleAllowed = Boolean(mode.role_allowed);
+                          const sysEnabled = Boolean(mode.system_enabled);
+
+                          return (
+                            <div
+                              key={mode.code}
+                              className={`p-3.5 rounded-2xl border transition-all space-y-3 shadow-xs ${
+                                isAllow
+                                  ? 'bg-emerald-500/5 border-emerald-500/35'
+                                  : isDeny
+                                  ? 'bg-rose-500/5 border-rose-500/35'
+                                  : 'bg-surface border-line'
+                              }`}
+                            >
+                              {/* Mode Header */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-8 h-8 rounded-xl bg-surface-sunken flex items-center justify-center shrink-0 border border-line">
+                                    {renderModeIcon(mode.icon, 'w-4 h-4')}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <h4 className="font-bold text-xs text-content">{mode.name}</h4>
+                                      {mode.is_default && (
+                                        <span className="px-1.5 py-0.2 rounded text-[8px] font-bold uppercase bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                          Default
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-content-subtle font-mono mt-0.5 truncate">
+                                      {mode.code} • {formatProviderLabel(mode.provider)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Status badge */}
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold uppercase shrink-0 border ${
+                                    isAllow
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                      : isDeny
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                                      : 'bg-surface-sunken text-content-muted border-line'
+                                  }`}
+                                >
+                                  {isAllow
+                                    ? (isEn ? 'Override: Allow' : 'Override: Izinkan')
+                                    : isDeny
+                                    ? (isEn ? 'Override: Deny' : 'Override: Blokir')
+                                    : (isEn ? 'Role Template' : 'Template Peran')}
+                                </span>
+                              </div>
+
+                              {/* Baseline & Effective Row */}
+                              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-line/50">
+                                <span className="text-content-muted flex items-center gap-1">
+                                  <span>{t('admin.modeRoleBaseline')}:</span>
+                                  <span className={`font-semibold ${roleAllowed ? 'text-emerald-400' : 'text-content-subtle'}`}>
+                                    {roleAllowed ? (isEn ? 'Allowed' : 'Diizinkan') : (isEn ? 'Blocked' : 'Diblokir')}
+                                  </span>
+                                </span>
+
+                                <span className="flex items-center gap-1">
+                                  <span className="text-content-muted">{t('admin.modeEffectiveAllowed')}:</span>
+                                  <span
+                                    className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded font-bold ${
+                                      effective
+                                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                        : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                    }`}
+                                  >
+                                    {effective ? (
+                                      <>
+                                        <Check className="w-2.5 h-2.5" />
+                                        <span>{isEn ? 'Allowed' : 'Diizinkan'}</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Lock className="w-2.5 h-2.5" />
+                                        <span>{isEn ? 'Blocked' : 'Diblokir'}</span>
+                                      </>
+                                    )}
+                                  </span>
+                                </span>
+                              </div>
+
+                              {!sysEnabled && (
+                                <div className="text-[10px] text-amber-400 font-medium flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3 shrink-0" />
+                                  <span>{isEn ? 'Disabled system-wide' : 'Dinonaktifkan secara global'}</span>
+                                </div>
+                              )}
+
+                              {/* Tri-state buttons (Full-width 3 columns) */}
+                              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-surface-sunken border border-line text-xs font-bold text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleModeOverrideChange(mode.code, 'inherit')}
+                                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                    isInherit
+                                      ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
+                                      : 'text-content-subtle hover:text-content'
+                                  }`}
+                                  title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
+                                >
+                                  <Shield className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{t('access.stateInherit')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleModeOverrideChange(mode.code, 'allow')}
+                                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                    isAllow
+                                      ? 'bg-emerald-500 text-white shadow-xs font-extrabold'
+                                      : 'text-content-subtle hover:text-emerald-400'
+                                  }`}
+                                >
+                                  <Check className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{t('access.stateAllow')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleModeOverrideChange(mode.code, 'deny')}
+                                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-lg cursor-pointer transition-all ${
+                                    isDeny
+                                      ? 'bg-danger text-white shadow-xs font-extrabold'
+                                      : 'text-content-subtle hover:text-danger'
+                                  }`}
+                                >
+                                  <X className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">{t('access.stateDeny')}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Desktop Matrix Table (visible on md: and up) */}
+                      <div className="hidden md:block relative overflow-auto max-h-[calc(100vh-320px)] min-h-[350px] rounded-2xl border border-line bg-surface shadow-xs custom-scrollbar">
+                        <table className="w-full text-left border-separate border-spacing-0 text-xs min-w-[700px]">
+                          <thead className="sticky top-0 z-20 shadow-xs">
+                            <tr className="bg-surface-sunken text-content-subtle text-[11px] font-bold uppercase tracking-wider">
+                              <th className="sticky top-0 left-0 z-30 py-3 px-4 w-[280px] min-w-[260px] bg-surface-sunken border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)]">
+                                {isEn ? 'Chat Mode' : 'Mode Chat'}
+                              </th>
+                              <th className="sticky top-0 py-3 px-3 text-center bg-surface-sunken border-b border-line">
+                                {isEn ? 'Role Baseline' : 'Basis Peran'}
+                              </th>
+                              <th className="sticky top-0 py-3 px-3 bg-surface-sunken border-b border-line">
+                                {isEn ? 'Permission Status (Tri-State)' : 'Status Izin (Tri-State)'}
+                              </th>
+                              <th className="sticky top-0 py-3 px-3 text-center bg-surface-sunken border-b border-line">
+                                {isEn ? 'Effective Access' : 'Akses Efektif'}
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-line/60">
+                            {filteredSelectedUserModes.map((mode) => {
+                              const isInherit = mode.override_state === 'inherit' || !mode.override_state;
+                              const isAllow = mode.override_state === 'allow';
+                              const isDeny = mode.override_state === 'deny';
+                              const effective = Boolean(mode.effective_allowed);
+                              const roleAllowed = Boolean(mode.role_allowed);
+                              const sysEnabled = Boolean(mode.system_enabled);
+
+                              return (
+                                <tr key={mode.code} className="hover:bg-surface-hover/50 transition-colors group">
+                                  <td className="sticky left-0 z-10 py-3 px-4 w-[280px] min-w-[260px] bg-surface group-hover:bg-surface-hover border-r border-b border-line shadow-[2px_0_5px_-2px_rgba(0,0,0,0.15)] transition-colors">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-8 h-8 rounded-xl bg-surface-sunken flex items-center justify-center shrink-0 border border-line">
+                                        {renderModeIcon(mode.icon, 'w-4 h-4')}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-semibold text-content">{mode.name}</span>
+                                          {mode.is_default && (
+                                            <span className="px-1.5 py-0.2 rounded text-[8px] font-black uppercase bg-amber-500/15 text-amber-300 border border-amber-500/30 leading-none">
+                                              Default
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] text-content-subtle font-mono block">
+                                          {mode.code} • {formatProviderLabel(mode.provider)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+
+                                  {/* Role Baseline */}
+                                  <td className="py-3 px-3 text-center border-b border-line">
+                                    <span
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                                        roleAllowed
+                                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/25'
+                                          : 'bg-surface-sunken text-content-subtle border border-line'
+                                      }`}
+                                    >
+                                      {roleAllowed ? <Check className="w-3 h-3" /> : <Lock className="w-2.5 h-2.5" />}
+                                      <span>{roleAllowed ? (isEn ? 'Allowed' : 'Diizinkan') : (isEn ? 'Blocked' : 'Diblokir')}</span>
+                                    </span>
+                                  </td>
+
+                                  {/* Tri-state buttons */}
+                                  <td className="py-3 px-3 border-b border-line">
+                                    <div className="inline-flex rounded-xl p-0.5 bg-surface-sunken border border-line text-[10px] font-bold">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleModeOverrideChange(mode.code, 'inherit')}
+                                        className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                          isInherit
+                                            ? 'bg-surface text-content shadow-xs font-extrabold border border-line'
+                                            : 'text-content-subtle hover:text-content'
+                                        }`}
+                                        title={isEn ? 'Inherit role rule' : 'Mewarisi aturan peran'}
+                                      >
+                                        {t('access.stateInherit')}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleModeOverrideChange(mode.code, 'allow')}
+                                        className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                          isAllow
+                                            ? 'bg-emerald-500 text-white shadow-xs font-extrabold'
+                                            : 'text-content-subtle hover:text-emerald-400'
+                                        }`}
+                                      >
+                                        {t('access.stateAllow')}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleModeOverrideChange(mode.code, 'deny')}
+                                        className={`px-2.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                          isDeny
+                                            ? 'bg-danger text-white shadow-xs font-extrabold'
+                                            : 'text-content-subtle hover:text-danger'
+                                        }`}
+                                      >
+                                        {t('access.stateDeny')}
+                                      </button>
+                                    </div>
+                                  </td>
+
+                                  {/* Effective Access */}
+                                  <td className="py-3 px-3 text-center border-b border-line">
+                                    {!sysEnabled ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/25">
+                                        <AlertCircle className="w-3 h-3" />
+                                        <span>{isEn ? 'Disabled' : 'Nonaktif'}</span>
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                                          effective
+                                            ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                            : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                                        }`}
+                                      >
+                                        {effective ? <Check className="w-3 h-3" /> : <Lock className="w-2.5 h-2.5" />}
+                                        <span>{effective ? (isEn ? 'Allowed' : 'Diizinkan') : (isEn ? 'Blocked' : 'Diblokir')}</span>
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-content-subtle border border-dashed border-line rounded-2xl bg-surface">
+                  {t('admin.noUserSelected')}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
 

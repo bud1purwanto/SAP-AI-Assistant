@@ -103,6 +103,10 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
+    get_modes_for_user,
+    get_user_modes_matrix,
+    set_user_mode_override,
+    get_all_user_mode_overrides,
     list_mcp_servers,
     get_mcp_server,
     create_mcp_server,
@@ -1996,9 +2000,22 @@ class AdminUpdateRoleModeRequest(BaseModel):
     allowed: Optional[bool] = None
 
 
+class AdminUserModeOverrideItem(BaseModel):
+    mode_code: str
+    state: Optional[str] = None  # "inherit" | "allow" | "deny"
+    enabled: Optional[bool] = None
+
+
+class AdminUpdateUserModeRequest(BaseModel):
+    mode_code: Optional[str] = None
+    state: Optional[str] = None
+    enabled: Optional[bool] = None
+    items: Optional[list[AdminUserModeOverrideItem]] = None
+
+
 @app.get("/api/modes")
 async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_user_optional)):
-    """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role)."""
+    """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role dan user overrides)."""
     username = user.get("username", "guest") if user else "guest"
     is_guest = not user or bool(user.get("is_guest", True))
     token_roles = (user.get("roles") or [user.get("role", "user")]) if user else ["guest"]
@@ -2006,17 +2023,7 @@ async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_use
     # role langsung berlaku tanpa menunggu token kedaluwarsa.
     active_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
 
-    # Union seluruh mode yang diizinkan untuk setiap peran aktif pengguna
-    modes_by_code = {}
-    for r in active_roles:
-        r_modes = get_modes_for_role(r)
-        for m in r_modes:
-            if m["code"] not in modes_by_code:
-                modes_by_code[m["code"]] = dict(m)
-            elif m.get("available"):
-                modes_by_code[m["code"]]["available"] = True
-
-    modes = list(modes_by_code.values())
+    modes = get_modes_for_user(username, active_roles)
     modes.sort(key=lambda x: x.get("sort_order", 0))
 
     cfg = get_system_config()
@@ -2211,6 +2218,86 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal menyimpan urutan mode.")
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
+
+
+@app.get("/api/admin/modes/users")
+async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mendapatkan daftar pengguna beserta ringkasan status override mode chat."""
+    users = list_all_users()
+    all_ovrs = get_all_user_mode_overrides()
+    ovrs_by_user = {}
+    for o in all_ovrs:
+        u = o["username"].lower()
+        if u not in ovrs_by_user:
+            ovrs_by_user[u] = []
+        ovrs_by_user[u].append(o)
+
+    result = []
+    for u in users:
+        u_name = u.get("username", "")
+        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
+        result.append({
+            "username": u_name,
+            "full_name": u.get("full_name", ""),
+            "role": u.get("role", "user"),
+            "roles": u.get("roles", [u.get("role", "user")]),
+            "division_name": u.get("division_name"),
+            "override_count": len(u_ovrs),
+            "overrides": u_ovrs,
+        })
+    return result
+
+
+@app.get("/api/admin/modes/users/{username}")
+async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
+    """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
+    res = get_user_modes_matrix(username)
+    if "error" in res and res.get("error") == "User not found":
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+    return res
+
+
+@app.put("/api/admin/modes/users/{username}")
+async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
+    """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
+    user_row = get_user_by_username(username)
+    if not user_row:
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+
+    items_to_process = []
+    if req.items is not None:
+        items_to_process = req.items
+    elif req.mode_code:
+        items_to_process = [AdminUserModeOverrideItem(
+            mode_code=req.mode_code,
+            state=req.state,
+            enabled=req.enabled,
+        )]
+
+    if not items_to_process:
+        raise HTTPException(status_code=400, detail="Tidak ada data mode yang diperbarui.")
+
+    success_count = 0
+    for item in items_to_process:
+        m_code = (item.mode_code or "").strip().lower()
+        if not m_code:
+            continue
+        st = item.state
+        if st is None and item.enabled is not None:
+            st = "allow" if item.enabled else "deny"
+        elif st is None:
+            st = "inherit"
+
+        ok = set_user_mode_override(username, m_code, st)
+        if ok:
+            success_count += 1
+
+    return {
+        "status": "success",
+        "username": username,
+        "updated": success_count,
+        "matrix": get_user_modes_matrix(username),
+    }
 
 
 # --- MCP ACCESS CONTROL ADMIN ENDPOINTS ---

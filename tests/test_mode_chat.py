@@ -6,8 +6,12 @@ from database import (
     get_chat_modes,
     get_chat_mode_by_code,
     get_modes_for_role,
+    get_modes_for_user,
     get_role_modes,
     set_role_mode,
+    set_user_mode_override,
+    get_user_mode_overrides,
+    get_user_modes_matrix,
     update_system_config,
     get_system_config,
 )
@@ -211,7 +215,7 @@ class _FakeModeModel:
         return self
 
 
-def _jalankan_process_chat(monkeypatch, roles, mode_code):
+def _jalankan_process_chat(monkeypatch, roles, mode_code, username="penguji_mode_union"):
     import agent as agent_module
     import database
     from models import ChatRequest
@@ -241,7 +245,7 @@ def _jalankan_process_chat(monkeypatch, roles, mode_code):
         ChatRequest(message="stok material SRRPAI", mode=mode_code),
         roles,
         "",
-        username="penguji_mode_union",
+        username=username,
         on_progress=on_progress,
     ))
     return hasil, progres
@@ -272,3 +276,121 @@ def test_process_chat_mode_ditolak_bila_semua_role_melarang(db, monkeypatch):
 
     stages = [e.get("stage") for e in progres]
     assert "mode_downgraded" in stages
+
+
+def test_user_mode_override_database(db, make_user):
+    """Test unit level database fungsi user mode override."""
+    user = "test_override_db_user"
+    make_user(user, role="user")
+
+    # Baseline: role 'user' denies expert
+    modes_base = get_modes_for_user(username=user, roles=["user"])
+    expert_base = next(m for m in modes_base if m["code"] == "expert")
+    assert expert_base["available"] is False
+
+    # 1. Set override: ALLOW
+    ok = set_user_mode_override(user, "expert", "allow")
+    assert ok is True
+    overrides = get_user_mode_overrides(user)
+    assert overrides.get("expert") is True
+
+    modes_allowed = get_modes_for_user(username=user, roles=["user"])
+    expert_allowed = next(m for m in modes_allowed if m["code"] == "expert")
+    assert expert_allowed["available"] is True
+
+    # Check matrix
+    matrix = get_user_modes_matrix(user)
+    assert matrix["username"] == user
+    expert_matrix = next(m for m in matrix["modes"] if m["code"] == "expert")
+    assert expert_matrix["override_state"] == "allow"
+    assert expert_matrix["effective_allowed"] is True
+
+    # 2. Set override: DENY (on fast mode which is normally allowed)
+    ok_deny = set_user_mode_override(user, "fast", "deny")
+    assert ok_deny is True
+    modes_denied = get_modes_for_user(username=user, roles=["user"])
+    fast_denied = next(m for m in modes_denied if m["code"] == "fast")
+    assert fast_denied["available"] is False
+
+    # 3. Revert override: INHERIT
+    ok_inherit = set_user_mode_override(user, "expert", "inherit")
+    assert ok_inherit is True
+    overrides_after = get_user_mode_overrides(user)
+    assert "expert" not in overrides_after
+
+    modes_reverted = get_modes_for_user(username=user, roles=["user"])
+    expert_reverted = next(m for m in modes_reverted if m["code"] == "expert")
+    assert expert_reverted["available"] is False
+
+
+def test_admin_user_modes_endpoints(client, admin_auth, make_user):
+    """Test API admin untuk listing user modes, get matrix, dan update override."""
+    target_user = "test_api_override_user"
+    user_auth = make_user(target_user, role="user")
+
+    # 1. GET /api/admin/modes/users
+    res_list = client.get("/api/admin/modes/users", headers=admin_auth)
+    assert res_list.status_code == 200
+    users_data = res_list.json()
+    assert isinstance(users_data, list)
+    target_entry = next((u for u in users_data if u["username"].lower() == target_user.lower()), None)
+    assert target_entry is not None
+
+    # 2. GET /api/admin/modes/users/{username}
+    res_matrix = client.get(f"/api/admin/modes/users/{target_user}", headers=admin_auth)
+    assert res_matrix.status_code == 200
+    matrix = res_matrix.json()
+    assert matrix["username"] == target_user
+    assert len(matrix["modes"]) >= 3
+
+    # 3. PUT /api/admin/modes/users/{username} (Allow expert mode)
+    update_payload = {
+        "items": [
+            {"mode_code": "expert", "state": "allow"},
+            {"mode_code": "medium", "state": "deny"},
+        ]
+    }
+    res_update = client.put(f"/api/admin/modes/users/{target_user}", json=update_payload, headers=admin_auth)
+    assert res_update.status_code == 200
+    assert res_update.json()["status"] == "success"
+
+    # Verify via user's /api/modes endpoint
+    user_modes_res = client.get("/api/modes", headers=user_auth)
+    assert user_modes_res.status_code == 200
+    user_modes = user_modes_res.json()["modes"]
+    expert_mode = next(m for m in user_modes if m["code"] == "expert")
+    assert expert_mode["available"] is True
+
+    medium_mode = next(m for m in user_modes if m["code"] == "medium")
+    assert medium_mode["available"] is False
+
+
+def test_process_chat_user_mode_override(db, monkeypatch, make_user):
+    """process_chat menghormati User Override di atas Role Matrix:
+    - User dengan role frontend (yang normalnya melarang expert) tapi punya override 'allow' -> expert aktif.
+    - User dengan role admin (yang normalnya mengizinkan expert) tapi punya override 'deny' -> expert diturunkan.
+    """
+    user_allow = "user_override_allow"
+    make_user(user_allow, role="frontend")
+    set_user_mode_override(user_allow, "expert", "allow")
+
+    _, progres_allow = _jalankan_process_chat(
+        monkeypatch, ["frontend"], "expert", username=user_allow
+    )
+    stages_allow = [e.get("stage") for e in progres_allow]
+    assert "mode_downgraded" not in stages_allow, (
+        f"Seharusnya mode 'expert' diizinkan untuk {user_allow} via override 'allow', tapi malah diturunkan: {progres_allow}"
+    )
+
+    user_deny = "user_override_deny"
+    make_user(user_deny, role="superadmin")
+    set_user_mode_override(user_deny, "expert", "deny")
+
+    _, progres_deny = _jalankan_process_chat(
+        monkeypatch, ["superadmin"], "expert", username=user_deny
+    )
+    stages_deny = [e.get("stage") for e in progres_deny]
+    assert "mode_downgraded" in stages_deny, (
+        f"Seharusnya mode 'expert' ditolak untuk {user_deny} via override 'deny', tapi tidak diturunkan: {progres_deny}"
+    )
+

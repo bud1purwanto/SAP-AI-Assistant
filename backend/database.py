@@ -3537,6 +3537,210 @@ def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
         return []
 
 
+def get_user_mode_overrides(username: str) -> dict[str, bool]:
+    """Mengambil kamus override izin mode chat untuk pengguna tertentu (mode_code -> enabled)."""
+    clean_u = (username or "").strip()
+    if not clean_u:
+        return {}
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT mode_code, enabled FROM ai_assistant.user_modes WHERE LOWER(username) = LOWER(:u)"),
+                {"u": clean_u}
+            ).fetchall()
+            return {r.mode_code: bool(r.enabled) for r in rows}
+    except Exception as e:
+        logger.error(f"Error get_user_mode_overrides for '{clean_u}': {e}")
+        return {}
+
+
+def get_all_user_mode_overrides() -> list[dict]:
+    """Mengambil seluruh catatan override mode chat pengguna untuk kebutuhan monitoring/admin."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT username, mode_code, enabled, updated_at FROM ai_assistant.user_modes ORDER BY username, mode_code")
+            ).fetchall()
+            return [
+                {
+                    "username": r.username,
+                    "mode_code": r.mode_code,
+                    "enabled": bool(r.enabled),
+                    "updated_at": _iso(r.updated_at),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error get_all_user_mode_overrides: {e}")
+        return []
+
+
+def set_user_mode_override(username: str, mode_code: str, state: Any) -> bool:
+    """Mengatur override mode chat per user (tri-state: 'inherit' / 'allow' / 'deny')."""
+    clean_u = (username or "").strip()
+    clean_m = (mode_code or "").strip()
+    if not clean_u or not clean_m:
+        return False
+
+    # Normalisasi state
+    s_val = str(state).lower().strip() if state is not None else "inherit"
+    if s_val in ("inherit", "none", "null", ""):
+        # Hapus baris override agar mewarisi peran (role)
+        try:
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(
+                    text("DELETE FROM ai_assistant.user_modes WHERE LOWER(username) = LOWER(:u) AND mode_code = :m"),
+                    {"u": clean_u, "m": clean_m}
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error delete user_mode override: {e}")
+            return False
+
+    is_enabled = s_val in ("allow", "true", "1")
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.user_modes (username, mode_code, enabled, updated_at)
+                VALUES (:u, :m, :en, CURRENT_TIMESTAMP)
+                ON CONFLICT (username, mode_code) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"u": clean_u, "m": clean_m, "en": is_enabled})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error set_user_mode_override: {e}")
+        return False
+
+
+def get_user_modes_matrix(username: str) -> dict:
+    """Mengambil matriks lengkap perizinan mode chat untuk pengguna tertentu,
+    menampilkan status bawaan peran (role_allowed), override (tri-state), dan hasil efektif (effective_allowed).
+    """
+    clean_u = (username or "").strip()
+    if not clean_u:
+        return {"username": "", "modes": []}
+
+    try:
+        user_row = get_user_by_username(clean_u)
+        if not user_row:
+            return {"username": clean_u, "error": "User not found", "modes": []}
+
+        roles_list = user_row.get("roles") or ([user_row.get("role")] if user_row.get("role") else ["user"])
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            all_modes = conn.execute(
+                text("SELECT id, code, name, description, icon, provider, model, is_default, enabled, sort_order, max_iterations FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
+            ).fetchall()
+
+            role_modes = get_modes_for_role(roles_list)
+            role_map = {m["code"]: bool(m.get("available", False)) for m in role_modes}
+
+            user_overrides = get_user_mode_overrides(clean_u)
+
+            modes_res = []
+            for m in all_modes:
+                code = m.code
+                is_role_allowed = role_map.get(code, False)
+                has_override = code in user_overrides
+                ovr_val = user_overrides.get(code)
+
+                if has_override:
+                    if ovr_val is True:
+                        state = "allow"
+                        effective_allowed = True
+                        source = "user_override"
+                    else:
+                        state = "deny"
+                        effective_allowed = False
+                        source = "user_override"
+                else:
+                    state = "inherit"
+                    effective_allowed = is_role_allowed
+                    source = "role"
+
+                modes_res.append({
+                    "id": m.id,
+                    "code": code,
+                    "name": m.name,
+                    "description": m.description,
+                    "icon": m.icon,
+                    "provider": m.provider,
+                    "model": m.model,
+                    "is_default": bool(m.is_default),
+                    "system_enabled": bool(m.enabled),
+                    "role_allowed": bool(is_role_allowed),
+                    "override_state": state,  # "inherit" | "allow" | "deny"
+                    "override": ovr_val if has_override else None,
+                    "effective_allowed": bool(effective_allowed) and bool(m.enabled),
+                    "source": source,
+                })
+
+            return {
+                "username": user_row.get("username", clean_u),
+                "full_name": user_row.get("full_name") or "",
+                "roles": roles_list,
+                "modes": modes_res,
+            }
+    except Exception as e:
+        logger.error(f"Error get_user_modes_matrix for '{clean_u}': {e}")
+        return {"username": clean_u, "modes": [], "error": str(e)}
+
+
+def get_modes_for_user(username: Optional[str], roles: Union[str, list, tuple, set]) -> list[dict]:
+    """Mengambil daftar seluruh mode chat beserta status `available` untuk user tertentu.
+    Prioritas ketersediaan:
+    1. Sistem & Master switch (chat_modes_enabled).
+    2. User Override jika ada (allow/deny).
+    3. Template Peran (UNION seluruh peran aktif pengguna).
+    """
+    base_modes = get_modes_for_role(roles)
+    clean_u = (username or "").strip()
+    if not clean_u or clean_u.lower() == "guest":
+        return base_modes
+
+    try:
+        user_overrides = get_user_mode_overrides(clean_u)
+        if not user_overrides:
+            return base_modes
+
+        cfg = get_system_config()
+        master_enabled = cfg.get("chat_modes_enabled", True)
+
+        result = []
+        for m in base_modes:
+            mode_dict = dict(m)
+            code = mode_dict.get("code")
+            if code in user_overrides:
+                ovr_enabled = user_overrides[code]
+                is_mode_enabled = mode_dict.get("enabled", True)
+                is_def = mode_dict.get("is_default", False)
+
+                if not master_enabled:
+                    available = is_def and is_mode_enabled
+                else:
+                    available = is_mode_enabled and ovr_enabled
+
+                mode_dict["available"] = bool(available)
+                mode_dict["source"] = "user_override"
+            else:
+                mode_dict["source"] = "role"
+
+            result.append(mode_dict)
+
+        return result
+    except Exception as e:
+        logger.error(f"Error get_modes_for_user for '{clean_u}': {e}")
+        return base_modes
+
+
 # ---------------------------------------------------------------------------
 # Master Data Roles (Dinamisasi Peran)
 # ---------------------------------------------------------------------------
