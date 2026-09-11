@@ -1596,11 +1596,11 @@ const ChatLayout = () => {
                     setCustomLoginMsg('');
                     setIsLoginModalOpen(true);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-accent via-indigo-600 to-accent hover:opacity-95 text-white text-xs font-bold transition-all shadow-sm shadow-accent/25 cursor-pointer active:scale-95"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer active:scale-95 shadow-xs"
                   title={t('sidebar.loginPrompt')}
                 >
-                  <LogIn className="w-3.5 h-3.5 shrink-0 text-white" aria-hidden="true" />
-                  <span className="text-white">{t('sidebar.loginPrompt')}</span>
+                  <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  <span>{t('sidebar.loginPrompt')}</span>
                 </button>
               </div>
             </div>
@@ -2288,16 +2288,10 @@ const ChatLayout = () => {
 
             {currentMessages.length === 0 && !isCurrentLoading && (
               <div className="pt-4 sm:pt-8 pb-3 sm:pb-4 relative">
-                {/* Ambient Glow Aura */}
-                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none -z-10 animate-pulse" />
-
                 <div className="text-center mb-4 sm:mb-6">
-                  {/* Glowing Animated Hero Icon Badge */}
-                  <div className="relative mx-auto w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center mb-2.5">
-                    <div className="absolute inset-0 bg-gradient-to-tr from-accent to-indigo-500 rounded-2xl blur-md opacity-50 animate-pulse" />
-                    <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-xl shadow-accent/30 border border-white/20">
-                      <Cpu className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
-                    </div>
+                  {/* Clean Enterprise Hero Icon Badge */}
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-accent-soft text-accent border border-accent/20 flex items-center justify-center mx-auto mb-2.5 shadow-xs">
+                    <Cpu className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
                   </div>
 
                   {/* Judul 100% Presisi di Tengah Tanpa Beban Elemen Kiri/Kanan */}
@@ -2547,7 +2541,7 @@ const ChatLayout = () => {
                   setKickedModalInfo({ isOpen: false, reason: '' });
                   setIsLoginModalOpen(true);
                 }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 via-indigo-600 to-rose-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-rose-600/25 transition-all cursor-pointer active:scale-95"
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer active:scale-95"
               >
                 {t('kicked.relogin')}
               </button>

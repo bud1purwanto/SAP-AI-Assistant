@@ -73,7 +73,6 @@ const INTERVAL_OPTIONS = [
 
 export default function ScheduledTasksModal({ isOpen, onClose }) {
   const { t, language } = useLanguage();
-  const isKeyboardOpen = useVirtualKeyboard();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -346,12 +345,15 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className={`fixed inset-0 z-50 flex ${
-      isKeyboardOpen ? 'items-start pt-1.5 sm:pt-6' : 'items-center'
-    } justify-center p-3 sm:p-6 bg-black/65 backdrop-blur-md overflow-y-auto overscroll-contain transition-all duration-250 animate-modal-backdrop`}>
-      <div className={`relative w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border border-line/80 bg-surface-raised/95 backdrop-blur-xl shadow-2xl overflow-hidden ${
-        isKeyboardOpen ? 'my-1 sm:my-auto' : 'my-auto'
-      } transition-all duration-250 animate-modal-content`}>
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-md transition-opacity duration-200 animate-modal-backdrop">
+      <div
+        className="min-h-full flex items-center justify-center p-3 sm:p-6 text-center"
+        style={{
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <div className="relative w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border border-line/80 bg-surface-raised/95 backdrop-blur-xl shadow-2xl overflow-hidden my-auto text-left transition-opacity duration-200 animate-modal-content">
         {/* Ambient Top Glow Blobs */}
         <div className="absolute -top-24 -left-24 w-56 h-56 bg-accent/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
         <div className="absolute -bottom-24 -right-24 w-56 h-56 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
@@ -809,6 +811,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }
 

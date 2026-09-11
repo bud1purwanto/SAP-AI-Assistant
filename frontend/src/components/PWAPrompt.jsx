@@ -101,7 +101,7 @@ const PWAPrompt = () => {
             <button
               type="button"
               onClick={handleInstallClick}
-              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-accent text-accent-fg rounded-xl text-xs font-semibold shadow-md hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-accent text-white rounded-xl text-xs font-semibold shadow-md hover:brightness-110 active:scale-95 transition-all cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               {t('pwa.installNow')}

@@ -908,7 +908,7 @@ const ChatInput = ({
                 disabled={busy || (!input.trim() && attachments.length === 0)}
                 className={`h-8 w-8 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                   !busy && (input.trim() || attachments.length > 0)
-                    ? 'bg-gradient-to-r from-accent via-indigo-600 to-accent text-white shadow-md shadow-accent/25 hover:shadow-accent/40 active:scale-95'
+                    ? 'bg-accent hover:bg-accent-hover text-white shadow-xs active:scale-95'
                     : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
                 }`}
                 title={t('input.send')}
@@ -926,7 +926,7 @@ const ChatInput = ({
               disabled={busy || (!input.trim() && attachments.length === 0)}
               className={`h-9 w-9 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
                 !busy && (input.trim() || attachments.length > 0)
-                  ? 'bg-gradient-to-r from-accent via-indigo-600 to-accent text-white shadow-md shadow-accent/25 hover:shadow-accent/40 active:scale-95'
+                  ? 'bg-accent hover:bg-accent-hover text-white shadow-xs active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
               }`}
               title={t('input.send')}

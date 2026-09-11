@@ -154,7 +154,7 @@ const ModeSelector = ({
                   <div
                     className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
                       isSelected && isAvailable
-                        ? 'bg-accent text-accent-fg'
+                        ? 'bg-accent text-white'
                         : isAvailable
                         ? 'bg-surface-sunken text-accent'
                         : 'bg-surface-sunken text-content-subtle'

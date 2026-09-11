@@ -707,7 +707,7 @@ export default function AdminMcpConfig({
               onClick={() => setViewMode('visual')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 viewMode === 'visual'
-                  ? 'bg-accent text-accent-contrast shadow-xs'
+                  ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
               }`}
               title={isEn ? 'Visual Form GUI' : 'Formulir Visual'}
@@ -720,7 +720,7 @@ export default function AdminMcpConfig({
               onClick={() => setViewMode('raw')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 viewMode === 'raw'
-                  ? 'bg-accent text-accent-contrast shadow-xs'
+                  ? 'bg-accent text-white shadow-xs'
                   : 'text-content-muted hover:text-content'
               }`}
               title={isEn ? 'Raw JSON Config' : 'JSON Mentah'}
@@ -1079,7 +1079,7 @@ export default function AdminMcpConfig({
                       type="button"
                       onClick={() => handleSaveCard(srv.id)}
                       disabled={isSaving}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent hover:bg-accent-hover text-accent-contrast transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent hover:bg-accent-hover text-white transition-all shadow-xs cursor-pointer disabled:opacity-50"
                       title={isEn ? 'Save server changes' : 'Simpan perubahan'}
                     >
                       <Save className="w-3.5 h-3.5" />

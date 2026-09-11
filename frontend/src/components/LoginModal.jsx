@@ -56,7 +56,6 @@ function removeSavedUserFromStorage(usernameToRemove) {
 
 const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, onClose }) => {
   const { t } = useLanguage();
-  const [isInputFocused, setIsInputFocused] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -71,13 +70,13 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
   const usernameRef = useRef(null);
   const passwordRef = useRef(null);
   const formRef = useRef(null);
-  const blurTimeoutRef = useRef(null);
+  const containerRef = useRef(null);
+  const pointerDownTargetRef = useRef(null);
 
   // Inisialisasi saat modal dibuka
   useEffect(() => {
     if (!isOpen) {
       setIsClosing(false);
-      setIsInputFocused(false);
       return undefined;
     }
 
@@ -85,16 +84,13 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    // Pastikan posisi scroll window tetap di (0, 0) agar fixed overlay tidak terdorong keluar layar di Safari iOS
-    if (typeof window !== 'undefined') {
-      window.scrollTo(0, 0);
-    }
-
     // Pastikan tidak ada elemen luar (seperti chat input) yang masih memegang fokus
     if (document.activeElement && typeof document.activeElement.blur === 'function') {
-      document.activeElement.blur();
+      const isInside = containerRef.current && containerRef.current.contains(document.activeElement);
+      if (!isInside) {
+        document.activeElement.blur();
+      }
     }
-    setIsInputFocused(false);
 
     setUsername('');
     setPassword('');
@@ -125,7 +121,6 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
     return () => {
       document.body.style.overflow = prevOverflow;
       if (focusTimer) clearTimeout(focusTimer);
-      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
       document.removeEventListener('keydown', onKeyDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,112 +204,93 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
   return (
     <div
+      ref={containerRef}
+      onPointerDown={(e) => {
+        pointerDownTargetRef.current = e.target;
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget && onClose && !isLoading && !isSuccess) {
+        if (
+          (e.target === e.currentTarget || e.target === containerRef.current?.firstElementChild) &&
+          (pointerDownTargetRef.current === e.currentTarget || pointerDownTargetRef.current === containerRef.current?.firstElementChild) &&
+          onClose &&
+          !isLoading &&
+          !isSuccess
+        ) {
           triggerClose();
         }
       }}
-      className={`fixed inset-0 bg-black/65 backdrop-blur-md z-50 flex ${
-        isInputFocused ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
-      } justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain transition-all duration-250 ${
+      className={`fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/70 backdrop-blur-md transition-opacity duration-200 ${
         isClosing ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
       }`}
-      style={{
-        minHeight: '100dvh',
-        height: '100%',
-        paddingTop: isInputFocused
-          ? 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.25rem)'
-          : 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)',
-        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem)',
-      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
       <div
-        className={`bg-surface-raised/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-[340px] xs:max-w-sm sm:max-w-md overflow-hidden border border-line/80 relative ${
-          isInputFocused ? 'my-1 sm:my-auto' : 'my-auto'
-        } flex flex-col transition-all duration-250 ${
-          isClosing ? 'animate-modal-content-out' : 'animate-modal-content'
-        } ${shake ? 'animate-shake' : ''}`}
+        className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center"
         style={{
-          maxHeight:
-            'min(92vh, calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 1.5rem))',
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
         }}
       >
-        {/* Glowing ambient background auras */}
-        <div className="absolute -top-20 -left-20 w-48 h-48 bg-accent/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Top glowing hairline accent */}
-        <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80" />
-
-        {/* Tombol Tutup (jika didukung) */}
-        {onClose && !isLoading && !isSuccess && (
-          <button
-            type="button"
-            onClick={triggerClose}
-            className="absolute top-3 right-3 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover rounded-full border border-line/50 transition-all duration-200 z-20 cursor-pointer hover:rotate-90"
-            aria-label={t('login.closeAria')}
-          >
-            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
-          </button>
-        )}
-
-        {/* Header Visual Modern & Smooth */}
-        <div className="relative pt-5 sm:pt-6 pb-2 px-5 sm:px-6 text-center shrink-0">
-          {/* Security Badge Pill */}
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-semibold bg-accent-soft text-accent-soft-fg border border-accent/25 shadow-xs mb-2 sm:mb-2.5 select-none">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-            </span>
-            <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>{t('login.badge')}</span>
-          </div>
-
-          {/* Glowing Lock Badge */}
-          <div className="relative mx-auto w-11 h-11 sm:w-14 sm:h-14 flex items-center justify-center mb-1.5 sm:mb-2">
-            <div className="absolute inset-0 bg-gradient-to-tr from-accent to-indigo-500 rounded-2xl blur-md opacity-50 animate-pulse" />
-            <div className="relative w-11 h-11 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-xl shadow-accent/30 border border-white/20">
-              <Lock className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
-            </div>
-          </div>
-
-          <h2 id="login-title" className="text-base sm:text-lg font-bold font-display text-content tracking-tight">
-            {t('login.title')}
-          </h2>
-          <p className="text-[11px] sm:text-xs text-content-muted mt-0.5 max-w-xs mx-auto leading-relaxed">
-            {t('login.subtitle')}
-          </p>
-        </div>
-
-        {/* Body Form */}
-        <form
-          ref={formRef}
-          onSubmit={handleSubmit}
-          onFocus={() => {
-            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
-            setIsInputFocused(true);
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          className={`bg-surface-raised/98 dark:bg-[#1a1a24] backdrop-blur-2xl rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-[340px] xs:max-w-sm sm:max-w-md border border-white/20 dark:border-white/15 ring-1 ring-black/5 dark:ring-white/10 relative my-auto flex flex-col text-left overflow-hidden transition-opacity duration-200 ${
+            isClosing ? 'animate-modal-content-out' : 'animate-modal-content'
+          } ${shake ? 'animate-shake' : ''}`}
+          style={{
+            maxHeight: 'min(92vh, calc(100% - 1.5rem))',
           }}
-          onBlur={() => {
-            if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
-            blurTimeoutRef.current = setTimeout(() => {
-              const active = document.activeElement;
-              if (!formRef.current || !formRef.current.contains(active)) {
-                setIsInputFocused(false);
-              }
-            }, 100);
-          }}
-          className="p-4 sm:p-6 pt-2 sm:pt-3 space-y-3 sm:space-y-4 overflow-y-auto custom-scrollbar flex-1 relative z-10"
         >
-          {/* Custom Informational Message (misal saat wajib login atau timeout) */}
-          {customMessage && (
-            <div className="flex items-start gap-2.5 p-2.5 sm:p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-medium leading-relaxed transition-all">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-              <span>{customMessage}</span>
-            </div>
+          {/* Top glowing hairline accent */}
+          <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-90" />
+
+          {/* Tombol Tutup (jika didukung) */}
+          {onClose && !isLoading && !isSuccess && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerClose();
+              }}
+              className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover rounded-full border border-line/50 transition-all duration-200 z-20 cursor-pointer hover:rotate-90"
+              aria-label={t('login.closeAria')}
+            >
+              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
+            </button>
           )}
+
+          {/* Header Visual Modern, Rapi & Proporsional */}
+          <div className="relative pt-3.5 sm:pt-6 pb-1 sm:pb-1.5 px-4 sm:px-6 text-center shrink-0">
+            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-accent-soft text-accent border border-accent/20 flex items-center justify-center mx-auto mb-1.5 sm:mb-2 shadow-xs">
+              <Lock className="w-4 h-4 sm:w-6 sm:h-6" aria-hidden="true" />
+            </div>
+
+            <h2 id="login-title" className="text-sm sm:text-lg font-bold font-display text-content tracking-tight">
+              {t('login.title')}
+            </h2>
+
+            {!customMessage && (
+              <p className="text-xs text-content-muted mt-0.5 max-w-xs mx-auto leading-relaxed">
+                {t('login.subtitle')}
+              </p>
+            )}
+          </div>
+
+          {/* Body Form */}
+          <form
+            ref={formRef}
+            onSubmit={handleSubmit}
+            className="p-3.5 sm:p-6 pt-1.5 sm:pt-2 space-y-2.5 sm:space-y-3.5 overflow-y-auto custom-scrollbar flex-1 min-h-0 relative z-10"
+          >
+            {/* Custom Informational Message (misal saat wajib login atau timeout) */}
+            {customMessage && (
+              <div className="flex items-start gap-2 p-2 sm:p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-medium leading-relaxed transition-all">
+                <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                <span>{customMessage}</span>
+              </div>
+            )}
 
           {/* Pesan Kesalahan dengan Transisi Mulus */}
           {error && (
@@ -331,7 +307,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
           <div>
             <label
               htmlFor="login-username"
-              className="block text-[11px] font-semibold text-content-secondary mb-1.5 uppercase tracking-wider"
+              className="block text-[11px] sm:text-xs font-semibold text-content-secondary mb-1 uppercase tracking-wider"
             >
               {t('login.usernameLabel')}
             </label>
@@ -354,7 +330,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                     passwordRef.current?.focus();
                   }
                 }}
-                className="peer w-full bg-surface-sunken/80 hover:bg-surface-sunken focus:bg-surface-raised border border-line focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-9 py-2.5 sm:py-3 text-xs sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
+                className="peer w-full bg-surface-sunken hover:bg-surface-sunken focus:bg-surface-raised border border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-9 py-2 sm:py-2.5 text-base sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
                 placeholder={t('login.usernamePlaceholder')}
               />
               {username && !isLoading && !isSuccess && (
@@ -378,7 +354,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
             {/* Rekomendasi Akun Pernah Login (Recent Accounts) */}
             {savedUsers.length > 0 && (
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-1.5 space-y-1">
                 <div className="flex items-center justify-between text-[11px] text-content-subtle font-medium">
                   <span className="flex items-center gap-1.5">
                     <Clock className="w-3 h-3" />
@@ -392,10 +368,10 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                       <div
                         key={u}
                         onClick={() => handleSelectRecent(u)}
-                        className={`group inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs font-mono border transition-all duration-150 cursor-pointer ${
+                        className={`group inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-md text-[11px] font-mono border transition-all duration-150 cursor-pointer ${
                           isSelected
                             ? 'bg-accent/15 border-accent text-accent font-semibold shadow-xs'
-                            : 'bg-surface-sunken/60 hover:bg-surface-hover border-line/60 text-content-secondary hover:text-content hover:border-line'
+                            : 'bg-surface-sunken/80 hover:bg-surface-hover border-line/60 text-content-secondary hover:text-content hover:border-line'
                         }`}
                         title={u}
                       >
@@ -420,10 +396,10 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
           {/* Input Password */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center justify-between mb-1">
               <label
                 htmlFor="login-password"
-                className="block text-[11px] font-semibold text-content-secondary uppercase tracking-wider"
+                className="block text-[11px] sm:text-xs font-semibold text-content-secondary uppercase tracking-wider"
               >
                 {t('login.passwordLabel')}
               </label>
@@ -449,7 +425,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={handlePasswordKeyDown}
                 onKeyUp={handlePasswordKeyUp}
-                className="peer w-full bg-surface-sunken/80 hover:bg-surface-sunken focus:bg-surface-raised border border-line focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-10 py-2.5 sm:py-3 text-xs sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
+                className="peer w-full bg-surface-sunken hover:bg-surface-sunken focus:bg-surface-raised border border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-10 py-2 sm:py-2.5 text-base sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
                 placeholder={t('login.passwordPlaceholder')}
               />
               <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center">
@@ -472,10 +448,10 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
             <button
               type="submit"
               disabled={isLoading || isSuccess}
-              className={`w-full relative overflow-hidden flex items-center justify-center gap-2 py-2.5 sm:py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all duration-300 shadow-md ${
+              className={`w-full relative overflow-hidden flex items-center justify-center gap-2 py-2.5 sm:py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${
                 isSuccess
-                  ? 'bg-emerald-600 text-white shadow-emerald-600/30'
-                  : 'bg-gradient-to-r from-accent via-indigo-600 to-accent bg-[length:200%_auto] hover:bg-[position:right_center] text-white shadow-accent/25 hover:shadow-accent/40 active:scale-[0.98] cursor-pointer'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-accent hover:bg-accent-hover text-white shadow-accent/25 hover:shadow-accent/40 active:scale-[0.98] cursor-pointer'
               } disabled:opacity-80`}
             >
               {isSuccess ? (
@@ -499,11 +475,11 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
 
           {/* Opsi Lanjutkan Sebagai Tamu (jika diizinkan oleh parent) */}
           {onGuestContinue && (
-            <div className="pt-2 text-center border-t border-line/60 mt-3">
+            <div className="pt-1 text-center border-t border-line/60 mt-2">
               <button
                 type="button"
                 onClick={onGuestContinue}
-                className="inline-flex items-center gap-1.5 text-xs text-content-muted hover:text-content font-medium py-1.5 px-3 rounded-xl hover:bg-surface-hover transition-all cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs text-content-muted hover:text-content font-medium py-1 px-3 rounded-xl hover:bg-surface-hover transition-all cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{t('login.guestContinue')}</span>
@@ -513,6 +489,7 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
         </form>
       </div>
     </div>
+  </div>
   );
 };
 
