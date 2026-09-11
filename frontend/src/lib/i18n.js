@@ -207,6 +207,8 @@ export const TRANSLATIONS = {
     'thinking.service_doc': 'Document Attachments',
     'thinking.service_ai': 'AI Reasoning',
     'thinking.service_file': 'Generating Document',
+    'thinking.investigating': 'Investigating data sources',
+    'thinking.reviewing': 'Reviewing answer quality',
 
     // Token & Quota
     'quota.exhausted': 'Your daily token quota is exhausted',
@@ -672,6 +674,8 @@ export const TRANSLATIONS = {
     'thinking.service_doc': 'Lampiran Dokumen',
     'thinking.service_ai': 'Analisis AI',
     'thinking.service_file': 'Menyiapkan Berkas',
+    'thinking.investigating': 'Menginvestigasi sumber data',
+    'thinking.reviewing': 'Memeriksa kualitas jawaban',
 
     // Token & Quota
     'quota.exhausted': 'Kuota token harian Anda sudah habis',

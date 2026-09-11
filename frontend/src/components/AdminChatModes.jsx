@@ -35,6 +35,10 @@ const INITIAL_FORM = {
   enabled: true,
   is_default: false,
   sort_order: 0,
+  analysis_depth: 'auto',
+  require_evidence: true,
+  max_review_cycles: 0,
+  rag_call_budget: null,
 };
 
 const formatProviderLabel = (p) => {
@@ -917,6 +921,10 @@ export default function AdminChatModes({
                             enabled: Boolean(mode.enabled),
                             is_default: Boolean(mode.is_default),
                             sort_order: mode.sort_order || 0,
+                            analysis_depth: mode.analysis_depth || 'auto',
+                            require_evidence: mode.require_evidence !== false,
+                            max_review_cycles: mode.max_review_cycles ?? 0,
+                            rag_call_budget: mode.rag_call_budget ?? null,
                           });
                         }}
                         className="p-1.5 rounded-lg text-content-subtle hover:text-accent hover:bg-surface-raised transition-colors cursor-pointer"
@@ -1161,6 +1169,24 @@ export default function AdminChatModes({
                 </div>
               </div>
 
+              <div className="p-3 rounded-xl border border-line/80 bg-surface-sunken/50 space-y-3">
+                <p className="text-xs font-bold text-content">{language === 'en' ? 'Analysis Quality' : 'Kualitas Analisis'}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="text-xs text-content-muted">{language === 'en' ? 'Analysis Depth' : 'Kedalaman Analisis'}
+                    <select value={newForm.analysis_depth} onChange={(e) => setNewForm({ ...newForm, analysis_depth: e.target.value })} className="mt-1 w-full px-3.5 py-2 bg-surface border border-line rounded-xl text-content">
+                      <option value="auto">Auto</option><option value="standard">Standard</option><option value="deep">Deep</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-muted">{language === 'en' ? 'Review Cycles (0-3)' : 'Siklus Review (0-3)'}
+                    <input type="number" min={0} max={3} value={newForm.max_review_cycles} onChange={(e) => setNewForm({ ...newForm, max_review_cycles: Number(e.target.value) })} className="mt-1 w-full px-3.5 py-2 bg-surface border border-line rounded-xl text-content" />
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-content">
+                  <input type="checkbox" checked disabled />
+                  {language === 'en' ? 'Require evidence for live claims (mandatory safety)' : 'Wajibkan evidence untuk klaim data live (keamanan wajib)'}
+                </label>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-content-muted mb-1">Provider *</label>
@@ -1323,6 +1349,24 @@ export default function AdminChatModes({
                     className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all"
                   />
                 </div>
+              </div>
+
+              <div className="p-3 rounded-xl border border-line/80 bg-surface-sunken/50 space-y-3">
+                <p className="text-xs font-bold text-content">{language === 'en' ? 'Analysis Quality' : 'Kualitas Analisis'}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="text-xs text-content-muted">{language === 'en' ? 'Analysis Depth' : 'Kedalaman Analisis'}
+                    <select value={editForm.analysis_depth || 'auto'} onChange={(e) => setEditForm({ ...editForm, analysis_depth: e.target.value })} className="mt-1 w-full px-3.5 py-2 bg-surface border border-line rounded-xl text-content">
+                      <option value="auto">Auto</option><option value="standard">Standard</option><option value="deep">Deep</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-content-muted">{language === 'en' ? 'Review Cycles (0-3)' : 'Siklus Review (0-3)'}
+                    <input type="number" min={0} max={3} value={editForm.max_review_cycles ?? 0} onChange={(e) => setEditForm({ ...editForm, max_review_cycles: Number(e.target.value) })} className="mt-1 w-full px-3.5 py-2 bg-surface border border-line rounded-xl text-content" />
+                  </label>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-content">
+                  <input type="checkbox" checked disabled />
+                  {language === 'en' ? 'Require evidence for live claims (mandatory safety)' : 'Wajibkan evidence untuk klaim data live (keamanan wajib)'}
+                </label>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

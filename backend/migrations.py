@@ -975,6 +975,35 @@ def _m0022_user_job_levels(conn):
     """))
 
 
+def _m0023_analysis_depth_mode(conn):
+    """Tambahkan kolom analysis_depth & require_evidence pada chat_modes."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS analysis_depth VARCHAR(16) DEFAULT 'auto';
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS require_evidence BOOLEAN NOT NULL DEFAULT TRUE;
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS max_review_cycles INTEGER NOT NULL DEFAULT 0;
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS rag_call_budget INTEGER DEFAULT NULL;
+    """))
+    # Set defaults per mode: fast=standard(0 review), medium=auto(0), expert=auto(1 review)
+    conn.execute(text("""
+        UPDATE ai_assistant.chat_modes SET analysis_depth='standard', max_review_cycles=0
+        WHERE code='fast' AND analysis_depth='auto';
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.chat_modes SET analysis_depth='auto', max_review_cycles=1
+        WHERE code='expert' AND max_review_cycles=0;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -998,6 +1027,7 @@ MIGRATIONS = [
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
+    ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
 ]
 
 

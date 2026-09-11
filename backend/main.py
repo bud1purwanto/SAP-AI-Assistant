@@ -1722,6 +1722,10 @@ class AdminUpdateModeRequest(BaseModel):
     enabled: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
+    analysis_depth: Optional[str] = None
+    require_evidence: Optional[bool] = None
+    max_review_cycles: Optional[int] = None
+    rag_call_budget: Optional[int] = None
 
 
 class AdminReorderModesRequest(BaseModel):
@@ -1895,6 +1899,10 @@ async def update_mode_endpoint(mode_id: int, req: AdminUpdateModeRequest, admin:
             enabled=req.enabled,
             is_default=req.is_default,
             sort_order=req.sort_order,
+            analysis_depth=req.analysis_depth.strip() if req.analysis_depth is not None else None,
+            require_evidence=req.require_evidence,
+            max_review_cycles=req.max_review_cycles,
+            rag_call_budget=req.rag_call_budget,
         )
         return updated
     except Exception as e:

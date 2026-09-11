@@ -8,6 +8,19 @@ from typing import Optional, Union, List, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
 import access_control
+from analysis_policy import (
+    AnalysisState,
+    classify_request,
+    build_investigation_plan,
+    build_final_answer_contract,
+    evaluate_evidence_sufficiency,
+    build_retry_instruction,
+    record_tool_evidence,
+    get_rag_budget,
+)
+from evidence_validators import validate_evidence
+from analysis_strategies import build_strategy_guidance
+from answer_quality import review_answer
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import trim_history
@@ -1675,7 +1688,66 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     rag_call_count = 0
     executed_tool_signatures = set()
     table_query_counts = {}
-    
+
+    # --- Grounded Analysis: klasifikasi intent & buat plan ---
+    _has_attachments = bool(getattr(chat_req, "attachment_ids", None))
+    _analysis_intent = classify_request(
+        chat_req.message,
+        target_server=target_srv,
+        has_attachments=_has_attachments,
+        history=chat_req.history,
+    )
+    _mode_analysis_depth = (active_mode or {}).get("analysis_depth") or "auto"
+    if _mode_analysis_depth == "deep" and _analysis_intent.needs_live_data:
+        _analysis_intent.kind = "deep_analysis"
+        _analysis_intent.depth = "deep"
+    _analysis_plan = build_investigation_plan(_analysis_intent, chat_req.message)
+    _analysis_state = AnalysisState(intent=_analysis_intent, plan=_analysis_plan)
+    _evidence_gate_retries = 0
+    _MAX_EVIDENCE_GATE_RETRIES = 2
+    _require_evidence = (active_mode or {}).get("require_evidence") is not False
+    _max_review_cycles = int((active_mode or {}).get("max_review_cycles") or 0)
+    # Deep analysis tetap mendapat satu review secara default; mode admin dapat
+    # mengaktifkan review untuk seluruh request detail hingga tiga siklus.
+    if _analysis_intent.kind == "deep_analysis":
+        _max_review_cycles = max(1, min(_max_review_cycles, 3))
+    _configured_rag_budget = (active_mode or {}).get("rag_call_budget")
+
+    def _current_rag_budget() -> int:
+        if _configured_rag_budget is not None:
+            try:
+                return max(0, min(int(_configured_rag_budget), 8))
+            except (TypeError, ValueError):
+                pass
+        return get_rag_budget(_analysis_state)
+
+    if _analysis_intent.kind == "deep_analysis":
+        answer_contract = build_final_answer_contract(_analysis_intent)
+        messages.append(HumanMessage(
+            content=f"SISTEM — KONTRAK JAWABAN ANALISIS: {answer_contract}"
+        ))
+
+    logger.info(
+        f"Analysis policy: kind={_analysis_intent.kind}, "
+        f"required_sources={_analysis_intent.required_sources}, "
+        f"plan_requirements={len(_analysis_plan.requirements)}"
+    )
+
+    # Progres tahapan investigasi spesifik
+    if _analysis_intent.kind in ("grounded_lookup", "deep_analysis"):
+        _stage_label = (
+            "Planning investigation…" if is_en
+            else "Menyusun rencana investigasi…"
+        )
+        await report("investigating", _stage_label, 0)
+
+    # Suntikkan panduan strategi query per domain
+    _strategy_text = build_strategy_guidance(_analysis_intent, _analysis_plan)
+    if _strategy_text:
+        messages.append(HumanMessage(
+            content=f"SISTEM — PANDUAN INVESTIGASI:\n{_strategy_text}"
+        ))
+
     while iteration < max_iterations:
         iteration += 1
         await report(
@@ -1773,8 +1845,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                                 access_control.log_audit(username, "service", "service:rag", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (RAG dilarang)")
                                 messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG. Jangan memanggil tool ini lagi."))
                                 continue
-                            if rag_call_count >= 2:
-                                messages.append(HumanMessage(content="SISTEM: Batas siklus penelusuran RAG tercapai. Dokumen yang terkumpul sudah memadai. Segera tuliskan jawaban akhir lengkap untuk pengguna sekarang."))
+                            _rag_budget = _current_rag_budget()
+                            if _rag_budget <= 0 or rag_call_count >= _rag_budget:
+                                messages.append(HumanMessage(content="SISTEM: Budget penelusuran RAG tercapai. Susun jawaban dari evidence yang tersedia dan nyatakan keterbatasan jika coverage belum lengkap."))
                                 continue
                             rag_call_count += 1
                         if server_name == "sap" and "sap" not in allowed_conn:
@@ -1795,7 +1868,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         res_str = "\n".join([item.text for item in tool_result.content if item.text])
                     if tool_result.is_error:
                         res_str = f"Execution Error: {res_str or tool_result.content}"
-                        
+
+                    # Catat evidence dari jalur text-based tool call
+                    _text_ev = validate_evidence(
+                        server=server_name, tool=actual_tool_name,
+                        content=res_str, is_error=bool(tool_result.is_error),
+                        args=t_args,
+                    )
+                    record_tool_evidence(_analysis_state, _text_ev)
+
                     source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
                     sources.append(SourceReference(
                         type=source_type,
@@ -1831,6 +1912,67 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
             reply_text = raw_content
             if reply_text.strip():
+                # Untuk lookup/analisis live, jawaban teks tidak boleh diterima
+                # sebelum evidence yang diwajibkan benar-benar tersedia.
+                gate = evaluate_evidence_sufficiency(_analysis_state)
+                if not gate.passed and _evidence_gate_retries < _MAX_EVIDENCE_GATE_RETRIES:
+                    _evidence_gate_retries += 1
+                    await report(
+                        "investigating",
+                        (f"Collecting more evidence (attempt {_evidence_gate_retries})…" if is_en
+                         else f"Mengumpulkan bukti tambahan (percobaan {_evidence_gate_retries})…"),
+                        iteration,
+                    )
+                    _analysis_state.gate_retries = _evidence_gate_retries
+                    logger.info(
+                        f"Evidence gate menolak draft (retry {_evidence_gate_retries}): "
+                        f"missing={gate.missing_sources}"
+                    )
+                    await reset_stream()
+                    retry_instruction = build_retry_instruction(_analysis_state, gate)
+                    messages.append(HumanMessage(content=retry_instruction))
+                    continue
+                if not gate.passed:
+                    # Budget retry habis: izinkan hanya jawaban parsial yang jujur,
+                    # bukan draft lama yang berpotensi mengarang data.
+                    await reset_stream()
+                    missing = ", ".join(s.upper() for s in gate.missing_sources)
+                    messages.append(HumanMessage(content=(
+                        "SISTEM: Batas upaya pengambilan bukti tercapai. Susun jawaban "
+                        f"parsial berdasarkan bukti yang tersedia. Nyatakan secara eksplisit bahwa "
+                        f"data dari {missing} belum berhasil diperoleh, jangan menyebut angka/fakta "
+                        "yang tidak didukung, dan jelaskan keterbatasannya."
+                    )))
+                    # Beri satu iterasi sintesis parsial tanpa memicu gate lagi.
+                    _analysis_intent.kind = "direct"
+                    continue
+
+                # Quality gate — review struktur dan angka (maks sesuai konfigurasi)
+                if _analysis_intent.kind == "deep_analysis" and _analysis_state.review_count < _max_review_cycles:
+                    quality = review_answer(
+                        reply_text,
+                        _analysis_state.evidence,
+                        depth=_analysis_intent.depth,
+                    )
+                    if not quality.passed and quality.revision_instruction:
+                        _analysis_state.review_count += 1
+                        await report(
+                            "reviewing",
+                            (f"Reviewing answer quality (cycle {_analysis_state.review_count})…" if is_en
+                             else f"Memeriksa kualitas jawaban (siklus {_analysis_state.review_count})…"),
+                            iteration,
+                        )
+                        logger.info(
+                            f"Quality review gagal (cycle {_analysis_state.review_count}): "
+                            f"issues={quality.issues}, unsupported={quality.unsupported_numbers}"
+                        )
+                        await reset_stream()
+                        messages.append(HumanMessage(content=(
+                            f"SISTEM — QUALITY REVIEW: {quality.revision_instruction} "
+                            "Perbaiki jawaban Anda sesuai instruksi di atas."
+                        )))
+                        continue
+
                 break
             if iteration < max_iterations:
                 await reset_stream()
@@ -1935,14 +2077,16 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     ))
                     continue
 
-                # Pembatasan siklus RAG berulang (maksimal 2 pemanggilan RAG per respons)
-                if server_name == "rag" and rag_call_count >= 2:
-                    logger.info(f"Membatasi siklus RAG berulang (sudah {rag_call_count} kali panggilan RAG). Meminta model langsung merangkum jawaban akhir.")
-                    messages.append(ToolMessage(
-                        content="Batas siklus penelusuran RAG tercapai. Dokumen dan konteks yang diperoleh sudah memadai. Segera tuliskan rangkuman dan jawaban akhir yang lengkap untuk pengguna dalam Bahasa Indonesia sekarang.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
+                # Pembatasan siklus RAG berdasarkan budget adaptif
+                if server_name == "rag":
+                    _rag_budget_native = _current_rag_budget()
+                    if _rag_budget_native <= 0 or rag_call_count >= _rag_budget_native:
+                        logger.info(f"RAG budget reached ({rag_call_count}/{_rag_budget_native}). Meminta model merangkum.")
+                        messages.append(ToolMessage(
+                            content="SISTEM: Budget penelusuran RAG tercapai. Susun jawaban dari evidence yang tersedia dan nyatakan keterbatasan jika coverage belum lengkap.",
+                            tool_call_id=tool_id
+                        ))
+                        continue
 
                 if server_name == "sap" and "sap" not in allowed_conn:
                     access_control.log_audit(
@@ -2044,6 +2188,23 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     texts.append(f"Execution Error: {result}")
                             
                 content_str = "\n".join(texts)
+
+                # Validasi dan catat substansi hasil tool ke evidence ledger.
+                # Semua domain memakai bentuk EvidenceItem yang seragam.
+                evidence = validate_evidence(
+                    server=server_name,
+                    tool=mcp_name,
+                    content=content_str,
+                    is_error=bool(result.is_error),
+                    args=tool_args,
+                )
+                record_tool_evidence(_analysis_state, evidence)
+                logger.info(
+                    f"Evidence recorded: server={evidence.server}, tool={evidence.tool}, "
+                    f"success={evidence.success}, rows={evidence.row_count}, "
+                    f"docs={evidence.document_count}, truncated={evidence.truncated}"
+                )
+
                 if server_name == "rag":
                     rag_call_count += 1
                     if rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str)):

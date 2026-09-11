@@ -52,6 +52,20 @@ const resolveContext = (progress, t) => {
       isSpinning: false,
     };
   }
+  if (stage === 'investigating') {
+    return {
+      Icon: FileSearch,
+      context: t('thinking.investigating'),
+      isSpinning: false,
+    };
+  }
+  if (stage === 'reviewing') {
+    return {
+      Icon: Sparkles,
+      context: t('thinking.reviewing'),
+      isSpinning: false,
+    };
+  }
   if (stage === 'building') {
     return {
       Icon: FileSpreadsheet,
@@ -131,6 +145,10 @@ const computeTargetPercent = (progress) => {
     case 'tool':
       // Eksekusi pengambilan data: bergerak dinamis 36% - 65% sesuai stepRatio
       return Math.min(Math.round(36 + stepRatio * 28), 65);
+    case 'investigating':
+      return Math.min(Math.round(28 + stepRatio * 20), 50);
+    case 'reviewing':
+      return Math.min(Math.round(88 + stepRatio * 8), 96);
     case 'building':
       // Menyiapkan berkas dokumen hasil (Excel/CSV/dokumen)
       return 92;

@@ -3236,6 +3236,10 @@ def update_chat_mode(
     enabled: bool = None,
     is_default: bool = None,
     sort_order: int = None,
+    analysis_depth: str = None,
+    require_evidence: bool = None,
+    max_review_cycles: int = None,
+    rag_call_budget: int = None,
 ) -> dict | None:
     """Memperbarui mode chat yang sudah ada."""
     try:
@@ -3282,6 +3286,18 @@ def update_chat_mode(
             if sort_order is not None:
                 fields.append("sort_order = :sort_order")
                 params["sort_order"] = sort_order
+            if analysis_depth is not None:
+                fields.append("analysis_depth = :analysis_depth")
+                params["analysis_depth"] = analysis_depth
+            if require_evidence is not None:
+                fields.append("require_evidence = :require_evidence")
+                params["require_evidence"] = require_evidence
+            if max_review_cycles is not None:
+                fields.append("max_review_cycles = :max_review_cycles")
+                params["max_review_cycles"] = max_review_cycles
+            if rag_call_budget is not None:
+                fields.append("rag_call_budget = :rag_call_budget")
+                params["rag_call_budget"] = rag_call_budget
 
             if not fields:
                 return get_chat_mode_by_id(mode_id)

@@ -65,7 +65,7 @@ async def _jalankan(monkeypatch, model, kumpulkan_token=True):
         token.append(None if reset else text)
 
     hasil = await agent_module.process_chat(
-        ChatRequest(message="stok material SRRPAI"),
+        ChatRequest(message="Jelaskan istilah material SRRPAI"),
         "user",
         "",
         username="penguji",
