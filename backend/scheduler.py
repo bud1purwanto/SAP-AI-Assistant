@@ -315,12 +315,24 @@ async def execute_task(task: dict) -> dict:
         if active_session_id:
             sources_str = json.dumps([s.model_dump() for s in resp.sources]) if getattr(resp, "sources", None) else ""
             artifacts_str = json.dumps([a.model_dump() for a in resp.artifacts]) if getattr(resp, "artifacts", None) else ""
+            usage = getattr(resp, "usage", None)
+            usage_str = json.dumps(usage.model_dump()) if usage else ""
             database.add_chat_message(
                 session_id=active_session_id,
                 role="ai",
                 content=result_text,
                 sources=sources_str,
                 artifacts=artifacts_str,
+                usage=usage_str,
+            )
+
+        usage = getattr(resp, "usage", None)
+        if usage and usage.total_tokens:
+            database.record_token_usage(
+                user_id,
+                usage.prompt_tokens or 0,
+                usage.completion_tokens or 0,
+                estimated=usage.estimated,
             )
 
         # Opsional: Kirim via Email Gateway jika email_to terisi (mendukung multiple recipients)

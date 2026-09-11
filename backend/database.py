@@ -1346,19 +1346,21 @@ def rename_chat_session(session_id: str, username: str, new_title: str):
         logger.error(f"Error rename_chat_session: {e}")
         return False
 
-def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
-                     artifacts: str = None, attachments: str = None) -> Optional[int]:
+def add_chat_message(session_id: str, role: str, content: str,
+                     sources: Optional[str] = None, artifacts: Optional[str] = None,
+                     attachments: Optional[str] = None,
+                     usage: Optional[str] = None) -> Optional[int]:
     """Tambah pesan (user / ai) ke dalam sesi percakapan. Mengembalikan ID pesan yang dibuat."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
                 INSERT INTO ai_assistant.chat_messages
-                    (session_id, role, content, sources, artifacts, attachments)
-                VALUES (:sid, :r, :c, :s, :a, :att)
+                    (session_id, role, content, sources, artifacts, attachments, usage)
+                VALUES (:sid, :r, :c, :s, :a, :att, :usage)
                 RETURNING id
             """), {"sid": session_id, "r": role, "c": content, "s": sources or "",
-                   "a": artifacts or "", "att": attachments or ""})
+                   "a": artifacts or "", "att": attachments or "", "usage": usage or ""})
             row = res.fetchone()
             msg_id = row[0] if row else None
             
@@ -1842,7 +1844,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             if username is not None:
                 params["u"] = username.strip()
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.usage, m.feedback, m.created_at
                     FROM ai_assistant.chat_messages m
                     JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
                     WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
@@ -1851,7 +1853,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                 """
             else:
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.usage, m.feedback, m.created_at
                     FROM ai_assistant.chat_messages m
                     WHERE m.session_id = :sid {page_filter}
                     ORDER BY m.id DESC
@@ -1867,6 +1869,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                     "sources": r.sources if r.sources else None,
                     "artifacts": r.artifacts if r.artifacts else None,
                     "attachments": r.attachments if r.attachments else None,
+                    "usage": r.usage if r.usage else None,
                     "feedback": r.feedback if (hasattr(r, 'feedback') and r.feedback) else None,
                     "created_at": _iso(r.created_at),
                 }

@@ -221,6 +221,8 @@ export const TRANSLATIONS = {
     'usage.fromCache': 'From cache',
     'usage.processTime': 'Processing time',
     'usage.dataCalls': 'Data calls',
+    'usage.modelCalls': 'Model calls',
+    'usage.estimated': 'Partially estimated',
     'usage.model': 'Model',
 
     // Settings Modal
@@ -688,6 +690,8 @@ export const TRANSLATIONS = {
     'usage.fromCache': 'Dari cache',
     'usage.processTime': 'Waktu proses',
     'usage.dataCalls': 'Panggilan data',
+    'usage.modelCalls': 'Panggilan model',
+    'usage.estimated': 'Sebagian diperkirakan',
     'usage.model': 'Model',
 
     // Settings Modal

@@ -17,6 +17,19 @@ def test_init_db_is_idempotent(db):
     assert {"users", "chat_sessions", "chat_messages", "generated_artifacts"} <= tables
 
 
+def test_usage_pesan_ai_disimpan_dan_dimuat_kembali(db):
+    session = db.create_chat_session("TRSTDEV", "Audit Token")
+    usage = '{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150,"estimated":false}'
+
+    message_id = db.add_chat_message(
+        session["session_id"], "ai", "Jawaban", usage=usage
+    )
+    messages = db.get_chat_messages(session["session_id"], username="TRSTDEV")
+
+    assert message_id
+    assert messages[-1]["usage"] == usage
+
+
 def test_message_title_truncation_works(db, client, admin_auth):
     """Judul dipotong di Python; SUBSTRING(x FROM a FOR b) khusus PostgreSQL."""
     session = db.create_chat_session("TRSTDEV", "Percakapan Baru")

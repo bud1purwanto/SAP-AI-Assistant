@@ -52,12 +52,18 @@ def test_pemakaian_dicatat_walau_pembatasan_dimatikan(client, admin_auth, make_u
     _saklar(client, admin_auth, False)
     auth = make_user("kuota1")
 
-    client.post("/api/chat", json={"message": "halo"}, headers=auth)
+    response = client.post("/api/chat", json={"message": "halo"}, headers=auth)
+    data = response.json()
     kuota = client.get("/api/quota", headers=auth).json()
+    messages = client.get(
+        f"/api/sessions/{data['session_id']}/messages", headers=auth
+    ).json()
 
     assert kuota["enforced"] is False
     assert kuota["used_tokens"] == 1200
     assert kuota["requests_today"] == 1
+    assert messages[-1]["usage"]
+    assert '"total_tokens": 1200' in messages[-1]["usage"]
 
 
 def test_pemakaian_bertambah_pada_permintaan_berikutnya(client, admin_auth, make_user, agen_dengan_token):

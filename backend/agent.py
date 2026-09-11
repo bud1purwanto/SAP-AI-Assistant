@@ -23,7 +23,7 @@ from analysis_strategies import build_strategy_guidance
 from answer_quality import review_answer
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
-from conversation import trim_history
+from conversation import estimate_tokens, trim_history
 from models import ChatRequest, ChatResponse, SourceReference, UsageStats
 from config import settings
 
@@ -861,22 +861,55 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     # --- PEMAKAIAN TOKEN ---
     #
-    # Angka diambil dari yang dilaporkan provider (usage_metadata milik
-    # LangChain), bukan dihitung sendiri. Perkiraan lokal akan meleset karena
-    # tokenizer tiap model berbeda, dan angka yang salah lebih buruk daripada
-    # tidak ada angka — jadi bila provider diam, nilainya dibiarkan kosong.
+    # Angka exact diambil dari usage_metadata provider. Setiap model-call tetap
+    # dicatat; bila metadata satu call hilang, hanya call tersebut yang diestimasi
+    # dan statistik request ditandai estimated agar tidak disajikan sebagai exact.
     mulai_ns = time.perf_counter_ns()
-    pemakaian = {"prompt": 0, "completion": 0, "cached": 0, "ada": False, "tool_calls": 0}
+    pemakaian = {
+        "prompt": 0,
+        "completion": 0,
+        "cached": 0,
+        "ada": False,
+        "estimated": False,
+        "tool_calls": 0,
+        "model_calls": 0,
+        "models": [],
+    }
 
-    def catat_pemakaian(pesan):
+    def _perkiraan_token_pesan(msgs) -> int:
+        total = 0
+        for msg in msgs:
+            total += estimate_tokens(_extract_text(getattr(msg, "content", ""))) + 4
+        return total
+
+    def catat_pemakaian(pesan, msgs, model):
+        """Catat satu model-call; gunakan estimasi hanya untuk metadata yang hilang."""
         data = getattr(pesan, "usage_metadata", None) or {}
-        if not data:
-            return
+        pemakaian["model_calls"] += 1
+        response_meta = getattr(pesan, "response_metadata", None) or {}
+        model_name = (
+            response_meta.get("model_name")
+            or response_meta.get("model")
+            or getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+        )
+        if model_name and model_name not in pemakaian["models"]:
+            pemakaian["models"].append(model_name)
+
+        if data:
+            pemakaian["prompt"] += int(data.get("input_tokens") or 0)
+            pemakaian["completion"] += int(data.get("output_tokens") or 0)
+            rincian = data.get("input_token_details") or {}
+            pemakaian["cached"] += sum(
+                int(value or 0)
+                for key, value in rincian.items()
+                if key.endswith("cache_read")
+            )
+        else:
+            pemakaian["prompt"] += _perkiraan_token_pesan(msgs)
+            pemakaian["completion"] += estimate_tokens(_extract_text(getattr(pesan, "content", "")))
+            pemakaian["estimated"] = True
         pemakaian["ada"] = True
-        pemakaian["prompt"] += int(data.get("input_tokens") or 0)
-        pemakaian["completion"] += int(data.get("output_tokens") or 0)
-        rincian = data.get("input_token_details") or {}
-        pemakaian["cached"] += int(rincian.get("cache_read") or 0)
 
     streamed_to_client = False
 
@@ -911,7 +944,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         """
         if not streaming:
             hasil = await model.ainvoke(msgs)
-            catat_pemakaian(hasil)
+            catat_pemakaian(hasil, msgs, model)
             return hasil
 
         merged = None
@@ -988,10 +1021,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         if merged is None:
             # Provider menutup aliran tanpa mengirim apa pun.
             hasil = await model.ainvoke(msgs)
-            catat_pemakaian(hasil)
+            catat_pemakaian(hasil, msgs, model)
             return hasil
 
-        catat_pemakaian(merged)
+        catat_pemakaian(merged, msgs, model)
         return merged
 
     await report("connecting", "Connecting to assistant…" if is_en else "Menyiapkan permintaan…")
@@ -2251,10 +2284,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         prompt_tokens=pemakaian["prompt"] if pemakaian["ada"] else None,
         completion_tokens=pemakaian["completion"] if pemakaian["ada"] else None,
         total_tokens=(pemakaian["prompt"] + pemakaian["completion"]) if pemakaian["ada"] else None,
-        cached_tokens=pemakaian["cached"] if pemakaian["ada"] else None,
+        cached_tokens=pemakaian["cached"] or None,
         latency_ms=int((time.perf_counter_ns() - mulai_ns) / 1_000_000),
-        model=primary_model_name,
+        model=" → ".join(pemakaian["models"]) if pemakaian["models"] else primary_model_name,
         tool_calls=pemakaian["tool_calls"],
+        model_calls=pemakaian["model_calls"],
+        estimated=pemakaian["estimated"],
     )
 
     return ChatResponse(

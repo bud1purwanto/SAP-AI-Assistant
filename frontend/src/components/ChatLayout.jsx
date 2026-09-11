@@ -488,7 +488,17 @@ const ChatLayout = () => {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [sessionQuery, isGuest]);
 
-  /** Kolom sources/artifacts disimpan sebagai JSON string di database. */
+  /** Kolom sources/artifacts/usage disimpan sebagai JSON string di database. */
+  const parseJsonObject = (raw) => {
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
   const parseJsonList = (raw) => {
     if (!raw) return [];
     try {
@@ -517,6 +527,7 @@ const ChatLayout = () => {
             sources: parseJsonList(m.sources),
             artifacts: parseJsonList(m.artifacts),
             attachments: parseJsonList(m.attachments),
+            usage: parseJsonObject(m.usage),
             feedback: m.feedback || null,
             created_at: m.created_at,
           }));

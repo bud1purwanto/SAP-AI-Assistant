@@ -179,12 +179,60 @@ def test_waktu_proses_selalu_terisi(monkeypatch):
     assert hasil.usage.latency_ms >= 0
 
 
-def test_token_dibiarkan_kosong_bila_provider_tidak_melaporkan(monkeypatch):
-    """Perkiraan lokal akan meleset karena tokenizer tiap model berbeda;
-    angka yang salah lebih menyesatkan daripada tidak ada angka."""
+def test_token_diperkirakan_bila_provider_tidak_melaporkan(monkeypatch):
+    """Setiap model-call tetap dihitung dan ditandai sebagai estimasi."""
     model = FakeStreamingModel(["Jawaban tanpa metadata."])
     hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
 
-    assert hasil.usage.prompt_tokens is None
-    assert hasil.usage.total_tokens is None
+    assert hasil.usage.prompt_tokens > 0
+    assert hasil.usage.completion_tokens > 0
+    assert hasil.usage.total_tokens == hasil.usage.prompt_tokens + hasil.usage.completion_tokens
     assert hasil.usage.cached_tokens is None
+    assert hasil.usage.estimated is True
+    assert hasil.usage.model_calls == 1
+
+
+class FakeModelMultiCall(FakeStreamingModel):
+    def __init__(self, responses):
+        super().__init__([])
+        self.responses = responses
+        self.index = 0
+
+    async def astream(self, msgs):
+        self.astream_dipanggil += 1
+        response = self.responses[self.index]
+        self.index += 1
+        chunk = AIMessageChunk(content=response["text"], tool_calls=[])
+        if response.get("usage"):
+            chunk.usage_metadata = response["usage"]
+        yield chunk
+
+
+def test_pemakaian_menjumlahkan_semua_model_call(monkeypatch):
+    model = FakeModelMultiCall([
+        {"text": "thinking process", "usage": {"input_tokens": 100, "output_tokens": 10}},
+        {"text": "Jawaban final.", "usage": {"input_tokens": 200, "output_tokens": 20}},
+    ])
+
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.prompt_tokens == 300
+    assert hasil.usage.completion_tokens == 30
+    assert hasil.usage.total_tokens == 330
+    assert hasil.usage.model_calls == 2
+    assert hasil.usage.estimated is False
+
+
+def test_metadata_parsial_ditandai_dan_call_tanpa_metadata_tetap_dihitung(monkeypatch):
+    model = FakeModelMultiCall([
+        {"text": "thinking process", "usage": {"input_tokens": 100, "output_tokens": 10}},
+        {"text": "Jawaban final."},
+    ])
+
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.prompt_tokens > 100
+    assert hasil.usage.completion_tokens > 10
+    assert hasil.usage.total_tokens == hasil.usage.prompt_tokens + hasil.usage.completion_tokens
+    assert hasil.usage.model_calls == 2
+    assert hasil.usage.estimated is True

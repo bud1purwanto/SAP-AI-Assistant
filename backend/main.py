@@ -2580,14 +2580,6 @@ async def _run_chat(
         **call_kwargs,
     )
 
-    if not is_guest and active_session_id:
-        sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
-        # Metadata berkas ikut disimpan; tanpa ini tombol unduh hilang setelah
-        # halaman dimuat ulang meski berkasnya masih tersimpan di database.
-        artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
-        msg_id = add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
-        response.message_id = msg_id
-
     # Pencatatan pemakaian.
     #
     # Bila provider melaporkan jumlah token, angka itu yang dipakai. Bila tidak,
@@ -2599,7 +2591,7 @@ async def _run_chat(
         if pakai and pakai.total_tokens:
             record_token_usage(
                 user["username"], pakai.prompt_tokens or 0, pakai.completion_tokens or 0,
-                estimated=False,
+                estimated=pakai.estimated,
             )
         else:
             from conversation import estimate_tokens
@@ -2616,6 +2608,22 @@ async def _run_chat(
             response.usage.estimated = True
 
         response.quota = status_kuota(user["username"], user_roles)
+
+    if not is_guest and active_session_id:
+        sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
+        # Metadata berkas dan usage ikut disimpan agar tombol unduh serta rincian
+        # token tetap tersedia setelah halaman dimuat ulang.
+        artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
+        usage_str = json.dumps(response.usage.model_dump()) if response.usage else ""
+        msg_id = add_chat_message(
+            active_session_id,
+            "ai",
+            response.reply,
+            sources_str,
+            artifacts_str,
+            usage=usage_str,
+        )
+        response.message_id = msg_id
 
     response.session_id = active_session_id
     response.user_message_id = user_message_id

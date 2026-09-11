@@ -1004,6 +1004,14 @@ def _m0023_analysis_depth_mode(conn):
     """))
 
 
+def _m0024_chat_message_usage(conn):
+    """Simpan statistik token per jawaban agar tetap tersedia setelah reload."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_messages
+        ADD COLUMN IF NOT EXISTS usage TEXT;
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -1028,6 +1036,7 @@ MIGRATIONS = [
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
     ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
+    ("0024_chat_message_usage", _m0024_chat_message_usage),
 ]
 
 
