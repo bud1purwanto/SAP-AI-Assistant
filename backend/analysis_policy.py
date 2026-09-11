@@ -95,6 +95,11 @@ _EXPLICIT_LIVE_SOURCE = re.compile(
 )
 _DIRECT = re.compile(r"^(halo|hai|hi|selamat|terima kasih|makasih)\b|\b(apa itu|terjemahkan|ringkas(?:an)?)\b", re.I)
 
+# Pertanyaan meta mengenai arsitektur, keamanan, atau konsep agen itu sendiri
+_META_CONCEPTUAL = re.compile(
+    r"\b(apakah\s+(data|informasi).*(dilihat|dikirim|disimpan|aman|rahasia|privasi))|"
+    r"(bagaimana\s+cara\s+kerja)|(jelaskan\s+(arsitektur|konsep|mekanisme))\b", re.I
+)
 
 def _normalise_target(target_server: str) -> str:
     target = (target_server or "").lower()
@@ -126,6 +131,11 @@ def classify_request(
     # pengguna secara eksplisit meminta validasi ke SAP/SQL/RAG live.
     if has_attachments and not _EXPLICIT_LIVE_SOURCE.search(text):
         return RequestIntent(kind="direct", depth="standard")
+    
+    # Bila ini pertanyaan konseptual/keamanan tentang sistem, tidak perlu tool live.
+    if _META_CONCEPTUAL.search(text):
+        return RequestIntent(kind="direct")
+
     # Definisi, terjemahan, dan peringkasan konten yang sudah diberikan bukan
     # tindakan ke sistem, meskipun kalimatnya diawali kata imperatif "buat".
     if _DIRECT.search(text):

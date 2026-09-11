@@ -37,6 +37,19 @@ class TestClassifyDirect:
         assert intent.kind == "direct"
         assert len(intent.required_sources) == 0
 
+    @pytest.mark.parametrize("msg", [
+        "Kita kan menerapkan RAG dan MCP SAP dan SQL, untuk data apakah akan dilihat dan dikirim ke LLM, karna ada data rahasia",
+        "bagaimana cara kerja sistem ini?",
+        "jelaskan arsitektur MCP yang digunakan",
+        "apakah informasi pelanggan disimpan secara aman?",
+        "jelaskan konsep dasar dari RAG",
+    ])
+    def test_meta_conceptual_intent(self, msg):
+        """Pertanyaan meta tentang sistem/arsitektur tidak butuh data live walau memuat keyword SAP/SQL/RAG."""
+        intent = classify_request(msg, target_server="all")
+        assert intent.kind == "direct"
+        assert len(intent.required_sources) == 0
+
     def test_direct_with_attachment_context(self):
         """Pertanyaan tentang lampiran yang sudah ada di prompt → direct."""
         intent = classify_request(
