@@ -90,7 +90,7 @@ systemctl enable sap-ai-backend
 systemctl restart sap-ai-backend
 
 # 6. Generate Nginx Configuration secara Dinamis sesuai direktori frontend/dist
-echo "🌐 [6/7] Mengonfigurasi Web Server Nginx (Port 8080)..."
+echo "🌐 [6/7] Mengonfigurasi Web Server Nginx (Port 8085)..."
 cat << EOF > /etc/nginx/sites-available/sap-ai
 upstream sap_backend {
     server 127.0.0.1:8005;
@@ -98,7 +98,7 @@ upstream sap_backend {
 }
 
 server {
-    listen 8080;
+    listen 8085;
     server_name sap-ai.local _;
 
     root ${PROJECT_DIR}/frontend/dist;
@@ -132,11 +132,20 @@ server {
         proxy_buffering off;
     }
 
-    # 1. PWA Service Worker & Manifest: JANGAN DI-CACHE!
-    location ~* ^/(?:sw\.js|registerSW\.js|manifest\.webmanifest|workbox-[a-f0-9]+\.js)\$ {
-        expires -1;
+    # 1. Service Worker: exact-match wajib menang dari seluruh aturan *.js.
+    location = /sw.js {
+        expires off;
         access_log off;
         add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+        add_header CDN-Cache-Control "no-store" always;
+    }
+
+    # Manifest/register helper juga tidak boleh disimpan oleh CDN.
+    location ~* ^/(?:registerSW\.js|manifest\.webmanifest|workbox-[a-f0-9]+\.js)\$ {
+        expires off;
+        access_log off;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+        add_header CDN-Cache-Control "no-store" always;
     }
 
     # 2. Vite Build Assets (dist/assets): Hash unik, aman di-cache 1 tahun

@@ -61,9 +61,22 @@ echo "⚙️ [4/5] Merestart service backend..."
 sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
 
 echo "🌐 [5/5] Memperbarui konfigurasi Nginx & reload..."
-if [ -f "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" ]; then
-    sudo cp "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" /etc/nginx/sites-available/sap-ai 2>/dev/null || cp "${PROJECT_DIR}/deploy/nginx-sap-ai.conf" /etc/nginx/sites-available/sap-ai 2>/dev/null || true
-    (sudo nginx -t 2>/dev/null && (sudo systemctl reload nginx 2>/dev/null || systemctl reload nginx 2>/dev/null || true)) || true
+NGINX_SOURCE="${PROJECT_DIR}/deploy/nginx-sap-ai.conf"
+NGINX_TARGET="/etc/nginx/sites-available/sap-ai"
+if [ ! -f "${NGINX_SOURCE}" ]; then
+    echo "❌ Konfigurasi Nginx tidak ditemukan: ${NGINX_SOURCE}"
+    exit 1
+fi
+
+if ! sudo cp "${NGINX_SOURCE}" "${NGINX_TARGET}" 2>/dev/null; then
+    cp "${NGINX_SOURCE}" "${NGINX_TARGET}"
+fi
+
+if ! sudo nginx -t; then
+    nginx -t
+fi
+if ! sudo systemctl reload nginx 2>/dev/null; then
+    systemctl reload nginx
 fi
 
 echo "=========================================================="
