@@ -319,14 +319,25 @@ code, pre, .font-mono {
   }
   to {
     opacity: 1;
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(10px);
+  }
+}
+
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+    backdrop-filter: blur(10px);
+  }
+  to {
+    opacity: 0;
+    backdrop-filter: blur(0px);
   }
 }
 
 @keyframes modal-content-in {
   0% {
     opacity: 0;
-    transform: scale(0.95) translateY(12px);
+    transform: scale(0.94) translateY(14px);
   }
   100% {
     opacity: 1;
@@ -334,12 +345,51 @@ code, pre, .font-mono {
   }
 }
 
+@keyframes modal-content-out {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
 .animate-modal-backdrop {
   animation: modal-backdrop-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.animate-modal-backdrop-out {
+  animation: modal-backdrop-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
 .animate-modal-content {
   animation: modal-content-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modal-content-out {
+  animation: modal-content-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-shake {
+  animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* Hilangkan panah datalist dan elemen widget bawaan browser */
+input::-webkit-calendar-picker-indicator,
+input::-webkit-list-button {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .shimmer-bg {

@@ -46,34 +46,39 @@ const ConfirmModal = ({
     switch (variant) {
       case 'reset':
         return {
-          iconBg: 'bg-rose-500/15 text-rose-500 border border-rose-500/30',
-          btnBg: 'bg-red-600 hover:bg-red-500 text-white shadow-red-900/20',
-          glow: 'from-rose-500/10 via-transparent to-transparent',
+          iconBg: 'bg-gradient-to-tr from-rose-500 to-red-600 text-white shadow-rose-500/30 border-white/20',
+          btnBg: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-red-900/25',
+          hairline: 'via-rose-500',
+          aura: 'bg-rose-500/20',
         };
       case 'info':
         return {
-          iconBg: 'bg-indigo-500/15 text-indigo-500 border border-indigo-500/30',
-          btnBg: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-900/20',
-          glow: 'from-indigo-500/10 via-transparent to-transparent',
+          iconBg: 'bg-gradient-to-tr from-indigo-500 to-accent text-white shadow-indigo-500/30 border-white/20',
+          btnBg: 'bg-gradient-to-r from-indigo-600 via-accent to-indigo-600 hover:opacity-95 text-white shadow-indigo-900/25',
+          hairline: 'via-accent',
+          aura: 'bg-accent/20',
         };
       case 'logout':
         return {
-          iconBg: 'bg-amber-500/15 text-amber-500 border border-amber-500/30',
-          btnBg: 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/20',
-          glow: 'from-amber-500/10 via-transparent to-transparent',
+          iconBg: 'bg-gradient-to-tr from-amber-500 to-orange-600 text-white shadow-amber-500/30 border-white/20',
+          btnBg: 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white shadow-amber-900/25',
+          hairline: 'via-amber-500',
+          aura: 'bg-amber-500/20',
         };
       case 'warning':
         return {
-          iconBg: 'bg-yellow-500/15 text-yellow-500 border border-yellow-500/30',
-          btnBg: 'bg-yellow-600 hover:bg-yellow-500 text-white shadow-yellow-900/20',
-          glow: 'from-yellow-500/10 via-transparent to-transparent',
+          iconBg: 'bg-gradient-to-tr from-yellow-500 to-amber-600 text-white shadow-yellow-500/30 border-white/20',
+          btnBg: 'bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white shadow-yellow-900/25',
+          hairline: 'via-amber-500',
+          aura: 'bg-amber-500/20',
         };
       case 'danger':
       default:
         return {
-          iconBg: 'bg-rose-500/15 text-rose-500 border border-rose-500/30',
-          btnBg: 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/20',
-          glow: 'from-rose-500/10 via-transparent to-transparent',
+          iconBg: 'bg-gradient-to-tr from-rose-500 to-red-600 text-white shadow-rose-500/30 border-white/20',
+          btnBg: 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-rose-900/25',
+          hairline: 'via-rose-500',
+          aura: 'bg-rose-500/20',
         };
     }
   };
@@ -82,7 +87,7 @@ const ConfirmModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 pt-safe pb-safe overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-md animate-modal-backdrop"
       onClick={() => {
         if (!isLoading) onClose();
       }}
@@ -91,31 +96,39 @@ const ConfirmModal = ({
       aria-labelledby="confirm-modal-title"
     >
       <div
-        className="modal-panel relative my-auto w-full max-w-sm overflow-y-auto rounded-2xl bg-surface-raised border border-line shadow-2xl transition-all animate-in zoom-in-95 duration-200"
+        className="relative my-auto w-full max-w-[340px] xs:max-w-sm overflow-hidden rounded-2xl sm:rounded-3xl bg-surface-raised/95 backdrop-blur-xl border border-line/80 shadow-2xl transition-all animate-modal-content"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Ambient Top Glow */}
-        <div className={`absolute -top-16 left-1/2 -translate-x-1/2 w-48 h-32 bg-gradient-to-b ${styles.glow} rounded-full blur-2xl pointer-events-none`} />
+        {/* Ambient Top Glow Blobs */}
+        <div className={`absolute -top-16 -left-16 w-44 h-44 ${styles.aura} rounded-full blur-3xl pointer-events-none animate-pulse`} />
+        <div className="absolute -bottom-16 -right-16 w-44 h-44 bg-surface-sunken/40 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Top glowing hairline accent */}
+        <div className={`absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent ${styles.hairline} to-transparent opacity-80`} />
 
         {/* Close Button */}
         <button
+          type="button"
           onClick={onClose}
           disabled={isLoading}
-          className="absolute top-3.5 right-3.5 p-1.5 rounded-xl text-content-subtle hover:text-content hover:bg-surface-sunken transition-colors disabled:opacity-50 cursor-pointer"
+          className="absolute top-3.5 right-3.5 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 disabled:opacity-50 cursor-pointer hover:rotate-90 z-10"
           aria-label={t('common.close')}
         >
-          <X className="w-4 h-4" />
+          <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
 
-        <div className="p-6 text-center">
-          {/* Animated Icon Avatar */}
-          <div className="mx-auto mb-4 flex items-center justify-center">
-            <div className={`w-13 h-13 rounded-2xl flex items-center justify-center shadow-inner ${styles.iconBg}`}>
-              <IconComponent className="w-6 h-6 animate-pulse" aria-hidden="true" />
+        <div className="p-5 sm:p-6 text-center relative z-10">
+          {/* Animated Hero Icon Avatar */}
+          <div className="mx-auto mb-3.5 flex items-center justify-center">
+            <div className="relative">
+              <div className={`absolute inset-0 rounded-2xl blur-md opacity-50 ${styles.aura}`} />
+              <div className={`relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-xl border ${styles.iconBg}`}>
+                <IconComponent className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
+              </div>
             </div>
           </div>
 
-          <h3 id="confirm-modal-title" className="text-base font-bold text-content font-display tracking-tight">
+          <h3 id="confirm-modal-title" className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
             {displayTitle}
           </h3>
 
@@ -123,12 +136,12 @@ const ConfirmModal = ({
             {displayMessage}
           </p>
 
-          <div className="mt-6 flex items-center gap-2.5">
+          <div className="mt-5 sm:mt-6 flex items-center gap-2.5">
             <button
               type="button"
               onClick={onClose}
               disabled={isLoading}
-              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-content border border-line transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-semibold bg-surface-sunken/80 hover:bg-surface-hover text-content border border-line transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             >
               {displayCancelText}
             </button>
@@ -136,7 +149,7 @@ const ConfirmModal = ({
               type="button"
               onClick={onConfirm}
               disabled={isLoading}
-              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold shadow-md transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer ${styles.btnBg}`}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer ${styles.btnBg}`}
             >
               {isLoading ? (
                 <div className="flex items-center justify-center gap-1.5">

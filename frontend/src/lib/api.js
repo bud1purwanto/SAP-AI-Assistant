@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config';
+import { getClientDeviceInfo } from './deviceDetection';
 
 const TOKEN_KEY = 'sap_assistant_token';
 const USER_KEY = 'sap_assistant_user';
@@ -99,12 +100,6 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     throw new ApiError(connectionErrorMessage(), 0);
   }
 
-  if (res.status === 401 && path !== '/api/login') {
-    clearSession();
-    onUnauthorized();
-    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
-  }
-
   if (res.status === 204) return null;
 
   let data = null;
@@ -115,6 +110,14 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     } catch {
       data = text;
     }
+  }
+
+  if (res.status === 401 && path !== '/api/login') {
+    clearSession();
+    const isKicked = data?.detail?.code === 'SESSION_KICKED' || (typeof data?.detail === 'string' && data.detail.includes('SESSION_KICKED'));
+    const kickReason = data?.detail?.reason || (typeof data?.detail === 'string' ? data.detail : null);
+    onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
+    throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401);
   }
 
   if (!res.ok) {
@@ -149,8 +152,25 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 }
 
 export const api = {
-  login: (username, password) =>
-    apiFetch('/api/login', { method: 'POST', body: { username, password }, auth: false }),
+  login: (username, password, extraDevice = {}) => {
+    const dev = getClientDeviceInfo();
+    return apiFetch('/api/login', {
+      method: 'POST',
+      body: {
+        username,
+        password,
+        device_name: extraDevice.device_name || dev.device_name,
+        device_type: extraDevice.device_type || dev.device_type,
+        os: extraDevice.os || dev.os,
+        browser: extraDevice.browser || dev.browser,
+      },
+      auth: false,
+    });
+  },
+  heartbeat: (payload = {}) =>
+    apiFetch('/api/auth/heartbeat', { method: 'POST', body: payload }),
+  logout: () =>
+    apiFetch('/api/logout', { method: 'POST' }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),
@@ -229,6 +249,21 @@ export const api = {
     apiFetch(`/api/admin/roles/${encodeURIComponent(code)}`, { method: 'DELETE' }),
   adminSessions: (limit = 50) => apiFetch(`/api/admin/sessions?limit=${limit}`),
   adminSessionMessages: (id) => apiFetch(`/api/admin/sessions/${id}/messages`),
+
+  adminUserSessions: (status = 'active', q = '') =>
+    apiFetch(`/api/admin/user-sessions?status=${encodeURIComponent(status)}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+  adminKickUserSession: (sessionId, reason = '') =>
+    apiFetch(`/api/admin/user-sessions/${encodeURIComponent(sessionId)}/kick`, { method: 'POST', body: { reason } }),
+  adminKickAllUserSessions: (username, reason = '') =>
+    apiFetch(`/api/admin/users/${encodeURIComponent(username)}/kick-sessions`, { method: 'POST', body: { reason } }),
+  adminSecurityLogs: ({ username = '', eventType = '', limit = 100, offset = 0 } = {}) => {
+    const params = new URLSearchParams();
+    if (username) params.set('username', username);
+    if (eventType) params.set('event_type', eventType);
+    if (limit) params.set('limit', limit);
+    if (offset) params.set('offset', offset);
+    return apiFetch(`/api/admin/security-logs?${params.toString()}`);
+  },
 
   adminSkills: () => apiFetch('/api/admin/skills'),
   adminCreateSkill: (payload) => apiFetch('/api/admin/skills', { method: 'POST', body: payload }),

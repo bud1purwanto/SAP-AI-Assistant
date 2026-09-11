@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any, Dict, List, Optional, Union
@@ -32,6 +33,16 @@ from database import (
     consume_guest_quota,
     create_chat_session,
     create_new_user,
+    create_user_session,
+    invalidate_existing_user_sessions,
+    get_user_session,
+    update_session_heartbeat,
+    kick_user_session,
+    kick_all_user_sessions,
+    terminate_session_logout,
+    list_active_sessions,
+    record_auth_audit_log,
+    list_auth_audit_logs,
     clone_role,
     create_role,
     get_role_impact,
@@ -225,24 +236,107 @@ async def healthz():
     return {"status": "ok", "database": info["engine"]}
 
 
-# --- AUTENTIKASI ---
+# --- AUTENTIKASI & MANAJEMEN SESI ---
+
+def _detect_client_device(
+    ua_str: str,
+    req_name: Optional[str] = None,
+    req_type: Optional[str] = None,
+    req_os: Optional[str] = None,
+    req_browser: Optional[str] = None,
+):
+    ua = ua_str or ""
+    ua_lower = ua.lower()
+
+    os_name = req_os
+    if not os_name:
+        if "iphone" in ua_lower or "ipad" in ua_lower or "ipod" in ua_lower:
+            os_name = "iOS"
+        elif "android" in ua_lower:
+            os_name = "Android"
+        elif "windows" in ua_lower:
+            os_name = "Windows"
+        elif "macintosh" in ua_lower or "mac os" in ua_lower:
+            os_name = "macOS"
+        elif "linux" in ua_lower:
+            os_name = "Linux"
+        else:
+            os_name = "OS Web"
+
+    device_type = req_type
+    if not device_type:
+        if "ipad" in ua_lower or "tablet" in ua_lower:
+            device_type = "tablet"
+        elif "mobi" in ua_lower or "iphone" in ua_lower or "android" in ua_lower:
+            device_type = "mobile"
+        else:
+            device_type = "desktop"
+
+    browser_name = req_browser
+    if not browser_name:
+        if "edg" in ua_lower:
+            browser_name = "Edge"
+        elif "chrome" in ua_lower and "chromium" not in ua_lower:
+            browser_name = "Chrome"
+        elif "safari" in ua_lower and "chrome" not in ua_lower:
+            browser_name = "Safari"
+        elif "firefox" in ua_lower:
+            browser_name = "Firefox"
+        elif "opera" in ua_lower or "opr" in ua_lower:
+            browser_name = "Opera"
+        else:
+            browser_name = "Web Browser"
+
+    device_name = req_name
+    if not device_name:
+        if device_type == "mobile":
+            device_name = f"HP ({browser_name} - {os_name})"
+        elif device_type == "tablet":
+            device_name = f"Tablet ({browser_name} - {os_name})"
+        else:
+            device_name = f"PC ({browser_name} - {os_name})"
+
+    terminal_info = f"{browser_name} / {os_name}"
+    return device_name, device_type, os_name, browser_name, terminal_info
+
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+    device_name: Optional[str] = None
+    device_type: Optional[str] = None
+    os: Optional[str] = None
+    browser: Optional[str] = None
 
 
 @app.post("/api/login")
 async def login(req: LoginRequest, request: Request):
-    """Endpoint autentikasi user. Mengembalikan access token JWT.
+    """Endpoint autentikasi user. Mengembalikan access token JWT dengan single-session control.
 
     Percobaan gagal dibatasi per (IP, username) agar tebak-password tidak dapat
     dijalankan tanpa batas; bcrypt memperlambat, tetapi tidak menghentikannya.
     """
     attempt_key = f"{_client_ip(request)}|{(req.username or '').strip().lower()}"[:120]
+    client_ip = _client_ip(request)
+    ua_str = request.headers.get("user-agent", "")
+    dev_name, dev_type, dev_os, dev_browser, term_info = _detect_client_device(
+        ua_str, req.device_name, req.device_type, req.os, req.browser
+    )
 
     blocked_for = check_login_block(attempt_key)
     if blocked_for > 0:
+        record_auth_audit_log(
+            event_type="LOGIN_BLOCKED",
+            username=req.username,
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            user_agent=ua_str,
+            status="BLOCKED",
+            details=f"Login diblokir sementara karena terlalu banyak percobaan gagal ({blocked_for // 60 + 1} menit).",
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Terlalu banyak percobaan login yang gagal. Coba lagi dalam {blocked_for // 60 + 1} menit.",
@@ -253,15 +347,76 @@ async def login(req: LoginRequest, request: Request):
         register_login_failure(
             attempt_key, settings.login_max_failures, settings.login_lock_seconds
         )
+        record_auth_audit_log(
+            event_type="LOGIN_FAILED",
+            username=req.username,
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            user_agent=ua_str,
+            status="FAILED",
+            details="Percobaan login gagal: password salah atau username tidak terdaftar.",
+        )
         raise HTTPException(status_code=401, detail="Username atau password salah")
 
     clear_login_failures(attempt_key)
+
+    # --- SINGLE-SESSION ENFORCEMENT ---
+    # Putuskan sesi lama yang masih aktif milik pengguna ini
+    session_id = str(uuid.uuid4())
+    kicked = invalidate_existing_user_sessions(
+        username=user["username"],
+        reason=f"Akun Anda telah login di perangkat lain ({dev_name} - {client_ip}). Sesi di perangkat ini dinonaktifkan.",
+    )
+    for old_s in kicked:
+        record_auth_audit_log(
+            event_type="SESSION_KICKED_NEW_LOGIN",
+            username=user["username"],
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            status="WARNING",
+            details=f"Sesi lama ({old_s.get('device_name')} - {old_s.get('ip_address')}) diputuskan otomatis karena login baru dari {dev_name} ({client_ip}).",
+        )
+
+    # Daftarkan sesi aktif baru
+    create_user_session(
+        session_id=session_id,
+        username=user["username"],
+        device_name=dev_name,
+        device_type=dev_type,
+        terminal_info=term_info,
+        os=dev_os,
+        browser=dev_browser,
+        ip_address=client_ip,
+        user_agent=ua_str,
+    )
+
+    record_auth_audit_log(
+        event_type="LOGIN_SUCCESS",
+        username=user["username"],
+        ip_address=client_ip,
+        device_name=dev_name,
+        device_type=dev_type,
+        browser=dev_browser,
+        os=dev_os,
+        user_agent=ua_str,
+        status="SUCCESS",
+        details="Login berhasil.",
+    )
+
     user_roles = user.get("roles") or [user["role"]]
-    token = create_access_token(user["username"], user["role"], roles=user_roles)
+    token = create_access_token(user["username"], user["role"], roles=user_roles, session_id=session_id)
     return {
         "status": "success",
         "access_token": token,
         "token_type": "bearer",
+        "session_id": session_id,
+        "device_name": dev_name,
         "expires_in": settings.jwt_expire_minutes * 60,
         "username": user["username"],
         "full_name": user.get("full_name", ""),
@@ -273,6 +428,101 @@ async def login(req: LoginRequest, request: Request):
         "division_name": user.get("division_name"),
         "job_level": user.get("job_level", "staff"),
     }
+
+
+class HeartbeatRequest(BaseModel):
+    current_action: Optional[str] = None
+    current_path: Optional[str] = None
+    is_idle: bool = False
+
+
+@app.post("/api/auth/heartbeat")
+async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
+    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & mengecek status keaktifan sesi."""
+    session_id = user.get("session_id")
+    if not session_id:
+        return {"status": "ok", "is_active": True}
+    is_active, reason = update_session_heartbeat(
+        session_id=session_id,
+        current_action=req.current_action,
+        current_path=req.current_path,
+        is_idle=req.is_idle,
+    )
+    if not is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
+        )
+    return {"status": "ok", "is_active": True}
+
+
+@app.post("/api/logout")
+async def logout_endpoint(user: dict = Depends(get_current_user)):
+    """Logout formal dari pengguna, mematikan sesi aktif di database."""
+    session_id = user.get("session_id")
+    if session_id:
+        terminate_session_logout(session_id)
+    return {"status": "success", "message": "Berhasil logout."}
+
+
+# --- ADMIN SESSION MONITOR & SECURITY LOGS ---
+
+@app.get("/api/admin/user-sessions")
+async def get_admin_user_sessions_endpoint(
+    status: str = "active",
+    q: Optional[str] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Mengambil daftar sesi aktif dan metrik telemetri pengguna."""
+    return list_active_sessions(status_filter=status, search=q)
+
+
+class AdminKickSessionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@app.post("/api/admin/user-sessions/{session_id}/kick")
+async def admin_kick_session_endpoint(
+    session_id: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Admin memutuskan sesi pengguna tertentu secara paksa."""
+    reason = req.reason if req else None
+    success = kick_user_session(session_id, admin["username"], reason=reason)
+    if not success:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau sudah tidak aktif.")
+    return {"status": "success", "message": "Sesi berhasil diputuskan."}
+
+
+@app.post("/api/admin/users/{username}/kick-sessions")
+async def admin_kick_user_sessions_endpoint(
+    username: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Admin memutuskan semua sesi aktif pengguna tertentu."""
+    reason = req.reason if req else None
+    kicked_count = kick_all_user_sessions(username, admin["username"], reason=reason)
+    return {
+        "status": "success",
+        "kicked_count": kicked_count,
+        "message": f"{kicked_count} sesi aktif berhasil diputuskan.",
+    }
+
+
+@app.get("/api/admin/security-logs")
+async def get_admin_security_logs_endpoint(
+    username: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Mengambil riwayat log audit autentikasi sistem."""
+    return list_auth_audit_logs(
+        username=username, event_type=event_type, limit=limit, offset=offset
+    )
 
 
 @app.get("/api/me")

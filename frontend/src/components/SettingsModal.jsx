@@ -25,9 +25,11 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
 
 const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
   const { language, setLanguage, t, languages } = useLanguage();
+  const isKeyboardOpen = useVirtualKeyboard();
   const [activeTab, setActiveTab] = useState(initialTab || 'persona');
   const [config, setConfig] = useState({
     mcp_sap_config_json: '',
@@ -434,26 +436,38 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain animate-in fade-in duration-200"
+      className={`fixed inset-0 bg-black/65 backdrop-blur-md z-50 flex ${
+        isKeyboardOpen ? 'items-start pt-1.5 sm:pt-4' : 'items-center'
+      } justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain transition-all duration-250 animate-modal-backdrop`}
       style={{
-        paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
-        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
+        paddingTop: isKeyboardOpen
+          ? 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.25rem)'
+          : 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)',
+        paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 0.75rem)'
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className={`bg-surface-raised rounded-3xl shadow-2xl w-full ${headerInfo.maxWidth} overflow-hidden border border-line/80 animate-in zoom-in-95 duration-200 modal-panel my-auto flex flex-col`}
+        className={`bg-surface-raised/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl w-full ${headerInfo.maxWidth} overflow-hidden border border-line/80 relative ${
+          isKeyboardOpen ? 'my-1 sm:my-auto' : 'my-auto'
+        } flex flex-col transition-all duration-250 animate-modal-content`}
         style={{
-          maxHeight: 'calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 2.5rem)'
+          maxHeight: 'min(92vh, calc(var(--app-height, 100dvh) - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)) - 1.5rem))'
         }}
       >
+        {/* Ambient Top Glow Blobs */}
+        <div className="absolute -top-24 -left-24 w-56 h-56 bg-accent/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-56 h-56 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Top glowing hairline accent */}
+        <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80" />
         
         {/* Header Modal - Focused & Gorgeous */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-line/80 bg-surface/40">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 sm:py-4 border-b border-line/80 bg-surface/40 relative z-10">
           <div className="flex items-center gap-3.5 min-w-0 pr-2">
-            <div className={`w-10 h-10 rounded-2xl bg-gradient-to-tr ${headerInfo.gradient} shadow-md flex items-center justify-center shrink-0`}>
+            <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr ${headerInfo.gradient} shadow-lg border border-white/20 flex items-center justify-center shrink-0`}>
               {headerInfo.icon}
             </div>
             <div className="min-w-0">
@@ -468,10 +482,10 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
 
           <button 
             onClick={onClose} 
-            className="w-8 h-8 rounded-full flex items-center justify-center text-content-muted hover:text-content hover:bg-surface-hover/80 transition-all shrink-0 cursor-pointer" 
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90" 
             aria-label={t('settings.closeAria')}
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -1356,7 +1370,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                 type="button"
                 onClick={handleSave}
                 disabled={isSaving}
-                className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-5 py-2 rounded-2xl text-xs font-bold shadow-md shadow-indigo-600/25 transition-all active:scale-95 disabled:opacity-70 cursor-pointer"
+                className="flex items-center gap-2 bg-gradient-to-r from-accent via-indigo-600 to-accent bg-[length:200%_auto] hover:bg-[position:right_center] text-white px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-accent/25 hover:shadow-accent/40 transition-all active:scale-[0.98] disabled:opacity-70 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
                 <span>{isSaving ? t('settings.saving') : t('settings.save')}</span>

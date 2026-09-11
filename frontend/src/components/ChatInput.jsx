@@ -624,7 +624,7 @@ const ChatInput = ({
 
   return (
     <div
-      className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4 relative"
+      className="composer-container pwa-chat-input-bar max-w-4xl mx-auto w-full px-2 sm:px-4 relative z-30"
       style={{
         paddingBottom: isMobile ? 'max(0.25rem, calc(var(--sab, env(safe-area-inset-bottom, 0px)) * 0.25))' : '0.625rem',
       }}
@@ -711,9 +711,12 @@ const ChatInput = ({
         className={`composer-form relative rounded-2xl sm:rounded-3xl border bg-surface-raised/95 backdrop-blur-md p-1.5 sm:p-2 shadow-lg transition-all ${
           isDragging
             ? 'border-accent ring-2 ring-accent/30 bg-accent-soft/30'
-            : 'border-line hover:border-slate-300 dark:hover:border-slate-700/80'
+            : 'border-line/80 hover:border-accent/40 focus-within:border-accent/80 focus-within:ring-2 focus-within:ring-accent/20'
         }`}
       >
+        {/* Top glowing hairline accent on focus */}
+        <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-0 focus-within:opacity-100 transition-opacity duration-200 pointer-events-none rounded-t-2xl sm:rounded-t-3xl" />
+
         {isDragging && (
           <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl sm:rounded-3xl bg-accent-soft/80 backdrop-blur-xs border-2 border-dashed border-accent text-accent font-semibold text-xs sm:text-sm">
             {t('input.dragDrop')}
@@ -851,7 +854,7 @@ const ChatInput = ({
                 disabled={busy || (!input.trim() && attachments.length === 0)}
                 className={`h-8 w-8 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                   !busy && (input.trim() || attachments.length > 0)
-                    ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
+                    ? 'bg-gradient-to-r from-accent via-indigo-600 to-accent text-white shadow-md shadow-accent/25 hover:shadow-accent/40 active:scale-95'
                     : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
                 }`}
                 title={t('input.send')}
@@ -869,7 +872,7 @@ const ChatInput = ({
               disabled={busy || (!input.trim() && attachments.length === 0)}
               className={`h-9 w-9 rounded-2xl flex items-center justify-center transition-all cursor-pointer ${
                 !busy && (input.trim() || attachments.length > 0)
-                  ? 'bg-accent text-accent-fg shadow-md hover:brightness-110 active:scale-95'
+                  ? 'bg-gradient-to-r from-accent via-indigo-600 to-accent text-white shadow-md shadow-accent/25 hover:shadow-accent/40 active:scale-95'
                   : 'bg-surface-sunken text-content-subtle cursor-not-allowed'
               }`}
               title={t('input.send')}

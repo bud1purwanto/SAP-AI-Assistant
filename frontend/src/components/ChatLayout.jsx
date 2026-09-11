@@ -162,6 +162,7 @@ const ChatLayout = () => {
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
+  const [kickedModalInfo, setKickedModalInfo] = useState({ isOpen: false, reason: '' });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Isi panel samping (kode/dokumen panjang), null bila panel tertutup.
   const [isiPanel, setIsiPanel] = useState(null);
@@ -385,7 +386,7 @@ const ChatLayout = () => {
 
   // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setUnauthorizedHandler((reason, code) => {
       setUser(GUEST_USER);
       setSessions([]);
       setCurrentSessionId(null);
@@ -395,11 +396,46 @@ const ChatLayout = () => {
       setSessionErrorMap({});
       fetchServers();
       fetchModes();
-      setCustomLoginMsg(t('login.sessionExpired'));
-      setIsLoginModalOpen(true);
+      if (code === 'SESSION_KICKED' || (reason && (reason.includes('perangkat lain') || reason.includes('Administrator') || reason.includes('diputuskan')))) {
+        setKickedModalInfo({
+          isOpen: true,
+          reason: reason || t('kicked.modalDesc'),
+        });
+      } else {
+        setCustomLoginMsg(reason || t('login.sessionExpired'));
+        setIsLoginModalOpen(true);
+      }
     });
     return () => setUnauthorizedHandler(null);
   }, [t, fetchServers, fetchModes]);
+
+  // --- Heartbeat pemantauan sesi & aktivitas real-time ---
+  useEffect(() => {
+    if (isGuest) return undefined;
+
+    const pingHeartbeat = async () => {
+      let currentAction = 'Membuka Percakapan Chat';
+      if (isCurrentLoading) currentAction = 'Sedang Menulis / Prompting AI';
+      else if (isAdminOpen) currentAction = 'Membuka Dashboard Admin';
+      else if (isSettingsOpen) currentAction = 'Membuka Pengaturan Akun';
+      else if (isScheduledTasksOpen) currentAction = 'Membuka Tugas Terjadwal';
+      else if (isiPanel) currentAction = 'Membaca Panel Dokumen / Kode';
+
+      try {
+        await api.heartbeat({
+          current_action: currentAction,
+          current_path: window.location.pathname || '/',
+          is_idle: document.hidden,
+        });
+      } catch {
+        // Jika 401 SESSION_KICKED, apiFetch sudah otomatis memanggil setUnauthorizedHandler
+      }
+    };
+
+    pingHeartbeat();
+    const interval = setInterval(pingHeartbeat, 20000);
+    return () => clearInterval(interval);
+  }, [isGuest, isCurrentLoading, isAdminOpen, isSettingsOpen, isScheduledTasksOpen, isiPanel]);
 
   useEffect(() => {
     fetchServers();
@@ -1220,6 +1256,7 @@ const ChatLayout = () => {
   };
 
   const handleLogout = () => {
+    api.logout().catch(() => {});
     clearSession();
     setUser(GUEST_USER);
     setSessions([]);
@@ -2250,14 +2287,21 @@ const ChatLayout = () => {
             )}
 
             {currentMessages.length === 0 && !isCurrentLoading && (
-              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4">
+              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4 relative">
+                {/* Ambient Glow Aura */}
+                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-accent/10 rounded-full blur-3xl pointer-events-none -z-10 animate-pulse" />
+
                 <div className="text-center mb-4 sm:mb-6">
-                  <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-2.5">
-                    <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
+                  {/* Glowing Animated Hero Icon Badge */}
+                  <div className="relative mx-auto w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center mb-2.5">
+                    <div className="absolute inset-0 bg-gradient-to-tr from-accent to-indigo-500 rounded-2xl blur-md opacity-50 animate-pulse" />
+                    <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 flex items-center justify-center text-white shadow-xl shadow-accent/30 border border-white/20">
+                      <Cpu className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
+                    </div>
                   </div>
 
                   {/* Judul 100% Presisi di Tengah Tanpa Beban Elemen Kiri/Kanan */}
-                  <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight text-center">
+                  <h3 className="text-base sm:text-xl font-bold text-content font-display tracking-tight text-center">
                     {t('suggestions.heroTitle')}
                   </h3>
 
@@ -2350,8 +2394,10 @@ const ChatLayout = () => {
                         <button
                           key={item.title || idx}
                           onClick={() => handleSendMessage(item.query)}
-                          className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
+                          className="relative overflow-hidden flex items-center sm:items-start sm:flex-col text-left p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-surface-raised/90 backdrop-blur-sm hover:border-accent/70 border border-line/80 shadow-xs hover:shadow-lg hover:shadow-accent/5 transition-all duration-200 group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
                         >
+                          {/* Top hairline accent on hover */}
+                          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                           <div className="flex items-center justify-between w-auto sm:w-full sm:mb-3.5 shrink-0">
                             <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors shrink-0">
                               <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -2475,6 +2521,40 @@ const ChatLayout = () => {
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
       />
+
+      {/* Modal Peringatan Sesi Terputus (Kicked by other device / admin) */}
+      {kickedModalInfo.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-modal-backdrop" />
+          <div className="relative w-full max-w-md rounded-2xl bg-surface border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/20 text-center animate-modal-content overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-rose-500 to-transparent pointer-events-none" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/30">
+              <ShieldAlert className="h-7 w-7 animate-pulse" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[11px] font-bold uppercase tracking-wider mb-2">
+              {t('kicked.modalBadge')}
+            </div>
+            <h3 className="text-lg font-bold text-content font-display tracking-tight">
+              {t('kicked.modalTitle')}
+            </h3>
+            <p className="mt-2 text-xs sm:text-sm text-content-secondary leading-relaxed bg-surface-sunken/60 p-3.5 rounded-xl border border-line">
+              {kickedModalInfo.reason || t('kicked.modalDesc')}
+            </p>
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setKickedModalInfo({ isOpen: false, reason: '' });
+                  setIsLoginModalOpen(true);
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 via-indigo-600 to-rose-600 hover:from-rose-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-rose-600/25 transition-all cursor-pointer active:scale-95"
+              >
+                {t('kicked.relogin')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

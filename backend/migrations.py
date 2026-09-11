@@ -1012,6 +1012,66 @@ def _m0024_chat_message_usage(conn):
     """))
 
 
+def _m0025_user_sessions_and_security_logs(conn):
+    """Tabel sesi aktif pengguna untuk single-session enforcement dan monitoring perangkat real-time,
+    serta tabel log audit autentikasi/keamanan."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
+            id VARCHAR(64) PRIMARY KEY,
+            username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
+            device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
+            device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
+            terminal_info VARCHAR(150),
+            os VARCHAR(60),
+            browser VARCHAR(60),
+            ip_address VARCHAR(60),
+            user_agent TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_idle BOOLEAN NOT NULL DEFAULT FALSE,
+            status VARCHAR(40) NOT NULL DEFAULT 'active',
+            kick_reason TEXT,
+            current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
+            current_path VARCHAR(100) DEFAULT '/',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMPTZ NOT NULL,
+            kicked_at TIMESTAMPTZ
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
+        ON ai_assistant.user_sessions (LOWER(username), is_active);
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
+        ON ai_assistant.user_sessions (last_active_at DESC);
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            event_type VARCHAR(50) NOT NULL,
+            username VARCHAR(100) NOT NULL,
+            ip_address VARCHAR(60),
+            device_name VARCHAR(120),
+            device_type VARCHAR(30),
+            browser VARCHAR(60),
+            os VARCHAR(60),
+            user_agent TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+            details TEXT
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
+        ON ai_assistant.auth_audit_logs (timestamp DESC);
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_auth_logs_username
+        ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -1037,6 +1097,7 @@ MIGRATIONS = [
     ("0022_user_job_levels", _m0022_user_job_levels),
     ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
     ("0024_chat_message_usage", _m0024_chat_message_usage),
+    ("0025_user_sessions_and_security_logs", _m0025_user_sessions_and_security_logs),
 ]
 
 

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import time
@@ -305,6 +306,65 @@ def init_db():
                     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 );
+            """))
+
+            # 5f. Sesi aktif pengguna (Single-session concurrency & Device monitor)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
+                    id VARCHAR(64) PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
+                    device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
+                    device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
+                    terminal_info VARCHAR(150),
+                    os VARCHAR(60),
+                    browser VARCHAR(60),
+                    ip_address VARCHAR(60),
+                    user_agent TEXT,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_idle BOOLEAN NOT NULL DEFAULT FALSE,
+                    status VARCHAR(40) NOT NULL DEFAULT 'active',
+                    kick_reason TEXT,
+                    current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
+                    current_path VARCHAR(100) DEFAULT '/',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    kicked_at TIMESTAMPTZ
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
+                ON ai_assistant.user_sessions (LOWER(username), is_active);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
+                ON ai_assistant.user_sessions (last_active_at DESC);
+            """))
+
+            # 5g. Catatan Log Audit Autentikasi & Keamanan (Login, Logout, Kick, Blocked)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    event_type VARCHAR(50) NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(60),
+                    device_name VARCHAR(120),
+                    device_type VARCHAR(30),
+                    browser VARCHAR(60),
+                    os VARCHAR(60),
+                    user_agent TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+                    details TEXT
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
+                ON ai_assistant.auth_audit_logs (timestamp DESC);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_auth_logs_username
+                ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
             """))
 
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
@@ -4291,6 +4351,391 @@ def delete_scheduled_task(task_id: str) -> bool:
         """), {"tid": task_id})
         conn.commit()
     return True
+
+
+# --- SESI PENGGUNA, ANTI-MULTIPLE LOGON, & LOG AUDIT AUTENTIKASI ---
+
+def record_auth_audit_log(
+    event_type: str,
+    username: str,
+    ip_address: Optional[str] = None,
+    device_name: Optional[str] = None,
+    device_type: Optional[str] = None,
+    browser: Optional[str] = None,
+    os: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    status: str = "SUCCESS",
+    details: Optional[str] = None,
+) -> bool:
+    """Mencatat aktivitas autentikasi dan keamanan ke tabel auth_audit_logs."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.auth_audit_logs (
+                    event_type, username, ip_address, device_name, device_type,
+                    browser, os, user_agent, status, details
+                ) VALUES (
+                    :event_type, :username, :ip_address, :device_name, :device_type,
+                    :browser, :os, :user_agent, :status, :details
+                )
+            """), {
+                "event_type": event_type[:50],
+                "username": username[:100],
+                "ip_address": (ip_address or "")[:60] or None,
+                "device_name": (device_name or "")[:120] or None,
+                "device_type": (device_type or "desktop")[:30],
+                "browser": (browser or "")[:60] or None,
+                "os": (os or "")[:60] or None,
+                "user_agent": user_agent[:1000] if user_agent else None,
+                "status": status[:20],
+                "details": details,
+            })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Gagal mencatat auth_audit_log: {e}")
+        return False
+
+
+def create_user_session(
+    session_id: str,
+    username: str,
+    device_name: str = "Unknown Device",
+    device_type: str = "desktop",
+    terminal_info: Optional[str] = None,
+    os: Optional[str] = None,
+    browser: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
+) -> Optional[dict]:
+    """Mendaftarkan sesi aktif pengguna baru ke database."""
+    if not expires_at:
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.user_sessions (
+                id, username, device_name, device_type, terminal_info,
+                os, browser, ip_address, user_agent, is_active, is_idle,
+                status, current_action, current_path, expires_at
+            ) VALUES (
+                :id, :username, :device_name, :device_type, :terminal_info,
+                :os, :browser, :ip_address, :user_agent, TRUE, FALSE,
+                'active', 'Membuka Chat Utama', '/', :expires_at
+            )
+        """), {
+            "id": session_id,
+            "username": username,
+            "device_name": device_name[:120],
+            "device_type": device_type[:30],
+            "terminal_info": (terminal_info or f"{browser or ''} / {os or ''}".strip(" /"))[:150],
+            "os": (os or "")[:60] or None,
+            "browser": (browser or "")[:60] or None,
+            "ip_address": (ip_address or "")[:60] or None,
+            "user_agent": user_agent[:1000] if user_agent else None,
+            "expires_at": expires_at,
+        })
+        conn.commit()
+    return get_user_session(session_id)
+
+
+def invalidate_existing_user_sessions(
+    username: str,
+    except_session_id: Optional[str] = None,
+    reason: str = "Akun Anda telah login di perangkat lain.",
+    status: str = "kicked_by_new_login",
+) -> list:
+    """Nonaktifkan semua sesi aktif milik user untuk menegakkan single-session policy."""
+    engine = get_engine()
+    kicked_list = []
+    with engine.connect() as conn:
+        query = "SELECT id, device_name, ip_address, browser, os, created_at FROM ai_assistant.user_sessions WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE"
+        params = {"u": username.strip()}
+        if except_session_id:
+            query += " AND id != :except_id"
+            params["except_id"] = except_session_id
+        rows = conn.execute(text(query), params).fetchall()
+        for r in rows:
+            kicked_list.append({
+                "id": r.id,
+                "device_name": r.device_name,
+                "ip_address": r.ip_address,
+                "browser": r.browser,
+                "os": r.os,
+            })
+
+        if kicked_list:
+            upd_query = """
+                UPDATE ai_assistant.user_sessions
+                SET is_active = FALSE,
+                    status = :st,
+                    kick_reason = :rs,
+                    kicked_at = CURRENT_TIMESTAMP
+                WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+            """
+            upd_params = {"u": username.strip(), "st": status, "rs": reason}
+            if except_session_id:
+                upd_query += " AND id != :except_id"
+                upd_params["except_id"] = except_session_id
+            conn.execute(text(upd_query), upd_params)
+            conn.commit()
+
+    return kicked_list
+
+
+def get_user_session(session_id: str) -> Optional[dict]:
+    """Mengambil detail satu sesi berdasarkan ID."""
+    if not session_id:
+        return None
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT s.*, u.full_name, u.role, u.division_code
+            FROM ai_assistant.user_sessions s
+            LEFT JOIN ai_assistant.users u ON LOWER(s.username) = LOWER(u.username)
+            WHERE s.id = :id
+        """), {"id": session_id}).fetchone()
+        if not row:
+            return None
+        return dict(row._mapping)
+
+
+def update_session_heartbeat(
+    session_id: str,
+    current_action: Optional[str] = None,
+    current_path: Optional[str] = None,
+    is_idle: bool = False,
+) -> tuple[bool, Optional[str]]:
+    """Perbarui waktu aktif sesi. Kembalikan (is_active, kick_reason)."""
+    if not session_id:
+        return False, "Sesi tidak ditemukan"
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT is_active, status, kick_reason
+            FROM ai_assistant.user_sessions
+            WHERE id = :id
+        """), {"id": session_id}).fetchone()
+        if not row:
+            return False, "Sesi tidak ditemukan"
+        if not row.is_active:
+            return False, row.kick_reason or "Sesi telah dihentikan"
+
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET last_active_at = CURRENT_TIMESTAMP,
+                current_action = COALESCE(:action, current_action),
+                current_path = COALESCE(:path, current_path),
+                is_idle = :idle
+            WHERE id = :id
+        """), {
+            "id": session_id,
+            "action": (current_action or "")[:150] or None,
+            "path": (current_path or "")[:100] or None,
+            "idle": is_idle,
+        })
+        conn.commit()
+    return True, None
+
+
+def kick_user_session(session_id: str, admin_username: str, reason: Optional[str] = None) -> bool:
+    """Admin memutuskan paksa satu sesi pengguna."""
+    engine = get_engine()
+    effective_reason = reason or f"Sesi diputuskan oleh Administrator ({admin_username})"
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT username, device_name, ip_address FROM ai_assistant.user_sessions WHERE id = :id"), {"id": session_id}).fetchone()
+        if not row:
+            return False
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'kicked_by_admin',
+                kick_reason = :r,
+                kicked_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {"id": session_id, "r": effective_reason})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="SESSION_KICKED_BY_ADMIN",
+            username=row.username,
+            ip_address=row.ip_address,
+            device_name=row.device_name,
+            status="WARNING",
+            details=f"Admin {admin_username} memutuskan sesi {session_id}. Alasan: {effective_reason}",
+        )
+    return True
+
+
+def kick_all_user_sessions(username: str, admin_username: str, reason: Optional[str] = None) -> int:
+    """Admin memutuskan semua sesi aktif pengguna tertentu."""
+    engine = get_engine()
+    effective_reason = reason or f"Semua sesi diputuskan oleh Administrator ({admin_username})"
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT id, device_name, ip_address
+            FROM ai_assistant.user_sessions
+            WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+        """), {"u": username.strip()}).fetchall()
+        if not rows:
+            return 0
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'kicked_by_admin',
+                kick_reason = :r,
+                kicked_at = CURRENT_TIMESTAMP
+            WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+        """), {"u": username.strip(), "r": effective_reason})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="FORCE_LOGOUT_ALL",
+            username=username,
+            status="WARNING",
+            details=f"Admin {admin_username} memutuskan {len(rows)} sesi aktif milik {username}. Alasan: {effective_reason}",
+        )
+    return len(rows)
+
+
+def terminate_session_logout(session_id: str) -> bool:
+    """Pengguna melakukan logout normal."""
+    if not session_id:
+        return False
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT username, device_name, ip_address FROM ai_assistant.user_sessions WHERE id = :id"), {"id": session_id}).fetchone()
+        if not row:
+            return False
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'logged_out',
+                kick_reason = 'Logout oleh pengguna'
+            WHERE id = :id
+        """), {"id": session_id})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="LOGOUT",
+            username=row.username,
+            ip_address=row.ip_address,
+            device_name=row.device_name,
+            status="SUCCESS",
+            details="Pengguna keluar secara normal (logout).",
+        )
+    return True
+
+
+def list_active_sessions(status_filter: str = "active", search: Optional[str] = None) -> dict:
+    """Mengambil daftar sesi aktif beserta metrik ringkasan telemetri."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        now = datetime.now(timezone.utc)
+        where_clauses = []
+        params = {}
+
+        if status_filter == "active":
+            where_clauses.append("s.is_active = TRUE")
+        elif status_filter == "kicked":
+            where_clauses.append("s.status LIKE 'kicked%'")
+        elif status_filter == "all":
+            pass
+
+        if search:
+            where_clauses.append("(LOWER(s.username) LIKE :s OR LOWER(s.device_name) LIKE :s OR LOWER(s.ip_address) LIKE :s OR LOWER(COALESCE(u.full_name, '')) LIKE :s)")
+            params["s"] = f"%{search.strip().lower()}%"
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        rows = conn.execute(text(f"""
+            SELECT s.*, u.full_name, u.role, u.division_code, d.name AS division_name
+            FROM ai_assistant.user_sessions s
+            LEFT JOIN ai_assistant.users u ON LOWER(s.username) = LOWER(u.username)
+            LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+            {where_sql}
+            ORDER BY s.is_active DESC, s.last_active_at DESC
+            LIMIT 150
+        """), params).fetchall()
+
+        sessions = []
+        for r in rows:
+            m = dict(r._mapping)
+            is_online = False
+            if m.get("is_active") and m.get("last_active_at"):
+                dt = m["last_active_at"]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                is_online = (now - dt).total_seconds() < 90
+
+            m["is_online"] = is_online
+            for dt_field in ("created_at", "last_active_at", "expires_at", "kicked_at"):
+                if m.get(dt_field):
+                    m[dt_field] = m[dt_field].isoformat()
+            sessions.append(m)
+
+        stats_row = conn.execute(text("""
+            SELECT 
+                COUNT(*) FILTER (WHERE is_active = TRUE) AS total_active,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND last_active_at >= NOW() - INTERVAL '90 seconds') AS online_now,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND device_type = 'desktop') AS desktop_count,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND device_type = 'mobile') AS mobile_count,
+                COUNT(*) FILTER (WHERE status LIKE 'kicked%' AND (kicked_at >= CURRENT_DATE OR last_active_at >= CURRENT_DATE)) AS kicked_today
+            FROM ai_assistant.user_sessions
+        """)).fetchone()
+
+        summary = {
+            "total_active": stats_row.total_active or 0,
+            "online_now": stats_row.online_now or 0,
+            "desktop_count": stats_row.desktop_count or 0,
+            "mobile_count": stats_row.mobile_count or 0,
+            "kicked_today": stats_row.kicked_today or 0,
+        }
+
+        return {"sessions": sessions, "summary": summary}
+
+
+def list_auth_audit_logs(
+    username: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """Mengambil log audit autentikasi dan keamanan sistem."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        where_clauses = []
+        params = {"lim": max(1, min(limit, 300)), "off": max(0, offset)}
+
+        if username:
+            where_clauses.append("LOWER(username) = LOWER(:u)")
+            params["u"] = username.strip()
+        if event_type:
+            where_clauses.append("event_type = :evt")
+            params["evt"] = event_type.strip()
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        total = conn.execute(text(f"SELECT COUNT(*) FROM ai_assistant.auth_audit_logs {where_sql}"), params).scalar() or 0
+
+        rows = conn.execute(text(f"""
+            SELECT *
+            FROM ai_assistant.auth_audit_logs
+            {where_sql}
+            ORDER BY timestamp DESC
+            LIMIT :lim OFFSET :off
+        """), params).fetchall()
+
+        logs = []
+        for r in rows:
+            m = dict(r._mapping)
+            if m.get("timestamp"):
+                m["timestamp"] = m["timestamp"].isoformat()
+            logs.append(m)
+
+        return {"logs": logs, "total": total}
 
 
 

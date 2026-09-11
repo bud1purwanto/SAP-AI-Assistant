@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
 
 const SAP_TEMPLATES = [
   {
@@ -72,6 +73,7 @@ const INTERVAL_OPTIONS = [
 
 export default function ScheduledTasksModal({ isOpen, onClose }) {
   const { t, language } = useLanguage();
+  const isKeyboardOpen = useVirtualKeyboard();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -344,19 +346,30 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border border-line bg-surface shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+    <div className={`fixed inset-0 z-50 flex ${
+      isKeyboardOpen ? 'items-start pt-1.5 sm:pt-6' : 'items-center'
+    } justify-center p-3 sm:p-6 bg-black/65 backdrop-blur-md overflow-y-auto overscroll-contain transition-all duration-250 animate-modal-backdrop`}>
+      <div className={`relative w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border border-line/80 bg-surface-raised/95 backdrop-blur-xl shadow-2xl overflow-hidden ${
+        isKeyboardOpen ? 'my-1 sm:my-auto' : 'my-auto'
+      } transition-all duration-250 animate-modal-content`}>
+        {/* Ambient Top Glow Blobs */}
+        <div className="absolute -top-24 -left-24 w-56 h-56 bg-accent/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-56 h-56 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Top glowing hairline accent */}
+        <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface-raised">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 sm:py-4 border-b border-line/80 bg-surface/40 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 border border-white/20 flex items-center justify-center text-white shadow-lg shrink-0">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-content font-display">
                 {t('scheduled.title')}
               </h2>
-              <p className="text-xs text-content-muted">
+              <p className="text-[11px] sm:text-xs text-content-muted">
                 {language === 'en' ? 'Automated SAP query execution & scheduled reports via Email (Multi-Recipient)' : 'Otomasi eksekusi query SAP & laporan terjadwal via Email (Multi-Penerima)'}
               </p>
             </div>
@@ -365,10 +378,10 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
             aria-label="Tutup"
           >
-            <X className="w-5 h-5" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 

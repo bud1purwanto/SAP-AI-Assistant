@@ -60,10 +60,21 @@ const ModeSelector = ({
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
     }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isOpen]);
 
   if (!modes || modes.length === 0) return null;
@@ -102,7 +113,7 @@ const ModeSelector = ({
 
       {isOpen && (
         <div
-          className="absolute bottom-full left-0 mb-2 w-72 sm:w-80 rounded-2xl bg-surface-raised/95 backdrop-blur-md border border-line shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+          className="absolute bottom-full left-0 mb-2 w-72 sm:w-80 max-w-[calc(100vw-4.5rem)] sm:max-w-none rounded-2xl bg-surface-raised/98 backdrop-blur-xl border border-line shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150"
           role="menu"
         >
           <div className="px-2.5 py-1.5 border-b border-line mb-1 flex items-center justify-between">
@@ -114,7 +125,7 @@ const ModeSelector = ({
             </span>
           </div>
 
-          <div className="space-y-1 max-h-72 overflow-y-auto custom-scrollbar p-0.5">
+          <div className="space-y-1 max-h-60 sm:max-h-72 overflow-y-auto custom-scrollbar p-0.5">
             {modes.map((mode) => {
               const isSelected = selectedMode === mode.code;
               const isAvailable = Boolean(mode.available);

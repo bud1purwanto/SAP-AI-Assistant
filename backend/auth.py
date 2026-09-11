@@ -51,7 +51,12 @@ def is_bcrypt_hash(value: str) -> bool:
 
 # --- JWT ---
 
-def create_access_token(username: str, role: str, roles: Optional[list] = None) -> str:
+def create_access_token(
+    username: str,
+    role: str,
+    roles: Optional[list] = None,
+    session_id: Optional[str] = None,
+) -> str:
     now = datetime.now(timezone.utc)
     roles_list = roles if roles else [role]
     payload = {
@@ -61,6 +66,8 @@ def create_access_token(username: str, role: str, roles: Optional[list] = None) 
         "iat": now,
         "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
     }
+    if session_id:
+        payload["jti"] = session_id
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -99,12 +106,20 @@ def get_current_user_optional(
         # agar sesi lama tidak menutup akses mode tamu.
         return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "roles": [GUEST_ROLE], "is_guest": True}
 
+    jti = payload.get("jti")
+    if jti:
+        from database import get_user_session
+        session = get_user_session(jti)
+        if session and not session.get("is_active"):
+            return {"username": GUEST_USERNAME, "role": GUEST_ROLE, "roles": [GUEST_ROLE], "is_guest": True}
+
     user_role = payload.get("role", "user")
     user_roles = payload.get("roles") or [user_role]
     return {
         "username": payload["sub"],
         "role": user_role,
         "roles": user_roles,
+        "session_id": jti,
         "is_guest": False,
     }
 
@@ -112,7 +127,7 @@ def get_current_user_optional(
 def get_current_user(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> dict:
-    """Wajib login. Menolak request tanpa token yang valid."""
+    """Wajib login. Menolak request tanpa token yang valid atau jika sesi telah diputus."""
     if creds is None or not creds.credentials:
         raise _credentials_exception("Diperlukan autentikasi. Silakan login terlebih dahulu.")
 
@@ -120,12 +135,25 @@ def get_current_user(
     if not payload or not payload.get("sub"):
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
+    jti = payload.get("jti")
+    if jti:
+        from database import get_user_session
+        session = get_user_session(jti)
+        if session and not session.get("is_active"):
+            reason = session.get("kick_reason") or "Sesi Anda telah dihentikan."
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "SESSION_KICKED", "reason": reason},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     user_role = payload.get("role", "user")
     user_roles = payload.get("roles") or [user_role]
     return {
         "username": payload["sub"],
         "role": user_role,
         "roles": user_roles,
+        "session_id": jti,
         "is_guest": False,
     }
 

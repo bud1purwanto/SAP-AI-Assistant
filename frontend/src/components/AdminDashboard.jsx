@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, MonitorSmartphone, Plus, PowerOff, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -9,6 +9,8 @@ import AdminRoles from './AdminRoles';
 import AdminDivisions from './AdminDivisions';
 import AdminChatAudit from './AdminChatAudit';
 import AdminMcpConfig from './AdminMcpConfig';
+import AdminSessionMonitor from './AdminSessionMonitor';
+import AdminSecurityLogs from './AdminSecurityLogs';
 import {
   formatRoleLabel as formatRoleLabelFallback,
   getRoleBadgeStyle as getRoleBadgeStyleByColor,
@@ -610,6 +612,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const handleKickUserSessions = (targetUsername) => {
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: language === 'en' ? 'Kick User Sessions' : 'Putuskan Sesi Pengguna',
+      message: language === 'en'
+        ? `Are you sure you want to forcibly terminate all active login sessions for @${targetUsername}?`
+        : `Apakah Anda yakin ingin memutuskan paksa semua sesi aktif login untuk @${targetUsername}?`,
+      confirmText: language === 'en' ? 'Terminate All' : 'Putuskan Semua',
+      cancelText: language === 'en' ? 'Cancel' : 'Batal',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, isLoading: true }));
+        setActionError('');
+        setActionSuccess('');
+        try {
+          const res = await api.adminKickAllUserSessions(targetUsername);
+          setActionSuccess(res?.message || (language === 'en' ? 'Sessions terminated successfully.' : 'Semua sesi berhasil diputuskan.'));
+          setTimeout(() => setActionSuccess(''), 4000);
+          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
+        } catch (err) {
+          setActionError(err.message || 'Gagal memutuskan sesi.');
+          setConfirmModal((m) => ({ ...m, isLoading: false }));
+        }
+      },
+    });
+  };
+
   const handleDeleteUser = (username) => {
     setConfirmModal({
       isOpen: true,
@@ -769,9 +799,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const tabCategories = [
     {
-      groupName: language === 'en' ? 'Monitoring & Metrics' : 'Monitoring & Metrik',
+      groupName: language === 'en' ? 'Monitoring & Security' : 'Monitoring & Keamanan',
       tabs: [
         { id: 'overview', icon: Activity, label: t('admin.tabOverview') },
+        { id: 'sessions', icon: MonitorSmartphone, label: t('admin.tabSessions') || (language === 'en' ? 'Sessions & Devices' : 'Sesi & Perangkat') },
+        { id: 'security_logs', icon: ShieldAlert, label: t('admin.tabSecurityLogs') || (language === 'en' ? 'Security Logs' : 'Log Keamanan') },
         { id: 'audit', icon: History, label: t('admin.tabAudit') },
         { id: 'feedback', icon: ThumbsDown, label: t('admin.tabFeedback') },
       ],
@@ -839,13 +871,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
         style={{ height: 'var(--app-height, 100dvh)' }}
       >
+      {/* Top glowing hairline accent */}
+      <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80 z-50 pointer-events-none" />
+
       {/* Header Modal */}
       <div
         className="relative flex items-center justify-between px-3.5 sm:px-6 py-2.5 sm:py-3 border-b border-line/80 bg-surface/95 backdrop-blur-xl shrink-0 z-40"
         style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.5rem)' }}
       >
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
-          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-2xs">
+          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 text-white border border-white/20 flex items-center justify-center shrink-0 shadow-md shadow-accent/25">
             <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -890,11 +925,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           </kbd>
           <button 
             onClick={onClose}
-            className="-mr-1 p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-line/60 hover:border-line"
+            className="-mr-1 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
             aria-label={t('admin.closeAria')}
             title="Tutup (Esc)"
           >
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -1485,6 +1520,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   aria-label={`Akses MCP ${u.username}`}
                                 >
                                   <ShieldCheck className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleKickUserSessions(u.username)}
+                                  className="p-1.5 text-content-subtle hover:text-rose-500 hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
+                                  title={language === 'en' ? `Kick all active sessions for ${u.username}` : `Putuskan semua sesi aktif ${u.username}`}
+                                  aria-label={`Kick sesi ${u.username}`}
+                                >
+                                  <PowerOff className="w-4 h-4" />
                                 </button>
                                 <button
                                   onClick={() => handleDeleteUser(u.username)}
@@ -2981,6 +3024,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </>
                 )}
               </div>
+            )}
+
+            {activeTab === 'sessions' && (
+              <AdminSessionMonitor masterRoles={masterRoles} />
+            )}
+
+            {activeTab === 'security_logs' && (
+              <AdminSecurityLogs />
             )}
 
             {activeTab === 'audit' && (
