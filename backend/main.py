@@ -695,6 +695,7 @@ class ConfigUpdate(BaseModel):
     full_name: str = None
     global_assistant_persona: str = None
     ai_suggestions_enabled: bool = None
+    require_login: Optional[bool] = None
 
 
 class CreateMcpServerRequest(BaseModel):
@@ -767,6 +768,7 @@ async def get_config(user: dict = Depends(get_current_user)):
             "openrouter_api_key": _mask_secret(sys_cfg.get("openrouter_api_key", "")),
             "openrouter_api_key_set": bool(sys_cfg.get("openrouter_api_key")),
             "ai_suggestions_enabled": sys_cfg.get("ai_suggestions_enabled", True),
+            "require_login": sys_cfg.get("require_login", True),
         })
 
     return payload
@@ -808,6 +810,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             openrouter_api_key=open_key,
             global_assistant_persona=config.global_assistant_persona,
             ai_suggestions_enabled=config.ai_suggestions_enabled,
+            require_login=config.require_login,
         )
 
     return {"status": "success"}
@@ -2324,6 +2327,13 @@ async def chat_stream_endpoint(
     apa yang sedang dikerjakan.
     """
     is_guest = not user or bool(user.get("is_guest", True))
+    sys_cfg = get_system_config()
+    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
+    if is_guest and require_login:
+        raise HTTPException(
+            status_code=401,
+            detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
+        )
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_progress(*args, **event):
@@ -2460,10 +2470,16 @@ async def _run_chat(
     on_progress=None,
     on_token=None,
 ) -> ChatResponse:
-    """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
-    is_guest = user.get("is_guest", True)
+    is_guest = not user or bool(user.get("is_guest", True))
+    sys_cfg = get_system_config()
+    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
 
     if is_guest:
+        if require_login:
+            raise HTTPException(
+                status_code=401,
+                detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
+            )
         # Kuota harian ditegakkan di server; penghitung di browser tidak dipercaya.
         quota = consume_guest_quota(
             _guest_client_key(request), date.today().isoformat(), settings.guest_daily_limit

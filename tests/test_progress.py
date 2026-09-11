@@ -138,3 +138,10 @@ def test_tool_stage_names_the_table_being_read():
     assert _describe_tool("sql", "query", {}) == "Membaca data dari database…"
     assert _describe_tool("sql", "query", {}, is_en=True) == "Querying database records…"
 
+
+def test_stream_requires_login(client):
+    """Streaming chat menolak permintaan tamu dengan 401 saat require_login aktif."""
+    res = client.post("/api/chat/stream", json={"message": "cek stok"})
+    assert res.status_code == 401
+    assert "Autentikasi diperlukan" in res.json()["detail"]
+

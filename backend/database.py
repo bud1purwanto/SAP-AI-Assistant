@@ -811,6 +811,7 @@ def get_system_config():
     chat_modes_enabled = True
     ai_suggestions_enabled = True
     mcp_access_control_enabled = False
+    require_login = getattr(settings, "require_login", True)
 
     try:
         engine = get_engine()
@@ -831,6 +832,8 @@ def get_system_config():
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'mcp_access_control_enabled' and r.value is not None:
                     mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'require_login' and r.value is not None:
+                    require_login = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -873,6 +876,7 @@ def get_system_config():
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
         "mcp_access_control_enabled": mcp_access_control_enabled,
+        "require_login": require_login,
     }
 
 def update_system_config(
@@ -893,11 +897,19 @@ def update_system_config(
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
     mcp_access_control_enabled: bool = None,
+    require_login: bool = None,
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            if require_login is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('require_login', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if require_login else "false"})
+
             if token_limit_enabled is not None:
                 conn.execute(text("""
                     INSERT INTO ai_assistant.system_config (key, value)

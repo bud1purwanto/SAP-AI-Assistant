@@ -269,6 +269,8 @@ const DIVISION_PLACEHOLDERS_EN = {
 
 const ChatInput = ({
   user = null,
+  isGuest = false,
+  onRequireLogin = null,
   onSendMessage,
   isLoading,
   modes = [],
@@ -369,6 +371,9 @@ const ChatInput = ({
 
   const activePlaceholdersList = useMemo(() => {
     const isEn = language === 'en';
+    if (isGuest || user?.role === 'guest') {
+      return [t('login.placeholderRequired') || (isEn ? 'Please sign in to start chatting...' : 'Silakan login terlebih dahulu untuk mulai bertanya...')];
+    }
     const defaultList = isEn ? ROTATING_PLACEHOLDERS_EN : ROTATING_PLACEHOLDERS_ID;
 
     const rawDiv = (user?.division_code || '').trim().toLowerCase();
@@ -530,6 +535,11 @@ const ChatInput = ({
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (isGuest || user?.role === 'guest') {
+      if (onRequireLogin) onRequireLogin();
+      else onSendMessage(input.trim() || 'halo');
+      return;
+    }
     if (isLoading || uploading > 0) return;
     if (!input.trim() && attachments.length === 0) return;
 
@@ -780,6 +790,11 @@ const ChatInput = ({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onFocus={() => {
+              if ((isGuest || user?.role === 'guest') && onRequireLogin) {
+                onRequireLogin();
+              }
+            }}
             placeholder={displayedPlaceholder}
             aria-label={activePlaceholder}
             className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed"

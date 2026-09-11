@@ -64,9 +64,26 @@ def test_message_history_is_paginated(client, make_user, db):
     assert len(older) == 10 and older[-1]["content"] == "pesan 19"
 
 
-def test_guest_quota_enforced_server_side(client):
-    """Penghitung di localStorage dapat direset user kapan saja."""
+def test_guest_chat_requires_login(client):
+    """Secara default pengguna wajib login; prompt tamu ditolak dengan 401."""
+    res = client.post("/api/chat", json={"message": "halo"})
+    assert res.status_code == 401
+    assert "Autentikasi diperlukan" in res.json()["detail"]
+
+
+def test_guest_quota_enforced_server_side(client, monkeypatch):
+    """Bila require_login dimatikan admin, kuota tamu ditegakkan di server."""
     from config import settings
+    import main
+
+    real_get_cfg = main.get_system_config
+
+    def fake_sys_cfg():
+        cfg = real_get_cfg()
+        cfg["require_login"] = False
+        return cfg
+
+    monkeypatch.setattr(main, "get_system_config", fake_sys_cfg)
 
     codes = [
         client.post("/api/chat", json={"message": f"halo {i}"}).status_code

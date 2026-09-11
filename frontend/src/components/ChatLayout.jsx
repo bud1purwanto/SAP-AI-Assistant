@@ -419,6 +419,14 @@ const ChatLayout = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, fetchServers, fetchModes]);
 
+  // Wajib login: buka modal login otomatis saat pengguna belum login
+  useEffect(() => {
+    if (isGuest) {
+      setCustomLoginMsg(t('login.requiredPrompt'));
+      setIsLoginModalOpen(true);
+    }
+  }, [isGuest, t]);
+
   useEffect(() => {
     scrollToBottom(true);
   }, [currentMessages, isCurrentLoading, scrollToBottom]);
@@ -913,6 +921,13 @@ const ChatLayout = () => {
    * jawaban lama muncul kembali alih-alih tergantikan.
    */
   const handleSendMessage = async (text, attachments = [], baseMessages = null) => {
+    // Wajib login: cegah pengiriman prompt jika berstatus tamu
+    if (isGuest) {
+      setCustomLoginMsg(t('login.requiredPrompt'));
+      setIsLoginModalOpen(true);
+      return;
+    }
+
     let targetSessionId = currentSessionId;
     // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
     if (!isGuest && !targetSessionId) {
@@ -2370,6 +2385,11 @@ const ChatLayout = () => {
 
         <ChatInput
           user={user}
+          isGuest={isGuest}
+          onRequireLogin={() => {
+            setCustomLoginMsg(t('login.requiredPrompt'));
+            setIsLoginModalOpen(true);
+          }}
           onSendMessage={handleSendMessage}
           isLoading={isCurrentLoading}
           modes={chatModesEnabled ? modesList : []}

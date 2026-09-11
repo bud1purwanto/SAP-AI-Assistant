@@ -97,7 +97,7 @@ _DIRECT = re.compile(r"^(halo|hai|hi|selamat|terima kasih|makasih)\b|\b(apa itu|
 
 # Pertanyaan meta mengenai arsitektur, keamanan, atau konsep agen itu sendiri
 _META_CONCEPTUAL = re.compile(
-    r"\b(apakah\s+(data|informasi).*(dilihat|dikirim|disimpan|aman|rahasia|privasi))|"
+    r"\b((?:(?:apakah\s+)?(?:data|informasi)|(?:data|informasi)\s+apakah).*?(?:dilihat|dikirim|disimpan|aman|rahasia|privasi))|"
     r"(bagaimana\s+cara\s+kerja)|(jelaskan\s+(arsitektur|konsep|mekanisme))\b", re.I
 )
 
