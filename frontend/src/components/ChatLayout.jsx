@@ -385,8 +385,8 @@ const ChatLayout = () => {
   };
 
   // --- Fungsi sentral reset tampilan & sesi ke Beranda (Home) secara bersih ---
-  const resetToHome = useCallback(() => {
-    setUser(GUEST_USER);
+  const resetToHome = useCallback((clearAuth = true) => {
+    if (clearAuth) setUser(GUEST_USER);
     setSessions([]);
     setCurrentSessionId(null);
     setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
@@ -400,7 +400,7 @@ const ChatLayout = () => {
     setIsSidebarOpen(false);
     setIsUserMenuOpen(false);
     setError(null);
-    clearSession();
+    if (clearAuth) clearSession();
     try {
       window.history.replaceState(null, '', '/');
     } catch {}
@@ -780,7 +780,7 @@ const ChatLayout = () => {
                 saveSession(data.access_token, userData);
 
                 // Update React State tanpa reload!
-                resetToHome();
+                resetToHome(false);
                 setUser(userData);
                 api.quotaSaya().then(setKuota).catch(() => setKuota(null));
                 setIsLoginModalOpen(false);
@@ -1255,7 +1255,7 @@ const ChatLayout = () => {
 
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
     saveSession(token, userData);
-    resetToHome();
+    resetToHome(false);
     setUser(userData);
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     fetchServers();
