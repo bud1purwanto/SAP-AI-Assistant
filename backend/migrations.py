@@ -1025,3 +1025,123 @@ def run_migrations(conn) -> list:
     if diterapkan:
         logger.info(f"Migrasi selesai: {', '.join(diterapkan)}")
     return diterapkan
+
+
+def _execute_identity_migration(conn, username_to_sub_map: dict):
+    """Eksekusi pemetaan identitas lama (username) ke Dashboard OIDC `sub`."""
+    # 1. Kumpulkan semua username unik yang memiliki data di schema ai_assistant.
+    tables_and_columns = [
+        ("users", "username"),
+        ("chat_sessions", "username"),
+        ("chat_uploads", "owner"),
+        ("generated_artifacts", "owner"),
+        ("user_resource_access", "username"),
+        ("user_roles", "username"),
+        ("user_sap_credentials", "username"),
+        ("scheduled_tasks", "user_id"),
+        ("token_usage", "username"),
+        ("request_log", "username"),
+    ]
+
+    found_users = set()
+    for table, col in tables_and_columns:
+        try:
+            rows = conn.execute(text(f"SELECT DISTINCT {col} FROM ai_assistant.{table} WHERE {col} IS NOT NULL")).fetchall()
+            for r in rows:
+                val = (r[0] or "").strip()
+                if val and val.lower() != "guest":
+                    found_users.add(val)
+        except Exception:
+            pass
+
+    # 2. Periksa apakah ada user aktif dengan data yang belum dipetakan.
+    norm_map = {k.strip().lower(): v for k, v in username_to_sub_map.items()}
+    unmapped = [u for u in found_users if u.strip().lower() not in norm_map and u.strip() not in username_to_sub_map]
+    if unmapped:
+        raise RuntimeError(f"unmapped user: {sorted(unmapped)}")
+
+    # 3. Perlebar kolom agar muat sub Dashboard OIDC (misal UUID panjang / teks hingga 255 karakter).
+    widen_targets = [
+        ("users", "username"),
+        ("chat_sessions", "username"),
+        ("chat_uploads", "owner"),
+        ("generated_artifacts", "owner"),
+        ("user_resource_access", "username"),
+        ("user_roles", "username"),
+        ("user_sap_credentials", "username"),
+        ("scheduled_tasks", "user_id"),
+        ("token_usage", "username"),
+        ("request_log", "username"),
+    ]
+    for table, col in widen_targets:
+        try:
+            conn.execute(text(f"ALTER TABLE ai_assistant.{table} ALTER COLUMN {col} TYPE VARCHAR(255)"))
+        except Exception:
+            pass
+
+    # 4. Tulis ulang baris kepemilikan dari legacy username ke Dashboard `sub`.
+    for old_u, new_sub in username_to_sub_map.items():
+        old_u_clean = old_u.strip()
+        new_sub_clean = str(new_sub).strip()
+
+        # Update ai_assistant.users terlebih dahulu (user_roles memiliki ON UPDATE CASCADE)
+        try:
+            conn.execute(
+                text("UPDATE ai_assistant.users SET username = :new WHERE LOWER(username) = LOWER(:old)"),
+                {"new": new_sub_clean, "old": old_u_clean},
+            )
+        except Exception:
+            pass
+
+        # Update tabel-tabel domain
+        update_queries = [
+            ("chat_sessions", "username"),
+            ("chat_uploads", "owner"),
+            ("generated_artifacts", "owner"),
+            ("user_resource_access", "username"),
+            ("user_roles", "username"),
+            ("user_sap_credentials", "username"),
+            ("scheduled_tasks", "user_id"),
+            ("token_usage", "username"),
+            ("request_log", "username"),
+        ]
+        for table, col in update_queries:
+            try:
+                conn.execute(
+                    text(f"UPDATE ai_assistant.{table} SET {col} = :new WHERE LOWER({col}) = LOWER(:old)"),
+                    {"new": new_sub_clean, "old": old_u_clean},
+                )
+            except Exception:
+                pass
+
+    # 5. Hapus kolom-kolom password lokal yang tidak lagi dipakai.
+    for col in ("password", "password_hash", "force_change_password"):
+        try:
+            conn.execute(text(f"ALTER TABLE ai_assistant.users DROP COLUMN IF EXISTS {col}"))
+        except Exception:
+            pass
+
+    # 6. Hapus tabel login_attempts lokal bila ada.
+    try:
+        conn.execute(text("DROP TABLE IF EXISTS ai_assistant.login_attempts"))
+    except Exception:
+        pass
+
+
+def run_identity_migration(conn_or_db, username_to_sub_map: dict):
+    """Jalankan migrasi identitas subjek (legacy username -> Dashboard OIDC sub).
+
+    Dapat menerima modul database, SQLAlchemy Engine, atau Connection aktif.
+    """
+    if hasattr(conn_or_db, "get_engine"):
+        engine = conn_or_db.get_engine()
+        with engine.begin() as conn:
+            _execute_identity_migration(conn, username_to_sub_map)
+    elif hasattr(conn_or_db, "begin"):
+        with conn_or_db.begin() as conn:
+            _execute_identity_migration(conn, username_to_sub_map)
+    else:
+        _execute_identity_migration(conn_or_db, username_to_sub_map)
+        if hasattr(conn_or_db, "commit"):
+            conn_or_db.commit()
+

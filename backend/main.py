@@ -15,21 +15,20 @@ from agent import process_chat
 from artifacts import get_artifact
 from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
-    create_access_token,
+    create_session_cookie,
+    decode_session_cookie,
+    generate_code_verifier,
+    generate_code_challenge,
+    get_current_principal,
     get_current_user,
     get_current_user_optional,
 )
 from auth import require_superadmin as require_superadmin_token
-from config import settings, _EPHEMERAL_JWT_SECRET
+from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
     attach_uploads_to_session,
-    check_login_block,
-    clear_login_failures,
-    authenticate_user,
-    change_user_password,
-    consume_guest_quota,
     create_chat_session,
     create_new_user,
     clone_role,
@@ -60,20 +59,16 @@ from database import (
     get_system_config,
     get_user_by_username,
     init_db,
-    list_all_users,
     load_upload_file,
     load_uploads,
     purge_expired_artifacts,
     purge_expired_uploads,
-    register_login_failure,
     rename_chat_session,
-    search_chat_history,
     session_belongs_to,
     truncate_chat_messages_from,
     update_message_feedback,
     update_role,
     update_system_config,
-    reset_user_password_by_admin,
     update_user_by_admin,
     update_user_full_name,
     update_user_persona,
@@ -128,12 +123,12 @@ async def _artifact_cleanup_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inisialisasi database schema & user bootstrap saat server dinyalakan."""
-    if _EPHEMERAL_JWT_SECRET:
+    """Inisialisasi database schema saat server dinyalakan."""
+    if _EPHEMERAL_SESSION_SECRET:
         logger.warning(
-            "JWT_SECRET tidak diset — memakai secret acak sementara. Semua sesi login "
+            "SESSION_SECRET tidak diset — memakai secret acak sementara. Semua sesi login "
             "akan gugur setiap restart dan tidak konsisten antar worker. "
-            "Set JWT_SECRET di .env untuk produksi."
+            "Set SESSION_SECRET di .env untuk produksi."
         )
     # Kegagalan database selalu fatal: tanpa PostgreSQL aplikasi tidak punya
     # tempat menyimpan user, percakapan, maupun berkas hasil generate.
@@ -176,15 +171,8 @@ app.add_middleware(
 
 
 def require_superadmin(user: dict = Depends(require_superadmin_token)) -> dict:
-    """Verifikasi ulang role terhadap database.
-
-    Token menyimpan role saat login; pemeriksaan ulang ini memastikan
-    pencabutan hak akses langsung berlaku tanpa menunggu token kedaluwarsa.
-    """
-    fresh = get_user_by_username(user["username"])
-    if not fresh or fresh.get("role") != "superadmin":
-        raise HTTPException(status_code=403, detail="Akses ditolak. Fitur ini hanya untuk Super Admin.")
-    return fresh
+    """Superadmin diotorisasi oleh Dashboard OIDC BFF."""
+    return user
 
 
 def _mask_secret(value: str) -> str:
@@ -225,80 +213,192 @@ async def healthz():
     return {"status": "ok", "database": info["engine"]}
 
 
-# --- AUTENTIKASI ---
+# --- AUTENTIKASI OIDC BFF ---
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+import httpx
+import json as _json
+import jwt
 
 
-@app.post("/api/login")
-async def login(req: LoginRequest, request: Request):
-    """Endpoint autentikasi user. Mengembalikan access token JWT.
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
-    Percobaan gagal dibatasi per (IP, username) agar tebak-password tidak dapat
-    dijalankan tanpa batas; bcrypt memperlambat, tetapi tidak menghentikannya.
-    """
-    attempt_key = f"{_client_ip(request)}|{(req.username or '').strip().lower()}"[:120]
 
-    blocked_for = check_login_block(attempt_key)
-    if blocked_for > 0:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Terlalu banyak percobaan login yang gagal. Coba lagi dalam {blocked_for // 60 + 1} menit.",
-        )
+@app.get("/api/auth/login")
+async def oidc_login(request: Request):
+    """Redirect ke Dashboard OIDC /authorize dengan PKCE (S256)."""
+    verifier = generate_code_verifier()
+    challenge = generate_code_challenge(verifier)
+    import secrets as _secrets
+    state = _secrets.token_urlsafe(24)
+    nonce = _secrets.token_urlsafe(16)
 
-    user = authenticate_user(req.username, req.password)
-    if not user:
-        register_login_failure(
-            attempt_key, settings.login_max_failures, settings.login_lock_seconds
-        )
-        raise HTTPException(status_code=401, detail="Username atau password salah")
+    # Simpan verifier & state dalam cookie ephemeral yang ditandatangani.
+    flow_payload = {
+        "verifier": verifier,
+        "state": state,
+        "nonce": nonce,
+    }
+    flow_cookie = create_session_cookie(flow_payload)
 
-    clear_login_failures(attempt_key)
-    user_roles = user.get("roles") or [user["role"]]
-    token = create_access_token(user["username"], user["role"], roles=user_roles)
-    return {
-        "status": "success",
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in": settings.jwt_expire_minutes * 60,
-        "username": user["username"],
-        "full_name": user.get("full_name", ""),
-        "role": user["role"],
-        "roles": user_roles,
-        "assistant_persona": user["assistant_persona"],
-        "force_change_password": user.get("force_change_password", False),
-        "division_code": user.get("division_code"),
-        "division_name": user.get("division_name"),
-        "job_level": user.get("job_level", "staff"),
+    authorize_url = (
+        f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/authorize"
+        f"?response_type=code"
+        f"&client_id={settings.dashboard_oidc_client_id}"
+        f"&redirect_uri={settings.dashboard_oidc_redirect_uri}"
+        f"&scope=openid%20profile%20email%20mcp:connect"
+        f"&state={state}"
+        f"&nonce={nonce}"
+        f"&code_challenge={challenge}"
+        f"&code_challenge_method=S256"
+    )
+
+    resp = RedirectResponse(url=authorize_url, status_code=307)
+    resp.set_cookie(
+        key="sap_oidc_flow",
+        value=flow_cookie,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        max_age=300,  # 5 menit untuk menyelesaikan callback
+    )
+    return resp
+
+
+@app.get("/api/auth/callback")
+async def oidc_callback(request: Request):
+    """Terima authorization code, tukar dengan Dashboard OIDC, set session cookie."""
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    error = request.query_params.get("error")
+
+    if error:
+        raise HTTPException(status_code=400, detail=f"Login dibatalkan: {error}")
+
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Parameter code dan state wajib ada.")
+
+    # Verifikasi state terhadap cookie ephemeral.
+    flow_cookie = request.cookies.get("sap_oidc_flow")
+    if not flow_cookie:
+        raise HTTPException(status_code=400, detail="Sesi OIDC telah kedaluwarsa. Silakan login ulang.")
+    flow_data = decode_session_cookie(flow_cookie)
+    if not flow_data or flow_data.get("state") != state:
+        raise HTTPException(status_code=400, detail="State OIDC tidak cocok. Silakan login ulang.")
+
+    verifier = flow_data.get("verifier", "")
+
+    # Tukar code dengan token via Dashboard OIDC token endpoint.
+    token_url = f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/token"
+    token_data = {
+        "grant_type": "authorization_code",
+        "client_id": settings.dashboard_oidc_client_id,
+        "code": code,
+        "redirect_uri": settings.dashboard_oidc_redirect_uri,
+        "code_verifier": verifier,
+    }
+    if settings.dashboard_oidc_client_secret:
+        token_data["client_secret"] = settings.dashboard_oidc_client_secret
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as http:
+            resp = await http.post(token_url, data=token_data)
+        if resp.status_code != 200:
+            logger.error(f"Dashboard OIDC token error: {resp.status_code} {resp.text[:300]}")
+            raise HTTPException(status_code=502, detail="Gagal menukar kode otorisasi dengan Dashboard.")
+        token_json = resp.json()
+    except httpx.RequestError as e:
+        logger.error(f"Dashboard OIDC tidak dapat dihubungi: {e}")
+        raise HTTPException(status_code=502, detail="Dashboard OIDC tidak dapat dihubungi.")
+
+    # Ekstrak klaim dari access_token dan id_token (JWT tidak ditandatangani ulang;
+    # Dashboard adalah otoritas, kita hanya membaca klaim untuk identitas sesi).
+    access_token = token_json.get("access_token", "")
+    id_token = token_json.get("id_token", "")
+
+    claims = {}
+    for raw_jwt in (access_token, id_token):
+        if not raw_jwt:
+            continue
+        try:
+            claims.update(jwt.decode(raw_jwt, options={"verify_signature": False}))
+        except Exception:
+            pass
+
+    sub = claims.get("sub") or flow_data.get("nonce") or ""
+    username = claims.get("username") or claims.get("preferred_username") or claims.get("name") or sub
+    roles = claims.get("roles") or [claims.get("role", "user")] if claims.get("role") else claims.get("roles", ["user"])
+    if isinstance(roles, str):
+        roles = [roles]
+    if not roles:
+        roles = ["user"]
+    org_units = claims.get("org_units", [])
+    if isinstance(org_units, str):
+        org_units = [org_units]
+
+    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else (roles[0] if roles else "user")
+
+    principal = {
+        "sub": str(sub),
+        "username": str(username),
+        "role": primary_role,
+        "roles": roles,
+        "org_units": org_units,
+        "is_guest": False,
     }
 
+    session_cookie = create_session_cookie(principal)
+    redirect_url = "/"
+    resp = RedirectResponse(url=redirect_url, status_code=302)
+    resp.set_cookie(
+        key=settings.session_cookie_name,
+        value=session_cookie,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        max_age=settings.session_expire_hours * 3600,
+    )
+    resp.delete_cookie("sap_oidc_flow")
+    return resp
 
+
+@app.post("/api/auth/logout")
+async def oidc_logout():
+    """Hapus cookie sesi BFF."""
+    resp = Response(
+        content=_json.dumps({"status": "success", "message": "Berhasil logout"}),
+        media_type="application/json",
+    )
+    resp.delete_cookie(settings.session_cookie_name, path="/")
+    return resp
+
+
+@app.get("/api/auth/session")
 @app.get("/api/me")
-async def me(user: dict = Depends(get_current_user)):
-    """Kembalikan profil user dari token — dipakai frontend untuk validasi sesi."""
-    fresh = get_user_by_username(user["username"])
-    if not fresh:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-    return fresh
-
-
-class ChangePasswordRequest(BaseModel):
-    old_password: Optional[str] = None
-    new_password: str
-
-
-@app.post("/api/change-password")
-async def change_password_endpoint(
-    req: ChangePasswordRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Endpoint untuk mengubah password user yang sedang login."""
-    res = change_user_password(user["username"], req.old_password, req.new_password)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
+async def auth_session(user: dict = Depends(get_current_user)):
+    """Kembalikan profil user dari sesi BFF (tanpa bearer/refresh token)."""
+    profile = {
+        "sub": user["sub"],
+        "username": user["username"],
+        "role": user.get("role", "user"),
+        "roles": user.get("roles", ["user"]),
+        "org_units": user.get("org_units", []),
+        "is_guest": user.get("is_guest", False),
+    }
+    # Sertakan preferensi lokal bila ada.
+    local = get_user_by_username(user["username"])
+    if not local:
+        local = get_user_by_username(user["sub"])
+    if local:
+        profile["full_name"] = local.get("full_name", "")
+        profile["assistant_persona"] = local.get("assistant_persona", "")
+        profile["division_code"] = local.get("division_code")
+        profile["division_name"] = local.get("division_name")
+        profile["job_level"] = local.get("job_level", "staff")
+    return profile
 
 # --- PER-USER SAP CREDENTIALS ---
 
@@ -1119,7 +1219,7 @@ async def get_admin_users_endpoint(admin: dict = Depends(require_superadmin)):
 
 class AdminCreateUserRequest(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     full_name: str = ""
     role: str = "user"
     roles: Optional[List[str]] = None
@@ -1133,11 +1233,9 @@ async def create_user_endpoint(
     req: AdminCreateUserRequest,
     admin: dict = Depends(require_superadmin),
 ):
-    """Membuat user baru (oleh Super Admin)."""
-    if not req.username or not req.password:
-        raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
-    if len(req.password) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
+    """Membuat profil user baru (oleh Super Admin)."""
+    if not req.username:
+        raise HTTPException(status_code=400, detail="Username wajib diisi.")
 
     clean_roles = req.roles if req.roles else ([req.role] if req.role else ["user"])
     available_roles = get_available_roles(enabled_only=True)
@@ -1161,36 +1259,6 @@ async def create_user_endpoint(
     return res
 
 
-class AdminResetPasswordRequest(BaseModel):
-    password: Optional[str] = None
-    new_password: Optional[str] = None
-    force_change_password: bool = True
-
-    @property
-    def effective_password(self) -> str:
-        return self.password or self.new_password or ""
-
-
-@app.post("/api/admin/users/{username}/reset-password")
-async def admin_reset_password_endpoint(
-    username: str,
-    req: AdminResetPasswordRequest,
-    admin: dict = Depends(require_superadmin),
-):
-    """Reset password user oleh Super Admin dan tandai force_change_password."""
-    target_pwd = req.effective_password
-    if not target_pwd or len(target_pwd) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
-
-    res = reset_user_password_by_admin(
-        username=username,
-        new_password=target_pwd,
-        force_change=req.force_change_password,
-    )
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
-    return res
 
 
 class AdminUpdateUserRequest(BaseModel):
@@ -1232,8 +1300,6 @@ async def update_user_endpoint(
                 detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
             )
 
-    if req.password and len(req.password) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
 
     res = update_user_by_admin(
         username=username,
@@ -2449,13 +2515,26 @@ async def _run_chat(
     else:
         profile = get_user_by_username(user["username"])
         if not profile:
-            raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-        user_roles = profile.get("roles") or [profile["role"]]
-        user_role = profile["role"]
-        user_persona = profile["assistant_persona"]
+            profile = get_user_by_username(user.get("sub", ""))
+        if not profile:
+            # Identitas dikelola oleh Dashboard OIDC; bila belum ada profil lokal,
+            # gunakan atribut dari principal sesi.
+            user_role = user.get("role", "user")
+            user_roles = user.get("roles") or [user_role]
+            profile = {
+                "username": user["username"],
+                "role": user_role,
+                "roles": user_roles,
+                "assistant_persona": "",
+                "division_code": None,
+                "job_level": "staff",
+            }
+        else:
+            user_roles = profile.get("roles") or [profile["role"]]
+            user_role = profile["role"]
+        user_persona = profile.get("assistant_persona", "")
         user_division = profile.get("division_code")
         user_job_level = profile.get("job_level", "staff")
-
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
         _tegakkan_kuota(profile["username"], user_roles)

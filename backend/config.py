@@ -23,14 +23,21 @@ class Settings(BaseSettings):
     # ==============================================================================
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
 
-    # --- Autentikasi & Keamanan JWT ---
-    jwt_secret: str = "sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod"
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 43200  # 30 hari
+    # --- Dashboard OIDC BFF ---
+    # Autentikasi dilakukan via Dashboard OIDC; SAP bertindak sebagai BFF
+    # dengan HTTP-only signed session cookie.
+    dashboard_oidc_issuer: str = "http://127.0.0.1:3000"
+    dashboard_oidc_client_id: str = "sap-ai-assistant"
+    dashboard_oidc_client_secret: str | None = None
+    dashboard_oidc_redirect_uri: str = "http://localhost:5173/api/auth/callback"
+    dashboard_mcp_gateway_url: str = "http://127.0.0.1:3000/api/mcp"
 
-    # --- Bootstrap Super Admin ---
-    # Password akun superadmin bootstrap ('TRSTDEV'), hanya dipakai saat tabel users masih kosong.
-    bootstrap_admin_password: str = "ChangeMe!2024"
+    # --- Session Cookie ---
+    session_cookie_name: str = "sap_session"
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"
+    session_secret: str = "sap-ai-assistant-enterprise-session-secret-abap-2026"
+    session_expire_hours: int = 24
 
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"
@@ -42,8 +49,6 @@ class Settings(BaseSettings):
     quota_timezone: str = "Asia/Jakarta"
     # Penegakan batas dapat dimatikan admin; pencatatan pemakaian tetap jalan.
     token_limit_enabled: bool = False
-    login_max_failures: int = 8
-    login_lock_seconds: int = 900  # 15 menit
     artifact_max_per_user: int = 20
 
     # --- Penganggaran Riwayat Percakapan (History Context Limits) ---
@@ -92,18 +97,22 @@ class Settings(BaseSettings):
 
 def _load_settings() -> Settings:
     s = Settings()
-    # Prioritaskan JWT_SECRET dari .env file jika ada di file
     if ENV_PATH.exists():
         dot_env_vals = dotenv_values(ENV_PATH)
-        if dot_env_vals.get("JWT_SECRET"):
-            s.jwt_secret = dot_env_vals["JWT_SECRET"]
+        if dot_env_vals.get("SESSION_SECRET"):
+            s.session_secret = dot_env_vals["SESSION_SECRET"]
     return s
+
 
 settings = _load_settings()
 
-# Secret ephemeral hanya sebagai jaring pengaman pengembangan; produksi harus set JWT_SECRET.
-if not settings.jwt_secret:
-    settings.jwt_secret = secrets.token_urlsafe(48)
-    _EPHEMERAL_JWT_SECRET = True
-else:
-    _EPHEMERAL_JWT_SECRET = False
+# Produksi: startup gagal bila seting Dashboard wajib tidak ada.
+_EPHEMERAL_SESSION_SECRET = False
+if not settings.session_secret or settings.session_secret == settings.model_fields["session_secret"].default:
+    if os.environ.get("ENV", "").lower() in ("prod", "production"):
+        raise RuntimeError(
+            "SESSION_SECRET wajib di-set di .env untuk produksi. "
+            "Jangan pakai default — sesi dapat dipalsukan."
+        )
+    # Dev: pakai default dengan peringatan.
+    _EPHEMERAL_SESSION_SECRET = True

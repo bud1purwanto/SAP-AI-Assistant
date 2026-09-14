@@ -19,12 +19,17 @@ TEST_DB_URL = os.environ.get(
 )
 
 os.environ.setdefault("DATABASE_URL", TEST_DB_URL)
-os.environ.setdefault("JWT_SECRET", "test-secret-test-secret-test-secret-123")
-os.environ.setdefault("BOOTSTRAP_ADMIN_PASSWORD", "AdminPass123")
-os.environ.setdefault("GUEST_DAILY_LIMIT", "2")
+os.environ.setdefault("SESSION_SECRET", "test-session-secret-test-session-secret-1234567890")
+os.environ.setdefault("DASHBOARD_OIDC_ISSUER", "http://127.0.0.1:3000")
+os.environ.setdefault("DASHBOARD_OIDC_CLIENT_ID", "sap-ai-assistant")
+os.environ.setdefault("DASHBOARD_OIDC_REDIRECT_URI", "http://localhost:5173/api/auth/callback")
+os.environ.setdefault("DASHBOARD_MCP_GATEWAY_URL", "http://127.0.0.1:3000/api/mcp")
+os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
 
 ADMIN_USER = "TRSTDEV"
-ADMIN_PASSWORD = "AdminPass123"
+ADMIN_SUB = "trstdev-dashboard-sub"
+os.environ.setdefault("GUEST_DAILY_LIMIT", "2")
+
 
 
 # Pengujian menjalankan DROP SCHEMA.
@@ -114,27 +119,36 @@ def client(db):
 
 
 @pytest.fixture(scope="module")
-def admin_auth(client):
-    res = client.post("/api/login", json={"username": ADMIN_USER, "password": ADMIN_PASSWORD})
-    assert res.status_code == 200, res.text
-    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+def admin_auth():
+    """Cookie sesi admin superadmin (signed)."""
+    from auth import create_session_cookie
+
+    cookie = create_session_cookie({
+        "sub": ADMIN_SUB,
+        "username": ADMIN_USER,
+        "role": "superadmin",
+        "roles": ["superadmin"],
+        "org_units": [],
+        "is_guest": False,
+    })
+    return {"Cookie": f"sap_session={cookie}"}
 
 
 @pytest.fixture
-def make_user(client, admin_auth):
-    """Buat user baru dan kembalikan header Authorization-nya."""
-    created = []
+def make_user():
+    """Buat cookie sesi user (signed). Identitas dikelola Dashboard OIDC."""
 
     def _make(username, password="Passw0rd123", **kwargs):
-        payload = {"username": username, "password": password, "role": "user", **kwargs}
-        res = client.post("/api/admin/users", json=payload, headers=admin_auth)
-        assert res.status_code == 200, res.text
-        created.append(username)
-        login = client.post("/api/login", json={"username": username, "password": password})
-        assert login.status_code == 200, login.text
-        return {"Authorization": f"Bearer {login.json()['access_token']}"}
+        from auth import create_session_cookie
+
+        cookie = create_session_cookie({
+            "sub": username,
+            "username": username,
+            "role": "user",
+            "roles": ["user"],
+            "org_units": [],
+            "is_guest": False,
+        })
+        return {"Cookie": f"sap_session={cookie}"}
 
     yield _make
-
-    for username in created:
-        client.delete(f"/api/admin/users/{username}", headers=admin_auth)

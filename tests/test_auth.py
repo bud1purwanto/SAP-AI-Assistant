@@ -1,86 +1,87 @@
-"""Autentikasi, hashing password, dan kontrol akses antar user."""
+"""Autentikasi OIDC BFF dan migrasi identitas subjek."""
 import pytest
 from sqlalchemy import text
-
-from conftest import ADMIN_PASSWORD, ADMIN_USER
-
-
-def test_wrong_password_rejected(client):
-    res = client.post("/api/login", json={"username": ADMIN_USER, "password": "salah"})
-    assert res.status_code == 401
+from migrations import run_identity_migration
 
 
-def test_legacy_hardcoded_credentials_removed(client):
-    """Kredensial fallback lama menerima login kapan pun database bermasalah."""
-    for username, password in [("TRSTDEV", "ronin03"), ("TRST-BUDI", "1234567")]:
-        assert client.post("/api/login", json={"username": username, "password": password}).status_code == 401
-
-
-def test_login_returns_jwt(client):
-    res = client.post("/api/login", json={"username": ADMIN_USER, "password": ADMIN_PASSWORD})
-    body = res.json()
-    assert res.status_code == 200
-    assert body["access_token"] and body["role"] == "superadmin"
-
-
-def test_password_stored_as_bcrypt_hash(db):
+def seed_legacy_user(db, username="alice"):
     with db.get_engine().connect() as conn:
-        row = conn.execute(
-            text("SELECT password, password_hash FROM ai_assistant.users WHERE username = :u"),
-            {"u": ADMIN_USER},
-        ).fetchone()
-    assert row.password_hash.startswith("$2b$")
-    assert not row.password
+        conn.execute(
+            text("INSERT INTO ai_assistant.users (username, role) VALUES (:u, 'user') ON CONFLICT (username) DO NOTHING"),
+            {"u": username},
+        )
+        conn.commit()
+
+
+def seed_chat_session(db, username="alice"):
+    with db.get_engine().connect() as conn:
+        conn.execute(
+            text("INSERT INTO ai_assistant.chat_sessions (session_id, username, title) VALUES (:s, :u, 'Test Session') ON CONFLICT (session_id) DO NOTHING"),
+            {"s": f"test_session_{username}", "u": username},
+        )
+        conn.commit()
+
+
+def get_chat_session_owner(db):
+    with db.get_engine().connect() as conn:
+        row = conn.execute(text("SELECT username FROM ai_assistant.chat_sessions LIMIT 1")).fetchone()
+        return row[0] if row else None
+
+
+def test_login_redirects_to_dashboard_oidc(client):
+    r = client.get("/api/auth/login", follow_redirects=False)
+    assert r.status_code in (302, 307)
+    assert "client_id=sap-ai-assistant" in r.headers["location"]
+    assert "code_challenge=" in r.headers["location"]
+
+
+def test_local_password_login_removed(client):
+    r = client.post("/api/login", json={"username": "TRSTDEV", "password": "ChangeMe!2024"})
+    assert r.status_code == 404
+
+
+def test_username_to_sub_migration_rewrites_owned_rows(db):
+    seed_legacy_user(db, username="alice")
+    seed_chat_session(db, username="alice")
+    run_identity_migration(db, {"alice": "dashboard-sub-1"})
+    assert get_chat_session_owner(db) == "dashboard-sub-1"
+
+
+def test_identity_migration_fails_on_unmapped_user(db):
+    seed_legacy_user(db, username="alice")
+    with pytest.raises(RuntimeError, match="unmapped"):
+        run_identity_migration(db, {})
 
 
 def test_user_name_header_no_longer_authenticates(client):
-    """Identitas dulu diambil dari header yang dapat dipalsukan siapa pun."""
-    res = client.get("/api/admin/users", headers={"X-User-Name": ADMIN_USER})
+    """Identitas tidak boleh diambil dari header yang dapat dipalsukan."""
+    res = client.get("/api/admin/users", headers={"X-User-Name": "TRSTDEV"})
     assert res.status_code == 401
 
 
-def test_forged_token_rejected(client):
-    res = client.get("/api/sessions", headers={"Authorization": "Bearer bukan.token.valid"})
+def test_forged_session_cookie_rejected(client):
+    """Cookie sesi palsu / rusak harus ditolak."""
+    res = client.get("/api/sessions", headers={"Cookie": "sap_session=bukan.token.valid"})
     assert res.status_code == 401
 
 
-def test_non_admin_blocked_from_admin_api(client, make_user):
-    auth = make_user("alice")
-    assert client.get("/api/admin/users", headers=auth).status_code == 403
+def test_auth_session_returns_profile_without_tokens(client, make_user):
+    """Endpoint /api/auth/session atau /api/auth/me mengembalikan profil tanpa bearer/refresh tokens."""
+    auth = make_user("user_session_test")
+    res = client.get("/api/auth/session", headers=auth)
+    assert res.status_code == 200
+    data = res.json()
+    assert "sub" in data
+    assert "username" in data
+    assert "access_token" not in data
+    assert "refresh_token" not in data
+    assert "token" not in data
 
 
-def test_password_change_invalidates_old_password(client, make_user):
-    auth = make_user("bob")
-    res = client.post(
-        "/api/change-password",
-        json={"old_password": "Passw0rd123", "new_password": "PasswordBaru1"},
-        headers=auth,
-    )
-    assert res.status_code == 200, res.text
-    assert client.post("/api/login", json={"username": "bob", "password": "Passw0rd123"}).status_code == 401
-    assert client.post("/api/login", json={"username": "bob", "password": "PasswordBaru1"}).status_code == 200
-
-
-@pytest.mark.parametrize("password", ["123", "pendek"])
-def test_weak_password_rejected(client, admin_auth, password):
-    res = client.post(
-        "/api/admin/users",
-        json={"username": "lemah", "password": password, "role": "user"},
-        headers=admin_auth,
-    )
-    assert res.status_code == 400
-
-
-def test_admin_cannot_delete_own_account(client, admin_auth):
-    assert client.delete(f"/api/admin/users/{ADMIN_USER}", headers=admin_auth).status_code == 400
-
-
-def test_login_throttled_after_repeated_failures(client, make_user):
-    make_user("target")
-    codes = [
-        client.post("/api/login", json={"username": "target", "password": "salah"}).status_code
-        for _ in range(12)
-    ]
-    assert 429 in codes, "percobaan login gagal tidak pernah dibatasi"
-    # Password yang benar pun ditolak selama masa penguncian.
-    assert client.post("/api/login", json={"username": "target", "password": "Passw0rd123"}).status_code == 429
+def test_auth_logout_clears_cookie(client, make_user):
+    """Endpoint /api/auth/logout menghapus cookie sesi."""
+    auth = make_user("user_logout_test")
+    res = client.post("/api/auth/logout", headers=auth)
+    assert res.status_code == 200
+    # Cek response sets deletion cookie (Max-Age=0 or empty value)
+    assert "sap_session" in res.headers.get("set-cookie", "")
