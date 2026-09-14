@@ -112,7 +112,6 @@ const ChatLayout = () => {
   // Aliran teks jawaban halus dengan efek ketikan adaptif (typewriter stream)
   const {
     streamMap: sessionStreamMap,
-    appendToken,
     flushAndFinish,
     abortStream,
     resetStream,
@@ -1050,9 +1049,11 @@ const ChatLayout = () => {
             lastStreamActivityRef.current[targetKey] = Date.now();
             setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
           },
-          onToken: (chunk) => {
+          onToken: () => {
+            // Persentase 1–100 adalah fase tunggal yang harus selesai dulu.
+            // Token final sudah dibawa lagi oleh event result, jadi cukup
+            // catat aktivitas tanpa menampilkannya sebelum indikator lengkap.
             lastStreamActivityRef.current[targetKey] = Date.now();
-            appendToken(targetKey, chunk);
           },
         },
       );
@@ -1075,8 +1076,10 @@ const ChatLayout = () => {
         ...prev,
         [targetKey]: { ...prev[targetKey], stage: 'done', label: isEn ? 'Completed' : 'Selesai' },
       }));
-      await Promise.all([flushAndFinish(targetKey, data.reply), progressFinished]);
+      await progressFinished;
       if (controller.signal.aborted) return;
+      // Baru setelah 100% terlihat, tampilkan jawaban final secara utuh.
+      await flushAndFinish(targetKey, data.reply);
 
       const assistantMsg = {
         id: data.message_id,

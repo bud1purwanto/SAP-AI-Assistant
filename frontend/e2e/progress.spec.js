@@ -38,11 +38,13 @@ test('hasil cepat tetap mencapai 100 tanpa indikator hilang saat token datang', 
   await page.getByPlaceholder('Tanyakan sesuatu tentang SAP…').fill('uji progres');
   await page.getByPlaceholder('Tanyakan sesuatu tentang SAP…').press('Enter');
   await expect(page.getByRole('progressbar')).toBeVisible();
+  // Jawaban final tidak boleh mendahului animasi 1–100.
+  await page.waitForTimeout(700);
+  await expect(page.getByRole('progressbar')).toBeVisible();
+  await expect(page.getByText('Jawaban final pengujian.', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Buat ulang jawaban' })).toBeVisible();
   const values = await page.evaluate(() => window.progressValues);
-  expect(values[0]).toBe(1);
-  expect(values.at(-1)).toBe(100);
-  expect(values.every((n, i) => i === 0 || n >= values[i - 1])).toBe(true);
+  expect(values).toEqual(Array.from({ length: 100 }, (_, index) => index + 1));
   await expect(page.getByRole('progressbar')).toHaveCount(0);
   await expect(page.getByText('Jawaban final pengujian.', { exact: true })).toHaveCount(1);
 });
