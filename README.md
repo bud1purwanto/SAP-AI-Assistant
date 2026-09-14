@@ -1,11 +1,11 @@
 # Enterprise SAP AI Assistant
 
-Aplikasi ini adalah asisten chat berbasis AI yang ditujukan untuk berinteraksi dengan sistem SAP ECC 6.0 menggunakan arsitektur MCP (Model Context Protocol) lokal dan RAG (Retrieval-Augmented Generation) lokal.
+Aplikasi ini adalah asisten chat berbasis AI yang ditujukan untuk berinteraksi dengan sistem SAP ECC 6.0 menggunakan arsitektur Centralized Identity (OIDC SSO dengan PKCE) dan Unified MCP Gateway terpusat melalui Dashboard MCP.
 
 ## Arsitektur Proyek
 Proyek ini menggunakan struktur monorepo:
-- `/backend`: Backend server menggunakan **Python, FastAPI, dan LangChain**.
-- `/frontend`: Frontend UI menggunakan **React, Vite, dan Tailwind CSS**.
+- `/backend`: Backend server menggunakan **Python, FastAPI, dan LangChain**, terhubung ke Dashboard MCP Gateway dan OIDC Identity Provider.
+- `/frontend`: Frontend UI menggunakan **React, Vite, dan Tailwind CSS** dengan alur login SSO OIDC PKCE terpusat.
 
 ---
 
@@ -69,12 +69,11 @@ Proyek ini menggunakan struktur monorepo:
 ---
 
 ## Fitur Utama
-1. **Role-Based Access Control (RBAC):** Anda dapat mengganti role (Guest, IT Admin, Production Manager) di UI untuk menguji permission akses.
-2. **Agentic Traceability:** Setiap balasan AI yang menggunakan RAG atau data SAP MCP akan menampilkan tombol "View Source" untuk melihat data raw yang digunakan.
-3. **Dynamic Config:** Konfigurasi seperti OpenRouter API Key dan path ke MCP SAP lokal diatur sepenuhnya melalui environment variables tanpa hardcode.
+1. **Centralized Identity & OIDC SSO (PKCE):** Otentikasi terpusat ke Dashboard Identity Provider menggunakan RFC 7636 Authorization Code flow dengan S256 PKCE. Single Sign-On (SSO) tanpa login terpisah.
+2. **Unified MCP Gateway Routing:** Seluruh perkakas MCP (SAP, RAG, SQL, Email) diakses secara aman dan dinamis melalui endpoint gateway terpusat (`DASHBOARD_MCP_GATEWAY_URL`), tanpa IP direct ataupun token statis bawaan.
+3. **Agentic Traceability:** Setiap balasan AI yang menggunakan RAG atau data SAP MCP menampilkan tombol "View Source" untuk melihat data raw yang digunakan.
 4. **🌈 Diagram & Flowchart Auto-Render (Mermaid.js):** Visualisasi otomatis alur proses bisnis SAP (Procure-to-Pay, Order-to-Cash, Production Order) langsung di bubble chat.
 5. **🌐 Multilanguage & i18n Ready:** Mendukung Bahasa Indonesia (`id`) dan English (`en`) secara dinamis di seluruh antarmuka dan respons asisten.
-
 ---
 
 ## 🌐 Standar Pengembangan Multibahasa (Multilanguage Requirement)
