@@ -174,7 +174,7 @@ const ThinkingIndicator = ({ progress, onStop, onComplete }) => {
           aria-label={`Progress: ${label}`}
         >
           <div
-            className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full transition-all duration-300 ease-out"
+            className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full"
             style={{ width: `${displayPercent}%` }}
           />
         </div>

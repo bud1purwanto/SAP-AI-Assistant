@@ -42,6 +42,17 @@ test('hasil cepat tetap mencapai 100 tanpa indikator hilang saat token datang', 
   await page.waitForTimeout(700);
   await expect(page.getByRole('progressbar')).toBeVisible();
   await expect(page.getByText('Jawaban final pengujian.', { exact: true })).toHaveCount(0);
+  const barSync = await page.evaluate(() => {
+    const bar = document.querySelector('[role="progressbar"]');
+    const fill = bar?.firstElementChild;
+    return {
+      percent: Number(bar?.getAttribute('aria-valuenow')),
+      width: fill?.style.width,
+      transitionDuration: fill ? getComputedStyle(fill).transitionDuration : null,
+    };
+  });
+  expect(barSync.width).toBe(`${barSync.percent}%`);
+  expect(barSync.transitionDuration).toBe('0s');
   await expect(page.getByRole('button', { name: 'Buat ulang jawaban' })).toBeVisible();
   const values = await page.evaluate(() => window.progressValues);
   expect(values).toEqual(Array.from({ length: 100 }, (_, index) => index + 1));
