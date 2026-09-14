@@ -124,6 +124,7 @@ const ChatLayout = () => {
   const abortControllersRef = useRef({});
   const isStreamActiveRef = useRef({});
   const lastStreamActivityRef = useRef({});
+  const progressCompletionResolversRef = useRef({});
 
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
@@ -1056,8 +1057,26 @@ const ChatLayout = () => {
         },
       );
 
-      // Tuntaskan sisa pengetikan adaptif secara mulus sampai karakter terakhir
-      await flushAndFinish(targetKey, data.reply);
+      // Result (not an intermediate agent stage) is the completion boundary.
+      // Keep the indicator mounted until it has visibly reached 100%.
+      const progressFinished = new Promise((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          controller.signal.removeEventListener('abort', finish);
+          delete progressCompletionResolversRef.current[targetKey];
+          resolve();
+        };
+        // A background session has no mounted indicator; never block its result.
+        const timer = setTimeout(finish, 2000);
+        progressCompletionResolversRef.current[targetKey] = finish;
+        controller.signal.addEventListener('abort', finish, { once: true });
+      });
+      setSessionProgressMap((prev) => ({
+        ...prev,
+        [targetKey]: { ...prev[targetKey], stage: 'done', label: isEn ? 'Completed' : 'Selesai' },
+      }));
+      await Promise.all([flushAndFinish(targetKey, data.reply), progressFinished]);
+      if (controller.signal.aborted) return;
 
       const assistantMsg = {
         id: data.message_id,
@@ -2286,18 +2305,22 @@ const ChatLayout = () => {
               />
             ))}
 
-            {/* Jawaban yang sedang ditulis: tampilkan tekstualnya begitu ada,
-                indikator tahapan hanya selama belum ada teks sama sekali. */}
+            {/* Progres tetap terpasang sampai 100%. Jawaban yang telah lolos gate
+                boleh mengalir di bawahnya tanpa mengganti/memulai ulang indikator. */}
+            {isCurrentLoading && (
+              <ThinkingIndicator
+                progress={currentProgress}
+                onStop={() => stopGeneration(activeSessionKey)}
+                onComplete={() => progressCompletionResolversRef.current[activeSessionKey]?.()}
+              />
+            )}
+
             {isCurrentLoading && currentStream.trim() && (
               <ChatMessage
                 message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
                 isStreaming
                 tts={tts}
               />
-            )}
-
-            {isCurrentLoading && !currentStream.trim() && (
-              <ThinkingIndicator progress={currentProgress} onStop={() => stopGeneration(activeSessionKey)} />
             )}
 
             {currentMessages.length === 0 && !isCurrentLoading && (

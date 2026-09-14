@@ -118,10 +118,50 @@ const resolveContext = (progress, t) => {
   };
 };
 
-const ThinkingIndicator = ({ progress, onStop, onComplete }) => {
+/**
+ * Hitung target persentase secara dinamis berdasarkan tahap (stage),
+ * langkah aktif (step), dan batas iterasi mode (max_steps).
+ */
+const computeTargetPercent = (progress) => {
+  if (!progress) return 10;
+  const stage = progress.stage;
+  if (stage === 'done') return 100;
+  if (stage === 'reconnecting') return 75;
+
+  // Baca max_steps secara dinamis dari setting mode yang aktif (fallback 15 jika tidak tersedia)
+  const maxSteps = Math.max(Number(progress.max_steps) || 15, 1);
+  const step = Math.max(Number(progress.step) || 0, 0);
+  const stepRatio = Math.min(step / maxSteps, 1);
+
+  switch (stage) {
+    case 'connecting':
+      return 15;
+    case 'reading':
+      return 25;
+    case 'thinking':
+      // Langkah awal (analisis pertanyaan sebelum panggil tool)
+      if (step <= 1) return 32;
+      // Langkah perumusan jawaban dari data: bergerak dinamis 62% - 88% sesuai stepRatio
+      return Math.min(Math.round(62 + stepRatio * 26), 88);
+    case 'tool':
+      // Eksekusi pengambilan data: bergerak dinamis 36% - 65% sesuai stepRatio
+      return Math.min(Math.round(36 + stepRatio * 28), 65);
+    case 'investigating':
+      return Math.min(Math.round(28 + stepRatio * 20), 50);
+    case 'reviewing':
+      return Math.min(Math.round(88 + stepRatio * 8), 96);
+    case 'building':
+      // Menyiapkan berkas dokumen hasil (Excel/CSV/dokumen)
+      return 92;
+    default:
+      return 20;
+  }
+};
+
+const ThinkingIndicator = ({ progress, onStop }) => {
   const { t } = useLanguage();
   const targetPercent = computeTargetPercent(progress);
-  const [displayPercent, setDisplayPercent] = useState(1);
+  const [displayPercent, setDisplayPercent] = useState(() => Math.min(targetPercent, 12));
   const { Icon, context, isSpinning } = resolveContext(progress, t);
   const label = progress?.label || t('thinking.processing');
 
@@ -136,20 +176,37 @@ const ThinkingIndicator = ({ progress, onStop, onComplete }) => {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      tickCountRef.current += 1;
-      setDisplayPercent((prev) => advanceProgress(
-        prev, targetRef.current, isDoneRef.current, tickCountRef.current,
-      ));
-    }, progress?.stage === 'done' ? 16 : 50);
-    return () => clearInterval(interval);
-  }, [progress?.stage]);
+      setDisplayPercent((prev) => {
+        const target = targetRef.current;
+        const isDone = isDoneRef.current;
 
-  useEffect(() => {
-    if (displayPercent !== 100 || progress?.stage !== 'done') return undefined;
-    // Leave the completed state visible before the parent removes this indicator.
-    const timer = setTimeout(() => onComplete?.(), 150);
-    return () => clearTimeout(timer);
-  }, [displayPercent, progress?.stage, onComplete]);
+        // Bila proses selesai (done), percepat kenaikan urut hingga 100%
+        if (isDone) {
+          if (prev >= 100) return 100;
+          const delta = Math.max(1, Math.ceil((100 - prev) / 3));
+          return Math.min(prev + delta, 100);
+        }
+
+        // Naikkan secara urut dan bertahap menuju target
+        if (prev < target) {
+          const diff = target - prev;
+          const stepDelta = diff > 20 ? 2 : 1;
+          return Math.min(prev + stepDelta, target);
+        }
+
+        // Saat menunggu respon I/O (misal query SAP/Email lambat), lakukan perayap halus (micro-creep)
+        // setiap ~600ms (+1%) agar loading tidak membeku, dibatasi aman sebelum tahap selesai.
+        tickCountRef.current += 1;
+        if (tickCountRef.current % 12 === 0 && prev < 92 && prev < target + 6) {
+          return prev + 1;
+        }
+
+        return prev;
+      });
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex items-start gap-3 my-3 animate-fadeIn" role="status" aria-live="polite">

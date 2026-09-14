@@ -848,15 +848,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # Model dipanggil dengan .astream() bila pemanggil menyediakan `on_token`,
     # sehingga jawaban muncul sambil ditulis alih-alih menunggu selesai.
     #
-    # Lookup/analisis menahan seluruh draft sampai diterima; request direct
-    # tetap mengalir bertahap. reset_stream dipertahankan untuk jalur direct
-    # yang ternyata memanggil tool, membocorkan penalaran, atau gagal.
+    # Satu putaran agen belum tentu menghasilkan jawaban akhir: model bisa
+    # memanggil tool, membocorkan penalaran, atau balasannya kosong. Bila itu
+    # terjadi, teks yang terlanjur mengalir dibatalkan lewat `reset_stream()`
+    # agar antarmuka tidak menampilkan jawaban yang kemudian dibuang.
     streaming = on_token is not None
-    # Lookup/analisis berbasis bukti belum boleh menerbitkan keluaran model
-    # sampai evidence gate dan quality gate menerima draft tersebut. Nilainya
-    # ditetapkan setelah intent diklasifikasikan dan tetap aktif selama request,
-    # termasuk saat intent sementara diubah ke direct untuk sintesis parsial.
-    defer_response_stream = False
 
     # --- PEMAKAIAN TOKEN ---
     #
@@ -911,6 +907,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         pemakaian["ada"] = True
 
     streamed_to_client = False
+    latest_call_streamed = False
 
     async def emit_token(text: str):
         nonlocal streamed_to_client
@@ -929,8 +926,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             except Exception as e:
                 logger.warning(f"Gagal mereset aliran token: {e}")
 
-    async def call_model(model, msgs):
+    async def call_model(model, msgs, publish_stream=True):
         """Panggil model; alirkan teksnya bila streaming diaktifkan.
+
+        ``publish_stream=False`` tetap memakai streaming provider untuk latency dan
+        metadata, tetapi menahan draft sampai agentic gate menyatakannya final.
 
         Menggabungkan chunk memakai operator `+` milik AIMessageChunk sehingga
         tool_calls tetap tersusun utuh seperti hasil ainvoke().
@@ -955,11 +955,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         try:
             async for chunk in model.astream(msgs):
                 merged = chunk if merged is None else merged + chunk
-
-                # Tetap gabungkan tool calls dan usage, tetapi jangan bocorkan
-                # draft analisis sebelum seluruh pemeriksaan selesai.
-                if defer_response_stream:
-                    continue
 
                 # Deteksi awal apakah model sedang memanggil tool
                 if getattr(chunk, "tool_call_chunks", None) or getattr(chunk, "tool_calls", None):
@@ -1749,7 +1744,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if _analysis_intent.kind == "deep_analysis":
         _max_review_cycles = max(1, min(_max_review_cycles, 3))
     _configured_rag_budget = (active_mode or {}).get("rag_call_budget")
-    defer_response_stream = _analysis_intent.kind in ("grounded_lookup", "deep_analysis")
 
     def _current_rag_budget() -> int:
         if _configured_rag_budget is not None:
@@ -2283,8 +2277,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     # Ubah blok spesifikasi berkas dari model menjadi berkas Excel/CSV sungguhan.
     reply_text, artifacts = extract_and_build(reply_text, owner=username)
-    if streaming and defer_response_stream and reply_text:
-        await emit_token(reply_text)
     await report("done", "Completed" if is_en else "Selesai", max_iterations)
 
     statistik = UsageStats(
