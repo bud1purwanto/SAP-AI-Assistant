@@ -327,8 +327,21 @@ async def oidc_callback(request: Request):
             claims.update(jwt.decode(raw_jwt, options={"verify_signature": False}))
         except Exception:
             pass
+    # Validasi nonce OIDC
+    expected_nonce = flow_data.get("nonce")
+    if expected_nonce:
+        token_nonce = claims.get("nonce")
+        if token_nonce and token_nonce != expected_nonce:
+            raise HTTPException(status_code=400, detail="Nonce OIDC tidak cocok.")
+        # Jika id_token ada tetapi nonce tidak cocok atau tidak disertakan ketika diharapkan
+        if id_token and not token_nonce:
+            raise HTTPException(status_code=400, detail="Nonce OIDC tidak ditemukan pada id_token.")
 
-    sub = claims.get("sub") or flow_data.get("nonce") or ""
+    sub = claims.get("sub")
+    if not sub or not str(sub).strip():
+        raise HTTPException(status_code=400, detail="Token OIDC tidak memuat klaim 'sub'.")
+    sub = str(sub).strip()
+
     username = claims.get("username") or claims.get("preferred_username") or claims.get("name") or sub
     roles = claims.get("roles") or [claims.get("role", "user")] if claims.get("role") else claims.get("roles", ["user"])
     if isinstance(roles, str):

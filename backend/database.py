@@ -3666,14 +3666,16 @@ def delete_role(code: str) -> bool:
         invalidate_role_codes_cache()
         return True
 
-def _get_fernet_key() -> bytes:
-    """Derive a deterministic 32-byte Fernet key from settings.jwt_secret."""
-    secret = (getattr(settings, "jwt_secret", "") or "default_secret_key_change_in_prod").encode("utf-8")
-    return base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+def _get_fernet_key(secret_str: Optional[str] = None) -> bytes:
+    """Derive a deterministic 32-byte Fernet key from session_secret (or fallback secret)."""
+    raw = secret_str or getattr(settings, "session_secret", None)
+    if not raw:
+        raise RuntimeError("SESSION_SECRET tidak dikonfigurasi. Enkripsi kredensial SAP tidak dapat dilakukan.")
+    return base64.urlsafe_b64encode(hashlib.sha256(raw.encode("utf-8")).digest())
 
 
 def encrypt_fernet(data: str) -> str:
-    """Encrypt a plaintext string using Fernet."""
+    """Encrypt a plaintext string using Fernet with session_secret."""
     if not data:
         return ""
     f = Fernet(_get_fernet_key())
@@ -3681,16 +3683,40 @@ def encrypt_fernet(data: str) -> str:
 
 
 def decrypt_fernet(encrypted_data: str) -> Optional[str]:
-    """Decrypt a ciphertext string using Fernet."""
+    """Decrypt a ciphertext string using Fernet.
+    
+    Tries session_secret first; if that fails (e.g. data encrypted prior to OIDC migration),
+    falls back to legacy JWT_SECRET if available before failing closed.
+    """
     if not encrypted_data:
         return None
+
+    # 1. Coba decrypt dengan session_secret utama
     try:
         f = Fernet(_get_fernet_key())
         return f.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
-    except Exception as ex:
-        logger.warning(f"Failed to decrypt data: {ex}")
-        return None
+    except Exception:
+        pass
 
+    # 2. Coba decrypt dengan legacy secrets (bila data lama dienkripsi dengan JWT_SECRET)
+    legacy_secrets = []
+    import os
+    if os.environ.get("JWT_SECRET"):
+        legacy_secrets.append(os.environ["JWT_SECRET"])
+    # Default legacy jwt_secret sebelum migrasi
+    legacy_secrets.append("sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod")
+
+    for leg in legacy_secrets:
+        try:
+            f_leg = Fernet(_get_fernet_key(leg))
+            decrypted = f_leg.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
+            logger.info("Berhasil mendekripsi kredensial SAP menggunakan legacy key.")
+            return decrypted
+        except Exception:
+            continue
+
+    logger.warning("Gagal mendekripsi data kredensial SAP dengan seluruh kunci yang tersedia.")
+    return None
 
 def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
     """Save encrypted SAP credentials for a specific user and SAP target.

@@ -106,7 +106,7 @@ def _load_settings() -> Settings:
 
 settings = _load_settings()
 
-# Produksi: startup gagal bila seting Dashboard wajib tidak ada.
+# Produksi: startup gagal bila seting Dashboard wajib tidak ada atau tidak aman.
 _EPHEMERAL_SESSION_SECRET = False
 if not settings.session_secret or settings.session_secret == settings.model_fields["session_secret"].default:
     if os.environ.get("ENV", "").lower() in ("prod", "production"):
@@ -116,3 +116,23 @@ if not settings.session_secret or settings.session_secret == settings.model_fiel
         )
     # Dev: pakai default dengan peringatan.
     _EPHEMERAL_SESSION_SECRET = True
+
+if os.environ.get("ENV", "").lower() in ("prod", "production"):
+    _localhost_hosts = ("localhost", "127.0.0.1", "0.0.0.0")
+    for _url_attr in ("dashboard_oidc_issuer", "dashboard_oidc_redirect_uri", "dashboard_mcp_gateway_url"):
+        _val = getattr(settings, _url_attr, "").strip()
+        if not _val:
+            raise RuntimeError(f"{_url_attr} wajib di-set untuk produksi.")
+        if any(_h in _val for _h in _localhost_hosts):
+            raise RuntimeError(
+                f"{_url_attr} tidak boleh mengarah ke localhost/127.0.0.1 di produksi "
+                f"(nilai: {_val})."
+            )
+    # client_secret wajib untuk confidential client; bila kosong (public client PKCE),
+    # pastikan redirect_uri menggunakan HTTPS.
+    if not settings.dashboard_oidc_client_secret:
+        if not settings.dashboard_oidc_redirect_uri.startswith("https://"):
+            raise RuntimeError(
+                "DASHBOARD_OIDC_CLIENT_SECRET kosong (public client). "
+                "Untuk produksi, redirect_uri harus menggunakan HTTPS."
+            )

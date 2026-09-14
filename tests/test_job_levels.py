@@ -7,7 +7,6 @@ from database import (
     create_new_user,
     get_user_by_username,
     update_user_by_admin,
-    authenticate_user,
     list_all_users,
 )
 
@@ -76,11 +75,10 @@ def test_user_job_level_crud(db):
     assert u["job_level"] == "leader"
     assert u["division_code"] == "IT"
 
-    # Authenticate user
-    auth = authenticate_user(uname, "Password123!")
+    # Verifikasi profil user (autentikasi password lokal telah dipindah ke Dashboard OIDC)
+    auth = get_user_by_username(uname)
     assert auth is not None
     assert auth["job_level"] == "leader"
-
     # List all users
     all_users = list_all_users()
     found = next((usr for usr in all_users if usr["username"] == uname), None)
@@ -109,15 +107,14 @@ def test_user_job_level_crud(db):
     assert u_def["job_level"] == "staff"
 
 
-def test_api_admin_users_and_login_job_level(client, admin_auth):
-    """Pengujian endpoint API /api/admin/users dan /api/login terhadap job_level."""
+def test_api_admin_users_and_login_job_level(client, admin_auth, make_user):
+    """Pengujian endpoint API /api/admin/users dan sesi BFF terhadap job_level."""
     uname = "api_jl_user"
-    # Create via admin API
+    # Create via admin API (password opsional — identitas dikelola Dashboard OIDC)
     resp = client.post(
         "/api/admin/users",
         json={
             "username": uname,
-            "password": "Password123!",
             "full_name": "API JL User",
             "role": "user",
             "division_code": "HR",
@@ -127,13 +124,13 @@ def test_api_admin_users_and_login_job_level(client, admin_auth):
     )
     assert resp.status_code == 200
 
-    # Login dengan user baru dan cek response login
-    login_resp = client.post(
-        "/api/login",
-        json={"username": uname, "password": "Password123!"},
-    )
-    assert login_resp.status_code == 200
-    data = login_resp.json()
+    # Sesi user via BFF cookie (login lokal telah dipindah ke Dashboard OIDC)
+    user_headers = make_user(uname)
+
+    # Verifikasi profil via /api/me
+    me_resp = client.get("/api/me", headers=user_headers)
+    assert me_resp.status_code == 200
+    data = me_resp.json()
     assert data["job_level"] == "leader"
     assert data["division_code"] == "HR"
 
@@ -147,11 +144,10 @@ def test_api_admin_users_and_login_job_level(client, admin_auth):
     )
     assert update_resp.status_code == 200
 
-    # Verify updated level via /api/me using token
-    user_token = data["access_token"]
-    me_resp = client.get("/api/me", headers={"Authorization": f"Bearer {user_token}"})
-    assert me_resp.status_code == 200
-    assert me_resp.json()["job_level"] == "manager"
+    # Verify updated level via /api/me
+    me_resp2 = client.get("/api/me", headers=user_headers)
+    assert me_resp2.status_code == 200
+    assert me_resp2.json()["job_level"] == "manager"
 
 
 def test_agent_job_level_persona_injection(monkeypatch):

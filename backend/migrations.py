@@ -1085,15 +1085,13 @@ def _execute_identity_migration(conn, username_to_sub_map: dict):
         new_sub_clean = str(new_sub).strip()
 
         # Update ai_assistant.users terlebih dahulu (user_roles memiliki ON UPDATE CASCADE)
-        try:
-            conn.execute(
-                text("UPDATE ai_assistant.users SET username = :new WHERE LOWER(username) = LOWER(:old)"),
-                {"new": new_sub_clean, "old": old_u_clean},
-            )
-        except Exception:
-            pass
+        conn.execute(
+            text("UPDATE ai_assistant.users SET username = :new WHERE LOWER(username) = LOWER(:old)"),
+            {"new": new_sub_clean, "old": old_u_clean},
+        )
 
-        # Update tabel-tabel domain
+        # Update tabel-tabel domain — biarkan exception propagasi agar
+        # transaksi di-rollback secara atomik.
         update_queries = [
             ("chat_sessions", "username"),
             ("chat_uploads", "owner"),
@@ -1106,13 +1104,10 @@ def _execute_identity_migration(conn, username_to_sub_map: dict):
             ("request_log", "username"),
         ]
         for table, col in update_queries:
-            try:
-                conn.execute(
-                    text(f"UPDATE ai_assistant.{table} SET {col} = :new WHERE LOWER({col}) = LOWER(:old)"),
-                    {"new": new_sub_clean, "old": old_u_clean},
-                )
-            except Exception:
-                pass
+            conn.execute(
+                text(f"UPDATE ai_assistant.{table} SET {col} = :new WHERE LOWER({col}) = LOWER(:old)"),
+                {"new": new_sub_clean, "old": old_u_clean},
+            )
 
     # 5. Hapus kolom-kolom password lokal yang tidak lagi dipakai.
     for col in ("password", "password_hash", "force_change_password"):
