@@ -1,6 +1,5 @@
 import { API_BASE_URL } from '../config';
 
-const TOKEN_KEY = 'sap_assistant_token';
 const USER_KEY = 'sap_assistant_user';
 
 /** Dipanggil saat server menolak token (401) agar UI dapat mengembalikan ke layar login. */
@@ -9,12 +8,9 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = typeof fn === 'function' ? fn : () => {};
 }
 
+/** Auth is handled exclusively via HTTP-only session cookies; kept for signature compat. */
 export function getToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY) || '';
-  } catch {
-    return '';
-  }
+  return '';
 }
 
 export function getStoredUser() {
@@ -26,10 +22,12 @@ export function getStoredUser() {
   }
 }
 
-export function saveSession(token, user) {
+export function saveSession(_tokenOrUser, maybeUser) {
   try {
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    const user = maybeUser !== undefined ? maybeUser : _tokenOrUser;
+    if (user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    }
   } catch {
     /* penyimpanan tidak tersedia — sesi hanya bertahan selama tab terbuka */
   }
@@ -37,8 +35,8 @@ export function saveSession(token, user) {
 
 export function clearSession() {
   try {
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    localStorage.removeItem('sap_assistant_token');
   } catch {
     /* diabaikan */
   }
@@ -83,15 +81,13 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const token = getToken();
-  if (auth && token) headers.Authorization = `Bearer ${token}`;
-
   let res;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'include',
       signal,
     });
   } catch (err) {
@@ -298,9 +294,8 @@ export const api = {
  */
 export async function fetchArtifactBlob(artifactId) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/artifacts/${artifactId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
 
   if (res.status === 401) {
@@ -323,12 +318,11 @@ export async function uploadAttachment(file, sessionId) {
   form.append('file', file);
   if (sessionId) form.append('session_id', sessionId);
 
-  const token = getToken();
   let res;
   try {
     res = await fetch(`${API_BASE_URL}/api/uploads`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
       body: form,
     });
   } catch {
@@ -351,9 +345,8 @@ export async function uploadAttachment(file, sessionId) {
 /** URL pratinjau lampiran; perlu token sehingga diambil sebagai blob. */
 export async function fetchAttachmentBlob(uploadId) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/uploads/${uploadId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
   if (!res.ok) throw new ApiError(isEn ? 'Failed to load attachment.' : 'Lampiran tidak dapat dimuat.', res.status);
   return res.blob();
@@ -364,15 +357,14 @@ export async function fetchAttachmentBlob(uploadId) {
  */
 export async function chatWithProgress(payload, { onProgress, onToken, signal } = {}) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   let res;
   try {
     res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
+      credentials: 'include',
       body: JSON.stringify(payload),
       signal,
     });

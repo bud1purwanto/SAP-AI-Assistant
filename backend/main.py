@@ -28,6 +28,7 @@ from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
+    consume_guest_quota,
     attach_uploads_to_session,
     create_chat_session,
     create_new_user,
@@ -2151,88 +2152,40 @@ async def toggle_admin_access_master_endpoint(req: AdminToggleAccessMasterReques
     return {"status": "success", "mcp_access_control_enabled": req.enabled}
 
 
-# --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS ---
+# --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS (DECOMMISSIONED) ---
+#
+# MCP upstream configuration is now managed exclusively by the Dashboard MCP
+# Gateway. SAP no longer stores or mutates upstream MCP server URLs/tokens; the
+# endpoints below return 410 Gone and direct admins to the Dashboard.
+_MCP_DEPRECATED_DETAIL = (
+    "MCP server configuration has moved to the Dashboard MCP Gateway. "
+    "Configure upstream MCP servers, tokens, and access policies there."
+)
+
 
 @app.get("/api/admin/mcp/servers")
 async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil daftar seluruh server MCP yang terdaftar beserta status live terkini."""
-    servers = list_mcp_servers(enabled_only=False)
-    status_map = await mcp_manager.check_servers_status()
-    for s in servers:
-        sid = s["id"]
-        st = status_map.get(sid, {})
-        s["online"] = st.get("online", False)
-        s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
-        s["tool_count"] = st.get("tool_count", 0)
-        s["active_server"] = st.get("active_server", "-")
-        if "error" in st:
-            s["error"] = st["error"]
-    return {"servers": servers}
+    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
 
 
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    """Menambahkan gateway server MCP baru ke database."""
-    res = create_mcp_server(req.dict())
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(req.id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah create server MCP gagal: {ex}")
-    return res
+    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
 
 
 @app.put("/api/admin/mcp/servers/{server_id}")
 async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui metadata, deskripsi, URL, atau token server MCP."""
-    update_data = {k: v for k, v in req.dict().items() if v is not None}
-    res = update_mcp_server(server_id, update_data)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah update server MCP gagal: {ex}")
-    return res
+    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
 
 
 @app.delete("/api/admin/mcp/servers/{server_id}")
 async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    """Menghapus server MCP kustom dari sistem (server sistem bawaan dilindungi)."""
-    res = delete_mcp_server(server_id)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah delete server MCP gagal: {ex}")
-    return res
+    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
 
 
 @app.post("/api/admin/mcp/servers/{server_id}/reset")
 async def reset_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    """Mengembalikan server MCP sistem ke konfigurasi default bawaan pabrik."""
-    res = reset_mcp_server_to_default(server_id)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah reset server MCP gagal: {ex}")
-    return res
+    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
 
 
 @app.post("/api/admin/mcp/test")

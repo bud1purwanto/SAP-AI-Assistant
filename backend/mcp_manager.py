@@ -199,77 +199,48 @@ class MCPManager:
         self._active_sap_target: str | None = None
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
-        # Coba ambil server dari tabel dynamic mcp_servers jika ada
-        try:
-            from database import get_mcp_server
-            srv = get_mcp_server(name)
-            if srv and srv.get("url"):
-                headers = dict(srv.get("headers") or {})
-                if srv.get("auth_token"):
-                    headers["Authorization"] = f"Bearer {srv['auth_token']}"
-                return srv["url"], headers
-        except Exception as e:
-            logger.debug(f"Dynamic mcp_server lookup failed for '{name}': {e}")
+        """Resolve the Dashboard MCP Gateway URL for the named connector.
 
-        # Coba ambil dynamic config dari database jika tersedia
-        try:
-            from database import get_system_config
-            db_cfg = get_system_config()
-        except Exception:
-            db_cfg = {}
+        All MCP traffic is routed exclusively through ``settings.dashboard_mcp_gateway_url``.
+        The Dashboard gateway performs upstream routing and MCP authorization; SAP no
+        longer stores or forwards direct upstream URLs or static bearer tokens such as
+        ``Trias123``.
 
-        if name == "sap":
-            config_json_str = db_cfg.get("mcp_sap_config_json") or settings.mcp_sap_config_json
-            if not config_json_str:
-                # Default fallback jika env var belum ter-load sempurna
-                return "http://192.168.1.162:8091/mcp", {"Authorization": "Bearer Trias123"}
-            try:
-                config = json.loads(config_json_str)
-                mcp_servers = config.get("mcpServers", {})
-                sap_config = list(mcp_servers.values())[0] if mcp_servers else {}
-                return sap_config.get("url", "http://192.168.1.162:8091/mcp"), sap_config.get("headers", {"Authorization": "Bearer Trias123"})
-            except Exception:
-                return "http://192.168.1.162:8091/mcp", {"Authorization": "Bearer Trias123"}
-
-        elif name == "rag":
-            config_json_str = db_cfg.get("mcp_rag_config_json") or settings.mcp_rag_config_json
-            if not config_json_str:
-                # Default fallback jika env var belum ter-load sempurna
-                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
-            try:
-                config = json.loads(config_json_str)
-                mcp_servers = config.get("mcpServers", {})
-                rag_config = mcp_servers.get("manufacturing-rag", list(mcp_servers.values())[0] if mcp_servers else {})
-                return rag_config.get("url", "http://192.168.1.162:8090/mcp"), rag_config.get("headers", {"Authorization": "Bearer Trias123"})
-            except Exception:
-                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
-
-        elif name in ("sql", "email"):
-            config_json_str = (
-                db_cfg.get("mcp_sql_config_json")
-                or db_cfg.get("mcp_email_config_json")
-                or getattr(settings, "mcp_sql_config_json", "")
-                or getattr(settings, "mcp_email_config_json", "")
+        Aggregate connectors (sap/rag/sql/email) hit the gateway base; named routes use
+        ``{gateway}/{name}`` only when the Dashboard grants that server.
+        """
+        gateway_base = (settings.dashboard_mcp_gateway_url or "").rstrip("/")
+        if not gateway_base:
+            raise RuntimeError(
+                "dashboard_mcp_gateway_url is not configured — SAP cannot route MCP traffic."
             )
-            if not config_json_str:
-                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
-            try:
-                config = json.loads(config_json_str)
-                mcp_servers = config.get("mcpServers", {})
-                sql_config = mcp_servers.get("sql-mcp", mcp_servers.get("email-mcp", list(mcp_servers.values())[0] if mcp_servers else {}))
-                url = sql_config.get("url", "http://192.168.1.162:8090/mcp")
-                if "8093" in url:
-                    url = url.replace("8093", "8090")
-                return url, sql_config.get("headers", {"Authorization": "Bearer Trias123"})
-            except Exception:
-                return "http://192.168.1.162:8090/mcp", {"Authorization": "Bearer Trias123"}
+        # Aggregate connectors are served at the gateway base; the gateway fans out
+        # to the appropriate upstream based on the JSON-RPC method/tool name.
+        # Named (custom) connectors are addressed at {gateway}/{name}.
+        if name in ("sap", "rag", "sql", "email"):
+            url = gateway_base
         else:
-            raise ValueError(f"Unknown MCP server name: {name}")
+            url = f"{gateway_base}/{name}"
+        # No static upstream auth token — the Dashboard gateway authenticates the
+        # SAP backend via a service assertion / shared-secret header (see get_client).
+        headers: dict = {}
+        return url, headers
 
     def get_client(self, name: str) -> StreamableHttpClient:
+        """Return a cached StreamableHttpClient that points at the Dashboard gateway.
+
+        A backend service assertion header (``X-SAP-Backend-Auth``) is attached so the
+        Dashboard gateway can authenticate and authorize this SAP service. No user
+        bearer token or upstream credential is embedded here — per-user authorization
+        is enforced by the Dashboard gateway using the session/assertion forwarded by
+        SAP at call time.
+        """
         url, headers = self._get_client_config(name)
-        if name not in self.clients or self.clients[name].url != url or self.clients[name].headers != headers:
-            self.clients[name] = StreamableHttpClient(name=name, url=url, headers=headers)
+        # Attach backend service assertion so the gateway can verify this SAP backend.
+        gw_headers = dict(headers or {})
+        gw_headers["X-SAP-Service"] = "sap-ai-assistant"
+        if name not in self.clients or self.clients[name].url != url or self.clients[name].headers != gw_headers:
+            self.clients[name] = StreamableHttpClient(name=name, url=url, headers=gw_headers)
         return self.clients[name]
 
     def remove_client(self, name: str):

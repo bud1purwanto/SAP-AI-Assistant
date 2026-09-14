@@ -20,7 +20,7 @@ import { useLanguage } from '../hooks/useLanguage';
 import { useTypewriterStream } from '../hooks/useTypewriterStream';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import {
-  api, ApiError, chatWithProgress, clearSession, getStoredUser, getToken, saveSession, setUnauthorizedHandler,
+  api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
 import { formatRoleLabel, getRoleBadgeStyle, getRoleLabel, getUserInitials } from '../lib/roles';
 
@@ -659,7 +659,7 @@ const ChatLayout = () => {
   // Sinkronisasi multi-tab: jika akun berubah di tab browser lain, update tab ini
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'sap_assistant_token' || e.key === 'sap_assistant_user') {
+      if (e.key === 'sap_assistant_user') {
         const currentUser = getStoredUser() || GUEST_USER;
         setUser(currentUser);
         setSessions([]);
@@ -1180,10 +1180,7 @@ const ChatLayout = () => {
   const handleForcePasswordChanged = () => {
     setUser((prev) => {
       const updated = { ...prev, force_change_password: false };
-      const token = getToken();
-      if (token) {
-        saveSession(token, updated);
-      }
+      saveSession(null, updated);
       return updated;
     });
   };
