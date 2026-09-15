@@ -112,6 +112,7 @@ const ChatLayout = () => {
   // Aliran teks jawaban halus dengan efek ketikan adaptif (typewriter stream)
   const {
     streamMap: sessionStreamMap,
+    appendToken,
     flushAndFinish,
     abortStream,
     resetStream,
@@ -123,7 +124,6 @@ const ChatLayout = () => {
   const abortControllersRef = useRef({});
   const isStreamActiveRef = useRef({});
   const lastStreamActivityRef = useRef({});
-  const progressCompletionResolversRef = useRef({});
 
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
@@ -1017,7 +1017,7 @@ const ChatLayout = () => {
     setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: true }));
     setSessionProgressMap((prev) => ({
       ...prev,
-      [targetKey]: { stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 },
+      [targetKey]: { stage: 'connecting', label: t('thinking.connecting'), step: 0, max_steps: 6 },
     }));
     setSessionErrorMap((prev) => ({ ...prev, [targetKey]: null }));
     resetStream(targetKey);
@@ -1049,36 +1049,22 @@ const ChatLayout = () => {
             lastStreamActivityRef.current[targetKey] = Date.now();
             setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
           },
-          onToken: () => {
-            // Persentase 1–100 adalah fase tunggal yang harus selesai dulu.
-            // Token final sudah dibawa lagi oleh event result, jadi cukup
-            // catat aktivitas tanpa menampilkannya sebelum indikator lengkap.
+          onToken: (chunk) => {
+            // Tampilkan token segera. Nilai null adalah token_reset dari
+            // backend ketika draft berubah menjadi panggilan tool.
             lastStreamActivityRef.current[targetKey] = Date.now();
+            appendToken(targetKey, chunk);
           },
         },
       );
 
-      // Result (not an intermediate agent stage) is the completion boundary.
-      // Keep the indicator mounted until it has visibly reached 100%.
-      const progressFinished = new Promise((resolve) => {
-        const finish = () => {
-          clearTimeout(timer);
-          controller.signal.removeEventListener('abort', finish);
-          delete progressCompletionResolversRef.current[targetKey];
-          resolve();
-        };
-        // A background session has no mounted indicator; never block its result.
-        const timer = setTimeout(finish, 2000);
-        progressCompletionResolversRef.current[targetKey] = finish;
-        controller.signal.addEventListener('abort', finish, { once: true });
-      });
       setSessionProgressMap((prev) => ({
         ...prev,
         [targetKey]: { ...prev[targetKey], stage: 'done', label: isEn ? 'Completed' : 'Selesai' },
       }));
-      await progressFinished;
       if (controller.signal.aborted) return;
-      // Baru setelah 100% terlihat, tampilkan jawaban final secara utuh.
+      // Sinkronkan potongan terakhir dengan hasil final tanpa menunggu animasi
+      // progress mencapai 100 persen.
       await flushAndFinish(targetKey, data.reply);
 
       const assistantMsg = {
@@ -2308,13 +2294,11 @@ const ChatLayout = () => {
               />
             ))}
 
-            {/* Progres tetap terpasang sampai 100%. Jawaban yang telah lolos gate
-                boleh mengalir di bawahnya tanpa mengganti/memulai ulang indikator. */}
+            {/* Progres dan jawaban streaming tampil bersamaan. */}
             {isCurrentLoading && (
               <ThinkingIndicator
                 progress={currentProgress}
                 onStop={() => stopGeneration(activeSessionKey)}
-                onComplete={() => progressCompletionResolversRef.current[activeSessionKey]?.()}
               />
             )}
 
