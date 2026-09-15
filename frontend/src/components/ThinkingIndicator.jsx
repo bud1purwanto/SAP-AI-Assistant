@@ -118,12 +118,31 @@ const resolveContext = (progress, t) => {
   };
 };
 
+const resolveLabel = (progress, t) => {
+  const stageKeys = {
+    connecting: 'thinking.connecting',
+    reconnecting: 'thinking.reconnecting',
+    reading: 'thinking.reading',
+    thinking: 'thinking.thinking',
+    tool: 'thinking.tool',
+    investigating: 'thinking.investigating',
+    reviewing: 'thinking.reviewing',
+    building: 'thinking.building',
+    done: 'thinking.done',
+  };
+  const key = stageKeys[progress?.stage];
+  return key ? t(key) : t('thinking.processing');
+};
+
 const ThinkingIndicator = ({ progress, onStop, onComplete }) => {
   const { t } = useLanguage();
   const targetPercent = computeTargetPercent(progress);
   const [displayPercent, setDisplayPercent] = useState(1);
   const { Icon, context, isSpinning } = resolveContext(progress, t);
-  const label = progress?.label || t('thinking.processing');
+  // Label dari backend hanya metadata progres dan bisa berasal dari bahasa
+  // request sebelumnya. Teks yang terlihat selalu dirender dari kamus UI
+  // aktif agar pergantian bahasa langsung konsisten tanpa menunggu event baru.
+  const label = resolveLabel(progress, t);
 
   const targetRef = useRef(targetPercent);
   const isDoneRef = useRef(progress?.stage === 'done');
@@ -171,7 +190,7 @@ const ThinkingIndicator = ({ progress, onStop, onComplete }) => {
           aria-valuenow={displayPercent}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`Progress: ${label}`}
+          aria-label={t('thinking.progressAria', { label })}
         >
           <div
             className="h-full bg-gradient-to-r from-indigo-500 to-violet-600 rounded-full"

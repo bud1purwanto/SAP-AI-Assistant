@@ -1072,15 +1072,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     
     if not all_mcp_tools:
-        return ChatResponse(
-            reply=(
-                "⚠️ **Koneksi ke sistem target terputus atau tidak diizinkan**\n\n"
-                "Saya belum bisa mengambil data dari sistem maupun basis dokumen internal "
-                "saat ini. Silakan coba beberapa saat lagi, atau hubungi administrator bila "
-                "berlanjut.\n\n"
-                "Anda tetap bisa bertanya hal umum atau melampirkan berkas untuk saya bantu olah."
-            ),
-            sources=[]
+        # Ketiadaan gateway tidak boleh mematikan percakapan umum. Model tetap
+        # menjawab tanpa tool; prompt di bawah memberitahukan bahwa tidak ada
+        # sumber live sehingga model tidak boleh berpura-pura telah mengeceknya.
+        logger.warning(
+            "Tidak ada katalog tool MCP yang tersedia untuk target '%s'; "
+            "melanjutkan percakapan dalam mode tanpa tool.",
+            target_srv,
         )
         
     has_sap = any(item["server"] == "sap" for item in all_mcp_tools)

@@ -59,3 +59,32 @@ def test_call_result_exposes_is_error():
 
     result = MCPCallResult(content=[], is_error=True)
     assert result.is_error is True and result.isError is True
+
+
+def test_tool_catalogs_are_fetched_concurrently():
+    """SAP dan RAG tidak boleh ditunggu berurutan sebelum model dipanggil."""
+    from mcp_manager import MCPManager, MCPTool
+
+    running = 0
+    peak = 0
+
+    class FakeClient:
+        async def list_tools(self, http):
+            nonlocal running, peak
+            running += 1
+            peak = max(peak, running)
+            await asyncio.sleep(0.01)
+            running -= 1
+            return [MCPTool("read")]
+
+    manager = MCPManager()
+    manager.get_client = lambda name: FakeClient()
+
+    async def run():
+        return await manager.get_all_tools(
+            server_filter="sap", allowed_connectors={"sap", "rag"}
+        )
+
+    result = asyncio.run(run())
+    assert peak == 2
+    assert {item["server"] for item in result} == {"sap", "rag"}
