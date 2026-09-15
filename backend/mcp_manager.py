@@ -189,7 +189,7 @@ RAG_INTERNAL_EXCLUDED_TOOLS = {
 
 class MCPManager:
     def __init__(self):
-        self.clients: dict[str, StreamableHttpClient] = {}
+        self.clients: dict[tuple[str, str], StreamableHttpClient] = {}
         # Server MCP SAP menyimpan "server aktif" sebagai state global di sisi
         # server. Dengan beberapa user bersamaan, request user lain dapat
         # menggeser target di antara set_active_server dan pemanggilan tool,
@@ -227,32 +227,30 @@ class MCPManager:
         return url, headers
 
     def get_client(self, name: str) -> StreamableHttpClient:
-        """Return a cached StreamableHttpClient that points at the Dashboard gateway.
+        """Return a per-user Dashboard Gateway client with a required bearer token."""
+        from auth import get_dashboard_access_token
 
-        A backend service assertion header (``X-SAP-Backend-Auth``) is attached so the
-        Dashboard gateway can authenticate and authorize this SAP service. No user
-        bearer token or upstream credential is embedded here — per-user authorization
-        is enforced by the Dashboard gateway using the session/assertion forwarded by
-        SAP at call time.
-        """
+        access_token = get_dashboard_access_token()
+        if not access_token:
+            raise PermissionError("Dashboard access token is required for MCP gateway requests.")
         url, headers = self._get_client_config(name)
-        # Attach backend service assertion so the gateway can verify this SAP backend.
         gw_headers = dict(headers or {})
-        gw_headers["X-SAP-Service"] = "sap-ai-assistant"
-        if name not in self.clients or self.clients[name].url != url or self.clients[name].headers != gw_headers:
-            self.clients[name] = StreamableHttpClient(name=name, url=url, headers=gw_headers)
-        return self.clients[name]
+        gw_headers["Authorization"] = f"Bearer {access_token}"
+        cache_key = (name, access_token)
+        if cache_key not in self.clients or self.clients[cache_key].url != url:
+            self.clients[cache_key] = StreamableHttpClient(name=name, url=url, headers=gw_headers)
+        return self.clients[cache_key]
 
     def remove_client(self, name: str):
         """Hapus instance client yang di-cache saat konfigurasi server berubah atau dihapus."""
-        if name in self.clients:
-            del self.clients[name]
+        for cache_key in [key for key in self.clients if key[0] == name]:
+            del self.clients[cache_key]
 
     def clear_client_cache(self, name: Optional[str] = None):
         """Bersihkan cache tool dari client tertentu atau semua client."""
         if name:
-            if name in self.clients:
-                self.clients[name].clear_tools_cache()
+            for cache_key in [key for key in self.clients if key[0] == name]:
+                self.clients[cache_key].clear_tools_cache()
         else:
             for client in self.clients.values():
                 client.clear_tools_cache()

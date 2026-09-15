@@ -318,6 +318,8 @@ async def oidc_callback(request: Request):
     # Ekstrak klaim dari access_token dan id_token (JWT tidak ditandatangani ulang;
     # Dashboard adalah otoritas, kita hanya membaca klaim untuk identitas sesi).
     access_token = token_json.get("access_token", "")
+    if not access_token or not str(access_token).strip():
+        raise HTTPException(status_code=502, detail="Dashboard tidak mengembalikan access token.")
     id_token = token_json.get("id_token", "")
 
     claims = {}
@@ -362,6 +364,7 @@ async def oidc_callback(request: Request):
         "roles": roles,
         "org_units": org_units,
         "is_guest": False,
+        "access_token": access_token,
     }
 
     session_cookie = create_session_cookie(principal)

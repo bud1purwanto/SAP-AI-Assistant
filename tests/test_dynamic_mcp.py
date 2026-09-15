@@ -136,33 +136,33 @@ def test_admin_stats_dynamic_mcp(client, admin_auth):
     assert "email" in srv_ids
 
 
-def test_mcp_manager_uses_only_dashboard_gateway(monkeypatch):
-    """MCPManager routes all traffic through the Dashboard MCP gateway URL —
-    no direct upstream IPs or 'Trias123' bearer tokens may leak through."""
+def test_mcp_manager_requires_dashboard_token(monkeypatch):
+    from auth import set_dashboard_access_token
+    from mcp_manager import MCPManager
+    set_dashboard_access_token(None)
+    with pytest.raises(PermissionError):
+        MCPManager().get_client("rag")
+
+
+def test_mcp_manager_uses_dashboard_bearer_token(monkeypatch):
+    from auth import set_dashboard_access_token
     from mcp_manager import MCPManager
     from config import settings
 
-    monkeypatch.setattr(
-        settings, "dashboard_mcp_gateway_url", "http://127.0.0.1:3000/api/mcp"
-    )
-
+    monkeypatch.setattr(settings, "dashboard_mcp_gateway_url", "http://127.0.0.1:3000/api/mcp")
+    set_dashboard_access_token("dashboard-token-xyz")
     manager = MCPManager()
-    client = manager.get_client("rag")
     gw = settings.dashboard_mcp_gateway_url.rstrip("/")
-    # Client URL must be the gateway base (or a named route under it), never a direct upstream IP.
-    assert client.url == gw or client.url.startswith(gw + "/")
-    assert "192.168.1.162" not in client.url
-    assert "Trias123" not in repr(client.headers)
-    # No static bearer token for upstream MCP services.
-    assert "Authorization" not in client.headers or "Trias123" not in client.headers.get("Authorization", "")
 
-    # Same guarantee for the SAP and SQL connectors.
-    for name in ("sap", "sql", "email"):
-        c = manager.get_client(name)
-        assert c.url == gw or c.url.startswith(gw + "/")
-        assert "192.168.1.162" not in c.url
-        assert "Trias123" not in repr(c.headers)
+    for name in ("rag", "sap", "sql", "email"):
+        client = manager.get_client(name)
+        assert client.url == gw or client.url.startswith(gw + "/")
+        assert "192.168.1.162" not in client.url
+        assert "Trias123" not in repr(client.headers)
+        assert client.headers["Authorization"] == "Bearer dashboard-token-xyz"
+        assert "X-SAP-Service" not in client.headers
 
+    set_dashboard_access_token(None)
 
 def test_admin_mcp_direct_server_crud_removed(client, admin_auth):
     """Local MCP registry CRUD endpoints are decommissioned (410 Gone / 404)."""

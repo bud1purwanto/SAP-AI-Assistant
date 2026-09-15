@@ -5,6 +5,7 @@ Dashboard MCP bertindak sebagai otoritas identitas tunggal;
 SAP mengelola sesi peramban lokal menggunakan HTTP-only signed session cookie.
 """
 import base64
+import contextvars
 import hashlib
 import logging
 import secrets
@@ -19,6 +20,8 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 GUEST_USERNAME = "Guest"
+_dashboard_tokens: dict[str, tuple[str, datetime]] = {}
+_dashboard_access_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_access_token", default=None)
 GUEST_ROLE = "guest"
 
 
@@ -37,6 +40,14 @@ def generate_code_challenge(verifier: str) -> str:
 
 # --- Signed Session Cookie ---
 
+def set_dashboard_access_token(token: Optional[str]) -> None:
+    _dashboard_access_token.set(token.strip() if isinstance(token, str) and token.strip() else None)
+
+
+def get_dashboard_access_token() -> Optional[str]:
+    return _dashboard_access_token.get()
+
+
 def create_session_cookie(principal: dict) -> str:
     """Tandatangani payload sesi menggunakan session_secret server."""
     now = datetime.now(timezone.utc)
@@ -53,6 +64,11 @@ def create_session_cookie(principal: dict) -> str:
         "iat": now,
         "exp": now + timedelta(hours=settings.session_expire_hours),
     }
+    access_token = principal.get("access_token")
+    if access_token:
+        session_id = secrets.token_urlsafe(32)
+        _dashboard_tokens[session_id] = (str(access_token), payload["exp"])
+        payload["session_id"] = session_id
     return jwt.encode(payload, settings.session_secret, algorithm="HS256")
 
 
@@ -106,6 +122,10 @@ def get_current_principal(request: Request) -> dict:
     if not payload or not payload.get("sub") or payload.get("is_guest"):
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
+    session_id = payload.get("session_id")
+    token_entry = _dashboard_tokens.get(session_id) if isinstance(session_id, str) else None
+    set_dashboard_access_token(token_entry[0] if token_entry and token_entry[1] > datetime.now(timezone.utc) else None)
+
     user_role = payload.get("role", "user")
     user_roles = payload.get("roles") or [user_role]
     return {
@@ -144,6 +164,9 @@ def get_current_user_optional(request: Request) -> dict:
             "org_units": [],
             "is_guest": True,
         }
+    session_id = payload.get("session_id")
+    token_entry = _dashboard_tokens.get(session_id) if isinstance(session_id, str) else None
+    set_dashboard_access_token(token_entry[0] if token_entry and token_entry[1] > datetime.now(timezone.utc) else None)
 
     user_role = payload.get("role", "user")
     user_roles = payload.get("roles") or [user_role]
