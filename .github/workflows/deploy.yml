@@ -87,7 +87,7 @@ jobs:
       - name: Run backend tests
         env:
           TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
+          SESSION_SECRET: ci-secret-ci-secret-ci-secret-1234
           BOOTSTRAP_ADMIN_PASSWORD: AdminPass123
         run: pytest
 
@@ -106,7 +106,7 @@ jobs:
       - name: Run end-to-end tests
         env:
           E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sapai_e2e
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
+          SESSION_SECRET: ci-secret-ci-secret-ci-secret-1234
           E2E_ADMIN_PASSWORD: AdminPass123
         run: bash scripts/e2e.sh
 

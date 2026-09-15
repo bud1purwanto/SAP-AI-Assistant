@@ -35,7 +35,7 @@ Skrip ini akan otomatis melakukan:
 | Variabel | Kegunaan |
 | :--- | :--- |
 | `DATABASE_URL` | Koneksi PostgreSQL (**Wajib**). Semua riwayat chat, user, config MCP, dan skill disimpan di sini. |
-| `JWT_SECRET` | Kunci penandatangan token login JWT (**Wajib** di produksi). Buat dengan `openssl rand -base64 48`. |
+| `SESSION_SECRET` | Kunci penandatangan cookie sesi OIDC (**Wajib** di produksi). Buat dengan `openssl rand -base64 48`. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Password akun superadmin awal `TRSTDEV` saat tabel users pertama kali diinisialisasi. |
 | `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (gunakan `*` atau domain/IP Anda). |
 | `QUOTA_TIMEZONE` | Zona waktu penentu pergantian hari kuota token (bawaan `Asia/Jakarta`). Dengan UTC, kuota tim Indonesia akan reset pukul 07.00 — di tengah jam kerja. |

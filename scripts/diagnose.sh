@@ -14,8 +14,8 @@ if [ -f backend/.env ]; then
   ok "backend/.env ada"
   grep -q '^DATABASE_URL=.\+' backend/.env && ok "DATABASE_URL terisi" \
     || bad "DATABASE_URL kosong — salin dari backend/.env.example"
-  grep -q '^JWT_SECRET=.\+' backend/.env && ok "JWT_SECRET terisi" \
-    || bad "JWT_SECRET kosong — sesi login akan gugur setiap restart"
+  grep -q '^SESSION_SECRET=.\+' backend/.env && ok "SESSION_SECRET terisi" \
+    || bad "SESSION_SECRET kosong — sesi login akan gugur setiap restart"
 else
   bad "backend/.env tidak ada"
   info "jalankan: cp backend/.env.example backend/.env"

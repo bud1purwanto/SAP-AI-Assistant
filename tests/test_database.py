@@ -36,22 +36,3 @@ def test_backend_is_postgres(db):
     assert db.get_backend_info()["engine"] == "postgresql"
 
 
-def test_legacy_plaintext_password_upgrades_to_hash(db):
-    """Instalasi lama menyimpan password apa adanya."""
-    with db.get_engine().connect() as conn:
-        conn.execute(
-            text(
-                "INSERT INTO ai_assistant.users (username, password, role, assistant_persona) "
-                "VALUES ('warisan', 'rahasia123', 'user', '')"
-            )
-        )
-        conn.commit()
-
-    assert db.authenticate_user("warisan", "rahasia123") is not None
-
-    with db.get_engine().connect() as conn:
-        row = conn.execute(
-            text("SELECT password, password_hash FROM ai_assistant.users WHERE username = 'warisan'")
-        ).fetchone()
-    assert row.password_hash.startswith("$2b$") and not row.password
-    assert db.authenticate_user("warisan", "rahasia123") is not None

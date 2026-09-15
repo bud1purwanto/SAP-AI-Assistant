@@ -1160,22 +1160,6 @@ const ChatLayout = () => {
     await handleSendMessage(cleaned, message.attachments || [], base);
   };
 
-  const handleLoginSuccess = ({ access_token: token, ...userData }) => {
-    saveSession(token, userData);
-    setSessions([]);
-    setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-    setSessionLoadingMap({});
-    setSessionProgressMap({});
-    setSessionErrorMap({});
-    setUser(userData);
-    api.quotaSaya().then(setKuota).catch(() => setKuota(null));
-    fetchServers();
-    fetchModes();
-    setIsLoginModalOpen(false);
-    setCustomLoginMsg('');
-    setError(null);
-  };
 
   const handleForcePasswordChanged = () => {
     setUser((prev) => {
@@ -2332,7 +2316,6 @@ const ChatLayout = () => {
       {/* Modals */}
       <LoginModal
         isOpen={isLoginModalOpen}
-        onLoginSuccess={handleLoginSuccess}
         customMessage={customLoginMsg}
         onClose={() => setIsLoginModalOpen(false)}
       />

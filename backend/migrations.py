@@ -769,10 +769,10 @@ def _m0017_dynamic_mcp_servers(conn):
             except Exception:
                 return def_url, def_token
 
-        sap_url, sap_token = _extract_url_token(cfg_map.get("mcp_sap_config_json"), "http://192.168.1.162:8091/mcp", "Trias123")
-        rag_url, rag_token = _extract_url_token(cfg_map.get("mcp_rag_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
-        sql_url, sql_token = _extract_url_token(cfg_map.get("mcp_sql_config_json") or cfg_map.get("mcp_email_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
-        email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
+        sap_url, sap_token = _extract_url_token(cfg_map.get("mcp_sap_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        rag_url, rag_token = _extract_url_token(cfg_map.get("mcp_rag_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        sql_url, sql_token = _extract_url_token(cfg_map.get("mcp_sql_config_json") or cfg_map.get("mcp_email_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://127.0.0.1:3000/api/mcp", "")
 
         conn.execute(text("""
             INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
@@ -819,8 +819,8 @@ def _m0018_seed_mcp_email_server(conn):
 
     email_url, email_token = _extract_url_token(
         cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"),
-        "http://192.168.1.162:8090/mcp",
-        "Trias123"
+        "http://127.0.0.1:3000/api/mcp",
+        ""
     )
 
     conn.execute(text("""

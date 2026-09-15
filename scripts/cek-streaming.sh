@@ -12,17 +12,17 @@
 # Skrip ini menandai waktu tiap event yang tiba, sehingga ketiganya dapat
 # dibedakan tanpa menebak. Jalankan DI SERVER.
 #
-#   bash scripts/cek-streaming.sh <username> <password>
+#   bash scripts/cek-streaming.sh <session_cookie_value>
 set -uo pipefail
 
-USER_NAME="${1:-}"
-PASSWORD="${2:-}"
+SESSION_COOKIE="${1:-${SAP_SESSION_COOKIE:-}}"
 BACKEND="${BACKEND_URL:-http://127.0.0.1:8005}"
 NGINX="${NGINX_URL:-http://127.0.0.1:8080}"
 PERTANYAAN="${PERTANYAAN:-Jelaskan secara singkat perbedaan tabel MARA, MARC, dan MARD}"
 
-if [ -z "$USER_NAME" ] || [ -z "$PASSWORD" ]; then
-    echo "Pemakaian: bash scripts/cek-streaming.sh <username> <password>" >&2
+if [ -z "$SESSION_COOKIE" ]; then
+    echo "Pemakaian: bash scripts/cek-streaming.sh <session_cookie_value>" >&2
+    echo "Catatan: /api/login telah dipensiunkan; otentikasi menggunakan session cookie OIDC." >&2
     exit 1
 fi
 
@@ -33,16 +33,7 @@ uji() {
     echo "  $nama  ($base)"
     echo "=================================================="
 
-    local token
-    token=$(curl -s --max-time 15 -X POST "$base/api/login" \
-        -H 'Content-Type: application/json' \
-        -d "{\"username\":\"$USER_NAME\",\"password\":\"$PASSWORD\"}" \
-        | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
-
-    if [ -z "$token" ]; then
-        echo "❌ Login gagal — periksa username/password, atau $base tidak dapat dihubungi."
-        return 1
-    fi
+    local cookie_header="Cookie: sap_session=$SESSION_COOKIE"
 
     local mulai_ns
     mulai_ns=$(date +%s%N)
@@ -72,7 +63,7 @@ uji() {
             *'"result"'*) result_ms=$sekarang_ms ;;
         esac
     done < <(curl -sN --max-time 180 -X POST "$base/api/chat/stream" \
-        -H "Authorization: Bearer $token" \
+        -H "$cookie_header" \
         -H 'Content-Type: application/json' \
         -d "{\"message\":\"$PERTANYAAN\"}")
 

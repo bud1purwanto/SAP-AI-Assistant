@@ -597,43 +597,10 @@ def update_user_persona(username: str, persona: str):
         logger.error(f"Error update_user_persona: {e}")
         return False
 
-DEFAULT_MCP_SAP_JSON = '''{
-  "mcpServers": {
-    "sap-leader-remote": {
-      "type": "http",
-      "url": "http://192.168.1.162:8091/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_RAG_JSON = '''{
-  "mcpServers": {
-    "manufacturing-rag": {
-      "type": "http",
-      "url": "http://192.168.1.162:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_SQL_JSON = '''{
-  "mcpServers": {
-    "sql-mcp": {
-      "type": "http",
-      "url": "http://192.168.1.162:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_EMAIL_JSON = DEFAULT_MCP_SQL_JSON
+DEFAULT_MCP_SAP_JSON = json.dumps({"mcpServers": {"sap": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_RAG_JSON = json.dumps({"mcpServers": {"rag": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_SQL_JSON = json.dumps({"mcpServers": {"sql": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_EMAIL_JSON = json.dumps({"mcpServers": {"email": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
 
 def get_system_config():
     """Ambil konfigurasi MCP SAP, MCP RAG, MCP SQL, 9Router, dan OpenRouter dari database."""
@@ -1082,12 +1049,12 @@ def delete_mcp_server(server_id: str) -> dict:
 
 
 def reset_mcp_server_to_default(server_id: str) -> dict:
-    """Mengembalikan server MCP sistem ke URL dan token bawaan."""
+    """Mengembalikan server MCP sistem ke URL gateway terpusat."""
     sid = (server_id or "").strip().lower()
     defaults = {
-        "sap": {"url": "http://192.168.1.162:8091/mcp", "token": "Trias123", "name": "SAP ERP Gateway", "desc": "Live Data, Tabel & ABAP Code SAP"},
-        "rag": {"url": "http://192.168.1.162:8090/mcp", "token": "Trias123", "name": "RAG Knowledge Gateway", "desc": "Vector DB, SOP & Tech Docs"},
-        "sql": {"url": "http://192.168.1.162:8090/mcp", "token": "Trias123", "name": "SQL & Database Gateway", "desc": "Relational SQL & Query Tools"},
+        "sap": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SAP ERP Gateway", "desc": "Live Data, Tabel & ABAP Code SAP"},
+        "rag": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "RAG Knowledge Gateway", "desc": "Vector DB, SOP & Tech Docs"},
+        "sql": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SQL & Database Gateway", "desc": "Relational SQL & Query Tools"},
     }
     if sid not in defaults:
         return {"success": False, "message": f"Server '{sid}' bukan server sistem bawaan."}
@@ -1101,7 +1068,6 @@ def reset_mcp_server_to_default(server_id: str) -> dict:
         "enabled": True,
         "transport_type": "http"
     })
-
 # --- CHAT SESSION & HISTORY FUNCTIONS ---
 
 def create_chat_session(username: str, title: str = "Percakapan Baru"):
@@ -3683,40 +3649,15 @@ def encrypt_fernet(data: str) -> str:
 
 
 def decrypt_fernet(encrypted_data: str) -> Optional[str]:
-    """Decrypt a ciphertext string using Fernet.
-    
-    Tries session_secret first; if that fails (e.g. data encrypted prior to OIDC migration),
-    falls back to legacy JWT_SECRET if available before failing closed.
-    """
+    """Decrypt a ciphertext string using Fernet with session_secret."""
     if not encrypted_data:
         return None
-
-    # 1. Coba decrypt dengan session_secret utama
     try:
         f = Fernet(_get_fernet_key())
         return f.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
     except Exception:
-        pass
-
-    # 2. Coba decrypt dengan legacy secrets (bila data lama dienkripsi dengan JWT_SECRET)
-    legacy_secrets = []
-    import os
-    if os.environ.get("JWT_SECRET"):
-        legacy_secrets.append(os.environ["JWT_SECRET"])
-    # Default legacy jwt_secret sebelum migrasi
-    legacy_secrets.append("sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod")
-
-    for leg in legacy_secrets:
-        try:
-            f_leg = Fernet(_get_fernet_key(leg))
-            decrypted = f_leg.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
-            logger.info("Berhasil mendekripsi kredensial SAP menggunakan legacy key.")
-            return decrypted
-        except Exception:
-            continue
-
-    logger.warning("Gagal mendekripsi data kredensial SAP dengan seluruh kunci yang tersedia.")
-    return None
+        logger.warning("Gagal mendekripsi data kredensial SAP dengan session_secret.")
+        return None
 
 def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
     """Save encrypted SAP credentials for a specific user and SAP target.

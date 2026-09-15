@@ -36,7 +36,6 @@ export function saveSession(_tokenOrUser, maybeUser) {
 export function clearSession() {
   try {
     localStorage.removeItem(USER_KEY);
-    localStorage.removeItem('sap_assistant_token');
   } catch {
     /* diabaikan */
   }
@@ -95,7 +94,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     throw new ApiError(connectionErrorMessage(), 0);
   }
 
-  if (res.status === 401 && path !== '/api/login') {
+  if (res.status === 401) {
     clearSession();
     onUnauthorized();
     throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
@@ -145,8 +144,6 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 }
 
 export const api = {
-  login: (username, password) =>
-    apiFetch('/api/login', { method: 'POST', body: { username, password }, auth: false }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),
