@@ -1,7 +1,7 @@
 # Pengujian Backend
 
 Pengujian berjalan di atas **PostgreSQL sungguhan**, sama seperti produksi.
-Schema `ai_assistant` dibuat ulang untuk setiap modul uji, sehingga hasilnya
+Schema `ai_assistant_dev` dibuat ulang untuk setiap modul uji, sehingga hasilnya
 tidak bergantung pada urutan menjalankan tes.
 
 ## Menjalankan

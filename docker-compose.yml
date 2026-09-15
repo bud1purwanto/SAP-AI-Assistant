@@ -7,23 +7,55 @@
 #   cd backend && uvicorn main:app --reload
 #
 services:
-  postgres:
-    image: postgres:16
-    container_name: sap-ai-postgres
+  # postgres:
+  #   image: postgres:16
+  #   container_name: sap-ai-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: ABAP_DB
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - sap-ai-pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres -d ABAP_DB"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 10
+
+  backend:
+    build: ./backend
+    container_name: sap-ai-backend
     restart: unless-stopped
+    env_file:
+      - ./backend/.env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ABAP_DB
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB
+      DASHBOARD_MCP_URL: ${DASHBOARD_MCP_URL:-http://host.docker.internal:4000}
+      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:-d99e37cfb69a93a18c80caa4fe871755c695dd7c7ae6a939b829c5352e3c534c}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
-      - "5432:5432"
-    volumes:
-      - sap-ai-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ABAP_DB"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - "8006:8000"
+    networks:
+      - default
+      - ai-workspace
+
+  frontend:
+    build: ./frontend
+    container_name: sap-ai-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
 
 volumes:
   sap-ai-pgdata:
+
+networks:
+  ai-workspace:
+    external: true
+    name: ${AGENTIC_TOOLS_BACKEND_NETWORK:-ai-workspace_ai-workspace}

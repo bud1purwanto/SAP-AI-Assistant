@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _ensure_ledger(conn):
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.schema_migrations (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.schema_migrations (
             name        VARCHAR(120) PRIMARY KEY,
             applied_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
@@ -33,7 +33,7 @@ def _ensure_ledger(conn):
 
 
 def _applied(conn) -> set:
-    rows = conn.execute(text("SELECT name FROM ai_assistant.schema_migrations")).fetchall()
+    rows = conn.execute(text("SELECT name FROM ai_assistant_dev.schema_migrations")).fetchall()
     return {r[0] for r in rows}
 
 
@@ -60,7 +60,7 @@ def _m0001_waktu_percakapan_pakai_zona_waktu(conn):
         masih_polos = conn.execute(text("""
             SELECT 1
             FROM information_schema.columns
-            WHERE table_schema = 'ai_assistant'
+            WHERE table_schema = 'ai_assistant_dev'
               AND table_name = :t
               AND column_name = :c
               AND data_type = 'timestamp without time zone'
@@ -68,14 +68,14 @@ def _m0001_waktu_percakapan_pakai_zona_waktu(conn):
         if not masih_polos:
             continue
 
-        logger.info(f"Mengubah ai_assistant.{tabel}.{kolom} menjadi TIMESTAMPTZ.")
+        logger.info(f"Mengubah ai_assistant_dev.{tabel}.{kolom} menjadi TIMESTAMPTZ.")
         conn.execute(text(f"""
-            ALTER TABLE ai_assistant.{tabel}
+            ALTER TABLE ai_assistant_dev.{tabel}
             ALTER COLUMN {kolom} TYPE TIMESTAMPTZ
             USING {kolom} AT TIME ZONE current_setting('TimeZone')
         """))
         conn.execute(text(f"""
-            ALTER TABLE ai_assistant.{tabel}
+            ALTER TABLE ai_assistant_dev.{tabel}
             ALTER COLUMN {kolom} SET DEFAULT CURRENT_TIMESTAMP
         """))
 
@@ -99,11 +99,11 @@ def _m0002_indeks_pencarian_riwayat(conn):
 
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_messages_content_trgm
-        ON ai_assistant.chat_messages USING GIN (content gin_trgm_ops)
+        ON ai_assistant_dev.chat_messages USING GIN (content gin_trgm_ops)
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_sessions_title_trgm
-        ON ai_assistant.chat_sessions USING GIN (title gin_trgm_ops)
+        ON ai_assistant_dev.chat_sessions USING GIN (title gin_trgm_ops)
     """))
 
 
@@ -112,7 +112,7 @@ def _m0003_indeks_feedback(conn):
     seluruh tabel pesan yang jumlahnya terus bertambah."""
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_messages_feedback
-        ON ai_assistant.chat_messages (feedback, id DESC)
+        ON ai_assistant_dev.chat_messages (feedback, id DESC)
         WHERE feedback IS NOT NULL AND feedback <> ''
     """))
 
@@ -130,7 +130,7 @@ def _m0004_peran_abaper_dan_functional(conn):
     menjadi 'abaper' tanpa diminta.
     """
     jumlah = conn.execute(text("""
-        UPDATE ai_assistant.users SET role = 'abaper' WHERE role = 'user'
+        UPDATE ai_assistant_dev.users SET role = 'abaper' WHERE role = 'user'
     """)).rowcount
     logger.info(f"{jumlah} pengguna dipindahkan dari peran 'user' ke 'abaper'.")
 
@@ -138,7 +138,7 @@ def _m0004_peran_abaper_dan_functional(conn):
 def _m0005_kuota_token(conn):
     """Pencatatan pemakaian token per pengguna per hari, dan batas per peran."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.token_usage (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.token_usage (
             username        VARCHAR(80)  NOT NULL,
             usage_date      VARCHAR(10)  NOT NULL,
             prompt_tokens   BIGINT       NOT NULL DEFAULT 0,
@@ -155,12 +155,12 @@ def _m0005_kuota_token(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_token_usage_tanggal
-        ON ai_assistant.token_usage (usage_date DESC, total_tokens DESC)
+        ON ai_assistant_dev.token_usage (usage_date DESC, total_tokens DESC)
     """))
 
     # Jejak per permintaan untuk pembatasan per menit.
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.request_log (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.request_log (
             id          BIGSERIAL PRIMARY KEY,
             username    VARCHAR(80) NOT NULL,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -168,11 +168,11 @@ def _m0005_kuota_token(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_request_log_user_waktu
-        ON ai_assistant.request_log (LOWER(username), created_at DESC)
+        ON ai_assistant_dev.request_log (LOWER(username), created_at DESC)
     """))
 
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.role_limits (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.role_limits (
             role                VARCHAR(30) PRIMARY KEY,
             daily_token_limit   BIGINT      NOT NULL DEFAULT 0,
             per_minute_limit    INTEGER     NOT NULL DEFAULT 0,
@@ -189,7 +189,7 @@ def _m0005_kuota_token(conn):
         ("guest", 50_000, 5),
     ):
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            INSERT INTO ai_assistant_dev.role_limits (role, daily_token_limit, per_minute_limit)
             VALUES (:r, :h, :m)
             ON CONFLICT (role) DO NOTHING
         """), {"r": peran, "h": harian, "m": per_menit})
@@ -198,7 +198,7 @@ def _m0005_kuota_token(conn):
 def _m0006_mode_chat(conn):
     """Tabel konfigurasi mode chat AI dan perizinan akses mode per role pengguna."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.chat_modes (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.chat_modes (
             id SERIAL PRIMARY KEY,
             code VARCHAR(40) NOT NULL UNIQUE,
             name VARCHAR(100) NOT NULL,
@@ -218,9 +218,9 @@ def _m0006_mode_chat(conn):
     """))
 
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.role_modes (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.role_modes (
             role VARCHAR(40) NOT NULL,
-            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
+            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant_dev.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
             enabled BOOLEAN NOT NULL DEFAULT TRUE,
             updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (role, mode_code)
@@ -236,7 +236,7 @@ def _m0006_mode_chat(conn):
 
     for code, name, desc, icon, provider, model, fb_prov, fb_model, max_iter, enabled, is_default, order in initial_modes:
         conn.execute(text("""
-            INSERT INTO ai_assistant.chat_modes
+            INSERT INTO ai_assistant_dev.chat_modes
                 (code, name, description, icon, provider, model, fallback_provider, fallback_model, max_iterations, enabled, is_default, sort_order)
             VALUES
                 (:c, :n, :d, :i, :p, :m, :fbp, :fbm, :mi, :en, :def, :ord)
@@ -268,14 +268,14 @@ def _m0006_mode_chat(conn):
 
     for role, code, enabled in role_permissions:
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+            INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled)
             VALUES (:r, :c, :en)
             ON CONFLICT (role, mode_code) DO NOTHING
         """), {"r": role, "c": code, "en": enabled})
 
     # Seed Master Switch
     conn.execute(text("""
-        INSERT INTO ai_assistant.system_config (key, value)
+        INSERT INTO ai_assistant_dev.system_config (key, value)
         VALUES ('chat_modes_enabled', 'true')
         ON CONFLICT (key) DO NOTHING
     """))
@@ -285,7 +285,7 @@ def _m0006_mode_chat(conn):
 def _m0007_akses_mcp_per_user(conn):
     """Katalog resource MCP dan kontrol otorisasi akses per peran serta per pengguna."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.mcp_resources (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.mcp_resources (
             resource_key   VARCHAR(80) PRIMARY KEY,
             kind           VARCHAR(20) NOT NULL,
             label          VARCHAR(120) NOT NULL,
@@ -299,9 +299,9 @@ def _m0007_akses_mcp_per_user(conn):
     """))
 
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.role_resource_access (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.role_resource_access (
             role          VARCHAR(40) NOT NULL,
-            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
+            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant_dev.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
             allowed       BOOLEAN NOT NULL DEFAULT FALSE,
             can_write     BOOLEAN NOT NULL DEFAULT FALSE,
             updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -310,9 +310,9 @@ def _m0007_akses_mcp_per_user(conn):
     """))
 
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.user_resource_access (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_resource_access (
             username      VARCHAR(80) NOT NULL,
-            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
+            resource_key  VARCHAR(80) NOT NULL REFERENCES ai_assistant_dev.mcp_resources(resource_key) ON UPDATE CASCADE ON DELETE CASCADE,
             allowed       BOOLEAN NOT NULL DEFAULT FALSE,
             can_write     BOOLEAN NOT NULL DEFAULT FALSE,
             valid_until   TIMESTAMPTZ,
@@ -323,11 +323,11 @@ def _m0007_akses_mcp_per_user(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_user_res_access_user
-        ON ai_assistant.user_resource_access (LOWER(username));
+        ON ai_assistant_dev.user_resource_access (LOWER(username));
     """))
 
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.access_audit (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.access_audit (
             id            BIGSERIAL PRIMARY KEY,
             actor         VARCHAR(80) NOT NULL,
             target_type   VARCHAR(20) NOT NULL,
@@ -340,12 +340,12 @@ def _m0007_akses_mcp_per_user(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_access_audit_created
-        ON ai_assistant.access_audit (created_at DESC);
+        ON ai_assistant_dev.access_audit (created_at DESC);
     """))
 
     # Seed Master Switch: default 'false' (OFF) agar transisi aman
     conn.execute(text("""
-        INSERT INTO ai_assistant.system_config (key, value)
+        INSERT INTO ai_assistant_dev.system_config (key, value)
         VALUES ('mcp_access_control_enabled', 'false')
         ON CONFLICT (key) DO NOTHING
     """))
@@ -366,7 +366,7 @@ def _m0007_akses_mcp_per_user(conn):
 
     for r_key, r_kind, r_label, r_sid, r_client, r_prod in default_resources:
         conn.execute(text("""
-            INSERT INTO ai_assistant.mcp_resources
+            INSERT INTO ai_assistant_dev.mcp_resources
                 (resource_key, kind, label, sid, client, is_production)
             VALUES
                 (:k, :kind, :label, :sid, :cli, :prod)
@@ -392,7 +392,7 @@ def _m0008_peran_ekstra_backend_frontend_basis_data(conn):
         ("data_analyst", 800_000, 10),
     ):
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            INSERT INTO ai_assistant_dev.role_limits (role, daily_token_limit, per_minute_limit)
             VALUES (:r, :h, :m)
             ON CONFLICT (role) DO NOTHING
         """), {"r": peran, "h": harian, "m": per_menit})
@@ -414,7 +414,7 @@ def _m0008_peran_ekstra_backend_frontend_basis_data(conn):
     ]
     for role, code, enabled in role_permissions:
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+            INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled)
             VALUES (:r, :c, :en)
             ON CONFLICT (role, mode_code) DO NOTHING
         """), {"r": role, "c": code, "en": enabled})
@@ -423,8 +423,8 @@ def _m0008_peran_ekstra_backend_frontend_basis_data(conn):
 def _m0009_multi_role_pengguna(conn):
     """Tabel relasi peran ganda pengguna (user_roles) dan migrasi data non-destruktif."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.user_roles (
-            username   VARCHAR(50) NOT NULL REFERENCES ai_assistant.users(username) ON UPDATE CASCADE ON DELETE CASCADE,
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_roles (
+            username   VARCHAR(50) NOT NULL REFERENCES ai_assistant_dev.users(username) ON UPDATE CASCADE ON DELETE CASCADE,
             role       VARCHAR(40) NOT NULL,
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (username, role)
@@ -432,14 +432,14 @@ def _m0009_multi_role_pengguna(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_user_roles_username
-        ON ai_assistant.user_roles(username);
+        ON ai_assistant_dev.user_roles(username);
     """))
 
     # Migrasi data awal dari tabel users ke user_roles
     conn.execute(text("""
-        INSERT INTO ai_assistant.user_roles (username, role)
+        INSERT INTO ai_assistant_dev.user_roles (username, role)
         SELECT username, role
-        FROM ai_assistant.users
+        FROM ai_assistant_dev.users
         WHERE role IS NOT NULL AND role != ''
         ON CONFLICT (username, role) DO NOTHING;
     """))
@@ -449,7 +449,7 @@ def _m0010_seed_skill_sap_mm(conn):
     """Seed modul keahlian SOP SAP MM ke katalog skills."""
     from database import DEFAULT_SKILL_MM
     conn.execute(text("""
-        INSERT INTO ai_assistant.skills (name, description, content, enabled)
+        INSERT INTO ai_assistant_dev.skills (name, description, content, enabled)
         VALUES ('SAP MM', 'Panduan modul Materials Management (MM), Purchasing, Vendor, Master Material, dan pembuatan PO via BAPI RFC (BAPI_PO_CREATE1)', :mm_content, true)
         ON CONFLICT (name) DO UPDATE SET
             description = EXCLUDED.description,
@@ -460,20 +460,20 @@ def _m0010_seed_skill_sap_mm(conn):
 def _m0011_skill_tags(conn):
     """Tambahkan kolom tags pada tabel skills dan seed tags bawaan untuk modul default."""
     conn.execute(text("""
-        ALTER TABLE ai_assistant.skills ADD COLUMN IF NOT EXISTS tags text DEFAULT '';
+        ALTER TABLE ai_assistant_dev.skills ADD COLUMN IF NOT EXISTS tags text DEFAULT '';
     """))
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET tags = 'abap, program, coding, se38, se80, bapi, syntax, zprogram, function module, include'
         WHERE name = 'SAP ABAP' AND (tags IS NULL OR tags = '');
     """))
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET tags = 'pp, produksi, production, slit roll, slitting, bom, routing, work center, afko, co01, zpp001, mrp'
         WHERE name = 'SAP PP' AND (tags IS NULL OR tags = '');
     """))
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET tags = 'mm, purchasing, po, purchase order, material, vendor, bapi_po_create1, mara, ekko, migo, pr'
         WHERE name = 'SAP MM' AND (tags IS NULL OR tags = '');
     """))
@@ -488,25 +488,25 @@ def _m0012_standardize_persona_and_skills(conn):
         DEFAULT_SKILL_MM,
     )
     conn.execute(text("""
-        INSERT INTO ai_assistant.system_config (key, value)
+        INSERT INTO ai_assistant_dev.system_config (key, value)
         VALUES ('global_assistant_persona', :persona)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
     """), {"persona": DEFAULT_GLOBAL_PERSONA})
 
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET content = :abap_content
         WHERE name = 'SAP ABAP';
     """), {"abap_content": DEFAULT_SKILL_ABAP})
 
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET content = :pp_content
         WHERE name = 'SAP PP';
     """), {"pp_content": DEFAULT_SKILL_PP})
 
     conn.execute(text("""
-        UPDATE ai_assistant.skills
+        UPDATE ai_assistant_dev.skills
         SET content = :mm_content
         WHERE name = 'SAP MM';
     """), {"mm_content": DEFAULT_SKILL_MM})
@@ -516,13 +516,13 @@ def _m0013_master_data_roles(conn):
     """Normalisasi lebar kolom peran, master tabel roles, seed 9 peran, backfill defensif, dan foreign key."""
     # 1. Normalisasi lebar kolom VARCHAR(40)
     conn.execute(text("""
-        ALTER TABLE ai_assistant.users ALTER COLUMN role TYPE VARCHAR(40);
-        ALTER TABLE ai_assistant.role_limits ALTER COLUMN role TYPE VARCHAR(40);
+        ALTER TABLE ai_assistant_dev.users ALTER COLUMN role TYPE VARCHAR(40);
+        ALTER TABLE ai_assistant_dev.role_limits ALTER COLUMN role TYPE VARCHAR(40);
     """))
 
-    # 2. Tabel master ai_assistant.roles
+    # 2. Tabel master ai_assistant_dev.roles
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.roles (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.roles (
             code               VARCHAR(40)  PRIMARY KEY,
             label              VARCHAR(80)  NOT NULL,
             description        VARCHAR(255) NOT NULL DEFAULT '',
@@ -552,7 +552,7 @@ def _m0013_master_data_roles(conn):
 
     for code, label, desc, color, icon, is_sys, can_mod, enabled, sort_ord in default_roles:
         conn.execute(text("""
-            INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+            INSERT INTO ai_assistant_dev.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
             VALUES (:c, :l, :d, :col, :ico, :sys, :mod, :en, :so)
             ON CONFLICT (code) DO UPDATE SET
                 label = EXCLUDED.label,
@@ -569,20 +569,20 @@ def _m0013_master_data_roles(conn):
 
     # 4. Backfill defensif: daftarkan peran yang ada di tabel-tabel anak tapi belum ada di roles
     conn.execute(text("""
-        INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+        INSERT INTO ai_assistant_dev.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
         SELECT DISTINCT LOWER(TRIM(r.role)), INITCAP(REPLACE(TRIM(r.role), '_', ' ')), 'Peran kustom sistem', 'zinc', 'users', FALSE, FALSE, TRUE, 100
         FROM (
-            SELECT role FROM ai_assistant.users WHERE role IS NOT NULL AND TRIM(role) != ''
+            SELECT role FROM ai_assistant_dev.users WHERE role IS NOT NULL AND TRIM(role) != ''
             UNION
-            SELECT role FROM ai_assistant.user_roles WHERE role IS NOT NULL AND TRIM(role) != ''
+            SELECT role FROM ai_assistant_dev.user_roles WHERE role IS NOT NULL AND TRIM(role) != ''
             UNION
-            SELECT role FROM ai_assistant.role_limits WHERE role IS NOT NULL AND TRIM(role) != ''
+            SELECT role FROM ai_assistant_dev.role_limits WHERE role IS NOT NULL AND TRIM(role) != ''
             UNION
-            SELECT role FROM ai_assistant.role_modes WHERE role IS NOT NULL AND TRIM(role) != ''
+            SELECT role FROM ai_assistant_dev.role_modes WHERE role IS NOT NULL AND TRIM(role) != ''
             UNION
-            SELECT role FROM ai_assistant.role_resource_access WHERE role IS NOT NULL AND TRIM(role) != ''
+            SELECT role FROM ai_assistant_dev.role_resource_access WHERE role IS NOT NULL AND TRIM(role) != ''
         ) r
-        WHERE LOWER(TRIM(r.role)) NOT IN (SELECT code FROM ai_assistant.roles)
+        WHERE LOWER(TRIM(r.role)) NOT IN (SELECT code FROM ai_assistant_dev.roles)
         ON CONFLICT (code) DO NOTHING;
     """))
 
@@ -599,19 +599,19 @@ def _m0013_master_data_roles(conn):
             BEGIN
                 IF NOT EXISTS (
                     SELECT 1 FROM information_schema.table_constraints 
-                    WHERE table_schema = 'ai_assistant' AND constraint_name = '{fk_name}'
+                    WHERE table_schema = 'ai_assistant_dev' AND constraint_name = '{fk_name}'
                 ) THEN
-                    ALTER TABLE ai_assistant.{table}
+                    ALTER TABLE ai_assistant_dev.{table}
                     ADD CONSTRAINT {fk_name}
-                    FOREIGN KEY ({col}) REFERENCES ai_assistant.roles(code)
+                    FOREIGN KEY ({col}) REFERENCES ai_assistant_dev.roles(code)
                     ON UPDATE CASCADE ON DELETE {on_delete};
                 END IF;
             END $$;
         """))
 
     # 6. Tutup celah LLM Mode: isi role_modes yang belum ada untuk seluruh peran master
-    modes = conn.execute(text("SELECT code, is_default FROM ai_assistant.chat_modes")).fetchall()
-    roles = conn.execute(text("SELECT code FROM ai_assistant.roles")).fetchall()
+    modes = conn.execute(text("SELECT code, is_default FROM ai_assistant_dev.chat_modes")).fetchall()
+    roles = conn.execute(text("SELECT code FROM ai_assistant_dev.roles")).fetchall()
     for r in roles:
         r_code = r.code
         for m in modes:
@@ -624,14 +624,14 @@ def _m0013_master_data_roles(conn):
             else:
                 is_en = False
             conn.execute(text("""
-                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled)
                 VALUES (:r, :m, :en)
                 ON CONFLICT (role, mode_code) DO NOTHING;
             """), {"r": r_code, "m": m_code, "en": is_en})
 
 
 def _m0014_users_role_integrity(conn):
-    """Menegakkan integritas ai_assistant.users.role: lowercase konsisten + FK ke roles.
+    """Menegakkan integritas ai_assistant_dev.users.role: lowercase konsisten + FK ke roles.
 
     Sebelum migrasi ini, users.role bisa berisi casing berbeda dari user_roles.role
     (mis. 'Backend' vs 'backend') karena jalur update lama tidak menormalisasi input
@@ -643,17 +643,17 @@ def _m0014_users_role_integrity(conn):
     # 1. Backfill defensif: jaga-jaga ada users.role yang belum terdaftar di master roles
     #    (mis. diisi manual lewat SQL di luar aplikasi).
     conn.execute(text("""
-        INSERT INTO ai_assistant.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
+        INSERT INTO ai_assistant_dev.roles (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
         SELECT DISTINCT LOWER(TRIM(role)), INITCAP(REPLACE(TRIM(role), '_', ' ')), 'Peran kustom sistem', 'zinc', 'users', FALSE, FALSE, TRUE, 100
-        FROM ai_assistant.users
+        FROM ai_assistant_dev.users
         WHERE role IS NOT NULL AND TRIM(role) != ''
-          AND LOWER(TRIM(role)) NOT IN (SELECT code FROM ai_assistant.roles)
+          AND LOWER(TRIM(role)) NOT IN (SELECT code FROM ai_assistant_dev.roles)
         ON CONFLICT (code) DO NOTHING;
     """))
 
     # 2. Normalisasi data yang sudah ada ke lowercase (menyamakan dengan user_roles.role)
     conn.execute(text("""
-        UPDATE ai_assistant.users SET role = LOWER(TRIM(role)) WHERE role <> LOWER(TRIM(role));
+        UPDATE ai_assistant_dev.users SET role = LOWER(TRIM(role)) WHERE role <> LOWER(TRIM(role));
     """))
 
     # 3. Pasang CHECK constraint agar tidak bisa dimasukkan huruf besar lagi
@@ -662,9 +662,9 @@ def _m0014_users_role_integrity(conn):
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM information_schema.table_constraints
-                WHERE table_schema = 'ai_assistant' AND constraint_name = 'chk_users_role_lowercase'
+                WHERE table_schema = 'ai_assistant_dev' AND constraint_name = 'chk_users_role_lowercase'
             ) THEN
-                ALTER TABLE ai_assistant.users
+                ALTER TABLE ai_assistant_dev.users
                 ADD CONSTRAINT chk_users_role_lowercase CHECK (role = LOWER(role));
             END IF;
         END $$;
@@ -676,11 +676,11 @@ def _m0014_users_role_integrity(conn):
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM information_schema.table_constraints
-                WHERE table_schema = 'ai_assistant' AND constraint_name = 'fk_users_role'
+                WHERE table_schema = 'ai_assistant_dev' AND constraint_name = 'fk_users_role'
             ) THEN
-                ALTER TABLE ai_assistant.users
+                ALTER TABLE ai_assistant_dev.users
                 ADD CONSTRAINT fk_users_role
-                FOREIGN KEY (role) REFERENCES ai_assistant.roles(code)
+                FOREIGN KEY (role) REFERENCES ai_assistant_dev.roles(code)
                 ON UPDATE CASCADE ON DELETE RESTRICT;
             END IF;
         END $$;
@@ -703,20 +703,20 @@ def _m0015_role_suspended_flag(conn):
     Peran sistem tidak boleh disuspend, sama seperti tidak boleh dinonaktifkan.
     """
     conn.execute(text("""
-        ALTER TABLE ai_assistant.roles
+        ALTER TABLE ai_assistant_dev.roles
         ADD COLUMN IF NOT EXISTS suspended BOOLEAN NOT NULL DEFAULT FALSE;
     """))
 
 
 def _m0016_force_change_password(conn):
-    """Menambahkan kolom force_change_password pada ai_assistant.users.
+    """Menambahkan kolom force_change_password pada ai_assistant_dev.users.
 
     Ketika admin mereset password pengguna atau akun baru dibuat dengan password
     sementara, flag ini bernilai TRUE. Pengguna diwajibkan mengganti password
     pribadinya saat login sebelum dapat menggunakan aplikasi.
     """
     conn.execute(text("""
-        ALTER TABLE ai_assistant.users
+        ALTER TABLE ai_assistant_dev.users
         ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN NOT NULL DEFAULT FALSE;
     """))
 
@@ -724,7 +724,7 @@ def _m0016_force_change_password(conn):
 def _m0017_dynamic_mcp_servers(conn):
     """Tabel server MCP dinamis untuk konfigurasi multi-gateway."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.mcp_servers (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.mcp_servers (
             id VARCHAR(64) PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             description TEXT,
@@ -742,10 +742,10 @@ def _m0017_dynamic_mcp_servers(conn):
     """))
 
     # Seed default core gateways jika tabel masih kosong
-    count = conn.execute(text("SELECT count(*) FROM ai_assistant.mcp_servers")).scalar()
+    count = conn.execute(text("SELECT count(*) FROM ai_assistant_dev.mcp_servers")).scalar()
     if count == 0:
         rows = conn.execute(text("""
-            SELECT key, value FROM ai_assistant.system_config 
+            SELECT key, value FROM ai_assistant_dev.system_config 
             WHERE key IN ('mcp_sap_config_json', 'mcp_rag_config_json', 'mcp_sql_config_json', 'mcp_email_config_json')
         """)).fetchall()
         cfg_map = {r[0]: r[1] for r in rows if r[1]}
@@ -775,7 +775,7 @@ def _m0017_dynamic_mcp_servers(conn):
         email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
 
         conn.execute(text("""
-            INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
+            INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
             VALUES 
                 ('sap', 'SAP ERP Gateway', 'Live Data, Tabel & ABAP Code SAP', :sap_url, 'http', :sap_token, 'Database', TRUE, TRUE, 1),
                 ('rag', 'RAG Knowledge Gateway', 'Vector DB, SOP & Tech Docs', :rag_url, 'http', :rag_token, 'BookOpen', TRUE, TRUE, 2),
@@ -791,9 +791,9 @@ def _m0017_dynamic_mcp_servers(conn):
 
 
 def _m0018_seed_mcp_email_server(conn):
-    """Seed default Email Gateway ke ai_assistant.mcp_servers jika belum ada."""
+    """Seed default Email Gateway ke ai_assistant_dev.mcp_servers jika belum ada."""
     rows = conn.execute(text("""
-        SELECT key, value FROM ai_assistant.system_config 
+        SELECT key, value FROM ai_assistant_dev.system_config 
         WHERE key IN ('mcp_email_config_json', 'mcp_sql_config_json')
     """)).fetchall()
     cfg_map = {r[0]: r[1] for r in rows if r[1]}
@@ -824,7 +824,7 @@ def _m0018_seed_mcp_email_server(conn):
     )
 
     conn.execute(text("""
-        INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
+        INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
         VALUES ('email', 'Email Gateway', 'Email, Calendar & Mail Archive Gateway', :email_url, 'http', :email_token, 'Mail', TRUE, TRUE, 4)
         ON CONFLICT (id) DO NOTHING;
     """), {"email_url": email_url, "email_token": email_token})
@@ -833,7 +833,7 @@ def _m0018_seed_mcp_email_server(conn):
 def _m0019_scheduled_tasks(conn):
     """Tabel pemantauan & rekap terjadwal (Scheduled Tasks / Daily Digest)."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.scheduled_tasks (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.scheduled_tasks (
             id VARCHAR(64) PRIMARY KEY,
             user_id VARCHAR(50) NOT NULL,
             title VARCHAR(255) NOT NULL,
@@ -850,18 +850,18 @@ def _m0019_scheduled_tasks(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_user
-        ON ai_assistant.scheduled_tasks(user_id);
+        ON ai_assistant_dev.scheduled_tasks(user_id);
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_active
-        ON ai_assistant.scheduled_tasks(is_active);
+        ON ai_assistant_dev.scheduled_tasks(is_active);
     """))
 
 
 def _m0020_scheduled_tasks_email_text(conn):
     """Mendukung multiple email penerima tanpa batas panjang karakter."""
     conn.execute(text("""
-        ALTER TABLE ai_assistant.scheduled_tasks
+        ALTER TABLE ai_assistant_dev.scheduled_tasks
         ALTER COLUMN email_to TYPE TEXT;
     """))
 
@@ -869,7 +869,7 @@ def _m0020_scheduled_tasks_email_text(conn):
 def _m0021_master_data_divisions(conn):
     """Tabel master data divisi, konfigurasi persona divisi, dan kolom division_code pada tabel users."""
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.divisions (
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.divisions (
             code VARCHAR(40) PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             description VARCHAR(255) NOT NULL DEFAULT '',
@@ -883,36 +883,36 @@ def _m0021_master_data_divisions(conn):
     """))
     conn.execute(text("""
         CREATE INDEX IF NOT EXISTS idx_divisions_enabled_sort
-        ON ai_assistant.divisions(enabled, sort_order);
+        ON ai_assistant_dev.divisions(enabled, sort_order);
     """))
 
     # Tambah kolom division_code pada users jika belum ada
     conn.execute(text("""
-        ALTER TABLE ai_assistant.users
+        ALTER TABLE ai_assistant_dev.users
         ADD COLUMN IF NOT EXISTS division_code VARCHAR(40);
     """))
 
     # Foreign key non-destruktif
     has_fk = conn.execute(text("""
         SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_schema = 'ai_assistant'
+        WHERE constraint_schema = 'ai_assistant_dev'
           AND table_name = 'users'
           AND constraint_name = 'fk_users_division'
     """)).fetchone()
     if not has_fk:
         try:
             conn.execute(text("""
-                ALTER TABLE ai_assistant.users
+                ALTER TABLE ai_assistant_dev.users
                 ADD CONSTRAINT fk_users_division
                 FOREIGN KEY (division_code)
-                REFERENCES ai_assistant.divisions(code)
+                REFERENCES ai_assistant_dev.divisions(code)
                 ON DELETE SET NULL;
             """))
         except Exception as e:
             logger.warning(f"Gagal menambahkan FK fk_users_division: {e}")
 
     # Seed default divisions jika masih kosong
-    count = conn.execute(text("SELECT count(*) FROM ai_assistant.divisions")).scalar()
+    count = conn.execute(text("SELECT count(*) FROM ai_assistant_dev.divisions")).scalar()
     if count == 0:
         seed_divisions = [
             (
@@ -945,32 +945,32 @@ def _m0021_master_data_divisions(conn):
         ]
         for c, n, d, p, r, en, s in seed_divisions:
             conn.execute(text("""
-                INSERT INTO ai_assistant.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
+                INSERT INTO ai_assistant_dev.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
                 VALUES (:c, :n, :d, :p, :r, :en, :s)
                 ON CONFLICT (code) DO NOTHING
             """), {"c": c, "n": n, "d": d, "p": p, "r": r, "en": en, "s": s})
 
 
 def _m0022_user_job_levels(conn):
-    """Tambahkan kolom job_level (staff, leader, manager) pada ai_assistant.users."""
+    """Tambahkan kolom job_level (staff, leader, manager) pada ai_assistant_dev.users."""
     conn.execute(text("""
-        ALTER TABLE ai_assistant.users
+        ALTER TABLE ai_assistant_dev.users
         ADD COLUMN IF NOT EXISTS job_level VARCHAR(32) DEFAULT 'staff';
     """))
     conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_users_job_level ON ai_assistant.users (job_level);
+        CREATE INDEX IF NOT EXISTS idx_users_job_level ON ai_assistant_dev.users (job_level);
     """))
     conn.execute(text("""
-        UPDATE ai_assistant.users
+        UPDATE ai_assistant_dev.users
         SET job_level = 'staff'
         WHERE job_level IS NULL OR job_level = '';
     """))
     # Superadmin disetel ke level manager untuk akses penuh ke seluruh dokumen
     conn.execute(text("""
-        UPDATE ai_assistant.users
+        UPDATE ai_assistant_dev.users
         SET job_level = 'manager'
         WHERE LOWER(role) = 'superadmin' OR username IN (
-            SELECT username FROM ai_assistant.user_roles WHERE LOWER(role) = 'superadmin'
+            SELECT username FROM ai_assistant_dev.user_roles WHERE LOWER(role) = 'superadmin'
         );
     """))
 
@@ -1017,7 +1017,7 @@ def run_migrations(conn) -> list:
         logger.info(f"Menjalankan migrasi {nama}…")
         fungsi(conn)
         conn.execute(
-            text("INSERT INTO ai_assistant.schema_migrations (name) VALUES (:n)"),
+            text("INSERT INTO ai_assistant_dev.schema_migrations (name) VALUES (:n)"),
             {"n": nama},
         )
         diterapkan.append(nama)

@@ -12,7 +12,7 @@ from migrations import MIGRATIONS, run_migrations
 
 
 def _ledger(conn):
-    rows = conn.execute(text("SELECT name FROM ai_assistant.schema_migrations")).fetchall()
+    rows = conn.execute(text("SELECT name FROM ai_assistant_dev.schema_migrations")).fetchall()
     return {r[0] for r in rows}
 
 
@@ -37,7 +37,7 @@ def test_kolom_waktu_bertipe_timestamptz(db):
         ):
             tipe = conn.execute(text("""
                 SELECT data_type FROM information_schema.columns
-                WHERE table_schema='ai_assistant' AND table_name=:t AND column_name=:c
+                WHERE table_schema='ai_assistant_dev' AND table_name=:t AND column_name=:c
             """), {"t": tabel, "c": kolom}).scalar()
             assert tipe == "timestamp with time zone", f"{tabel}.{kolom} bertipe {tipe}"
 
@@ -49,11 +49,11 @@ def test_migrasi_pindahan_aman_pada_database_yang_sudah_dikonversi(db):
     engine = get_engine()
     with engine.connect() as conn:
         sebelum = conn.execute(text(
-            "SELECT updated_at FROM ai_assistant.chat_sessions ORDER BY updated_at DESC LIMIT 1"
+            "SELECT updated_at FROM ai_assistant_dev.chat_sessions ORDER BY updated_at DESC LIMIT 1"
         )).scalar()
 
         # Hapus catatannya, seolah database ini berasal dari versi sebelum ledger ada.
-        conn.execute(text("DELETE FROM ai_assistant.schema_migrations"))
+        conn.execute(text("DELETE FROM ai_assistant_dev.schema_migrations"))
         conn.commit()
 
     init_db()
@@ -61,7 +61,7 @@ def test_migrasi_pindahan_aman_pada_database_yang_sudah_dikonversi(db):
     with engine.connect() as conn:
         assert _ledger(conn) == {nama for nama, _ in MIGRATIONS}
         sesudah = conn.execute(text(
-            "SELECT updated_at FROM ai_assistant.chat_sessions ORDER BY updated_at DESC LIMIT 1"
+            "SELECT updated_at FROM ai_assistant_dev.chat_sessions ORDER BY updated_at DESC LIMIT 1"
         )).scalar()
     assert sesudah == sebelum, "nilai waktu bergeser saat migrasi dijalankan ulang"
 

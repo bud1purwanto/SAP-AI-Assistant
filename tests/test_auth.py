@@ -26,7 +26,7 @@ def test_login_returns_jwt(client):
 def test_password_stored_as_bcrypt_hash(db):
     with db.get_engine().connect() as conn:
         row = conn.execute(
-            text("SELECT password, password_hash FROM ai_assistant.users WHERE username = :u"),
+            text("SELECT password, password_hash FROM ai_assistant_dev.users WHERE username = :u"),
             {"u": ADMIN_USER},
         ).fetchone()
     assert row.password_hash.startswith("$2b$")

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     Catatan Arsitektur:
     - Infrastruktur server (Database URL, JWT Secret, CORS, Limits) dikonfigurasi via file .env / ENV server.
     - AI Provider (9Router, OpenRouter), MCP Servers (SAP, RAG, Email), Persona Organisasi, dan Skills
-      disimpan secara dinamis di database PostgreSQL (tabel `ai_assistant.system_config` & `ai_assistant.skills`)
+      disimpan secara dinamis di database PostgreSQL (tabel `ai_assistant_dev.system_config` & `ai_assistant_dev.skills`)
       dan dapat diubah secara live lewat Dashboard Admin (UI).
     """
     # ==============================================================================

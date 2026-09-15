@@ -78,17 +78,17 @@ def get_engine():
 
 
 def init_db():
-    """Membuat schema 'ai_assistant' serta tabel 'users', 'system_config', 
+    """Membuat schema 'ai_assistant_dev' serta tabel 'users', 'system_config', 
     'chat_sessions', dan 'chat_messages', kemudian seeding user default."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # 1. Buat Schema ai_assistant (jika didukung seperti PostgreSQL)
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant;"))
+            # 1. Buat Schema ai_assistant_dev (jika didukung seperti PostgreSQL)
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai_assistant_dev;"))
             
-            # 2. Buat Tabel ai_assistant.roles jika belum ada
+            # 2. Buat Tabel ai_assistant_dev.roles jika belum ada
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.roles (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.roles (
                     code VARCHAR(40) PRIMARY KEY,
                     label VARCHAR(80) NOT NULL,
                     description VARCHAR(255) NOT NULL DEFAULT '',
@@ -103,9 +103,9 @@ def init_db():
                 );
             """))
 
-            # 2b. Buat Tabel ai_assistant.users
+            # 2b. Buat Tabel ai_assistant_dev.users
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.users (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.users (
                     username VARCHAR(50) PRIMARY KEY,
                     password VARCHAR(100),
                     password_hash VARCHAR(255),
@@ -120,26 +120,26 @@ def init_db():
             # PostgreSQL satu pernyataan yang gagal membatalkan SELURUH
             # transaksi, sehingga semua perintah berikutnya ikut gagal.
             conn.execute(text(
-                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
+                "ALTER TABLE ai_assistant_dev.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
             ))
             conn.execute(text(
-                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120)"
+                "ALTER TABLE ai_assistant_dev.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120)"
             ))
             conn.execute(text(
-                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN DEFAULT FALSE"
+                "ALTER TABLE ai_assistant_dev.users ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN DEFAULT FALSE"
             ))
             # Kolom password plaintext dipensiunkan; DROP NOT NULL bersifat
             # idempoten sehingga aman dijalankan berulang.
             conn.execute(text(
-                "ALTER TABLE ai_assistant.users ALTER COLUMN password DROP NOT NULL"
+                "ALTER TABLE ai_assistant_dev.users ALTER COLUMN password DROP NOT NULL"
             ))
             conn.execute(text(
-                "ALTER TABLE ai_assistant.users ADD COLUMN IF NOT EXISTS division_code VARCHAR(40)"
+                "ALTER TABLE ai_assistant_dev.users ADD COLUMN IF NOT EXISTS division_code VARCHAR(40)"
             ))
 
-            # 2c. Buat Tabel ai_assistant.divisions
+            # 2c. Buat Tabel ai_assistant_dev.divisions
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.divisions (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.divisions (
                     code VARCHAR(40) PRIMARY KEY,
                     name VARCHAR(120) NOT NULL,
                     description VARCHAR(255) NOT NULL DEFAULT '',
@@ -152,17 +152,17 @@ def init_db():
                 );
             """))
 
-            # 3. Buat Tabel ai_assistant.system_config
+            # 3. Buat Tabel ai_assistant_dev.system_config
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.system_config (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.system_config (
                     key VARCHAR(50) PRIMARY KEY,
                     value TEXT
                 );
             """))
 
-            # 3b. Buat Tabel ai_assistant.user_sap_credentials untuk Multi-User MCP SAP
+            # 3b. Buat Tabel ai_assistant_dev.user_sap_credentials untuk Multi-User MCP SAP
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.user_sap_credentials (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_sap_credentials (
                     username VARCHAR(50) NOT NULL,
                     target VARCHAR(50) NOT NULL,
                     encrypted_data TEXT NOT NULL,
@@ -171,9 +171,9 @@ def init_db():
                 );
             """))
 
-            # 4. Buat Tabel ai_assistant.chat_sessions
+            # 4. Buat Tabel ai_assistant_dev.chat_sessions
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.chat_sessions (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.chat_sessions (
                     session_id VARCHAR(50) PRIMARY KEY,
                     username VARCHAR(50) NOT NULL,
                     title VARCHAR(255) NOT NULL,
@@ -182,12 +182,12 @@ def init_db():
                 );
             """))
 
-            # 5. Buat Tabel ai_assistant.chat_messages
+            # 5. Buat Tabel ai_assistant_dev.chat_messages
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.chat_messages (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.chat_messages (
                     id SERIAL PRIMARY KEY,
                     session_id VARCHAR(50) NOT NULL
-                        REFERENCES ai_assistant.chat_sessions(session_id) ON DELETE CASCADE,
+                        REFERENCES ai_assistant_dev.chat_sessions(session_id) ON DELETE CASCADE,
                     role VARCHAR(20) NOT NULL,
                     content TEXT NOT NULL,
                     sources TEXT,
@@ -197,32 +197,32 @@ def init_db():
 
             # 5a. Migrasi & index untuk chat_messages / chat_sessions.
             conn.execute(text(
-                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS artifacts TEXT"
+                "ALTER TABLE ai_assistant_dev.chat_messages ADD COLUMN IF NOT EXISTS artifacts TEXT"
             ))
             # Lampiran dari pengguna dipisahkan dari berkas hasil generate:
             # keduanya berkas, tetapi arah dan masa berlakunya berbeda.
             conn.execute(text(
-                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT"
+                "ALTER TABLE ai_assistant_dev.chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT"
             ))
             # Feedback rating ('like' | 'dislike' | null) untuk audit kepuasan pengguna.
             conn.execute(text(
-                "ALTER TABLE ai_assistant.chat_messages ADD COLUMN IF NOT EXISTS feedback VARCHAR(10)"
+                "ALTER TABLE ai_assistant_dev.chat_messages ADD COLUMN IF NOT EXISTS feedback VARCHAR(10)"
             ))
             # Kolom-kolom ini dibaca pada setiap pembukaan sesi dan render sidebar.
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_messages_session
-                ON ai_assistant.chat_messages (session_id, id);
+                ON ai_assistant_dev.chat_messages (session_id, id);
             """))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_sessions_username
-                ON ai_assistant.chat_sessions (LOWER(username), updated_at DESC);
+                ON ai_assistant_dev.chat_sessions (LOWER(username), updated_at DESC);
             """))
 
             # 5b. Kuota harian pengunjung tamu, ditegakkan di sisi server.
             # localStorage di browser dapat dihapus kapan saja sehingga tidak
             # bisa dijadikan dasar pembatasan.
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.guest_usage (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.guest_usage (
                     client_key VARCHAR(64) NOT NULL,
                     usage_date VARCHAR(10) NOT NULL,
                     count INTEGER NOT NULL DEFAULT 0,
@@ -237,7 +237,7 @@ def init_db():
             # satu worker uvicorn, unduhan bisa mendarat di worker yang berbeda
             # dari yang membuat berkasnya, dan berkas hilang setiap restart.
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.generated_artifacts (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.generated_artifacts (
                     artifact_id VARCHAR(32) PRIMARY KEY,
                     owner VARCHAR(50) NOT NULL,
                     filename VARCHAR(255) NOT NULL,
@@ -251,17 +251,17 @@ def init_db():
             """))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_artifacts_expires
-                ON ai_assistant.generated_artifacts (expires_at);
+                ON ai_assistant_dev.generated_artifacts (expires_at);
             """))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_artifacts_owner
-                ON ai_assistant.generated_artifacts (LOWER(owner));
+                ON ai_assistant_dev.generated_artifacts (LOWER(owner));
             """))
 
             # 5c-bis. Lampiran percakapan (gambar & dokumen) yang dikirim pengguna
             # sebagai konteks untuk AI. Teksnya diekstraksi sekali saat unggah.
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.chat_uploads (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.chat_uploads (
                     upload_id VARCHAR(32) PRIMARY KEY,
                     owner VARCHAR(50) NOT NULL,
                     session_id VARCHAR(50),
@@ -277,16 +277,16 @@ def init_db():
             """))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_uploads_owner
-                ON ai_assistant.chat_uploads (LOWER(owner), created_at DESC);
+                ON ai_assistant_dev.chat_uploads (LOWER(owner), created_at DESC);
             """))
             conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS idx_uploads_expires
-                ON ai_assistant.chat_uploads (expires_at);
+                ON ai_assistant_dev.chat_uploads (expires_at);
             """))
 
             # 5d. Catatan percobaan login gagal, untuk pembatasan brute force.
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.login_attempts (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.login_attempts (
                     client_key VARCHAR(120) PRIMARY KEY,
                     failures INTEGER NOT NULL DEFAULT 0,
                     first_failure_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -296,7 +296,7 @@ def init_db():
 
             # 5e. Katalog Skill Asisten (Panduan & SOP Modul SAP)
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.skills (
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.skills (
                     id SERIAL PRIMARY KEY,
                     name VARCHAR(100) NOT NULL UNIQUE,
                     description VARCHAR(255),
@@ -308,10 +308,10 @@ def init_db():
             """))
 
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
-            res_dev = conn.execute(text("SELECT username FROM ai_assistant.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
+            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
             if not res_dev:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.users (username, password_hash, role, assistant_persona)
+                    INSERT INTO ai_assistant_dev.users (username, password_hash, role, assistant_persona)
                     VALUES ('TRSTDEV', :pwd, 'superadmin', :persona)
                 """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
                 logger.warning(
@@ -319,97 +319,97 @@ def init_db():
                 )
 
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
-            res_sap = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
+            res_sap = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
             if not res_sap or not res_sap.value:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('mcp_sap_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": settings.mcp_sap_config_json or DEFAULT_MCP_SAP_JSON})
 
-            res_rag = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key = 'mcp_rag_config_json'")).fetchone()
+            res_rag = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key = 'mcp_rag_config_json'")).fetchone()
             if not res_rag or not res_rag.value:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('mcp_rag_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": settings.mcp_rag_config_json or DEFAULT_MCP_RAG_JSON})
 
-            res_email = conn.execute(text("SELECT key, value FROM ai_assistant.system_config WHERE key IN ('mcp_sql_config_json', 'mcp_email_config_json')")).fetchone()
+            res_email = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key IN ('mcp_sql_config_json', 'mcp_email_config_json')")).fetchone()
             if not res_email or not res_email.value:
                 val = settings.mcp_sql_config_json or settings.mcp_email_config_json or DEFAULT_MCP_SQL_JSON
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('mcp_sql_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": val})
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('mcp_email_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": val})
 
             # 9Router Config Defaults
-            res_9r_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_enabled'")).fetchone()
+            res_9r_en = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'nine_router_enabled'")).fetchone()
             if not res_9r_en:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('nine_router_enabled', :val)
                 """), {"val": str(settings.nine_router_enabled).lower()})
 
-            res_9r_url = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_base_url'")).fetchone()
+            res_9r_url = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'nine_router_base_url'")).fetchone()
             if not res_9r_url:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('nine_router_base_url', :val)
                 """), {"val": settings.nine_router_base_url or "http://192.168.88.83:20128/v1"})
 
-            res_9r_mod = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_model'")).fetchone()
+            res_9r_mod = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'nine_router_model'")).fetchone()
             if not res_9r_mod:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('nine_router_model', :val)
                 """), {"val": settings.nine_router_model or "ag/gemini-3.7-flash-medium"})
 
-            res_9r_key = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'nine_router_api_key'")).fetchone()
+            res_9r_key = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'nine_router_api_key'")).fetchone()
             if not res_9r_key:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('nine_router_api_key', :val)
                 """), {"val": settings.nine_router_api_key or ""})
 
             # OpenRouter Config Defaults
-            res_or_en = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_enabled'")).fetchone()
+            res_or_en = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'openrouter_enabled'")).fetchone()
             if not res_or_en:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('openrouter_enabled', :val)
                 """), {"val": str(settings.openrouter_enabled).lower()})
 
-            res_primary = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_model'")).fetchone()
+            res_primary = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'openrouter_model'")).fetchone()
             if not res_primary:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('openrouter_model', :val)
                 """), {"val": settings.openrouter_model or "openrouter/auto"})
 
-            res_fallback = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_fallback_model'")).fetchone()
+            res_fallback = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'openrouter_fallback_model'")).fetchone()
             if not res_fallback:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('openrouter_fallback_model', :val)
                 """), {"val": settings.openrouter_fallback_model or "openrouter/free"})
 
-            res_apikey = conn.execute(text("SELECT key FROM ai_assistant.system_config WHERE key = 'openrouter_api_key'")).fetchone()
+            res_apikey = conn.execute(text("SELECT key FROM ai_assistant_dev.system_config WHERE key = 'openrouter_api_key'")).fetchone()
             if not res_apikey:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('openrouter_api_key', :val)
                 """), {"val": settings.openrouter_api_key or ""})
 
             # Seed default skills (SAP ABAP, SAP PP, SAP MM)
             conn.execute(text("""
-                INSERT INTO ai_assistant.skills (name, description, content, enabled)
+                INSERT INTO ai_assistant_dev.skills (name, description, content, enabled)
                 VALUES 
                 ('SAP ABAP', 'Standar penulisan kode ABAP, function module, BAPI, dan best practice clean code', :abap_content, true),
                 ('SAP PP', 'Panduan modul Production Planning, Bill of Materials (BOM), Routing, dan Work Center', :pp_content, true),
@@ -426,7 +426,7 @@ def init_db():
             run_migrations(conn)
 
             conn.commit()
-            logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
+            logger.info("Database PostgreSQL schema 'ai_assistant_dev' berhasil diinisialisasi.")
     except Exception as e:
         logger.error(f"Gagal inisialisasi database: {e}")
         # Di produksi kegagalan ini tidak boleh ditelan: tanpa ini server tetap
@@ -452,8 +452,8 @@ def authenticate_user(username: str, password: str):
             row = conn.execute(text("""
                 SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
                        u.division_code, d.name AS division_name, u.job_level
-                FROM ai_assistant.users u
-                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                FROM ai_assistant_dev.users u
+                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
 
@@ -470,7 +470,7 @@ def authenticate_user(username: str, password: str):
                 authenticated = row.password == pwd_clean
                 if authenticated:
                     conn.execute(text("""
-                        UPDATE ai_assistant.users
+                        UPDATE ai_assistant_dev.users
                         SET password_hash = :h, password = NULL
                         WHERE LOWER(username) = LOWER(:u)
                     """), {"h": hash_password(pwd_clean), "u": uname_clean})
@@ -480,8 +480,8 @@ def authenticate_user(username: str, password: str):
             if authenticated:
                 role_rows = conn.execute(text("""
                     SELECT ur.role 
-                    FROM ai_assistant.user_roles ur
-                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    FROM ai_assistant_dev.user_roles ur
+                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
                     WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
@@ -489,8 +489,8 @@ def authenticate_user(username: str, password: str):
                 if not roles:
                     single = conn.execute(text("""
                         SELECT u.role 
-                        FROM ai_assistant.users u
-                        JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                        FROM ai_assistant_dev.users u
+                        JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
                         WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
@@ -525,7 +525,7 @@ def change_user_password(username: str, old_password: Optional[str], new_passwor
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT password, password_hash, force_change_password FROM ai_assistant.users
+                SELECT password, password_hash, force_change_password FROM ai_assistant_dev.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": username.strip()}).fetchone()
 
@@ -554,7 +554,7 @@ def change_user_password(username: str, old_password: Optional[str], new_passwor
                         return {"success": False, "message": "Password saat ini salah."}
 
             conn.execute(text("""
-                UPDATE ai_assistant.users
+                UPDATE ai_assistant_dev.users
                 SET password_hash = :new_h, password = NULL, force_change_password = FALSE
                 WHERE LOWER(username) = LOWER(:u)
             """), {"new_h": hash_password(new_password), "u": username.strip()})
@@ -566,8 +566,8 @@ def change_user_password(username: str, old_password: Optional[str], new_passwor
 
 
 def get_user_roles(username: str, active_only: bool = True) -> list:
-    """Mengambil seluruh role yang dimiliki oleh user dari ai_assistant.user_roles.
-    Bila active_only=True, hanya mengembalikan peran yang statusnya enabled di ai_assistant.roles.
+    """Mengambil seluruh role yang dimiliki oleh user dari ai_assistant_dev.user_roles.
+    Bila active_only=True, hanya mengembalikan peran yang statusnya enabled di ai_assistant_dev.roles.
     """
     uname_clean = (username or "").strip()
     if not uname_clean:
@@ -578,14 +578,14 @@ def get_user_roles(username: str, active_only: bool = True) -> list:
             if active_only:
                 rows = conn.execute(text("""
                     SELECT ur.role 
-                    FROM ai_assistant.user_roles ur
-                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    FROM ai_assistant_dev.user_roles ur
+                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
                     WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
             else:
                 rows = conn.execute(text("""
-                    SELECT role FROM ai_assistant.user_roles
+                    SELECT role FROM ai_assistant_dev.user_roles
                     WHERE LOWER(username) = LOWER(:u)
                     ORDER BY created_at ASC
                 """), {"u": uname_clean}).fetchall()
@@ -597,13 +597,13 @@ def get_user_roles(username: str, active_only: bool = True) -> list:
             if active_only:
                 single = conn.execute(text("""
                     SELECT u.role 
-                    FROM ai_assistant.users u
-                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                    FROM ai_assistant_dev.users u
+                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
                     WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                 """), {"u": uname_clean}).scalar()
             else:
                 single = conn.execute(text("""
-                    SELECT role FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)
+                    SELECT role FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)
                 """), {"u": uname_clean}).scalar()
 
             return [single] if single else ["user"]
@@ -630,16 +630,16 @@ def set_user_roles(username: str, roles: list, conn=None):
 
     def _execute(connection):
         connection.execute(text("""
-            DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)
+            DELETE FROM ai_assistant_dev.user_roles WHERE LOWER(username) = LOWER(:u)
         """), {"u": uname_clean})
         for r in clean_roles:
             connection.execute(text("""
-                INSERT INTO ai_assistant.user_roles (username, role)
+                INSERT INTO ai_assistant_dev.user_roles (username, role)
                 VALUES (:u, :r)
                 ON CONFLICT (username, role) DO NOTHING
             """), {"u": uname_clean, "r": r})
         connection.execute(text("""
-            UPDATE ai_assistant.users
+            UPDATE ai_assistant_dev.users
             SET role = :pr
             WHERE LOWER(username) = LOWER(:u)
         """), {"pr": primary_role, "u": uname_clean})
@@ -667,15 +667,15 @@ def get_user_by_username(username: str):
             row = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
                        u.division_code, d.name AS division_name, u.job_level
-                FROM ai_assistant.users u
-                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                FROM ai_assistant_dev.users u
+                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
             if row:
                 role_rows = conn.execute(text("""
                     SELECT ur.role 
-                    FROM ai_assistant.user_roles ur
-                    JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    FROM ai_assistant_dev.user_roles ur
+                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
                     WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
                     ORDER BY ur.created_at ASC
                 """), {"u": uname_clean}).fetchall()
@@ -683,8 +683,8 @@ def get_user_by_username(username: str):
                 if not roles:
                     single = conn.execute(text("""
                         SELECT u.role 
-                        FROM ai_assistant.users u
-                        JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(u.role)
+                        FROM ai_assistant_dev.users u
+                        JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
                         WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
@@ -712,7 +712,7 @@ def update_user_full_name(username: str, full_name: str):
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                UPDATE ai_assistant.users
+                UPDATE ai_assistant_dev.users
                 SET full_name = :fn
                 WHERE LOWER(username) = LOWER(:u)
             """), {"fn": (full_name or "").strip(), "u": username.strip()})
@@ -729,7 +729,7 @@ def update_user_persona(username: str, persona: str):
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                UPDATE ai_assistant.users 
+                UPDATE ai_assistant_dev.users 
                 SET assistant_persona = :p 
                 WHERE LOWER(username) = LOWER(:u)
             """), {"p": persona, "u": username.strip()})
@@ -803,7 +803,7 @@ def get_system_config():
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("SELECT key, value FROM ai_assistant.system_config")).fetchall()
+            rows = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config")).fetchall()
             for r in rows:
                 if r.key == 'mcp_sap_config_json' and r.value is not None:
                     sap_cfg = r.value
@@ -888,42 +888,42 @@ def update_system_config(
         with engine.connect() as conn:
             if token_limit_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('token_limit_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if token_limit_enabled else "false"})
 
             if chat_modes_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('chat_modes_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if chat_modes_enabled else "false"})
 
             if ai_suggestions_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('ai_suggestions_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if ai_suggestions_enabled else "false"})
 
             if mcp_access_control_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('mcp_access_control_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if mcp_access_control_enabled else "false"})
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('mcp_sap_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": mcp_sap_json})
                 
             if mcp_rag_json is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('mcp_rag_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": mcp_rag_json})
@@ -931,75 +931,75 @@ def update_system_config(
             target_sql = mcp_sql_json if mcp_sql_json is not None else mcp_email_json
             if target_sql is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('mcp_sql_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": target_sql})
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('mcp_email_config_json', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": target_sql})
 
             if nine_router_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('nine_router_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if nine_router_enabled else "false"})
 
             if nine_router_base_url is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('nine_router_base_url', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": nine_router_base_url})
 
             if nine_router_model is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('nine_router_model', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": nine_router_model})
 
             if nine_router_api_key is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('nine_router_api_key', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": nine_router_api_key})
 
             if openrouter_enabled is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('openrouter_enabled', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if openrouter_enabled else "false"})
 
             if openrouter_model is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('openrouter_model', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": openrouter_model})
 
             if openrouter_fallback_model is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('openrouter_fallback_model', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": openrouter_fallback_model})
 
             if openrouter_api_key is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value) 
+                    INSERT INTO ai_assistant_dev.system_config (key, value) 
                     VALUES ('openrouter_api_key', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": openrouter_api_key})
                 
             if global_assistant_persona is not None:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.system_config (key, value)
+                    INSERT INTO ai_assistant_dev.system_config (key, value)
                     VALUES ('global_assistant_persona', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": global_assistant_persona})
@@ -1013,14 +1013,14 @@ def update_system_config(
 # --- DYNAMIC MCP SERVERS FUNCTIONS ---
 
 def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
-    """Mengambil daftar server MCP dari tabel ai_assistant.mcp_servers."""
+    """Mengambil daftar server MCP dari tabel ai_assistant_dev.mcp_servers."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             query = """
                 SELECT id, name, description, url, transport_type, auth_token, headers, 
                        icon, is_system, enabled, display_order, created_at, updated_at
-                FROM ai_assistant.mcp_servers
+                FROM ai_assistant_dev.mcp_servers
             """
             params = {}
             if enabled_only:
@@ -1062,7 +1062,7 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
             r = conn.execute(text("""
                 SELECT id, name, description, url, transport_type, auth_token, headers,
                        icon, is_system, enabled, display_order, created_at, updated_at
-                FROM ai_assistant.mcp_servers
+                FROM ai_assistant_dev.mcp_servers
                 WHERE LOWER(id) = LOWER(:id)
             """), {"id": sid}).fetchone()
             if not r:
@@ -1111,14 +1111,14 @@ def create_mcp_server(data: dict) -> dict:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id FROM ai_assistant.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            existing = conn.execute(text("SELECT id FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if existing:
                 return {"success": False, "message": f"Server MCP dengan ID '{sid}' sudah ada."}
 
-            max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant.mcp_servers")).scalar() or 0
+            max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant_dev.mcp_servers")).scalar() or 0
 
             conn.execute(text("""
-                INSERT INTO ai_assistant.mcp_servers (id, name, description, url, transport_type, auth_token, headers, icon, is_system, enabled, display_order)
+                INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, headers, icon, is_system, enabled, display_order)
                 VALUES (:id, :name, :desc, :url, :transport, :token, :headers, :icon, FALSE, :enabled, :order)
             """), {
                 "id": sid, "name": name, "desc": desc, "url": url, "transport": transport,
@@ -1141,7 +1141,7 @@ def update_mcp_server(server_id: str, data: dict) -> dict:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, is_system FROM ai_assistant.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            existing = conn.execute(text("SELECT id, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if not existing:
                 return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
 
@@ -1190,7 +1190,7 @@ def update_mcp_server(server_id: str, data: dict) -> dict:
 
             fields.append("updated_at = CURRENT_TIMESTAMP")
             set_clause = ", ".join(fields)
-            conn.execute(text(f"UPDATE ai_assistant.mcp_servers SET {set_clause} WHERE LOWER(id) = LOWER(:id)"), params)
+            conn.execute(text(f"UPDATE ai_assistant_dev.mcp_servers SET {set_clause} WHERE LOWER(id) = LOWER(:id)"), params)
             conn.commit()
 
             return {"success": True, "message": f"Server MCP '{sid}' berhasil diperbarui."}
@@ -1208,14 +1208,14 @@ def delete_mcp_server(server_id: str) -> dict:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, name, is_system FROM ai_assistant.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            existing = conn.execute(text("SELECT id, name, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if not existing:
                 return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
 
             if existing.is_system:
                 return {"success": False, "message": f"Server sistem bawaan '{existing.name}' tidak dapat dihapus. Anda dapat menonaktifkannya melalui toggle status."}
 
-            conn.execute(text("DELETE FROM ai_assistant.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid})
+            conn.execute(text("DELETE FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid})
             conn.commit()
             return {"success": True, "message": f"Server MCP '{existing.name}' berhasil dihapus."}
     except Exception as e:
@@ -1253,7 +1253,7 @@ def create_chat_session(username: str, title: str = "Percakapan Baru"):
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.chat_sessions (session_id, username, title)
+                INSERT INTO ai_assistant_dev.chat_sessions (session_id, username, title)
                 VALUES (:sid, :u, :t)
             """), {"sid": session_id, "u": username, "t": title})
             conn.commit()
@@ -1273,10 +1273,10 @@ def get_chat_sessions(username: str):
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT s.session_id, s.title, s.created_at, s.updated_at
-                FROM ai_assistant.chat_sessions s
+                FROM ai_assistant_dev.chat_sessions s
                 WHERE LOWER(s.username) = LOWER(:u)
                   AND EXISTS (
-                      SELECT 1 FROM ai_assistant.chat_messages m
+                      SELECT 1 FROM ai_assistant_dev.chat_messages m
                       WHERE m.session_id = s.session_id
                   )
                 ORDER BY s.updated_at DESC
@@ -1301,14 +1301,14 @@ def delete_chat_session(session_id: str, username: str):
         with engine.connect() as conn:
             # Pesan dihapus eksplisit agar tidak bergantung pada ON DELETE CASCADE.
             conn.execute(text("""
-                DELETE FROM ai_assistant.chat_messages
+                DELETE FROM ai_assistant_dev.chat_messages
                 WHERE session_id IN (
-                    SELECT session_id FROM ai_assistant.chat_sessions
+                    SELECT session_id FROM ai_assistant_dev.chat_sessions
                     WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
                 )
             """), {"sid": session_id, "u": username.strip()})
             res = conn.execute(text("""
-                DELETE FROM ai_assistant.chat_sessions
+                DELETE FROM ai_assistant_dev.chat_sessions
                 WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
             """), {"sid": session_id, "u": username.strip()})
             conn.commit()
@@ -1324,7 +1324,7 @@ def rename_chat_session(session_id: str, username: str, new_title: str):
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                UPDATE ai_assistant.chat_sessions
+                UPDATE ai_assistant_dev.chat_sessions
                 SET title = :t, updated_at = CURRENT_TIMESTAMP
                 WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
             """), {"t": new_title.strip()[:100], "sid": session_id, "u": username.strip()})
@@ -1341,7 +1341,7 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                INSERT INTO ai_assistant.chat_messages
+                INSERT INTO ai_assistant_dev.chat_messages
                     (session_id, role, content, sources, artifacts, attachments)
                 VALUES (:sid, :r, :c, :s, :a, :att)
                 RETURNING id
@@ -1353,7 +1353,7 @@ def add_chat_message(session_id: str, role: str, content: str, sources: str = No
             # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
             if role == 'user':
                 conn.execute(text("""
-                    UPDATE ai_assistant.chat_sessions
+                    UPDATE ai_assistant_dev.chat_sessions
                     SET updated_at = CURRENT_TIMESTAMP,
                         title = CASE
                             WHEN title = 'Percakapan Baru' THEN :title
@@ -1378,16 +1378,16 @@ def update_message_feedback(message_id: int, feedback: Optional[str], username: 
         with engine.connect() as conn:
             if username is not None:
                 res = conn.execute(text("""
-                    UPDATE ai_assistant.chat_messages m
+                    UPDATE ai_assistant_dev.chat_messages m
                     SET feedback = :fb
-                    FROM ai_assistant.chat_sessions s
+                    FROM ai_assistant_dev.chat_sessions s
                     WHERE m.id = :mid
                       AND m.session_id = s.session_id
                       AND LOWER(s.username) = LOWER(:u)
                 """), {"mid": message_id, "fb": feedback, "u": username.strip()})
             else:
                 res = conn.execute(text("""
-                    UPDATE ai_assistant.chat_messages
+                    UPDATE ai_assistant_dev.chat_messages
                     SET feedback = :fb
                     WHERE id = :mid
                 """), {"mid": message_id, "fb": feedback})
@@ -1414,15 +1414,15 @@ def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT m.session_id
-                FROM ai_assistant.chat_messages m
-                JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                FROM ai_assistant_dev.chat_messages m
+                JOIN ai_assistant_dev.chat_sessions s ON s.session_id = m.session_id
                 WHERE m.id = :mid AND LOWER(s.username) = LOWER(:u)
             """), {"mid": message_id, "u": username.strip()}).fetchone()
             if not row:
                 return None
             session_id = row.session_id
             conn.execute(text("""
-                DELETE FROM ai_assistant.chat_messages
+                DELETE FROM ai_assistant_dev.chat_messages
                 WHERE session_id = :sid AND id >= :mid
             """), {"sid": session_id, "mid": message_id})
             conn.commit()
@@ -1451,7 +1451,7 @@ def search_chat_history(username: str, query: str, limit: int = 30):
                        s.updated_at,
                        (
                            SELECT m.content
-                           FROM ai_assistant.chat_messages m
+                           FROM ai_assistant_dev.chat_messages m
                            WHERE m.session_id = s.session_id
                              AND m.content ILIKE :q
                            ORDER BY m.id DESC
@@ -1459,16 +1459,16 @@ def search_chat_history(username: str, query: str, limit: int = 30):
                        ) AS snippet,
                        (
                            SELECT COUNT(*)
-                           FROM ai_assistant.chat_messages m
+                           FROM ai_assistant_dev.chat_messages m
                            WHERE m.session_id = s.session_id
                              AND m.content ILIKE :q
                        ) AS hits
-                FROM ai_assistant.chat_sessions s
+                FROM ai_assistant_dev.chat_sessions s
                 WHERE LOWER(s.username) = LOWER(:u)
                   AND (
                       s.title ILIKE :q
                       OR EXISTS (
-                          SELECT 1 FROM ai_assistant.chat_messages m
+                          SELECT 1 FROM ai_assistant_dev.chat_messages m
                           WHERE m.session_id = s.session_id AND m.content ILIKE :q
                       )
                   )
@@ -1524,22 +1524,22 @@ def get_feedback_messages(kind: str = "dislike", limit: int = 50, offset: int = 
                        s.username,
                        (
                            SELECT q.content
-                           FROM ai_assistant.chat_messages q
+                           FROM ai_assistant_dev.chat_messages q
                            WHERE q.session_id = m.session_id
                              AND q.id < m.id
                              AND q.role = 'user'
                            ORDER BY q.id DESC
                            LIMIT 1
                        ) AS question
-                FROM ai_assistant.chat_messages m
-                JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                FROM ai_assistant_dev.chat_messages m
+                JOIN ai_assistant_dev.chat_sessions s ON s.session_id = m.session_id
                 WHERE m.feedback = :fb
                 ORDER BY m.id DESC
                 LIMIT :lim OFFSET :off
             """), {"fb": kind, "lim": limit, "off": offset}).fetchall()
 
             total = conn.execute(
-                text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = :fb"),
+                text("SELECT COUNT(*) FROM ai_assistant_dev.chat_messages WHERE feedback = :fb"),
                 {"fb": kind},
             ).scalar() or 0
 
@@ -1596,7 +1596,7 @@ def get_role_limits() -> dict:
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT role, daily_token_limit, per_minute_limit
-                FROM ai_assistant.role_limits ORDER BY role
+                FROM ai_assistant_dev.role_limits ORDER BY role
             """)).fetchall()
             return {
                 r.role: {
@@ -1620,7 +1620,7 @@ def set_role_limit(role: str, daily_token_limit: int, per_minute_limit: int) -> 
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+                INSERT INTO ai_assistant_dev.role_limits (role, daily_token_limit, per_minute_limit)
                 VALUES (:r, :h, :m)
                 ON CONFLICT (role) DO UPDATE
                 SET daily_token_limit = :h, per_minute_limit = :m,
@@ -1645,7 +1645,7 @@ def get_token_usage(username: str, tanggal: str = None) -> dict:
         with engine.connect() as conn:
             r = conn.execute(text("""
                 SELECT prompt_tokens, completion_tokens, total_tokens, requests, estimated
-                FROM ai_assistant.token_usage
+                FROM ai_assistant_dev.token_usage
                 WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
             """), {"u": username.strip(), "d": tanggal}).fetchone()
             if not r:
@@ -1675,18 +1675,18 @@ def record_token_usage(username: str, prompt_tokens: int, completion_tokens: int
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.token_usage
+                INSERT INTO ai_assistant_dev.token_usage
                     (username, usage_date, prompt_tokens, completion_tokens,
                      total_tokens, requests, estimated)
                 VALUES (:u, :d, :p, :c, :t, 1, :e)
                 ON CONFLICT (username, usage_date) DO UPDATE SET
-                    prompt_tokens     = ai_assistant.token_usage.prompt_tokens + :p,
-                    completion_tokens = ai_assistant.token_usage.completion_tokens + :c,
-                    total_tokens      = ai_assistant.token_usage.total_tokens + :t,
-                    requests          = ai_assistant.token_usage.requests + 1,
+                    prompt_tokens     = ai_assistant_dev.token_usage.prompt_tokens + :p,
+                    completion_tokens = ai_assistant_dev.token_usage.completion_tokens + :c,
+                    total_tokens      = ai_assistant_dev.token_usage.total_tokens + :t,
+                    requests          = ai_assistant_dev.token_usage.requests + 1,
                     -- Sekali ada sumbangan perkiraan, angka hariannya bukan
                     -- lagi hasil ukur murni.
-                    estimated         = ai_assistant.token_usage.estimated OR :e,
+                    estimated         = ai_assistant_dev.token_usage.estimated OR :e,
                     updated_at        = CURRENT_TIMESTAMP
             """), {"u": username.strip(), "d": tanggal, "p": p, "c": c, "t": p + c,
                    "e": bool(estimated)})
@@ -1703,13 +1703,13 @@ def catat_permintaan(username: str) -> None:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(
-                text("INSERT INTO ai_assistant.request_log (username) VALUES (:u)"),
+                text("INSERT INTO ai_assistant_dev.request_log (username) VALUES (:u)"),
                 {"u": username.strip()},
             )
             # Jejak lama tidak berguna untuk jendela satu menit dan hanya
             # menggemukkan tabel.
             conn.execute(text("""
-                DELETE FROM ai_assistant.request_log
+                DELETE FROM ai_assistant_dev.request_log
                 WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '10 minutes'
             """))
             conn.commit()
@@ -1725,7 +1725,7 @@ def hitung_permintaan_semenit(username: str) -> int:
         engine = get_engine()
         with engine.connect() as conn:
             return int(conn.execute(text("""
-                SELECT COUNT(*) FROM ai_assistant.request_log
+                SELECT COUNT(*) FROM ai_assistant_dev.request_log
                 WHERE LOWER(username) = LOWER(:u)
                   AND created_at >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
             """), {"u": username.strip()}).scalar() or 0)
@@ -1742,12 +1742,12 @@ def reset_token_usage(username: str = None, tanggal: str = None) -> int:
         with engine.connect() as conn:
             if username:
                 res = conn.execute(text("""
-                    DELETE FROM ai_assistant.token_usage
+                    DELETE FROM ai_assistant_dev.token_usage
                     WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
                 """), {"u": username.strip(), "d": tanggal})
             else:
                 res = conn.execute(
-                    text("DELETE FROM ai_assistant.token_usage WHERE usage_date = :d"),
+                    text("DELETE FROM ai_assistant_dev.token_usage WHERE usage_date = :d"),
                     {"d": tanggal},
                 )
             conn.commit()
@@ -1766,8 +1766,8 @@ def ringkasan_pemakaian_harian(tanggal: str = None, limit: int = 100) -> list:
             rows = conn.execute(text("""
                 SELECT t.username, t.total_tokens, t.prompt_tokens, t.completion_tokens,
                        t.requests, t.estimated, u.role
-                FROM ai_assistant.token_usage t
-                LEFT JOIN ai_assistant.users u ON LOWER(u.username) = LOWER(t.username)
+                FROM ai_assistant_dev.token_usage t
+                LEFT JOIN ai_assistant_dev.users u ON LOWER(u.username) = LOWER(t.username)
                 WHERE t.usage_date = :d
                 ORDER BY t.total_tokens DESC
                 LIMIT :lim
@@ -1797,7 +1797,7 @@ def session_belongs_to(session_id: str, username: str) -> bool:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT 1 FROM ai_assistant.chat_sessions
+                SELECT 1 FROM ai_assistant_dev.chat_sessions
                 WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
             """), {"sid": session_id, "u": username.strip()}).fetchone()
             return row is not None
@@ -1831,8 +1831,8 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                 params["u"] = username.strip()
                 sql = f"""
                     SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
-                    FROM ai_assistant.chat_messages m
-                    JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                    FROM ai_assistant_dev.chat_messages m
+                    JOIN ai_assistant_dev.chat_sessions s ON s.session_id = m.session_id
                     WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
                     ORDER BY m.id DESC
                     LIMIT :lim
@@ -1840,7 +1840,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             else:
                 sql = f"""
                     SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
-                    FROM ai_assistant.chat_messages m
+                    FROM ai_assistant_dev.chat_messages m
                     WHERE m.session_id = :sid {page_filter}
                     ORDER BY m.id DESC
                     LIMIT :lim
@@ -1875,8 +1875,8 @@ def get_recent_user_queries(username: str, limit: int = 8) -> list[str]:
             rows = conn.execute(
                 text("""
                     SELECT m.content
-                    FROM ai_assistant.chat_messages m
-                    JOIN ai_assistant.chat_sessions s ON s.session_id = m.session_id
+                    FROM ai_assistant_dev.chat_messages m
+                    JOIN ai_assistant_dev.chat_sessions s ON s.session_id = m.session_id
                     WHERE LOWER(s.username) = LOWER(:u) AND m.role = 'user'
                     ORDER BY m.id DESC
                     LIMIT :lim
@@ -1906,14 +1906,14 @@ def list_all_users():
             rows = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
                        u.division_code, d.name AS division_name, u.job_level
-                FROM ai_assistant.users u
-                LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                FROM ai_assistant_dev.users u
+                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 ORDER BY u.role DESC, u.username ASC
             """)).fetchall()
 
             role_rows = conn.execute(text("""
                 SELECT username, role
-                FROM ai_assistant.user_roles
+                FROM ai_assistant_dev.user_roles
                 ORDER BY created_at ASC
             """)).fetchall()
 
@@ -1947,7 +1947,7 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
+            existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if existing:
                 return {"success": False, "message": f"User '{username}' sudah ada."}
 
@@ -1966,14 +1966,14 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
                 jl_clean = "staff"
 
             conn.execute(text("""
-                INSERT INTO ai_assistant.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
+                INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
                 VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc, :jl)
             """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
                    "r": primary_role, "persona": persona, "fcp": force_change_password, "dc": div_clean, "jl": jl_clean})
 
             for r in clean_roles:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.user_roles (username, role)
+                    INSERT INTO ai_assistant_dev.user_roles (username, role)
                     VALUES (:u, :r)
                     ON CONFLICT (username, role) DO NOTHING
                 """), {"u": username.strip(), "r": r})
@@ -1992,14 +1992,14 @@ def reset_user_password_by_admin(username: str, new_password: str, force_change:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(
-                text("SELECT username FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"),
+                text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
                 {"u": username.strip()},
             ).fetchone()
             if not existing:
                 return {"success": False, "message": "User tidak ditemukan."}
 
             conn.execute(text("""
-                UPDATE ai_assistant.users
+                UPDATE ai_assistant_dev.users
                 SET password_hash = :p, password = NULL, force_change_password = :fcp
                 WHERE LOWER(username) = LOWER(:u)
             """), {
@@ -2021,7 +2021,7 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username, role, assistant_persona, division_code, job_level FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
+            existing = conn.execute(text("SELECT username, role, assistant_persona, division_code, job_level FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if not existing:
                 return {"success": False, "message": "User tidak ditemukan."}
 
@@ -2041,10 +2041,10 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 params["r"] = primary_role
 
                 # Update tabel user_roles
-                conn.execute(text("DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+                conn.execute(text("DELETE FROM ai_assistant_dev.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
                 for r in clean_roles:
                     conn.execute(text("""
-                        INSERT INTO ai_assistant.user_roles (username, role)
+                        INSERT INTO ai_assistant_dev.user_roles (username, role)
                         VALUES (:u, :r)
                         ON CONFLICT (username, role) DO NOTHING
                     """), {"u": username.strip(), "r": r})
@@ -2053,9 +2053,9 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 updates.append("role = :r")
                 params["r"] = role_clean
                 # Selaraskan juga user_roles
-                conn.execute(text("DELETE FROM ai_assistant.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+                conn.execute(text("DELETE FROM ai_assistant_dev.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.user_roles (username, role)
+                    INSERT INTO ai_assistant_dev.user_roles (username, role)
                     VALUES (:u, :r)
                     ON CONFLICT (username, role) DO NOTHING
                 """), {"u": username.strip(), "r": role_clean})
@@ -2089,7 +2089,7 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                 params["fcp"] = force_change_password
 
             if updates:
-                sql = f"UPDATE ai_assistant.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
+                sql = f"UPDATE ai_assistant_dev.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
                 conn.commit()
             return {"success": True, "message": f"User '{username}' berhasil diperbarui."}
@@ -2110,8 +2110,8 @@ def list_divisions(enabled_only: bool = False) -> list[dict]:
                 SELECT d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
                        d.enabled, d.sort_order, d.created_at, d.updated_at,
                        COUNT(u.username) AS user_count
-                FROM ai_assistant.divisions d
-                LEFT JOIN ai_assistant.users u ON LOWER(u.division_code) = LOWER(d.code)
+                FROM ai_assistant_dev.divisions d
+                LEFT JOIN ai_assistant_dev.users u ON LOWER(u.division_code) = LOWER(d.code)
                 {where_clause}
                 GROUP BY d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
                          d.enabled, d.sort_order, d.created_at, d.updated_at
@@ -2149,8 +2149,8 @@ def get_division(code: str) -> Optional[dict]:
                 SELECT d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
                        d.enabled, d.sort_order, d.created_at, d.updated_at,
                        COUNT(u.username) AS user_count
-                FROM ai_assistant.divisions d
-                LEFT JOIN ai_assistant.users u ON LOWER(u.division_code) = LOWER(d.code)
+                FROM ai_assistant_dev.divisions d
+                LEFT JOIN ai_assistant_dev.users u ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(d.code) = LOWER(:c)
                 GROUP BY d.code, d.name, d.description, d.persona, d.rag_allowed_tags,
                          d.enabled, d.sort_order, d.created_at, d.updated_at
@@ -2187,14 +2187,14 @@ def create_division(code: str, name: str, description: str = "", persona: str = 
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(
-                text("SELECT code FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                text("SELECT code FROM ai_assistant_dev.divisions WHERE LOWER(code) = LOWER(:c)"),
                 {"c": code_clean}
             ).fetchone()
             if existing:
                 return {"success": False, "message": f"Divisi dengan kode '{code_clean}' sudah ada."}
 
             conn.execute(text("""
-                INSERT INTO ai_assistant.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
+                INSERT INTO ai_assistant_dev.divisions (code, name, description, persona, rag_allowed_tags, enabled, sort_order)
                 VALUES (:c, :n, :d, :p, :r, :en, :so)
             """), {
                 "c": code_clean,
@@ -2223,7 +2223,7 @@ def update_division(code: str, name: str = None, description: str = None,
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(
-                text("SELECT code FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                text("SELECT code FROM ai_assistant_dev.divisions WHERE LOWER(code) = LOWER(:c)"),
                 {"c": code_clean}
             ).fetchone()
             if not existing:
@@ -2251,7 +2251,7 @@ def update_division(code: str, name: str = None, description: str = None,
                 updates.append("sort_order = :so")
                 params["so"] = int(sort_order)
 
-            sql = f"UPDATE ai_assistant.divisions SET {', '.join(updates)} WHERE LOWER(code) = LOWER(:c)"
+            sql = f"UPDATE ai_assistant_dev.divisions SET {', '.join(updates)} WHERE LOWER(code) = LOWER(:c)"
             conn.execute(text(sql), params)
             conn.commit()
             return {"success": True, "message": f"Divisi '{code_clean}' berhasil diperbarui."}
@@ -2266,7 +2266,7 @@ def get_division_impact(code: str) -> dict:
         engine = get_engine()
         with engine.connect() as conn:
             users = conn.execute(
-                text("SELECT username, full_name, role FROM ai_assistant.users WHERE LOWER(division_code) = LOWER(:c)"),
+                text("SELECT username, full_name, role FROM ai_assistant_dev.users WHERE LOWER(division_code) = LOWER(:c)"),
                 {"c": code_clean}
             ).fetchall()
             return {
@@ -2285,7 +2285,7 @@ def delete_division(code: str) -> dict:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(
-                text("SELECT code, name FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                text("SELECT code, name FROM ai_assistant_dev.divisions WHERE LOWER(code) = LOWER(:c)"),
                 {"c": code_clean}
             ).fetchone()
             if not existing:
@@ -2293,11 +2293,11 @@ def delete_division(code: str) -> dict:
 
             # Lepas asosiasi user agar data user tidak hilang (ON DELETE SET NULL)
             conn.execute(
-                text("UPDATE ai_assistant.users SET division_code = NULL WHERE LOWER(division_code) = LOWER(:c)"),
+                text("UPDATE ai_assistant_dev.users SET division_code = NULL WHERE LOWER(division_code) = LOWER(:c)"),
                 {"c": code_clean}
             )
             conn.execute(
-                text("DELETE FROM ai_assistant.divisions WHERE LOWER(code) = LOWER(:c)"),
+                text("DELETE FROM ai_assistant_dev.divisions WHERE LOWER(code) = LOWER(:c)"),
                 {"c": code_clean}
             )
             conn.commit()
@@ -2359,8 +2359,8 @@ def delete_user_by_admin(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             # Hapus sessions user terlebih dahulu jika FK belum ON DELETE CASCADE
-            conn.execute(text("DELETE FROM ai_assistant.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
-            res = conn.execute(text("DELETE FROM ai_assistant.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+            conn.execute(text("DELETE FROM ai_assistant_dev.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+            res = conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
             conn.commit()
             if res.rowcount == 0:
                 return {"success": False, "message": "User tidak ditemukan."}
@@ -2391,7 +2391,7 @@ def get_top_active_users(period: str = "month", limit: int = 10):
 
             query = text(f"""
                 SELECT username, COUNT(session_id) as session_count
-                FROM ai_assistant.chat_sessions
+                FROM ai_assistant_dev.chat_sessions
                 {where_str}
                 GROUP BY username
                 ORDER BY session_count DESC
@@ -2408,11 +2408,11 @@ def get_admin_system_stats(period: str = "month", top_users_limit: int = 10):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            user_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.users")).scalar() or 0
-            session_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_sessions")).scalar() or 0
-            msg_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages")).scalar() or 0
-            likes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = 'like'")).scalar() or 0
-            dislikes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant.chat_messages WHERE feedback = 'dislike'")).scalar() or 0
+            user_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant_dev.users")).scalar() or 0
+            session_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant_dev.chat_sessions")).scalar() or 0
+            msg_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant_dev.chat_messages")).scalar() or 0
+            likes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant_dev.chat_messages WHERE feedback = 'like'")).scalar() or 0
+            dislikes_count = conn.execute(text("SELECT COUNT(*) FROM ai_assistant_dev.chat_messages WHERE feedback = 'dislike'")).scalar() or 0
             total_feedback = likes_count + dislikes_count
             satisfaction_rate = round((likes_count / total_feedback) * 100, 1) if total_feedback > 0 else None
             
@@ -2451,8 +2451,8 @@ def get_all_sessions_for_audit(limit: int = 50):
             rows = conn.execute(text("""
                 SELECT s.session_id, s.username, s.title, s.created_at, s.updated_at,
                        COUNT(m.id) as message_count
-                FROM ai_assistant.chat_sessions s
-                LEFT JOIN ai_assistant.chat_messages m ON s.session_id = m.session_id
+                FROM ai_assistant_dev.chat_sessions s
+                LEFT JOIN ai_assistant_dev.chat_messages m ON s.session_id = m.session_id
                 GROUP BY s.session_id, s.username, s.title, s.created_at, s.updated_at
                 ORDER BY s.updated_at DESC
                 LIMIT :lim
@@ -2486,7 +2486,7 @@ def consume_guest_quota(client_key: str, usage_date: str, limit: int) -> dict:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT count FROM ai_assistant.guest_usage
+                SELECT count FROM ai_assistant_dev.guest_usage
                 WHERE client_key = :k AND usage_date = :d
             """), {"k": client_key, "d": usage_date}).fetchone()
 
@@ -2496,12 +2496,12 @@ def consume_guest_quota(client_key: str, usage_date: str, limit: int) -> dict:
 
             if row:
                 conn.execute(text("""
-                    UPDATE ai_assistant.guest_usage SET count = count + 1
+                    UPDATE ai_assistant_dev.guest_usage SET count = count + 1
                     WHERE client_key = :k AND usage_date = :d
                 """), {"k": client_key, "d": usage_date})
             else:
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.guest_usage (client_key, usage_date, count)
+                    INSERT INTO ai_assistant_dev.guest_usage (client_key, usage_date, count)
                     VALUES (:k, :d, 1)
                 """), {"k": client_key, "d": usage_date})
             conn.commit()
@@ -2521,7 +2521,7 @@ def save_artifact(artifact_id: str, owner: str, filename: str, content_type: str
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.generated_artifacts
+                INSERT INTO ai_assistant_dev.generated_artifacts
                     (artifact_id, owner, filename, content_type, kind, data, size_bytes, expires_at)
                 VALUES (:id, :owner, :fn, :ct, :kind, :data, :size, :exp)
             """), {
@@ -2545,7 +2545,7 @@ def load_artifact(artifact_id: str, owner: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT filename, content_type, data
-                FROM ai_assistant.generated_artifacts
+                FROM ai_assistant_dev.generated_artifacts
                 WHERE artifact_id = :id
                   AND LOWER(owner) = LOWER(:owner)
                   AND expires_at > CURRENT_TIMESTAMP
@@ -2568,7 +2568,7 @@ def purge_expired_artifacts() -> int:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                DELETE FROM ai_assistant.generated_artifacts
+                DELETE FROM ai_assistant_dev.generated_artifacts
                 WHERE expires_at <= CURRENT_TIMESTAMP
             """))
             conn.commit()
@@ -2587,7 +2587,7 @@ def check_login_block(client_key: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT EXTRACT(EPOCH FROM (locked_until - CURRENT_TIMESTAMP)) AS sisa
-                FROM ai_assistant.login_attempts
+                FROM ai_assistant_dev.login_attempts
                 WHERE client_key = :k AND locked_until IS NOT NULL
                   AND locked_until > CURRENT_TIMESTAMP
             """), {"k": client_key}).fetchone()
@@ -2606,17 +2606,17 @@ def register_login_failure(client_key: str, max_failures: int, lock_seconds: int
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                INSERT INTO ai_assistant.login_attempts (client_key, failures)
+                INSERT INTO ai_assistant_dev.login_attempts (client_key, failures)
                 VALUES (:k, 1)
                 ON CONFLICT (client_key) DO UPDATE
-                SET failures = ai_assistant.login_attempts.failures + 1
+                SET failures = ai_assistant_dev.login_attempts.failures + 1
                 RETURNING failures
             """), {"k": client_key}).fetchone()
             failures = row.failures if row else 1
 
             if failures >= max_failures:
                 conn.execute(text("""
-                    UPDATE ai_assistant.login_attempts
+                    UPDATE ai_assistant_dev.login_attempts
                     SET locked_until = CURRENT_TIMESTAMP + make_interval(secs => :sec),
                         failures = 0
                     WHERE client_key = :k
@@ -2633,7 +2633,7 @@ def clear_login_failures(client_key: str):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("DELETE FROM ai_assistant.login_attempts WHERE client_key = :k"),
+            conn.execute(text("DELETE FROM ai_assistant_dev.login_attempts WHERE client_key = :k"),
                          {"k": client_key})
             conn.commit()
     except Exception as e:
@@ -2646,7 +2646,7 @@ def count_user_artifacts(owner: str) -> int:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT COUNT(*) AS n FROM ai_assistant.generated_artifacts
+                SELECT COUNT(*) AS n FROM ai_assistant_dev.generated_artifacts
                 WHERE LOWER(owner) = LOWER(:o) AND expires_at > CURRENT_TIMESTAMP
             """), {"o": (owner or "").strip()}).fetchone()
             return int(row.n) if row else 0
@@ -2661,9 +2661,9 @@ def drop_oldest_artifacts(owner: str, keep: int) -> int:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                DELETE FROM ai_assistant.generated_artifacts
+                DELETE FROM ai_assistant_dev.generated_artifacts
                 WHERE artifact_id IN (
-                    SELECT artifact_id FROM ai_assistant.generated_artifacts
+                    SELECT artifact_id FROM ai_assistant_dev.generated_artifacts
                     WHERE LOWER(owner) = LOWER(:o)
                     ORDER BY created_at DESC
                     OFFSET :keep
@@ -2686,7 +2686,7 @@ def save_upload(upload_id: str, owner: str, session_id: str, filename: str,
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.chat_uploads
+                INSERT INTO ai_assistant_dev.chat_uploads
                     (upload_id, owner, session_id, filename, content_type, kind,
                      data, extracted_text, size_bytes, expires_at)
                 VALUES (:id, :owner, :sid, :fn, :ct, :kind, :data, :txt, :size, :exp)
@@ -2715,7 +2715,7 @@ def load_uploads(upload_ids: list, owner: str) -> list:
         with engine.connect() as conn:
             rows = conn.execute(text("""
                 SELECT upload_id, filename, content_type, kind, data, extracted_text
-                FROM ai_assistant.chat_uploads
+                FROM ai_assistant_dev.chat_uploads
                 WHERE upload_id = ANY(:ids)
                   AND LOWER(owner) = LOWER(:owner)
                   AND expires_at > CURRENT_TIMESTAMP
@@ -2753,7 +2753,7 @@ def attach_uploads_to_session(upload_ids: list, owner: str, session_id: str):
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                UPDATE ai_assistant.chat_uploads
+                UPDATE ai_assistant_dev.chat_uploads
                 SET session_id = :sid
                 WHERE upload_id = ANY(:ids) AND LOWER(owner) = LOWER(:owner)
             """), {"ids": list(upload_ids), "sid": session_id, "owner": (owner or "").strip()})
@@ -2768,7 +2768,7 @@ def purge_expired_uploads() -> int:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                DELETE FROM ai_assistant.chat_uploads
+                DELETE FROM ai_assistant_dev.chat_uploads
                 WHERE expires_at <= CURRENT_TIMESTAMP
             """))
             conn.commit()
@@ -2929,14 +2929,14 @@ def get_skills(enabled_only: bool = False) -> list[dict]:
             if enabled_only:
                 stmt = text("""
                     SELECT id, name, description, content, tags, enabled, created_at, updated_at
-                    FROM ai_assistant.skills
+                    FROM ai_assistant_dev.skills
                     WHERE enabled = true
                     ORDER BY name ASC
                 """)
             else:
                 stmt = text("""
                     SELECT id, name, description, content, tags, enabled, created_at, updated_at
-                    FROM ai_assistant.skills
+                    FROM ai_assistant_dev.skills
                     ORDER BY id ASC
                 """)
             rows = conn.execute(stmt).fetchall()
@@ -2965,7 +2965,7 @@ def get_skill_by_id(skill_id: int) -> dict | None:
         with engine.connect() as conn:
             r = conn.execute(text("""
                 SELECT id, name, description, content, tags, enabled, created_at, updated_at
-                FROM ai_assistant.skills
+                FROM ai_assistant_dev.skills
                 WHERE id = :id
             """), {"id": skill_id}).fetchone()
             if not r:
@@ -2991,7 +2991,7 @@ def create_skill(name: str, description: str = "", content: str = "", tags: str 
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                INSERT INTO ai_assistant.skills (name, description, content, tags, enabled, updated_at)
+                INSERT INTO ai_assistant_dev.skills (name, description, content, tags, enabled, updated_at)
                 VALUES (:name, :description, :content, :tags, :enabled, CURRENT_TIMESTAMP)
                 RETURNING id, name, description, content, tags, enabled, created_at, updated_at
             """), {
@@ -3040,7 +3040,7 @@ def update_skill(
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                UPDATE ai_assistant.skills
+                UPDATE ai_assistant_dev.skills
                 SET name = :name, description = :description, content = :content, tags = :tags, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
                 WHERE id = :id
                 RETURNING id, name, description, content, tags, enabled, created_at, updated_at
@@ -3074,7 +3074,7 @@ def delete_skill(skill_id: int) -> bool:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                DELETE FROM ai_assistant.skills
+                DELETE FROM ai_assistant_dev.skills
                 WHERE id = :id
             """), {"id": skill_id})
             conn.commit()
@@ -3093,7 +3093,7 @@ def get_chat_modes(enabled_only: bool = False) -> list[dict]:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            query = "SELECT * FROM ai_assistant.chat_modes"
+            query = "SELECT * FROM ai_assistant_dev.chat_modes"
             if enabled_only:
                 query += " WHERE enabled = TRUE"
             query += " ORDER BY sort_order ASC, id ASC"
@@ -3110,7 +3110,7 @@ def get_chat_mode_by_id(mode_id: int) -> dict | None:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT * FROM ai_assistant.chat_modes WHERE id = :id"),
+                text("SELECT * FROM ai_assistant_dev.chat_modes WHERE id = :id"),
                 {"id": mode_id}
             ).fetchone()
             return dict(row._mapping) if row else None
@@ -3125,7 +3125,7 @@ def get_chat_mode_by_code(code: str) -> dict | None:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT * FROM ai_assistant.chat_modes WHERE code = :code"),
+                text("SELECT * FROM ai_assistant_dev.chat_modes WHERE code = :code"),
                 {"code": code}
             ).fetchone()
             return dict(row._mapping) if row else None
@@ -3140,11 +3140,11 @@ def get_default_chat_mode() -> dict | None:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT * FROM ai_assistant.chat_modes WHERE is_default = TRUE AND enabled = TRUE LIMIT 1")
+                text("SELECT * FROM ai_assistant_dev.chat_modes WHERE is_default = TRUE AND enabled = TRUE LIMIT 1")
             ).fetchone()
             if not row:
                 row = conn.execute(
-                    text("SELECT * FROM ai_assistant.chat_modes WHERE enabled = TRUE ORDER BY sort_order ASC, id ASC LIMIT 1")
+                    text("SELECT * FROM ai_assistant_dev.chat_modes WHERE enabled = TRUE ORDER BY sort_order ASC, id ASC LIMIT 1")
                 ).fetchone()
             return dict(row._mapping) if row else None
     except Exception as e:
@@ -3171,10 +3171,10 @@ def create_chat_mode(
         engine = get_engine()
         with engine.connect() as conn:
             if is_default:
-                conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE"))
+                conn.execute(text("UPDATE ai_assistant_dev.chat_modes SET is_default = FALSE"))
 
             row = conn.execute(text("""
-                INSERT INTO ai_assistant.chat_modes
+                INSERT INTO ai_assistant_dev.chat_modes
                     (code, name, description, icon, provider, model, fallback_provider, fallback_model, max_iterations, enabled, is_default, sort_order)
                 VALUES
                     (:c, :n, :d, :i, :p, :m, :fbp, :fbm, :mi, :en, :def, :ord)
@@ -3186,12 +3186,12 @@ def create_chat_mode(
             }).fetchone()
 
             # Daftarkan hak akses awal untuk semua role yang ada di master roles
-            role_rows = conn.execute(text("SELECT code FROM ai_assistant.roles")).fetchall()
+            role_rows = conn.execute(text("SELECT code FROM ai_assistant_dev.roles")).fetchall()
             for r in role_rows:
                 r_code = r.code
                 role_en = True if r_code in ("superadmin", "abaper") else False
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                    INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled)
                     VALUES (:r, :c, :en)
                     ON CONFLICT (role, mode_code) DO NOTHING
                 """), {"r": r_code, "c": code, "en": role_en})
@@ -3224,7 +3224,7 @@ def update_chat_mode(
         engine = get_engine()
         with engine.connect() as conn:
             if is_default:
-                conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE WHERE id != :id"), {"id": mode_id})
+                conn.execute(text("UPDATE ai_assistant_dev.chat_modes SET is_default = FALSE WHERE id != :id"), {"id": mode_id})
 
             fields = []
             params = {"id": mode_id}
@@ -3269,7 +3269,7 @@ def update_chat_mode(
                 return get_chat_mode_by_id(mode_id)
 
             fields.append("updated_at = CURRENT_TIMESTAMP")
-            sql = f"UPDATE ai_assistant.chat_modes SET {', '.join(fields)} WHERE id = :id RETURNING *"
+            sql = f"UPDATE ai_assistant_dev.chat_modes SET {', '.join(fields)} WHERE id = :id RETURNING *"
             row = conn.execute(text(sql), params).fetchone()
             conn.commit()
             return dict(row._mapping) if row else None
@@ -3283,7 +3283,7 @@ def delete_chat_mode(mode_id: int) -> bool:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            res = conn.execute(text("DELETE FROM ai_assistant.chat_modes WHERE id = :id"), {"id": mode_id})
+            res = conn.execute(text("DELETE FROM ai_assistant_dev.chat_modes WHERE id = :id"), {"id": mode_id})
             conn.commit()
             return (res.rowcount or 0) > 0
     except Exception as e:
@@ -3296,9 +3296,9 @@ def set_default_chat_mode(mode_id: int) -> bool:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("UPDATE ai_assistant.chat_modes SET is_default = FALSE"))
+            conn.execute(text("UPDATE ai_assistant_dev.chat_modes SET is_default = FALSE"))
             res = conn.execute(
-                text("UPDATE ai_assistant.chat_modes SET is_default = TRUE, enabled = TRUE WHERE id = :id"),
+                text("UPDATE ai_assistant_dev.chat_modes SET is_default = TRUE, enabled = TRUE WHERE id = :id"),
                 {"id": mode_id}
             )
             conn.commit()
@@ -3315,7 +3315,7 @@ def reorder_chat_modes(mode_ids: list[int]) -> bool:
         with engine.connect() as conn:
             for idx, mid in enumerate(mode_ids):
                 conn.execute(
-                    text("UPDATE ai_assistant.chat_modes SET sort_order = :ord WHERE id = :id"),
+                    text("UPDATE ai_assistant_dev.chat_modes SET sort_order = :ord WHERE id = :id"),
                     {"ord": idx, "id": mid}
                 )
             conn.commit()
@@ -3330,7 +3330,7 @@ def get_role_modes() -> list[dict]:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            rows = conn.execute(text("SELECT role, mode_code, enabled FROM ai_assistant.role_modes ORDER BY role, mode_code")).fetchall()
+            rows = conn.execute(text("SELECT role, mode_code, enabled FROM ai_assistant_dev.role_modes ORDER BY role, mode_code")).fetchall()
             return [
                 {
                     "role": r.role,
@@ -3354,7 +3354,7 @@ def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled, updated_at)
+                INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled, updated_at)
                 VALUES (:r, :c, :en, CURRENT_TIMESTAMP)
                 ON CONFLICT (role, mode_code) DO UPDATE SET
                     enabled = EXCLUDED.enabled,
@@ -3378,17 +3378,17 @@ def get_modes_for_role(role: str) -> list[dict]:
             # Cek status suspended dari peran master (mencabut izin dari pemegang saat ini;
             # berbeda dari 'enabled' yang hanya soal boleh-tidaknya ditetapkan ke user baru)
             role_meta = conn.execute(
-                text("SELECT suspended FROM ai_assistant.roles WHERE LOWER(code) = LOWER(:r)"),
+                text("SELECT suspended FROM ai_assistant_dev.roles WHERE LOWER(code) = LOWER(:r)"),
                 {"r": role}
             ).fetchone()
             role_is_enabled = not role_meta.suspended if role_meta is not None else True
 
             modes = conn.execute(
-                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
+                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant_dev.chat_modes ORDER BY sort_order ASC, id ASC")
             ).fetchall()
 
             role_rows = conn.execute(
-                text("SELECT mode_code, enabled FROM ai_assistant.role_modes WHERE role = :r"),
+                text("SELECT mode_code, enabled FROM ai_assistant_dev.role_modes WHERE role = :r"),
                 {"r": role}
             ).fetchall()
             role_map = {r.mode_code: bool(r.enabled) for r in role_rows}
@@ -3444,7 +3444,7 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            query = "SELECT code FROM ai_assistant.roles"
+            query = "SELECT code FROM ai_assistant_dev.roles"
             if enabled_only:
                 # Bisa ditetapkan ke user baru hanya jika enabled (tidak deprecated
                 # untuk penetapan baru) DAN tidak suspended (izinnya masih berlaku).
@@ -3458,7 +3458,7 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
             # tidak ada di database, sehingga validasi user/mode jadi tidak konsisten
             # dengan apa yang sebenarnya tersimpan. Fallback hardcode hanya untuk exception.
             if not codes:
-                logger.warning("Tabel ai_assistant.roles kosong (enabled_only=%s) - tidak ada role hardcode fallback yang dikembalikan.", enabled_only)
+                logger.warning("Tabel ai_assistant_dev.roles kosong (enabled_only=%s) - tidak ada role hardcode fallback yang dikembalikan.", enabled_only)
                 return []
             if enabled_only:
                 _ROLE_CODES_CACHE = list(codes)
@@ -3476,7 +3476,7 @@ def get_roles_can_modify_program() -> set[str]:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT code FROM ai_assistant.roles WHERE can_modify_program = TRUE AND suspended = FALSE")
+                text("SELECT code FROM ai_assistant_dev.roles WHERE can_modify_program = TRUE AND suspended = FALSE")
             ).fetchall()
             if rows:
                 return {r.code.lower() for r in rows}
@@ -3502,7 +3502,7 @@ def get_active_role_codes() -> set[str]:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT code FROM ai_assistant.roles WHERE suspended = FALSE")
+                text("SELECT code FROM ai_assistant_dev.roles WHERE suspended = FALSE")
             ).fetchall()
             codes = {r.code.lower() for r in rows if r.code}
             if codes:
@@ -3522,13 +3522,13 @@ def get_roles(enabled_only: bool = False) -> list[dict]:
                        r.is_system, r.can_modify_program, r.enabled, r.suspended, r.sort_order,
                        r.created_at, r.updated_at,
                        COALESCE(u_counts.cnt, 0) AS user_count
-                FROM ai_assistant.roles r
+                FROM ai_assistant_dev.roles r
                 LEFT JOIN (
                     SELECT LOWER(TRIM(role)) AS role, COUNT(DISTINCT LOWER(username)) AS cnt
                     FROM (
-                        SELECT username, role FROM ai_assistant.user_roles
+                        SELECT username, role FROM ai_assistant_dev.user_roles
                         UNION
-                        SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
+                        SELECT username, role FROM ai_assistant_dev.users WHERE role IS NOT NULL
                     ) all_ur
                     GROUP BY LOWER(TRIM(role))
                 ) u_counts ON u_counts.role = LOWER(r.code)
@@ -3556,13 +3556,13 @@ def get_role_by_code(code: str) -> dict | None:
                        r.is_system, r.can_modify_program, r.enabled, r.suspended, r.sort_order,
                        r.created_at, r.updated_at,
                        COALESCE(u_counts.cnt, 0) AS user_count
-                FROM ai_assistant.roles r
+                FROM ai_assistant_dev.roles r
                 LEFT JOIN (
                     SELECT LOWER(TRIM(role)) AS role, COUNT(DISTINCT LOWER(username)) AS cnt
                     FROM (
-                        SELECT username, role FROM ai_assistant.user_roles
+                        SELECT username, role FROM ai_assistant_dev.user_roles
                         UNION
-                        SELECT username, role FROM ai_assistant.users WHERE role IS NOT NULL
+                        SELECT username, role FROM ai_assistant_dev.users WHERE role IS NOT NULL
                     ) all_ur
                     GROUP BY LOWER(TRIM(role))
                 ) u_counts ON u_counts.role = LOWER(r.code)
@@ -3592,24 +3592,24 @@ def get_role_impact(code: str) -> dict:
         with engine.connect() as conn:
             users = conn.execute(text("""
                 SELECT u.username, u.full_name,
-                       (SELECT COUNT(*) FROM ai_assistant.user_roles ur2
+                       (SELECT COUNT(*) FROM ai_assistant_dev.user_roles ur2
                         WHERE LOWER(ur2.username) = LOWER(u.username)) AS other_role_count
-                FROM ai_assistant.users u
+                FROM ai_assistant_dev.users u
                 WHERE LOWER(u.username) IN (
-                    SELECT LOWER(username) FROM ai_assistant.user_roles WHERE LOWER(TRIM(role)) = :c
+                    SELECT LOWER(username) FROM ai_assistant_dev.user_roles WHERE LOWER(TRIM(role)) = :c
                     UNION
-                    SELECT LOWER(username) FROM ai_assistant.users WHERE LOWER(TRIM(role)) = :c
+                    SELECT LOWER(username) FROM ai_assistant_dev.users WHERE LOWER(TRIM(role)) = :c
                 )
                 ORDER BY u.username ASC
             """), {"c": c_clean}).fetchall()
 
             resource_count = conn.execute(text("""
-                SELECT COUNT(*) FROM ai_assistant.role_resource_access
+                SELECT COUNT(*) FROM ai_assistant_dev.role_resource_access
                 WHERE LOWER(TRIM(role)) = :c AND allowed = TRUE
             """), {"c": c_clean}).scalar() or 0
 
             mode_count = conn.execute(text("""
-                SELECT COUNT(*) FROM ai_assistant.role_modes
+                SELECT COUNT(*) FROM ai_assistant_dev.role_modes
                 WHERE LOWER(TRIM(role)) = :c AND enabled = TRUE
             """), {"c": c_clean}).scalar() or 0
 
@@ -3647,9 +3647,9 @@ def create_role(
     per_minute_limit: int = 5,
 ) -> dict:
     """
-    Membuat peran baru di ai_assistant.roles.
+    Membuat peran baru di ai_assistant_dev.roles.
     Otomatis:
-    1. Inisialisasi token quota di ai_assistant.role_limits
+    1. Inisialisasi token quota di ai_assistant_dev.role_limits
     2. Daftarkan baris role_modes dengan enabled = FALSE (least privilege)
     3. Invalidate cache kode peran.
     """
@@ -3661,13 +3661,13 @@ def create_role(
     engine = get_engine()
     with engine.connect() as conn:
         # Cek apakah kode sudah dipakai
-        existing = conn.execute(text("SELECT code FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        existing = conn.execute(text("SELECT code FROM ai_assistant_dev.roles WHERE code = :c"), {"c": c_clean}).fetchone()
         if existing:
             raise ValueError(f"Role with code '{c_clean}' already exists")
 
         # Insert master role
         row = conn.execute(text("""
-            INSERT INTO ai_assistant.roles
+            INSERT INTO ai_assistant_dev.roles
                 (code, label, description, color, icon, is_system, can_modify_program, enabled, sort_order)
             VALUES
                 (:c, :l, :d, :col, :ico, FALSE, :can_mod, :en, :so)
@@ -3683,7 +3683,7 @@ def create_role(
 
         # Inisialisasi kuota token
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_limits (role, daily_token_limit, per_minute_limit)
+            INSERT INTO ai_assistant_dev.role_limits (role, daily_token_limit, per_minute_limit)
             VALUES (:r, :dtl, :pml)
             ON CONFLICT (role) DO UPDATE SET
                 daily_token_limit = EXCLUDED.daily_token_limit,
@@ -3696,10 +3696,10 @@ def create_role(
         })
 
         # Daftarkan role_modes dengan enabled = FALSE untuk semua mode yang ada (least privilege)
-        modes = conn.execute(text("SELECT code FROM ai_assistant.chat_modes")).fetchall()
+        modes = conn.execute(text("SELECT code FROM ai_assistant_dev.chat_modes")).fetchall()
         for m in modes:
             conn.execute(text("""
-                INSERT INTO ai_assistant.role_modes (role, mode_code, enabled)
+                INSERT INTO ai_assistant_dev.role_modes (role, mode_code, enabled)
                 VALUES (:r, :m, FALSE)
                 ON CONFLICT (role, mode_code) DO NOTHING
             """), {"r": c_clean, "m": m.code})
@@ -3735,19 +3735,19 @@ def clone_role(
     engine = get_engine()
     with engine.connect() as conn:
         source = conn.execute(
-            text("SELECT * FROM ai_assistant.roles WHERE code = :c"), {"c": src_clean}
+            text("SELECT * FROM ai_assistant_dev.roles WHERE code = :c"), {"c": src_clean}
         ).fetchone()
         if not source:
             raise ValueError(f"Peran sumber '{src_clean}' tidak ditemukan")
 
         existing = conn.execute(
-            text("SELECT code FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}
+            text("SELECT code FROM ai_assistant_dev.roles WHERE code = :c"), {"c": c_clean}
         ).fetchone()
         if existing:
             raise ValueError(f"Peran dengan kode '{c_clean}' sudah ada")
 
         source_limits = conn.execute(
-            text("SELECT daily_token_limit, per_minute_limit FROM ai_assistant.role_limits WHERE role = :r"),
+            text("SELECT daily_token_limit, per_minute_limit FROM ai_assistant_dev.role_limits WHERE role = :r"),
             {"r": src_clean},
         ).fetchone()
 
@@ -3769,9 +3769,9 @@ def clone_role(
     with engine.connect() as conn:
         # Salin izin resource MCP (role_resource_access) dari sumber
         conn.execute(text("""
-            INSERT INTO ai_assistant.role_resource_access (role, resource_key, allowed, can_write, updated_at)
+            INSERT INTO ai_assistant_dev.role_resource_access (role, resource_key, allowed, can_write, updated_at)
             SELECT :new_role, resource_key, allowed, can_write, CURRENT_TIMESTAMP
-            FROM ai_assistant.role_resource_access
+            FROM ai_assistant_dev.role_resource_access
             WHERE role = :src
             ON CONFLICT (role, resource_key) DO UPDATE SET
                 allowed = EXCLUDED.allowed,
@@ -3782,9 +3782,9 @@ def clone_role(
         # Salin izin mode chat (role_modes) dari sumber, menimpa default-deny
         # yang tadi dipasang create_role()
         conn.execute(text("""
-            UPDATE ai_assistant.role_modes rm_new
+            UPDATE ai_assistant_dev.role_modes rm_new
             SET enabled = rm_src.enabled, updated_at = CURRENT_TIMESTAMP
-            FROM ai_assistant.role_modes rm_src
+            FROM ai_assistant_dev.role_modes rm_src
             WHERE rm_new.role = :new_role
               AND rm_src.role = :src
               AND rm_new.mode_code = rm_src.mode_code
@@ -3814,7 +3814,7 @@ def update_role(
 
     engine = get_engine()
     with engine.connect() as conn:
-        existing = conn.execute(text("SELECT * FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        existing = conn.execute(text("SELECT * FROM ai_assistant_dev.roles WHERE code = :c"), {"c": c_clean}).fetchone()
         if not existing:
             return None
 
@@ -3864,7 +3864,7 @@ def update_role(
             return dict(existing._mapping)
 
         updates.append("updated_at = CURRENT_TIMESTAMP")
-        query = f"UPDATE ai_assistant.roles SET {', '.join(updates)} WHERE code = :c RETURNING *"
+        query = f"UPDATE ai_assistant_dev.roles SET {', '.join(updates)} WHERE code = :c RETURNING *"
         row = conn.execute(text(query), params).fetchone()
         conn.commit()
         invalidate_role_codes_cache()
@@ -3884,7 +3884,7 @@ def delete_role(code: str) -> bool:
 
     engine = get_engine()
     with engine.connect() as conn:
-        role = conn.execute(text("SELECT is_system FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean}).fetchone()
+        role = conn.execute(text("SELECT is_system FROM ai_assistant_dev.roles WHERE code = :c"), {"c": c_clean}).fetchone()
         if not role:
             raise ValueError(f"Role '{c_clean}' not found")
 
@@ -3894,17 +3894,17 @@ def delete_role(code: str) -> bool:
         # Cek apakah ada user yang menggunakan role ini (case-insensitive: kolom
         # users.role/user_roles.role bisa berisi data lama dengan casing berbeda)
         user_in_user_roles = conn.execute(
-            text("SELECT COUNT(*) FROM ai_assistant.user_roles WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
+            text("SELECT COUNT(*) FROM ai_assistant_dev.user_roles WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
         ).scalar() or 0
         user_in_users = conn.execute(
-            text("SELECT COUNT(*) FROM ai_assistant.users WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
+            text("SELECT COUNT(*) FROM ai_assistant_dev.users WHERE LOWER(TRIM(role)) = :c"), {"c": c_clean}
         ).scalar() or 0
 
         total_users = user_in_user_roles + user_in_users
         if total_users > 0:
             raise ValueError(f"Cannot delete role '{c_clean}': {total_users} user(s) are currently assigned to this role")
 
-        conn.execute(text("DELETE FROM ai_assistant.roles WHERE code = :c"), {"c": c_clean})
+        conn.execute(text("DELETE FROM ai_assistant_dev.roles WHERE code = :c"), {"c": c_clean})
         conn.commit()
         invalidate_role_codes_cache()
         return True
@@ -3961,7 +3961,7 @@ def save_user_sap_credential(username: str, target: str, sap_user: str, sap_pass
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
-            INSERT INTO ai_assistant.user_sap_credentials (username, target, encrypted_data, updated_at)
+            INSERT INTO ai_assistant_dev.user_sap_credentials (username, target, encrypted_data, updated_at)
             VALUES (:u, :t, :e, CURRENT_TIMESTAMP)
             ON CONFLICT (username, target)
             DO UPDATE SET encrypted_data = :e, updated_at = CURRENT_TIMESTAMP
@@ -3980,7 +3980,7 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(text("""
-            SELECT encrypted_data FROM ai_assistant.user_sap_credentials
+            SELECT encrypted_data FROM ai_assistant_dev.user_sap_credentials
             WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:t)
         """), {"u": clean_user, "t": clean_target}).fetchone()
 
@@ -3992,7 +3992,7 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
                 sub = can_key.split(":", 1)[1] if ":" in can_key else can_key
                 if sub.lower() != clean_target.lower():
                     row = conn.execute(text("""
-                        SELECT encrypted_data FROM ai_assistant.user_sap_credentials
+                        SELECT encrypted_data FROM ai_assistant_dev.user_sap_credentials
                         WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:sub)
                     """), {"u": clean_user, "sub": sub}).fetchone()
             except Exception:
@@ -4025,7 +4025,7 @@ def list_user_sap_credentials(username: str) -> List[Dict[str, Any]]:
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT target, encrypted_data, updated_at
-            FROM ai_assistant.user_sap_credentials
+            FROM ai_assistant_dev.user_sap_credentials
             WHERE username = :u
             ORDER BY target ASC
         """), {"u": clean_user}).fetchall()
@@ -4060,7 +4060,7 @@ def delete_user_sap_credential(username: str, target: str) -> bool:
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
-            DELETE FROM ai_assistant.user_sap_credentials
+            DELETE FROM ai_assistant_dev.user_sap_credentials
             WHERE username = :u AND target = :t
         """), {"u": clean_user, "t": clean_target})
         conn.commit()
@@ -4079,7 +4079,7 @@ def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
                    created_at, updated_at
-            FROM ai_assistant.scheduled_tasks
+            FROM ai_assistant_dev.scheduled_tasks
             WHERE 1=1
         """
         params = {}
@@ -4120,7 +4120,7 @@ def get_scheduled_task(task_id: str) -> dict | None:
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
                    created_at, updated_at
-            FROM ai_assistant.scheduled_tasks
+            FROM ai_assistant_dev.scheduled_tasks
             WHERE id = :tid
         """), {"tid": task_id}).fetchone()
         if not r:
@@ -4155,7 +4155,7 @@ def create_scheduled_task(
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
-            INSERT INTO ai_assistant.scheduled_tasks (
+            INSERT INTO ai_assistant_dev.scheduled_tasks (
                 id, user_id, title, prompt, cron_expression, email_to, is_active
             ) VALUES (
                 :id, :user_id, :title, :prompt, :cron, :email_to, :is_active
@@ -4191,7 +4191,7 @@ def update_scheduled_task(task_id: str, **kwargs) -> dict | None:
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text(f"""
-            UPDATE ai_assistant.scheduled_tasks
+            UPDATE ai_assistant_dev.scheduled_tasks
             SET {', '.join(updates)}
             WHERE id = :tid
         """), params)
@@ -4204,7 +4204,7 @@ def record_task_run(task_id: str, status: str, result: str = None):
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
-            UPDATE ai_assistant.scheduled_tasks
+            UPDATE ai_assistant_dev.scheduled_tasks
             SET last_run_at = CURRENT_TIMESTAMP,
                 last_status = :status,
                 last_result = :result,
@@ -4225,7 +4225,7 @@ def delete_scheduled_task(task_id: str) -> bool:
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
-            DELETE FROM ai_assistant.scheduled_tasks
+            DELETE FROM ai_assistant_dev.scheduled_tasks
             WHERE id = :tid
         """), {"tid": task_id})
         conn.commit()

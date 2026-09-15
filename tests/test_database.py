@@ -11,7 +11,7 @@ def test_init_db_is_idempotent(db):
         tables = {
             r[0]
             for r in conn.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'ai_assistant'")
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'ai_assistant_dev'")
             )
         }
     assert {"users", "chat_sessions", "chat_messages", "generated_artifacts"} <= tables
@@ -41,7 +41,7 @@ def test_legacy_plaintext_password_upgrades_to_hash(db):
     with db.get_engine().connect() as conn:
         conn.execute(
             text(
-                "INSERT INTO ai_assistant.users (username, password, role, assistant_persona) "
+                "INSERT INTO ai_assistant_dev.users (username, password, role, assistant_persona) "
                 "VALUES ('warisan', 'rahasia123', 'user', '')"
             )
         )
@@ -51,7 +51,7 @@ def test_legacy_plaintext_password_upgrades_to_hash(db):
 
     with db.get_engine().connect() as conn:
         row = conn.execute(
-            text("SELECT password, password_hash FROM ai_assistant.users WHERE username = 'warisan'")
+            text("SELECT password, password_hash FROM ai_assistant_dev.users WHERE username = 'warisan'")
         ).fetchone()
     assert row.password_hash.startswith("$2b$") and not row.password
     assert db.authenticate_user("warisan", "rahasia123") is not None

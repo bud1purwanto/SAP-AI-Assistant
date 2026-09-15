@@ -283,7 +283,7 @@ Empat di antaranya adalah bug aktif yang tidak terlihat pada pembacaan awal:
 3. **`MCPCallResult` tidak punya atribut `is_error`.** Kelasnya hanya menyetel `isError`, sementara `agent.py:356` membacanya sebagai `is_error` — `AttributeError` di jalur fallback parser tool. Atribut disatukan dengan alias kompatibilitas.
 4. **`delete_chat_session()` selalu melaporkan sukses**, termasuk ketika tidak ada baris yang terhapus — sehingga percobaan menghapus sesi milik user lain tampak berhasil. Kini memakai `rowcount`.
 
-Selain itu: timestamp diasumsikan objek `datetime` padahal SQLite mengembalikan string, dan mode SQLite menulis ke tabel `chat_messages` tanpa prefiks sementara seluruh query memakai schema `ai_assistant` (kini diselaraskan lewat `ATTACH`).
+Selain itu: timestamp diasumsikan objek `datetime` padahal SQLite mengembalikan string, dan mode SQLite menulis ke tabel `chat_messages` tanpa prefiks sementara seluruh query memakai schema `ai_assistant_dev` (kini diselaraskan lewat `ATTACH`).
 
 ### Bagian D: sistem tema
 
