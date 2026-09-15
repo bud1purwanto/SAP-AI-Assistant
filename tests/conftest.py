@@ -1,7 +1,7 @@
 """Fixture bersama untuk pengujian backend.
 
 Seluruh pengujian berjalan di atas PostgreSQL sungguhan — sama seperti
-produksi. Schema `ai_assistant` dibuat ulang untuk setiap modul uji agar
+produksi. Schema `ai_assistant_dev` dibuat ulang untuk setiap modul uji agar
 hasilnya tidak bergantung pada urutan menjalankan tes.
 """
 import os
@@ -53,7 +53,7 @@ def _guard_test_database(url: str):
     if not is_test_named:
         raise RuntimeError(
             f"KEAMANAN GAGAL: TEST_DATABASE_URL menunjuk ke database '{db_name}'. "
-            "Pengujian pytest menjalankan 'DROP SCHEMA ai_assistant CASCADE'. "
+            "Pengujian pytest menjalankan 'DROP SCHEMA ai_assistant_dev CASCADE'. "
             "Database pengujian WAJIB memiliki nama berakhiran '_test' (contoh: ABAP_DB_TEST) "
             "untuk mencegah data operasional terhapus secara tidak sengaja."
         )
@@ -63,7 +63,7 @@ def _guard_test_database(url: str):
         if hint in target:
             raise RuntimeError(
                 f"TEST_DATABASE_URL menunjuk ke '{target}', yang tampak seperti database "
-                "produksi. Pengujian menghapus schema ai_assistant — arahkan ke database "
+                "produksi. Pengujian menghapus schema ai_assistant_dev — arahkan ke database "
                 "khusus pengujian."
             )
 
@@ -92,7 +92,7 @@ def _reset_schema():
     engine = database.get_engine()
     engine.dispose()
     with engine.connect() as conn:
-        conn.execute(text("DROP SCHEMA IF EXISTS ai_assistant CASCADE"))
+        conn.execute(text("DROP SCHEMA IF EXISTS ai_assistant_dev CASCADE"))
         conn.commit()
     database.init_db()
 
@@ -135,18 +135,35 @@ def admin_auth():
 
 
 @pytest.fixture
-def make_user():
+def make_user(db):
     """Buat cookie sesi user (signed). Identitas dikelola Dashboard OIDC."""
 
     def _make(username, password="Passw0rd123", **kwargs):
         from auth import create_session_cookie
+        from sqlalchemy import text
+
+        role = kwargs.get("role", "user")
+        roles = kwargs.get("roles", [role])
+
+        # Insert user to database so role checks and FK constraints work
+        engine = db.get_engine()
+        with engine.connect() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO ai_assistant_dev.users (username, role)
+                    VALUES (:u, :r)
+                    ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role
+                """),
+                {"u": username, "r": role},
+            )
+            conn.commit()
 
         cookie = create_session_cookie({
             "sub": username,
             "username": username,
-            "role": "user",
-            "roles": ["user"],
-            "org_units": [],
+            "role": role,
+            "roles": roles,
+            "org_units": kwargs.get("org_units", []),
             "is_guest": False,
         })
         return {"Cookie": f"sap_session={cookie}"}

@@ -7,7 +7,7 @@ from migrations import run_identity_migration
 def seed_legacy_user(db, username="alice"):
     with db.get_engine().connect() as conn:
         conn.execute(
-            text("INSERT INTO ai_assistant.users (username, role) VALUES (:u, 'user') ON CONFLICT (username) DO NOTHING"),
+            text("INSERT INTO ai_assistant_dev.users (username, role) VALUES (:u, 'user') ON CONFLICT (username) DO NOTHING"),
             {"u": username},
         )
         conn.commit()
@@ -16,7 +16,7 @@ def seed_legacy_user(db, username="alice"):
 def seed_chat_session(db, username="alice"):
     with db.get_engine().connect() as conn:
         conn.execute(
-            text("INSERT INTO ai_assistant.chat_sessions (session_id, username, title) VALUES (:s, :u, 'Test Session') ON CONFLICT (session_id) DO NOTHING"),
+            text("INSERT INTO ai_assistant_dev.chat_sessions (session_id, username, title) VALUES (:s, :u, 'Test Session') ON CONFLICT (session_id) DO NOTHING"),
             {"s": f"test_session_{username}", "u": username},
         )
         conn.commit()
@@ -24,7 +24,7 @@ def seed_chat_session(db, username="alice"):
 
 def get_chat_session_owner(db):
     with db.get_engine().connect() as conn:
-        row = conn.execute(text("SELECT username FROM ai_assistant.chat_sessions LIMIT 1")).fetchone()
+        row = conn.execute(text("SELECT username FROM ai_assistant_dev.chat_sessions LIMIT 1")).fetchone()
         return row[0] if row else None
 
 

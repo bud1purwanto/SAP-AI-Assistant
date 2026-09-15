@@ -26,18 +26,18 @@ def test_default_roles_seeded_and_column_widths(db):
     for exp in expected:
         assert exp in codes
 
-    # Cek lebar kolom VARCHAR(40) pada ai_assistant.users dan ai_assistant.role_limits
+    # Cek lebar kolom VARCHAR(40) pada ai_assistant_dev.users dan ai_assistant_dev.role_limits
     engine = get_engine()
     with engine.connect() as conn:
         users_col_len = conn.execute(text("""
             SELECT character_maximum_length FROM information_schema.columns
-            WHERE table_schema = 'ai_assistant' AND table_name = 'users' AND column_name = 'role'
+            WHERE table_schema = 'ai_assistant_dev' AND table_name = 'users' AND column_name = 'role'
         """)).scalar()
         assert users_col_len == 40
 
         limits_col_len = conn.execute(text("""
             SELECT character_maximum_length FROM information_schema.columns
-            WHERE table_schema = 'ai_assistant' AND table_name = 'role_limits' AND column_name = 'role'
+            WHERE table_schema = 'ai_assistant_dev' AND table_name = 'role_limits' AND column_name = 'role'
         """)).scalar()
         assert limits_col_len == 40
 
@@ -64,7 +64,7 @@ def test_create_custom_role_with_quota_and_least_privilege(db):
     engine = get_engine()
     with engine.connect() as conn:
         limits = conn.execute(
-            text("SELECT daily_token_limit, per_minute_limit FROM ai_assistant.role_limits WHERE role = :r"),
+            text("SELECT daily_token_limit, per_minute_limit FROM ai_assistant_dev.role_limits WHERE role = :r"),
             {"r": code}
         ).fetchone()
         assert limits is not None
@@ -175,7 +175,7 @@ def test_delete_role_guards(db, make_user):
     # Hapus user pemakai terlebih dahulu dari database
     engine = get_engine()
     with engine.connect() as conn:
-        conn.execute(text("DELETE FROM ai_assistant.users WHERE username = 'assigned_user'"))
+        conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE username = 'assigned_user'"))
         conn.commit()
 
     # Sekarang hapus harus sukses
@@ -528,7 +528,7 @@ def test_users_role_column_rejects_uppercase_and_unknown_role(db):
     with engine.connect() as conn:
         constraints = conn.execute(text("""
             SELECT constraint_name FROM information_schema.table_constraints
-            WHERE table_schema = 'ai_assistant' AND table_name = 'users'
+            WHERE table_schema = 'ai_assistant_dev' AND table_name = 'users'
               AND constraint_name IN ('chk_users_role_lowercase', 'fk_users_role')
         """)).fetchall()
         names = {c.constraint_name for c in constraints}
@@ -538,14 +538,14 @@ def test_users_role_column_rejects_uppercase_and_unknown_role(db):
         with pytest.raises(Exception):
             with conn.begin():
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.users (username, password_hash, role)
+                    INSERT INTO ai_assistant_dev.users (username, password_hash, role)
                     VALUES ('bad_role_case_test', 'x', 'Backend')
                 """))
 
         with pytest.raises(Exception):
             with conn.begin():
                 conn.execute(text("""
-                    INSERT INTO ai_assistant.users (username, password_hash, role)
+                    INSERT INTO ai_assistant_dev.users (username, password_hash, role)
                     VALUES ('bad_role_fk_test', 'x', 'role_yang_tidak_pernah_ada')
                 """))
 

@@ -95,9 +95,12 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   }
 
   if (res.status === 401) {
-    clearSession();
-    onUnauthorized();
-    throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    if (auth) {
+      clearSession();
+      onUnauthorized();
+      throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    }
+    return null;
   }
 
   if (res.status === 204) return null;
@@ -144,6 +147,8 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 }
 
 export const api = {
+  authSession: () => apiFetch('/api/auth/session', { auth: false }),
+  logout: () => apiFetch('/api/auth/logout', { method: 'POST', auth: false }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),

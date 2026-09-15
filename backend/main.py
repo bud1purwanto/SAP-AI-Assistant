@@ -31,6 +31,7 @@ from database import (
     consume_guest_quota,
     attach_uploads_to_session,
     create_chat_session,
+    ensure_user_exists,
     create_new_user,
     clone_role,
     create_role,
@@ -57,16 +58,18 @@ from database import (
     ringkasan_pemakaian_harian,
     set_role_limit,
     tanggal_kuota,
+    truncate_chat_messages_from,
     get_system_config,
     get_user_by_username,
     init_db,
+    list_all_users,
     load_upload_file,
     load_uploads,
     purge_expired_artifacts,
     purge_expired_uploads,
     rename_chat_session,
+    search_chat_history,
     session_belongs_to,
-    truncate_chat_messages_from,
     update_message_feedback,
     update_role,
     update_system_config,
@@ -237,11 +240,19 @@ async def oidc_login(request: Request):
     state = _secrets.token_urlsafe(24)
     nonce = _secrets.token_urlsafe(16)
 
-    # Simpan verifier & state dalam cookie ephemeral yang ditandatangani.
+    # Tentukan redirect_uri secara dinamis berdasarkan Host request jika tersedia
+    redirect_uri = settings.dashboard_oidc_redirect_uri
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if host and host not in ("testserver", "backend:8000", "localhost:8000"):
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+        redirect_uri = f"{proto}://{host}/api/auth/callback"
+
+    # Simpan verifier, state, dan redirect_uri dalam cookie ephemeral yang ditandatangani.
     flow_payload = {
         "verifier": verifier,
         "state": state,
         "nonce": nonce,
+        "redirect_uri": redirect_uri,
     }
     flow_cookie = create_session_cookie(flow_payload)
 
@@ -249,7 +260,7 @@ async def oidc_login(request: Request):
         f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/authorize"
         f"?response_type=code"
         f"&client_id={settings.dashboard_oidc_client_id}"
-        f"&redirect_uri={settings.dashboard_oidc_redirect_uri}"
+        f"&redirect_uri={redirect_uri}"
         f"&scope=openid%20profile%20email%20mcp:connect"
         f"&state={state}"
         f"&nonce={nonce}"
@@ -294,11 +305,12 @@ async def oidc_callback(request: Request):
 
     # Tukar code dengan token via Dashboard OIDC token endpoint.
     token_url = f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/token"
+    redirect_uri = flow_data.get("redirect_uri") or settings.dashboard_oidc_redirect_uri
     token_data = {
         "grant_type": "authorization_code",
         "client_id": settings.dashboard_oidc_client_id,
         "code": code,
-        "redirect_uri": settings.dashboard_oidc_redirect_uri,
+        "redirect_uri": redirect_uri,
         "code_verifier": verifier,
     }
     if settings.dashboard_oidc_client_secret:
@@ -367,6 +379,17 @@ async def oidc_callback(request: Request):
         "access_token": access_token,
     }
 
+    # Sinkronisasi user ke basis data lokal agar preferensi & relasi lokal berjalan
+    try:
+        ensure_user_exists(
+            username=str(username),
+            role=primary_role,
+            roles=roles,
+            full_name=claims.get("full_name") or claims.get("name") or "",
+        )
+    except Exception as e:
+        logger.warning(f"Gagal sinkronisasi user lokal saat OIDC callback: {e}")
+
     session_cookie = create_session_cookie(principal)
     redirect_url = "/"
     resp = RedirectResponse(url=redirect_url, status_code=302)
@@ -394,21 +417,42 @@ async def oidc_logout():
 
 
 @app.get("/api/auth/session")
-@app.get("/api/me")
-async def auth_session(user: dict = Depends(get_current_user)):
-    """Kembalikan profil user dari sesi BFF (tanpa bearer/refresh token)."""
+async def auth_session(user: dict = Depends(get_current_user_optional)):
+    """Kembalikan profil user dari sesi BFF (tanpa bearer/refresh token).
+    Jika tidak ada sesi login valid, kembalikan profil guest (200 OK).
+    """
+    if user.get("is_guest"):
+        return {
+            "sub": "guest",
+            "username": "guest",
+            "role": "guest",
+            "roles": ["guest"],
+            "org_units": [],
+            "is_guest": True,
+            "authenticated": False,
+        }
     profile = {
         "sub": user["sub"],
         "username": user["username"],
         "role": user.get("role", "user"),
         "roles": user.get("roles", ["user"]),
         "org_units": user.get("org_units", []),
-        "is_guest": user.get("is_guest", False),
+        "is_guest": False,
+        "authenticated": True,
     }
     # Sertakan preferensi lokal bila ada.
     local = get_user_by_username(user["username"])
     if not local:
         local = get_user_by_username(user["sub"])
+    if not local and not user.get("is_guest"):
+        try:
+            local = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
     if local:
         profile["full_name"] = local.get("full_name", "")
         profile["assistant_persona"] = local.get("assistant_persona", "")
@@ -416,6 +460,12 @@ async def auth_session(user: dict = Depends(get_current_user)):
         profile["division_name"] = local.get("division_name")
         profile["job_level"] = local.get("job_level", "staff")
     return profile
+
+
+@app.get("/api/me")
+async def get_me(user: dict = Depends(get_current_user)):
+    """Kembalikan profil user terautentikasi (401 bila belum login)."""
+    return await auth_session(user)
 
 # --- PER-USER SAP CREDENTIALS ---
 
@@ -849,10 +899,30 @@ class TestMcpConnectionRequest(BaseModel):
 async def get_config(user: dict = Depends(get_current_user)):
     profile = get_user_by_username(user["username"])
     if not profile:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
+        profile = get_user_by_username(user.get("sub", ""))
+    if not profile:
+        try:
+            profile = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
+    if not profile:
+        user_role = user.get("role", "user")
+        user_roles = user.get("roles") or [user_role]
+        profile = {
+            "username": user["username"],
+            "full_name": user.get("full_name", user["username"]),
+            "role": user_role,
+            "roles": user_roles,
+            "assistant_persona": "",
+            "force_change_password": False,
+        }
 
     sys_cfg = get_system_config()
-    is_admin = profile["role"] == "superadmin"
+    is_admin = profile.get("role") == "superadmin" or "superadmin" in [r.lower() for r in profile.get("roles", [])]
 
     payload = {
         "assistant_persona": profile["assistant_persona"],
@@ -892,6 +962,17 @@ async def get_config(user: dict = Depends(get_current_user)):
 @app.post("/api/config")
 async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_user)):
     profile = get_user_by_username(user["username"])
+    if not profile:
+        profile = get_user_by_username(user.get("sub", ""))
+    if not profile:
+        try:
+            profile = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
     if not profile:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
 
@@ -1128,11 +1209,21 @@ class SaklarLimitRequest(BaseModel):
 @app.get("/api/quota")
 async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
     """Sisa kuota pengguna yang sedang login."""
-    profil = get_user_by_username(user["username"])
+    username = user.get("username") or user.get("sub", "")
+    profil = get_user_by_username(username)
     if not profil:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-    user_roles = profil.get("roles") or [profil["role"]]
-    return status_kuota(profil["username"], user_roles)
+        profil = get_user_by_username(user.get("sub", ""))
+    if not profil:
+        try:
+            profil = ensure_user_exists(
+                username=username,
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
+    user_roles = (profil.get("roles") if profil else None) or user.get("roles") or [user.get("role", "user")]
+    return status_kuota(username, user_roles)
 
 
 @app.get("/api/admin/quota")

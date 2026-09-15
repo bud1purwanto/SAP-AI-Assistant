@@ -334,7 +334,7 @@ class MCPManager:
 
     async def check_servers_status(self) -> dict:
         status = {}
-        # Dapatkan list server dari tabel ai_assistant.mcp_servers jika ada
+        # Dapatkan list server dari tabel ai_assistant_dev.mcp_servers jika ada
         db_servers_dict = {}
         try:
             from database import list_mcp_servers

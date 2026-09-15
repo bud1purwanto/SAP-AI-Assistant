@@ -1394,7 +1394,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     now_real = datetime.now()
 
-    # Deskripsi role diambil dari master ai_assistant.roles agar LLM memahami
+    # Deskripsi role diambil dari master ai_assistant_dev.roles agar LLM memahami
     # konteks peran (termasuk role kustom buatan admin) tanpa perlu hardcode di sini.
     role_descriptions = []
     try:
@@ -2372,7 +2372,7 @@ async def generate_chat_suggestions(
         selected_theme = random.choice(themes_list)
         random_seed = random.randint(1000, 999999)
 
-        # Deskripsi role diambil dari master ai_assistant.roles (label + description),
+        # Deskripsi role diambil dari master ai_assistant_dev.roles (label + description),
         # bukan daftar contoh hardcode -- role kustom yang admin buat lewat tab Roles
         # otomatis mendapat konteks yang benar untuk LLM tanpa perlu deploy ulang kode.
         role_context = role_key or "guest"

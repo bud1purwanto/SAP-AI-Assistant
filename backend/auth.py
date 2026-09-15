@@ -64,6 +64,9 @@ def create_session_cookie(principal: dict) -> str:
         "iat": now,
         "exp": now + timedelta(hours=settings.session_expire_hours),
     }
+    for k, v in principal.items():
+        if k not in payload and k != "access_token":
+            payload[k] = v
     access_token = principal.get("access_token")
     if access_token:
         session_id = secrets.token_urlsafe(32)

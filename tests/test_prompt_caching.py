@@ -124,7 +124,7 @@ def test_konteks_memuat_keterangan_yang_dibutuhkan(monkeypatch, db):
     prompt = _prompt_untuk(monkeypatch, role="superadmin", persona="Pakai bahasa santai.")
     konteks = prompt[prompt.index("## KONTEKS PERMINTAAN INI"):]
 
-    # Role pengguna kini ditulis dengan label dari master ai_assistant.roles
+    # Role pengguna kini ditulis dengan label dari master ai_assistant_dev.roles
     # (mis. 'Super Admin'), bukan kode mentah ('superadmin').
     assert "Role pengguna: Super Admin" in konteks
     assert "Sistem SAP aktif" in konteks

@@ -1,8 +1,8 @@
 """Modul Otorisasi dan Kontrol Akses Sumber Daya MCP.
 
 Menyediakan resolusi izin 2 lapis:
-1. Template Role (ai_assistant.role_resource_access)
-2. Override per User (ai_assistant.user_resource_access) - tri-state (Inherit/Allow/Deny)
+1. Template Role (ai_assistant_dev.role_resource_access)
+2. Override per User (ai_assistant_dev.user_resource_access) - tri-state (Inherit/Allow/Deny)
 3. Fallback: DENY jika master switch 'mcp_access_control_enabled' aktif.
 
 Bila master switch nonaktif (default awal), semua akses tetap diizinkan
@@ -222,7 +222,7 @@ def register_mcp_aliases(can_key: str, name: str, aliases: List[str], sid: str =
 
 
 def load_aliases_from_db(force_refresh: bool = False):
-    """Memuat alias dinamis dari ai_assistant.mcp_resources."""
+    """Memuat alias dinamis dari ai_assistant_dev.mcp_resources."""
     global _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP, _LAST_ALIAS_MAP_SYNC
     now = time.time()
     if not force_refresh and (_DYNAMIC_SAP_MAP or _DYNAMIC_SQL_MAP) and (now - _LAST_ALIAS_MAP_SYNC < _ALIAS_CACHE_TTL):
@@ -232,7 +232,7 @@ def load_aliases_from_db(force_refresh: bool = False):
         engine = database.get_engine()
         with engine.connect() as conn:
             rows = conn.execute(
-                text("SELECT resource_key, kind, label, sid FROM ai_assistant.mcp_resources WHERE archived = FALSE")
+                text("SELECT resource_key, kind, label, sid FROM ai_assistant_dev.mcp_resources WHERE archived = FALSE")
             ).fetchall()
             for rk, kind, label, sid in rows:
                 if not rk:
@@ -495,14 +495,14 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
             for item in resources_to_sync:
                 conn.execute(
                     text("""
-                    INSERT INTO ai_assistant.mcp_resources
+                    INSERT INTO ai_assistant_dev.mcp_resources
                         (resource_key, kind, label, sid, client, is_production, last_seen_at, archived)
                     VALUES
                         (:k, :kind, :label, :sid, :cli, :prod, :now, :archived)
                     ON CONFLICT (resource_key) DO UPDATE SET
                         label = EXCLUDED.label,
-                        sid = CASE WHEN EXCLUDED.sid <> '' THEN EXCLUDED.sid ELSE ai_assistant.mcp_resources.sid END,
-                        client = CASE WHEN EXCLUDED.client <> '' THEN EXCLUDED.client ELSE ai_assistant.mcp_resources.client END,
+                        sid = CASE WHEN EXCLUDED.sid <> '' THEN EXCLUDED.sid ELSE ai_assistant_dev.mcp_resources.sid END,
+                        client = CASE WHEN EXCLUDED.client <> '' THEN EXCLUDED.client ELSE ai_assistant_dev.mcp_resources.client END,
                         is_production = EXCLUDED.is_production,
                         last_seen_at = :now,
                         archived = EXCLUDED.archived
@@ -525,7 +525,7 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
             if active_keys:
                 conn.execute(
                     text("""
-                    UPDATE ai_assistant.mcp_resources
+                    UPDATE ai_assistant_dev.mcp_resources
                     SET archived = TRUE
                     WHERE kind IN ('service', 'sql')
                       AND resource_key NOT IN ('service:rag', 'service:email')
@@ -545,7 +545,7 @@ def get_all_resources(include_archived: bool = False) -> List[Dict[str, Any]]:
     engine = database.get_engine()
     query = """
         SELECT resource_key, kind, label, sid, client, is_production, first_seen_at, last_seen_at, archived
-        FROM ai_assistant.mcp_resources
+        FROM ai_assistant_dev.mcp_resources
     """
     if not include_archived:
         query += " WHERE archived = FALSE"
@@ -627,8 +627,8 @@ def resolve_access(username: str, role: Union[str, List[str], None] = "user") ->
             r_rows = conn.execute(
                 text("""
                 SELECT rra.resource_key, rra.allowed, rra.can_write
-                FROM ai_assistant.role_resource_access rra
-                JOIN ai_assistant.roles r ON LOWER(r.code) = LOWER(rra.role)
+                FROM ai_assistant_dev.role_resource_access rra
+                JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(rra.role)
                 WHERE LOWER(rra.role) = ANY(:roles) AND r.suspended = FALSE
             """),
                 {"roles": list(roles_tuple), "role": roles_tuple[0] if roles_tuple else "user"},
@@ -647,7 +647,7 @@ def resolve_access(username: str, role: Union[str, List[str], None] = "user") ->
                 u_rows = conn.execute(
                     text("""
                     SELECT resource_key, allowed, can_write, valid_until
-                    FROM ai_assistant.user_resource_access
+                    FROM ai_assistant_dev.user_resource_access
                     WHERE LOWER(username) = LOWER(:u)
                 """),
                     {"u": username},
@@ -861,13 +861,13 @@ def log_audit(
     resource_key: Optional[str] = None,
     detail: str = "",
 ):
-    """Mencatat log audit perubahan otorisasi ke ai_assistant.access_audit."""
+    """Mencatat log audit perubahan otorisasi ke ai_assistant_dev.access_audit."""
     engine = database.get_engine()
     try:
         with engine.begin() as conn:
             conn.execute(
                 text("""
-                INSERT INTO ai_assistant.access_audit
+                INSERT INTO ai_assistant_dev.access_audit
                     (actor, target_type, target_id, resource_key, action, detail, created_at)
                 VALUES
                     (:actor, :tt, :tid, :rk, :act, :det, :now)
@@ -894,7 +894,7 @@ def get_audit_logs(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
             rows = conn.execute(
                 text("""
                 SELECT id, actor, target_type, target_id, resource_key, action, detail, created_at
-                FROM ai_assistant.access_audit
+                FROM ai_assistant_dev.access_audit
                 ORDER BY created_at DESC
                 LIMIT :limit OFFSET :offset
             """),
@@ -962,7 +962,7 @@ def get_all_roles_matrix() -> Dict[str, Any]:
             rows = conn.execute(
                 text("""
                 SELECT role, resource_key, allowed, can_write
-                FROM ai_assistant.role_resource_access
+                FROM ai_assistant_dev.role_resource_access
             """)
             ).fetchall()
 
@@ -1008,7 +1008,7 @@ def update_role_access(role: str, items: List[Dict[str, Any]], actor: str) -> bo
 
                 conn.execute(
                     text("""
-                    INSERT INTO ai_assistant.role_resource_access
+                    INSERT INTO ai_assistant_dev.role_resource_access
                         (role, resource_key, allowed, can_write, updated_at)
                     VALUES
                         (:role, :rk, :allowed, :cw, :now)
@@ -1054,7 +1054,7 @@ def get_user_matrix(username: str) -> Dict[str, Any]:
             rows = conn.execute(
                 text("""
                 SELECT resource_key, allowed, can_write, valid_until, granted_by, updated_at
-                FROM ai_assistant.user_resource_access
+                FROM ai_assistant_dev.user_resource_access
                 WHERE LOWER(username) = LOWER(:u)
             """),
                 {"u": username},
@@ -1131,7 +1131,7 @@ def update_user_access(username: str, items: List[Dict[str, Any]], actor: str) -
                     # Hapus baris override agar kembali mewarisi role
                     conn.execute(
                         text("""
-                        DELETE FROM ai_assistant.user_resource_access
+                        DELETE FROM ai_assistant_dev.user_resource_access
                         WHERE LOWER(username) = LOWER(:u) AND resource_key = :rk
                     """),
                         {"u": username, "rk": rk},
@@ -1140,7 +1140,7 @@ def update_user_access(username: str, items: List[Dict[str, Any]], actor: str) -
                     is_allowed = (state == "allow")
                     conn.execute(
                         text("""
-                        INSERT INTO ai_assistant.user_resource_access
+                        INSERT INTO ai_assistant_dev.user_resource_access
                             (username, resource_key, allowed, can_write, valid_until, granted_by, updated_at)
                         VALUES
                             (:u, :rk, :allowed, :cw, :vu, :actor, :now)
@@ -1205,7 +1205,7 @@ def bulk_update_user_access(
                 if state_l == "inherit":
                     conn.execute(
                         text("""
-                        DELETE FROM ai_assistant.user_resource_access
+                        DELETE FROM ai_assistant_dev.user_resource_access
                         WHERE LOWER(username) = LOWER(:u) AND resource_key = :rk
                     """),
                         {"u": u, "rk": resource_key},
@@ -1214,7 +1214,7 @@ def bulk_update_user_access(
                     is_allowed = (state_l == "allow")
                     conn.execute(
                         text("""
-                        INSERT INTO ai_assistant.user_resource_access
+                        INSERT INTO ai_assistant_dev.user_resource_access
                             (username, resource_key, allowed, can_write, valid_until, granted_by, updated_at)
                         VALUES
                             (:u, :rk, :allowed, :cw, :vu, :actor, :now)

@@ -11,7 +11,7 @@ def test_init_db_is_idempotent(db):
         tables = {
             r[0]
             for r in conn.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'ai_assistant'")
+                text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'ai_assistant_dev'")
             )
         }
     assert {"users", "chat_sessions", "chat_messages", "generated_artifacts"} <= tables

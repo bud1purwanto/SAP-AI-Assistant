@@ -405,19 +405,34 @@ const ChatLayout = () => {
     fetchModes();
   }, [fetchServers, fetchModes]);
 
-  // Validasi token tersimpan saat aplikasi dibuka: profil bisa saja sudah
-  // diubah atau dihapus admin sejak login terakhir.
+  // Sinkronkan sesi aktif dengan backend saat aplikasi dibuka
+  useEffect(() => {
+    let active = true;
+    api.authSession()
+      .then((profile) => {
+        if (!active) return;
+        if (profile && !profile.is_guest && profile.authenticated !== false) {
+          saveSession(profile);
+          setUser(profile);
+          api.quotaSaya().then(setKuota).catch(() => setKuota(null));
+        } else if (!isGuest) {
+          clearSession();
+          setUser(GUEST_USER);
+        }
+      })
+      .catch(() => {
+        /* abaikan bila offline atau backend belum siap */
+      });
+    return () => { active = false; };
+  }, []);
+
+  // Perbarui kuota dan mode saat profil pengguna berubah
   useEffect(() => {
     fetchModes();
     fetchServers();
     if (isGuest) return;
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
-    api.me()
-      .then((profile) => setUser(profile))
-      .catch(() => { /* 401 sudah ditangani handler di atas */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.username, fetchServers, fetchModes]);
-
+  }, [user?.username, isGuest, fetchServers, fetchModes]);
   useEffect(() => {
     scrollToBottom(true);
   }, [currentMessages, isCurrentLoading, scrollToBottom]);
@@ -1170,6 +1185,7 @@ const ChatLayout = () => {
   };
 
   const handleLogout = () => {
+    api.logout().catch(() => {});
     clearSession();
     setUser(GUEST_USER);
     setSessions([]);
