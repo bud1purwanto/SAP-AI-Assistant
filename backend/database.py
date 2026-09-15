@@ -485,6 +485,15 @@ def init_db():
             # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
             run_migrations(conn)
 
+            # Sinkronisasi sequence primary key serial agar selalu >= MAX(id)
+            # Mencegah error duplicate key jika ada riwayat data manual/dump restore.
+            conn.execute(text("""
+                SELECT setval(
+                    'ai_assistant.chat_messages_id_seq',
+                    GREATEST((SELECT COALESCE(MAX(id), 1) FROM ai_assistant.chat_messages), 1)
+                );
+            """))
+
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant' berhasil diinisialisasi.")
     except Exception as e:
