@@ -33,8 +33,8 @@ services:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB
-      DASHBOARD_MCP_URL: ${DASHBOARD_MCP_URL:-http://host.docker.internal:4000}
-      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:-d99e37cfb69a93a18c80caa4fe871755c695dd7c7ae6a939b829c5352e3c534c}
+      DASHBOARD_MCP_URL: ${DASHBOARD_MCP_URL:-http://192.168.1.161:4000}
+      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:-d216fa1a7457408f0fc51e7a8876fb352a425c7103c9e9be0c6f1d02e9d8399f}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:

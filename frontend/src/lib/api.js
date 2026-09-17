@@ -147,13 +147,19 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 }
 
 export const api = {
+  login: (username, password) =>
+    apiFetch('/api/auth/login', {
+      method: 'POST',
+      body: { username, password },
+      auth: false,
+    }),
   authSession: () => apiFetch('/api/auth/session', { auth: false }),
   logout: () => apiFetch('/api/auth/logout', { method: 'POST', auth: false }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),
   changePassword: (oldPassword, newPassword) =>
-    apiFetch('/api/change-password', {
+    apiFetch('/api/auth/change-password', {
       method: 'POST',
       body: { old_password: oldPassword, new_password: newPassword },
     }),

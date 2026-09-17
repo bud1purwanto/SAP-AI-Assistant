@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import json
+import re
 import time
 from typing import Optional, Set
 import httpx
@@ -111,18 +112,38 @@ class StreamableHttpClient:
         self._tools_cache = None
         self._tools_cache_time = 0.0
 
-    async def call_tool(self, client: httpx.AsyncClient, tool_name: str, arguments: dict) -> MCPCallResult:
+    async def call_tool(
+        self,
+        client: httpx.AsyncClient,
+        tool_name: str,
+        arguments: dict,
+        extra_headers: Optional[dict] = None,
+    ) -> MCPCallResult:
         await self.initialize(client)
         headers = dict(self.headers)
         if self.session_id:
             headers["mcp-session-id"] = self.session_id
+        if extra_headers:
+            headers.update(extra_headers)
+
+        actual_tool_name = tool_name
+        if self.url.rstrip("/").endswith("/v1/gateway") and "__" not in tool_name:
+            prefix_map = {
+                "sap": "sap-leader-mcp__",
+                "sql": "mcp-sql__",
+                "email": "mcp-email__",
+                "gitea": "mcp-gitea__",
+                "rag": "mcp-rag__",
+            }
+            prefix = prefix_map.get(self.name, "")
+            actual_tool_name = f"{prefix}{tool_name}"
 
         payload = {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": tool_name,
+                "name": actual_tool_name,
                 "arguments": arguments
             }
         }
@@ -177,6 +198,35 @@ def is_email_tool(tool_name: str) -> bool:
     return any(kw in name for kw in ("email", "mail", "calendar", "inbox", "archive"))
 
 
+def strip_gateway_tool_prefix(tool_name: str) -> str:
+    """Return the upstream MCP tool name without Dashboard gateway namespace."""
+    name = str(tool_name or "")
+    return name.split("__", 1)[1] if "__" in name else name
+
+
+def classify_gateway_tool(tool_name: str) -> str:
+    """Classify a tool name returned by the Dashboard gateway."""
+    name = str(tool_name or "").lower()
+    base = strip_gateway_tool_prefix(name)
+    if name.startswith("mcp-sql__") or base.startswith("sql_"):
+        return "sql"
+    if name.startswith("mcp-email__") or is_email_tool(base):
+        return "email"
+    if name.startswith("mcp-rag__") or base.startswith("rag_"):
+        return "rag"
+    if name.startswith("sap-leader-mcp__") or base.startswith("sap_"):
+        return "sap"
+    return "rag"
+
+
+def is_internal_rag_tool(tool_name: str) -> bool:
+    return strip_gateway_tool_prefix(tool_name) in RAG_INTERNAL_EXCLUDED_TOOLS
+
+
+def is_sql_admin_tool(tool_name: str) -> bool:
+    return strip_gateway_tool_prefix(tool_name) == "sql_reload_config"
+
+
 # Tool internal/administratif gateway RAG yang tidak relevan untuk user chat atau duplikat
 RAG_INTERNAL_EXCLUDED_TOOLS = {
     "draft_action",
@@ -197,6 +247,9 @@ class MCPManager:
         # Lock ini menjadikan pasangan (set target -> panggil tool) atomik.
         self._sap_lock = asyncio.Lock()
         self._active_sap_target: str | None = None
+        self._resources_cache: list[dict] = []
+        self._resources_cache_time: float = 0.0
+        self._cache_ttl: float = 10.0
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         """Resolve the Dashboard MCP Gateway URL for the named connector.
@@ -231,6 +284,20 @@ class MCPManager:
         from auth import get_dashboard_access_token
 
         access_token = get_dashboard_access_token()
+        # If access_token is an internal local JWT (HS256 from local auth),
+        # the Dashboard Gateway expects RS256 or an ApiClient token.
+        # Fall back to dashboard_mcp_api_token if configured.
+        if access_token and access_token.count(".") == 2:
+            try:
+                import jwt as _jwt
+                unverified = _jwt.get_unverified_header(access_token)
+                if unverified.get("alg") != "RS256" and getattr(settings, "dashboard_mcp_api_token", None):
+                    access_token = settings.dashboard_mcp_api_token
+            except Exception:
+                pass
+
+        if not access_token and getattr(settings, "dashboard_mcp_api_token", None):
+            access_token = settings.dashboard_mcp_api_token
         if not access_token:
             raise PermissionError("Dashboard access token is required for MCP gateway requests.")
         url, headers = self._get_client_config(name)
@@ -327,437 +394,322 @@ class MCPManager:
         try:
             r = await http_client.get(url, headers=headers, timeout=4.0)
             if r.status_code == 200:
-                return r.json()
+                data = r.json()
+                if isinstance(data, dict):
+                    resources = data.get("resources", [])
+                    if isinstance(resources, list):
+                        self._resources_cache = resources
+                        self._resources_cache_time = time.time()
+                return data
         except Exception as ex:
             logger.debug(f"Dashboard MCP resources endpoint tidak dapat dihubungi: {ex}")
         return None
 
-    async def check_servers_status(self) -> dict:
-        status = {}
-        # Dapatkan list server dari tabel ai_assistant_dev.mcp_servers jika ada
-        db_servers_dict = {}
+    async def get_live_resources(self, force_refresh: bool = False) -> list[dict]:
+        """Ambil list resource MCP terkini langsung dari dashboard-mcp dengan TTL caching."""
+        now = time.time()
+        if not force_refresh and self._resources_cache_time > 0 and (now - self._resources_cache_time < self._cache_ttl):
+            return self._resources_cache
+
         try:
-            from database import list_mcp_servers
-            db_list = list_mcp_servers(enabled_only=False)
-            db_servers_dict = {s["id"]: s for s in db_list}
+            async with httpx.AsyncClient() as http_client:
+                data = await self._fetch_dashboard_resources(http_client)
+                if data and isinstance(data, dict):
+                    resources = data.get("resources", [])
+                    if isinstance(resources, list):
+                        self._resources_cache = resources
+                        self._resources_cache_time = now
+                        return self._resources_cache
+        except Exception as e:
+            logger.warning(f"Gagal mengambil live resources dari dashboard-mcp: {e}")
+
+        return self._resources_cache
+
+    def get_live_resources_sync(self, force_refresh: bool = False) -> list[dict]:
+        """Versi synchronous untuk mengambil list resource MCP dengan TTL caching atau sync fetch."""
+        now = time.time()
+        if not force_refresh and self._resources_cache_time > 0 and (now - self._resources_cache_time < self._cache_ttl):
+            return self._resources_cache
+
+        if not settings.dashboard_mcp_url:
+            return self._resources_cache
+
+        url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
+        headers = {}
+        if settings.dashboard_mcp_api_token:
+            headers["Authorization"] = f"Bearer {settings.dashboard_mcp_api_token}"
+
+        try:
+            with httpx.Client(timeout=4.0) as client:
+                r = client.get(url, headers=headers)
+                if r.status_code == 200:
+                    data = r.json()
+                    if isinstance(data, dict):
+                        resources = data.get("resources", [])
+                        if isinstance(resources, list):
+                            self._resources_cache = resources
+                            self._resources_cache_time = now
+                            return self._resources_cache
         except Exception as ex:
-            logger.warning(f"Gagal mengambil data mcp_servers dari database: {ex}")
+            logger.debug(f"Sync fetch dashboard resources gagal: {ex}")
 
-        async with httpx.AsyncClient() as http_client:
-            # 0. Cek integrasi dynamic dashboard resources
-            dash_data = await self._fetch_dashboard_resources(http_client)
-            if dash_data and isinstance(dash_data, dict):
-                resources = dash_data.get("resources", [])
-                if resources:
-                    try:
-                        from access_control import sync_resources_from_mcp
-                        sync_resources_from_mcp(resources)
-                    except Exception as ex:
-                        logger.warning(f"Gagal sinkronisasi resources dari dashboard ke access_control: {ex}")
-                
-                dash_status = dash_data.get("status", {})
-                if dash_status:
-                    # Gunakan status live dari dashboard bila ada
-                    pass
+        return self._resources_cache
 
-            # 1. SAP Server
-            sap_meta = db_servers_dict.get("sap", {})
-            sap_enabled = sap_meta.get("enabled", True)
-            sap_name = sap_meta.get("name") or "SAP ERP Gateway"
-            sap_desc = sap_meta.get("description") or "Live Data, Tabel & ABAP Code SAP"
-            if not sap_enabled:
-                status["sap"] = {
-                    "id": "sap",
-                    "name": sap_name,
-                    "description": sap_desc,
-                    "online": False,
-                    "status": "disabled",
-                    "enabled": False,
-                    "is_system": True,
-                    "tool_count": 0,
-                    "tools_count": 0,
-                    "active_server": "Disabled",
-                    "sub_servers": [],
-                    "display_order": sap_meta.get("display_order", 1),
-                    "icon": sap_meta.get("icon", "Database"),
-                }
-            else:
-                try:
-                    sap_client = self.get_client("sap")
-                    sap_tools = await sap_client.list_tools(http_client)
-                    
-                    sub_servers = []
-                    active_server_name = "Default"
-                    try:
-                        srv_res = await sap_client.call_tool(http_client, "list_servers", {})
-                        if srv_res and not srv_res.isError and srv_res.content:
-                            txt = srv_res.content[0].text
-                            srv_data = json.loads(txt)
-                            sub_servers = srv_data.get("servers", [])
-                            sap_client_mapping = {
-                                "development aix": "130",
-                                "dev-aix": "130",
-                                "dev": "130",
-                                "development windows": "130",
-                                "dev-windows": "130",
-                                "dev-win": "130",
-                                "production aix": "999",
-                                "prod-aix": "999",
-                                "prod": "999",
-                                "prd": "999",
-                                "production windows": "999",
-                                "prod-windows": "999",
-                                "prod-win": "999",
-                                "prp": "999",
-                                "qa": "320",
-                                "quality": "320",
-                                "test": "320",
-                                "sandbox build competence": "140",
-                                "sandbox-build": "140",
-                                "build-competence": "140",
-                                "sandbox": "140",
-                                "sandbox new company": "130",
-                                "sandbox-new": "130",
-                                "new-company": "130",
-                            }
-                            for s in sub_servers:
-                                s_name = (s.get("name") or "").lower()
-                                c_val = s.get("client") or sap_client_mapping.get(s_name)
-                                if not c_val:
-                                    for al in s.get("aliases", []):
-                                        if al.lower() in sap_client_mapping:
-                                            c_val = sap_client_mapping[al.lower()]
-                                            break
-                                s["client"] = str(c_val or "130")
-                                if s.get("active"):
-                                    active_server_name = s.get("name") or s.get("sid") or "Active"
-                    except Exception as ex:
-                        logger.warning(f"Gagal mengambil daftar sub-servers SAP: {ex}")
+    async def check_servers_status(self) -> dict:
+        """Cek status seluruh server MCP dengan dashboard-mcp sebagai sumber otoritatif utama."""
+        try:
+            async with httpx.AsyncClient() as http_client:
+                dash_data = await self._fetch_dashboard_resources(http_client)
+        except Exception as ex:
+            logger.warning(f"Error fetching dashboard MCP resources: {ex}")
+            dash_data = None
 
-                    status["sap"] = {
-                        "id": "sap",
-                        "name": sap_name,
-                        "description": sap_desc,
-                        "online": True,
-                        "status": "online",
-                        "enabled": True,
-                        "is_system": True,
-                        "tool_count": len(sap_tools),
-                        "tools_count": len(sap_tools),
-                        "active_server": active_server_name,
-                        "sub_servers": sub_servers,
-                        "display_order": sap_meta.get("display_order", 1),
-                        "icon": sap_meta.get("icon", "Database"),
-                    }
-                except Exception as e:
-                    logger.error(f"Error checking SAP server: {e}")
-                    status["sap"] = {
-                        "id": "sap",
-                        "name": sap_name,
-                        "description": sap_desc,
-                        "online": False,
-                        "status": "offline",
-                        "enabled": True,
-                        "is_system": True,
-                        "tool_count": 0,
-                        "tools_count": 0,
-                        "active_server": "-",
-                        "sub_servers": [],
-                        "error": str(e),
-                        "display_order": sap_meta.get("display_order", 1),
-                        "icon": sap_meta.get("icon", "Database"),
-                    }
+        if dash_data and isinstance(dash_data, dict):
+            resources = dash_data.get("resources", [])
+            dash_status = dash_data.get("status", {})
+            if isinstance(resources, list):
+                self._resources_cache = resources
+                self._resources_cache_time = time.time()
 
-            # 2. RAG & Email Server status (port 8090 melayani RAG Knowledge Base dan Email/Exchange Gateway)
-            rag_meta = db_servers_dict.get("rag", {})
-            rag_enabled = rag_meta.get("enabled", True)
-            rag_name = rag_meta.get("name") or "RAG Knowledge Gateway"
-            rag_desc = rag_meta.get("description") or "Vector DB, SOP & Tech Docs"
+            # Format SAP sub_servers dari resources
+            sap_sub_servers = []
+            for r in resources:
+                if r.get("kind") == "sap":
+                    srv = dict(r)
+                    srv["name"] = r.get("label") or r.get("name") or r.get("sid") or r.get("resource_key", "SAP")
+                    srv["client"] = str(r.get("client") or "130")
+                    srv["sid"] = r.get("sid") or ""
+                    srv["resource_key"] = r.get("resource_key") or f"sap:{srv['name'].lower()}"
+                    sap_sub_servers.append(srv)
 
-            email_meta = db_servers_dict.get("email", {})
-            email_enabled = email_meta.get("enabled", True)
-            email_name = email_meta.get("name") or "Email Gateway"
-            email_desc = email_meta.get("description") or "Email, Calendar & Mail Archive Gateway"
+            # Format SQL sub_servers dari resources
+            sql_sub_servers = []
+            for r in resources:
+                if r.get("kind") == "sql":
+                    srv = dict(r)
+                    srv["name"] = r.get("label") or r.get("name") or r.get("resource_key", "SQL")
+                    sql_sub_servers.append(srv)
 
-            if not rag_enabled and not email_enabled:
-                status["rag"] = {
-                    "id": "rag",
-                    "name": rag_name,
-                    "description": rag_desc,
-                    "online": False,
-                    "status": "disabled",
-                    "enabled": False,
-                    "is_system": True,
-                    "tool_count": 0,
-                    "tools_count": 0,
-                    "active_server": "Disabled",
-                    "display_order": rag_meta.get("display_order", 2),
-                    "icon": rag_meta.get("icon", "BookOpen"),
-                }
-                status["email"] = {
-                    "id": "email",
-                    "name": email_name,
-                    "description": email_desc,
-                    "online": False,
-                    "status": "disabled",
-                    "enabled": False,
-                    "is_system": True,
-                    "tool_count": 0,
-                    "tools_count": 0,
-                    "active_server": "Disabled",
-                    "display_order": email_meta.get("display_order", 4),
-                    "icon": email_meta.get("icon", "Mail"),
-                }
-            else:
-                try:
-                    rag_client = self.get_client("rag")
-                    rag_tools = await rag_client.list_tools(http_client)
-                    
-                    # Pisahkan tool RAG murni dan tool Email secara akurat
-                    rag_clean_tools = [
-                        t for t in rag_tools 
-                        if not t.name.startswith("sql_") and not is_email_tool(t.name)
-                    ]
-                    email_tools = [
-                        t for t in rag_tools 
-                        if is_email_tool(t.name)
-                    ]
+            # 1. SAP Server status
+            sap_dash = (dash_status.get("sap") or dash_status.get("mcp_sap") or {}) if isinstance(dash_status, dict) else {}
+            sap_online = bool(sap_dash.get("online", bool(sap_sub_servers) or bool(sap_dash)))
+            sap_tool_count = sap_dash.get("tool_count") or sap_dash.get("tools_count") or (6 if sap_online else 0)
+            active_sap = sap_dash.get("active_server") or (sap_sub_servers[0]["name"] if sap_sub_servers else ("Default" if sap_online else "-"))
+            sap_status = {
+                "id": "sap",
+                "name": sap_dash.get("name") or "SAP ERP Gateway",
+                "description": sap_dash.get("description") or "Live Data, Tabel & ABAP Code SAP",
+                "online": sap_online,
+                "status": sap_dash.get("status", "online" if sap_online else "offline"),
+                "enabled": sap_dash.get("enabled", True),
+                "is_system": True,
+                "tool_count": sap_tool_count,
+                "tools_count": sap_tool_count,
+                "active_server": active_sap,
+                "sub_servers": sap_sub_servers,
+                "display_order": sap_dash.get("display_order", 1),
+                "icon": sap_dash.get("icon", "Database"),
+            }
 
-                    if rag_enabled:
-                        status["rag"] = {
-                            "id": "rag",
-                            "name": rag_name,
-                            "description": rag_desc,
-                            "online": True,
-                            "status": "online",
-                            "enabled": True,
-                            "is_system": True,
-                            "tool_count": len(rag_clean_tools),
-                            "tools_count": len(rag_clean_tools),
-                            "active_server": "Vector & Doc",
-                            "display_order": rag_meta.get("display_order", 2),
-                            "icon": rag_meta.get("icon", "BookOpen"),
-                        }
-                    else:
-                        status["rag"] = {
-                            "id": "rag",
-                            "name": rag_name,
-                            "description": rag_desc,
-                            "online": False,
-                            "status": "disabled",
-                            "enabled": False,
-                            "is_system": True,
-                            "tool_count": 0,
-                            "tools_count": 0,
-                            "active_server": "Disabled",
-                            "display_order": rag_meta.get("display_order", 2),
-                            "icon": rag_meta.get("icon", "BookOpen"),
-                        }
+            # 2. RAG Server status
+            rag_dash = (dash_status.get("rag") or dash_status.get("mcp_rag") or {}) if isinstance(dash_status, dict) else {}
+            rag_online = bool(rag_dash.get("online", bool(rag_dash)))
+            rag_tool_count = rag_dash.get("tool_count") or rag_dash.get("tools_count") or (6 if rag_online else 0)
+            rag_status = {
+                "id": "rag",
+                "name": rag_dash.get("name") or "RAG Knowledge Gateway",
+                "description": rag_dash.get("description") or "Vector DB, SOP & Tech Docs",
+                "online": rag_online,
+                "status": rag_dash.get("status", "online" if rag_online else "offline"),
+                "enabled": rag_dash.get("enabled", True),
+                "is_system": True,
+                "tool_count": rag_tool_count,
+                "tools_count": rag_tool_count,
+                "active_server": rag_dash.get("active_server", "Vector & Doc" if rag_online else "-"),
+                "display_order": rag_dash.get("display_order", 2),
+                "icon": rag_dash.get("icon", "BookOpen"),
+            }
 
-                    if email_enabled:
-                        status["email"] = {
-                            "id": "email",
-                            "name": email_name,
-                            "description": email_desc,
-                            "online": True,
-                            "status": "online",
-                            "enabled": True,
-                            "is_system": True,
-                            "tool_count": len(email_tools),
-                            "tools_count": len(email_tools),
-                            "active_server": "Mail Archive",
-                            "display_order": email_meta.get("display_order", 4),
-                            "icon": email_meta.get("icon", "Mail"),
-                        }
-                    else:
-                        status["email"] = {
-                            "id": "email",
-                            "name": email_name,
-                            "description": email_desc,
-                            "online": False,
-                            "status": "disabled",
-                            "enabled": False,
-                            "is_system": True,
-                            "tool_count": 0,
-                            "tools_count": 0,
-                            "active_server": "Disabled",
-                            "display_order": email_meta.get("display_order", 4),
-                            "icon": email_meta.get("icon", "Mail"),
-                        }
-                except Exception as e:
-                    logger.error(f"Error checking RAG/Email server: {e}")
-                    status["rag"] = {
-                        "id": "rag",
-                        "name": rag_name,
-                        "description": rag_desc,
-                        "online": False,
-                        "status": "offline",
-                        "enabled": rag_enabled,
-                        "is_system": True,
-                        "tool_count": 0,
-                        "tools_count": 0,
-                        "active_server": "-",
-                        "error": str(e),
-                        "display_order": rag_meta.get("display_order", 2),
-                        "icon": rag_meta.get("icon", "BookOpen"),
-                    }
-                    status["email"] = {
-                        "id": "email",
-                        "name": email_name,
-                        "description": email_desc,
-                        "online": False,
-                        "status": "offline",
-                        "enabled": email_enabled,
-                        "is_system": True,
-                        "tool_count": 0,
-                        "tools_count": 0,
-                        "active_server": "-",
-                        "error": str(e),
-                        "display_order": email_meta.get("display_order", 4),
-                        "icon": email_meta.get("icon", "Mail"),
-                    }
+            # 3. SQL Server status
+            sql_dash = (dash_status.get("sql") or dash_status.get("mcp_sql") or {}) if isinstance(dash_status, dict) else {}
+            sql_online = bool(sql_dash.get("online", bool(sql_sub_servers) or bool(sql_dash)))
+            sql_tool_count = sql_dash.get("tool_count") or sql_dash.get("tools_count") or (7 if sql_online else 0)
+            active_sql = sql_dash.get("active_server") or (sql_sub_servers[0]["name"] if sql_sub_servers else ("Default" if sql_online else "-"))
+            sql_status = {
+                "id": "sql",
+                "name": sql_dash.get("name") or "SQL & Database Gateway",
+                "description": sql_dash.get("description") or "Relational SQL & Query Tools",
+                "online": sql_online,
+                "status": sql_dash.get("status", "online" if sql_online else "offline"),
+                "enabled": sql_dash.get("enabled", True),
+                "is_system": True,
+                "tool_count": sql_tool_count,
+                "tools_count": sql_tool_count,
+                "active_server": active_sql,
+                "sub_servers": sql_sub_servers,
+                "display_order": sql_dash.get("display_order", 3),
+                "icon": sql_dash.get("icon", "Server"),
+            }
 
-            # 3. SQL Server status (mengambil daftar database server SQL live via sql_list_servers)
-            sql_meta = db_servers_dict.get("sql", {})
-            sql_enabled = sql_meta.get("enabled", True)
-            sql_name = sql_meta.get("name") or "SQL & Database Gateway"
-            sql_desc = sql_meta.get("description") or "Relational SQL & Query Tools"
-            if not sql_enabled:
-                status["sql"] = {
-                    "id": "sql",
-                    "name": sql_name,
-                    "description": sql_desc,
-                    "online": False,
-                    "status": "disabled",
-                    "enabled": False,
-                    "is_system": True,
-                    "tool_count": 0,
-                    "tools_count": 0,
-                    "active_server": "Disabled",
-                    "sub_servers": [],
-                    "display_order": sql_meta.get("display_order", 3),
-                    "icon": sql_meta.get("icon", "Server"),
-                }
-            else:
-                try:
-                    sql_client = self.get_client("sql")
-                    sql_tools = await sql_client.list_tools(http_client)
-                    sql_sub_servers = []
-                    active_sql_name = "Default"
-                    try:
-                        sql_srv_res = await sql_client.call_tool(http_client, "sql_list_servers", {})
-                        if sql_srv_res and not sql_srv_res.isError and sql_srv_res.content:
-                            sql_srv_data = json.loads(sql_srv_res.content[0].text)
-                            sql_sub_servers = sql_srv_data.get("servers", [])
-                            for s in sql_sub_servers:
-                                if s.get("active"):
-                                    active_sql_name = s.get("name") or "Active"
-                    except Exception as ex:
-                        logger.warning(f"Gagal mengambil daftar sub-servers SQL: {ex}")
+            # 4. Email Server status
+            email_dash = (dash_status.get("email") or dash_status.get("mcp_email") or {}) if isinstance(dash_status, dict) else {}
+            email_online = bool(email_dash.get("online", bool(email_dash)))
+            email_tool_count = email_dash.get("tool_count") or email_dash.get("tools_count") or (8 if email_online else 0)
+            email_status = {
+                "id": "email",
+                "name": email_dash.get("name") or "Email Gateway",
+                "description": email_dash.get("description") or "Email, Calendar & Mail Archive Gateway",
+                "online": email_online,
+                "status": email_dash.get("status", "online" if email_online else "offline"),
+                "enabled": email_dash.get("enabled", True),
+                "is_system": True,
+                "tool_count": email_tool_count,
+                "tools_count": email_tool_count,
+                "active_server": email_dash.get("active_server", "Mail Archive" if email_online else "-"),
+                "display_order": email_dash.get("display_order", 4),
+                "icon": email_dash.get("icon", "Mail"),
+            }
 
-                    sql_info = {
-                        "id": "sql",
-                        "name": sql_name,
-                        "description": sql_desc,
-                        "online": True,
-                        "status": "online",
-                        "enabled": True,
-                        "is_system": True,
-                        "tool_count": len([t for t in sql_tools if t.name.startswith("sql_")]),
-                        "tools_count": len([t for t in sql_tools if t.name.startswith("sql_")]),
-                        "active_server": active_sql_name,
-                        "sub_servers": sql_sub_servers,
-                        "display_order": sql_meta.get("display_order", 3),
-                        "icon": sql_meta.get("icon", "Server"),
-                    }
-                    status["sql"] = sql_info
-                except Exception as e:
-                    logger.error(f"Error checking SQL MCP server: {e}")
-                    sql_err = {
-                        "id": "sql",
-                        "name": sql_name,
-                        "description": sql_desc,
-                        "online": False,
-                        "status": "offline",
-                        "enabled": True,
-                        "is_system": True,
-                        "tool_count": 0,
-                        "tools_count": 0,
-                        "active_server": "-",
-                        "sub_servers": [],
-                        "error": str(e),
-                        "display_order": sql_meta.get("display_order", 3),
-                        "icon": sql_meta.get("icon", "Server"),
-                    }
-                    status["sql"] = sql_err
+            status = {
+                "sap": sap_status,
+                "rag": rag_status,
+                "sql": sql_status,
+                "email": email_status,
+            }
 
-            # 4. Custom Dynamic MCP Servers
-            for sid, srv in db_servers_dict.items():
-                if sid in ("sap", "rag", "sql", "email"):
-                    continue
-                s_name = srv.get("name") or sid
-                s_desc = srv.get("description") or ""
-                s_enabled = bool(srv.get("enabled", True))
-                s_order = srv.get("display_order", 99)
-                s_icon = srv.get("icon", "Server")
-                if not s_enabled:
+            known_server_keys = {
+                "sap", "rag", "sql", "email",
+                "mcp_sap", "mcp_rag", "mcp_sql", "mcp_email", "mcp_gitea",
+                "sap-leader-mcp", "mcp-rag", "mcp-sql", "mcp-email", "mcp-gitea",
+            }
+
+            # Custom servers in dash_status
+            if isinstance(dash_status, dict):
+                for sid, s_data in dash_status.items():
+                    if sid in known_server_keys or (isinstance(sid, str) and re.match(r"^[0-9a-fA-F-]{36}$", sid)):
+                        continue
+                    s_online = bool(s_data.get("online", False))
+                    s_tools = s_data.get("tool_count", s_data.get("tools_count", 0))
                     status[sid] = {
                         "id": sid,
-                        "name": s_name,
-                        "description": s_desc,
-                        "online": False,
-                        "status": "disabled",
-                        "enabled": False,
+                        "name": s_data.get("name") or sid,
+                        "description": s_data.get("description", ""),
+                        "online": s_online,
+                        "status": s_data.get("status", "online" if s_online else "offline"),
+                        "enabled": s_data.get("enabled", True),
                         "is_system": False,
-                        "tool_count": 0,
-                        "tools_count": 0,
-                        "active_server": "Disabled",
-                        "display_order": s_order,
-                        "icon": s_icon,
+                        "tool_count": s_tools,
+                        "tools_count": s_tools,
+                        "active_server": s_data.get("active_server", "Active" if s_online else "-"),
+                        "display_order": s_data.get("display_order", 99),
+                        "icon": s_data.get("icon", "Server"),
                     }
-                    continue
 
-                try:
-                    c = self.get_client(sid)
-                    c_tools = await c.list_tools(http_client)
+            # Custom servers in resources that might not be in dash_status
+            for r in resources:
+                raw_sid = r.get("serverId") or r.get("server_id") or ""
+                if re.match(r"^[0-9a-fA-F-]{36}$", str(raw_sid)):
+                    raw_sid = ""
+                sid = raw_sid
+                if not sid and ":" in r.get("resource_key", ""):
+                    prefix = r["resource_key"].split(":", 1)[0]
+                    if prefix not in ("sap", "rag", "sql", "email", "service"):
+                        sid = prefix
+                if sid and sid not in status and sid not in known_server_keys and not re.match(r"^[0-9a-fA-F-]{36}$", str(sid)):
                     status[sid] = {
                         "id": sid,
-                        "name": s_name,
-                        "description": s_desc,
+                        "name": r.get("server_name") or r.get("label") or sid,
+                        "description": r.get("description", ""),
                         "online": True,
                         "status": "online",
                         "enabled": True,
                         "is_system": False,
-                        "tool_count": len(c_tools),
-                        "tools_count": len(c_tools),
+                        "tool_count": 0,
+                        "tools_count": 0,
                         "active_server": "Active",
-                        "display_order": s_order,
-                        "icon": s_icon,
+                        "display_order": 99,
+                        "icon": "Server",
                     }
-                except Exception as ex:
-                    logger.warning(f"Error checking custom MCP server '{sid}': {ex}")
-                    status[sid] = {
-                        "id": sid,
-                        "name": s_name,
-                        "description": s_desc,
-                        "online": False,
-                        "status": "offline",
-                        "enabled": True,
-                        "is_system": False,
-                        "tools_count": 0,
-                        "active_server": "-",
-                        "error": str(ex),
-                        "display_order": s_order,
-                        "icon": s_icon,
-                    }
+            return status
 
-        return status
+        # Fallback offline status jika dashboard-mcp tidak dapat dihubungi
+        return {
+            "sap": {
+                "id": "sap",
+                "name": "SAP ERP Gateway",
+                "description": "Live Data, Tabel & ABAP Code SAP",
+                "online": False,
+                "status": "offline",
+                "enabled": True,
+                "is_system": True,
+                "tool_count": 0,
+                "tools_count": 0,
+                "active_server": "-",
+                "sub_servers": [],
+                "display_order": 1,
+                "icon": "Database",
+            },
+            "rag": {
+                "id": "rag",
+                "name": "RAG Knowledge Gateway",
+                "description": "Vector DB, SOP & Tech Docs",
+                "online": False,
+                "status": "offline",
+                "enabled": True,
+                "is_system": True,
+                "tool_count": 0,
+                "tools_count": 0,
+                "active_server": "-",
+                "display_order": 2,
+                "icon": "BookOpen",
+            },
+            "sql": {
+                "id": "sql",
+                "name": "SQL & Database Gateway",
+                "description": "Relational SQL & Query Tools",
+                "online": False,
+                "status": "offline",
+                "enabled": True,
+                "is_system": True,
+                "tool_count": 0,
+                "tools_count": 0,
+                "active_server": "-",
+                "sub_servers": [],
+                "display_order": 3,
+                "icon": "Server",
+            },
+            "email": {
+                "id": "email",
+                "name": "Email Gateway",
+                "description": "Email, Calendar & Mail Archive Gateway",
+                "online": False,
+                "status": "offline",
+                "enabled": True,
+                "is_system": True,
+                "tool_count": 0,
+                "tools_count": 0,
+                "active_server": "-",
+                "display_order": 4,
+                "icon": "Mail",
+            },
+        }
 
-    async def _set_active_sap_server_unlocked(self, http_client, target_sap: str, sap_credentials: Optional[dict] = None):
+    async def _set_active_sap_server_unlocked(
+        self,
+        http_client,
+        target_sap: str,
+        sap_credentials: Optional[dict] = None,
+        extra_headers: Optional[dict] = None,
+    ):
         """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
         sap_client = self.get_client("sap")
         last_error = None
-        payload = {"server_ref": target_sap}
+        try:
+            import access_control
+            sap_resource_key = access_control.canonical_resource_key(f"sap:{target_sap}")
+        except Exception:
+            sap_resource_key = target_sap if str(target_sap).startswith("sap:") else f"sap:{target_sap}"
+        payload = {"server_ref": target_sap, "resource_key": sap_resource_key}
         if sap_credentials:
             if sap_credentials.get("sap_user"):
                 payload["user"] = sap_credentials["sap_user"]
@@ -766,9 +718,21 @@ class MCPManager:
             if sap_credentials.get("sap_client"):
                 payload["client"] = sap_credentials["sap_client"]
 
+        req_headers = dict(extra_headers or {})
+        if target_sap and "X-SAP-Server" not in req_headers:
+            req_headers["X-SAP-Server"] = target_sap
+        if sap_credentials:
+            if sap_credentials.get("sap_user") and "X-SAP-User" not in req_headers:
+                req_headers["X-SAP-User"] = sap_credentials["sap_user"]
+            if sap_credentials.get("sap_password") and "X-SAP-Password" not in req_headers:
+                req_headers["X-SAP-Password"] = sap_credentials["sap_password"]
+            if sap_credentials.get("sap_client") and "X-SAP-Client" not in req_headers:
+                req_headers["X-SAP-Client"] = sap_credentials["sap_client"]
+            if sap_credentials.get("sap_language") and "X-SAP-Language" not in req_headers:
+                req_headers["X-SAP-Language"] = sap_credentials["sap_language"]
         for attempt in range(2):
             try:
-                res = await sap_client.call_tool(http_client, "set_active_server", payload)
+                res = await sap_client.call_tool(http_client, "set_active_server", payload, extra_headers=req_headers)
                 if res.is_error:
                     msg = res.content[0].text if res.content else "Unknown error"
                     raise RuntimeError(f"Tool set_active_server mengembalikan error: {msg}")
@@ -842,56 +806,75 @@ class MCPManager:
                     sap_client = self.get_client("sap")
                     sap_tools = await sap_client.list_tools(http_client)
                     for t in sap_tools:
-                        tools.append({"server": "sap", "tool": t})
+                        cls = classify_gateway_tool(t.name)
+                        if cls == "sap":
+                            tools.append({"server": "sap", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching SAP tools: {e}")
 
-            # RAG & Email Tools
-            if is_rag or is_email:
+            # RAG Tools — langsung dari client "rag" tanpa email
+            if is_rag:
                 try:
                     rag_client = self.get_client("rag")
                     rag_tools = await rag_client.list_tools(http_client)
                     for t in rag_tools:
-                        if t.name.startswith("sql_"):
+                        cls = classify_gateway_tool(t.name)
+                        # Lewati tool yang bukan domain RAG murni (ditangani client lain)
+                        if cls != "rag":
                             continue
-                        tool_is_email = is_email_tool(t.name)
-                        if tool_is_email:
-                            if not is_email:
-                                continue  # Email connector dilarang untuk peran ini
-                            tools.append({"server": "email", "tool": t})
-                        else:
-                            if not is_rag:
-                                continue  # RAG connector dilarang untuk peran ini
-                            # Pangkas tool pseudo-SAP di server RAG (seluruh fungsi SAP ditangani dedicated server SAP)
-                            if t.name.startswith("sap_"):
-                                continue
-                            # Pangkas tool internal administratif dan duplikat
-                            if t.name in RAG_INTERNAL_EXCLUDED_TOOLS:
-                                continue
-                            tools.append({"server": "rag", "tool": t})
+                        # Pangkas tool internal administratif gateway
+                        if is_internal_rag_tool(t.name):
+                            continue
+                        tools.append({"server": "rag", "tool": t})
                 except Exception as e:
-                    logger.error(f"Error fetching RAG/Email tools: {e}")
+                    logger.error(f"Error fetching RAG tools: {e}")
 
-            # SQL Tools
+            # Email Tools — client "email" tersendiri (bukan menumpang RAG)
+            if is_email:
+                try:
+                    email_client = self.get_client("email")
+                    email_tools = await email_client.list_tools(http_client)
+                    for t in email_tools:
+                        cls = classify_gateway_tool(t.name)
+                        if cls == "email":
+                            tools.append({"server": "email", "tool": t})
+                except Exception as e:
+                    logger.warning(f"Error fetching Email tools (MCP Email offline or unavailable): {e}")
+
+            # SQL Tools — terima tool bernamespace gateway (mcp-sql__*) maupun legacy (sql_*)
             if is_sql:
                 try:
                     sql_client = self.get_client("sql")
                     sql_tools = await sql_client.list_tools(http_client)
                     for t in sql_tools:
-                        if t.name.startswith("sql_"):
-                            if t.name == "sql_reload_config":
-                                continue
-                            tools.append({"server": "sql", "tool": t})
+                        cls = classify_gateway_tool(t.name)
+                        if cls != "sql":
+                            continue
+                        # Lewati tool admin config yang tidak relevan untuk pengguna
+                        if is_sql_admin_tool(t.name):
+                            continue
+                        tools.append({"server": "sql", "tool": t})
                 except Exception as e:
                     logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
 
             # Custom Dynamic MCP Servers Tools
             try:
-                from database import list_mcp_servers
-                custom_servers = [s for s in list_mcp_servers(enabled_only=True) if s["id"] not in ("sap", "rag", "sql", "email")]
-                for cs in custom_servers:
-                    cs_id = cs["id"]
-                    cs_name = cs.get("name") or cs_id
+                live_resources = await self.get_live_resources()
+                custom_servers_map = {}
+                for r in live_resources:
+                    # Resource bawaan/aggregate adalah target di dalam Dashboard gateway,
+                    # bukan custom MCP endpoint terpisah.
+                    if r.get("kind") in ("sap", "sql", "rag", "email", "service"):
+                        continue
+                    srv_id = r.get("serverId") or r.get("server_id")
+                    if not srv_id and ":" in r.get("resource_key", ""):
+                        prefix = r["resource_key"].split(":", 1)[0]
+                        if prefix not in ("sap", "rag", "sql", "email", "service"):
+                            srv_id = prefix
+                    if srv_id:
+                        custom_servers_map[srv_id] = r.get("server_name") or r.get("label") or srv_id
+
+                for cs_id, cs_name in custom_servers_map.items():
                     if allowed_connectors is not None and cs_id not in allowed_connectors:
                         continue
                     if server_filter not in ("all", cs_id) and not server_filter.startswith(f"{cs_id}:"):
@@ -905,7 +888,6 @@ class MCPManager:
                         logger.warning(f"Error fetching tools from custom MCP '{cs_id}': {e}")
             except Exception as ex:
                 logger.warning(f"Error listing custom MCP tools: {ex}")
-
         return tools
 
     async def call_tool(
@@ -930,37 +912,109 @@ class MCPManager:
         if server_name == "sap" and isinstance(arguments, dict):
             final_args = self._sanitize_sap_arguments(tool_name, arguments)
 
+        extra_sap_headers = {}
+        if server_name == "sap":
+            if isinstance(final_args, dict) and sap_target and "resource_key" not in final_args:
+                try:
+                    import access_control
+                    final_args["resource_key"] = access_control.canonical_resource_key(f"sap:{sap_target}")
+                except Exception:
+                    final_args["resource_key"] = sap_target if str(sap_target).startswith("sap:") else f"sap:{sap_target}"
+            if sap_target:
+                extra_sap_headers["X-SAP-Server"] = sap_target
+            if sap_credentials:
+                if sap_credentials.get("sap_user"):
+                    extra_sap_headers["X-SAP-User"] = sap_credentials["sap_user"]
+                if sap_credentials.get("sap_password"):
+                    extra_sap_headers["X-SAP-Password"] = sap_credentials["sap_password"]
+                if sap_credentials.get("sap_client"):
+                    extra_sap_headers["X-SAP-Client"] = sap_credentials["sap_client"]
+                if sap_credentials.get("sap_language"):
+                    extra_sap_headers["X-SAP-Language"] = sap_credentials["sap_language"]
+
         if server_name == "sap" and sap_target:
             async with self._sap_lock:
                 async with httpx.AsyncClient() as http_client:
-                    ok = await self._set_active_sap_server_unlocked(http_client, sap_target, sap_credentials=sap_credentials)
+                    ok = await self._set_active_sap_server_unlocked(
+                        http_client,
+                        sap_target,
+                        sap_credentials=sap_credentials,
+                        extra_headers=extra_sap_headers,
+                    )
                     if not ok:
                         return MCPCallResult(
                             content=[MCPContentItem(
                                 text=(
                                     f"Gagal mengarahkan permintaan ke sistem SAP '{sap_target}'. "
-                                    "Tool tidak dijalankan untuk menghindari eksekusi pada sistem yang salah."
+                                     "Tool tidak dijalankan untuk menghindari eksekusi pada sistem yang salah."
                                 )
                             )],
                             is_error=True,
                         )
                     client = self.get_client(server_name)
-                    return await self._handle_sap_call(http_client, client, tool_name, final_args)
+                    return await self._handle_sap_call(
+                        http_client,
+                        client,
+                        tool_name,
+                        final_args,
+                        extra_headers=extra_sap_headers,
+                    )
 
         async with httpx.AsyncClient() as http_client:
-            client_target = "rag" if server_name == "email" else server_name
+            client_target = server_name
             client = self.get_client(client_target)
             if server_name == "sap":
-                return await self._handle_sap_call(http_client, client, tool_name, final_args)
-            if server_name == "sql" and sap_target:
-                try:
-                    await client.call_tool(http_client, "sql_set_active_server", {"server_ref": sap_target})
-                except Exception as ex:
-                    logger.warning(f"Gagal mengatur active SQL server '{sap_target}': {ex}")
-                if isinstance(final_args, dict) and "server" not in final_args:
-                    final_args["server"] = sap_target
-            return await client.call_tool(http_client, tool_name, final_args)
+                return await self._handle_sap_call(
+                    http_client,
+                    client,
+                    tool_name,
+                    final_args,
+                    extra_headers=extra_sap_headers,
+                )
+            if server_name == "sql":
+                target = sap_target
+                if not target:
+                    try:
+                        resources = await self.get_live_resources()
+                        sql_res = [r for r in resources if r.get("kind") == "sql"]
+                        if sql_res:
+                            target = sql_res[0].get("resource_key") or sql_res[0].get("name")
+                    except Exception as ex:
+                        logger.warning(f"Gagal mendeteksi resource SQL default: {ex}")
+                if target:
+                    try:
+                        await client.call_tool(http_client, "set_active_server", {"server_ref": target, "resource_key": target})
+                    except Exception as ex:
+                        logger.warning(f"Gagal mengatur active SQL server '{target}': {ex}")
+                    if isinstance(final_args, dict):
+                        if "server" not in final_args:
+                            final_args["server"] = target
+                        if "resource_key" not in final_args:
+                            final_args["resource_key"] = target
+            res = await client.call_tool(http_client, tool_name, final_args)
 
+            if server_name == "sql" and res.content:
+                for item in res.content:
+                    txt = getattr(item, "text", "")
+                    if "Password untuk server" in txt and "tidak ditemukan" in txt:
+                        import re
+                        srv_match = re.search(r'Password untuk server [\\"]*([^\\"]+)[\\"]* tidak ditemukan', txt)
+                        srv_lbl = srv_match.group(1) if srv_match else "database"
+                        env_match = re.search(r'env var [\\"]*([^\\"]+)[\\"]*', txt)
+                        env_name = env_match.group(1) if env_match else f"SQL_PWD_{srv_lbl.upper().replace('-', '_')}"
+                        item.text = (
+                            f"⚠️ Koneksi Gagal: Password untuk server SQL '{srv_lbl}' belum dikonfigurasi di Gateway/Dashboard MCP. "
+                            f"Silakan konfigurasikan credential di Dashboard MCP atau tambahkan environment variable '{env_name}'."
+                        )
+                        res.is_error = True
+                    elif txt.strip().startswith('{"error":') or txt.strip().startswith('{\n  "error":'):
+                        try:
+                            err_data = json.loads(txt)
+                            if "error" in err_data:
+                                res.is_error = True
+                        except Exception:
+                            pass
+            return res
     @staticmethod
     def _is_mutation_bapi(func_name: str) -> bool:
         if not func_name:
@@ -973,10 +1027,18 @@ class MCPManager:
             and "ROLLBACK" not in u
         )
 
-    async def _handle_sap_call(self, http_client, client, tool_name: str, final_args: dict) -> MCPCallResult:
+    async def _handle_sap_call(
+        self,
+        http_client,
+        client,
+        tool_name: str,
+        final_args: dict,
+        extra_headers: Optional[dict] = None,
+    ) -> MCPCallResult:
         """Eksekusi tool SAP dengan perlindungan Atomic Auto-Commit untuk BAPI mutasi."""
-        res = await client.call_tool(http_client, tool_name, final_args)
-        if tool_name != "call_function" or res.is_error or not res.content:
+        res = await client.call_tool(http_client, tool_name, final_args, extra_headers=extra_headers)
+        clean_tool = tool_name.split("__", 1)[-1] if "__" in tool_name else tool_name
+        if clean_tool != "call_function" or res.is_error or not res.content:
             return res
 
         func_name = str(final_args.get("function_name", ""))
@@ -999,7 +1061,7 @@ class MCPManager:
                     await client.call_tool(http_client, "call_function", {
                         "function_name": "BAPI_TRANSACTION_COMMIT",
                         "parameters": {"WAIT": "X"}
-                    })
+                    }, extra_headers=extra_headers)
                     data["auto_commit"] = {
                         "status": "SUCCESS",
                         "message": "Dokumen berhasil di-commit secara permanen ke database SAP (Single LUW)."
@@ -1010,7 +1072,7 @@ class MCPManager:
                     await client.call_tool(http_client, "call_function", {
                         "function_name": "BAPI_TRANSACTION_ROLLBACK",
                         "parameters": {}
-                    })
+                    }, extra_headers=extra_headers)
                     data["auto_commit"] = {
                         "status": "ROLLED_BACK",
                         "message": "BAPI dibatalkan karena terdapat pesan error Type E/A."
@@ -1041,7 +1103,8 @@ class MCPManager:
             return val
 
         cleaned = _clean(arguments)
-        if tool_name == "call_function" and "parameters" in cleaned and isinstance(cleaned["parameters"], dict):
+        clean_tool = tool_name.split("__", 1)[-1] if "__" in tool_name else tool_name
+        if clean_tool == "call_function" and "parameters" in cleaned and isinstance(cleaned["parameters"], dict):
             # Pastikan dict parameters bersih dari meta-keys
             cleaned["parameters"] = _clean(cleaned["parameters"])
         return cleaned

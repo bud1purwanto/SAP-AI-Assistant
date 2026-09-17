@@ -2334,6 +2334,12 @@ const ChatLayout = () => {
         isOpen={isLoginModalOpen}
         customMessage={customLoginMsg}
         onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={(loggedInUser) => {
+          setUser(loggedInUser);
+          setIsLoginModalOpen(false);
+          setCustomLoginMsg('');
+          window.location.reload();
+        }}
       />
 
       <SettingsModal

@@ -433,13 +433,238 @@ def init_db():
             # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
             run_migrations(conn)
 
+            # Seed user TRSTDEV (superadmin) jika belum ada
+            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
+            if not res_dev:
+                from auth import hash_password
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona)
+                    VALUES ('TRSTDEV', :pwd, 'Super Administrator', 'superadmin', :persona)
+                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.user_roles (username, role)
+                    VALUES ('TRSTDEV', 'superadmin')
+                    ON CONFLICT (username, role) DO NOTHING
+                """))
+                logger.warning(
+                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
+                )
+
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant_dev' berhasil diinisialisasi.")
     except Exception as e:
         logger.error(f"Gagal inisialisasi database: {e}")
-        # Di produksi kegagalan ini tidak boleh ditelan: tanpa ini server tetap
-        # menyala dan melayani permintaan di atas database yang belum siap.
         raise
+
+
+def hash_scrypt_password(password: str) -> str:
+    """Buat password hash dengan format scrypt yang kompatibel dengan Dashboard MCP / ai_auth."""
+    import hashlib, os
+    salt = os.urandom(16)
+    derived = hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=salt,
+        n=16384,
+        r=8,
+        p=1,
+        maxmem=0,
+        dklen=64,
+    )
+    return f"scrypt$16384$8$1${salt.hex()}${derived.hex()}"
+
+
+def verify_scrypt_password(password: str, scrypt_hash: str) -> bool:
+    """Verifikasi password terhadap hash scrypt ai_auth (scrypt$16384$8$1$<salt_hex>$<derived_hex>)."""
+    import hashlib, hmac
+    try:
+        parts = scrypt_hash.split("$")
+        if len(parts) != 6 or parts[0] != "scrypt":
+            return False
+        n = int(parts[1])
+        r = int(parts[2])
+        p = int(parts[3])
+        salt = bytes.fromhex(parts[4])
+        expected = bytes.fromhex(parts[5])
+        derived = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=salt,
+            n=n,
+            r=r,
+            p=p,
+            maxmem=0,
+            dklen=len(expected),
+        )
+        return hmac.compare_digest(derived, expected)
+    except Exception as e:
+        logger.debug(f"verify_scrypt_password failed: {e}")
+        return False
+
+
+def sync_password_to_ai_auth(username: str, plain_password: str) -> bool:
+    """Sinkronkan password ke database terpusat ai_auth (PostgreSQL) menggunakan format scrypt dan cabut active refresh_tokens."""
+    import psycopg
+    from config import get_settings
+
+    uname_clean = (username or "").strip()
+    if not uname_clean or not plain_password:
+        return False
+
+    auth_db_url = get_settings().auth_database_url
+    if not auth_db_url:
+        return False
+
+    try:
+        scrypt_hash = hash_scrypt_password(plain_password)
+        with psycopg.connect(auth_db_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET password_hash = %s, updated_at = NOW()
+                    WHERE LOWER(username) = LOWER(%s)
+                    RETURNING id
+                    """,
+                    (scrypt_hash, uname_clean),
+                )
+                row = cur.fetchone()
+                if row:
+                    user_id = row[0]
+                    cur.execute(
+                        """
+                        UPDATE refresh_tokens
+                        SET revoked_at = NOW()
+                        WHERE user_id = %s AND revoked_at IS NULL
+                        """,
+                        (user_id,),
+                    )
+            conn.commit()
+            logger.info(f"Password user '{uname_clean}' berhasil disinkronkan ke ai_auth.")
+            return True
+    except Exception as e:
+        logger.warning(f"Gagal sinkronisasi password ke ai_auth untuk user '{uname_clean}': {e}")
+        return False
+
+
+def authenticate_user(username: str, password: str):
+    """Verifikasi login user (username case-insensitive).
+    Password diverifikasi terhadap hash bcrypt atau database terpusat ai_auth.
+    Instalasi lama yang masih menyimpan plaintext akan otomatis di-upgrade ke hash.
+    """
+    uname_clean = (username or "").strip()
+    pwd_clean = (password or "").strip()
+    if not uname_clean or not pwd_clean:
+        return None
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT username, password, password_hash, full_name, role, assistant_persona,
+                       force_change_password, division_code, job_level
+                FROM ai_assistant_dev.users
+                WHERE LOWER(username) = LOWER(:u)
+            """), {"u": uname_clean}).fetchone()
+
+            from auth import hash_password, verify_password, is_bcrypt_hash
+            authenticated = False
+
+            if row:
+                stored_hash = row.password_hash
+                if stored_hash and is_bcrypt_hash(stored_hash):
+                    authenticated = verify_password(pwd_clean, stored_hash)
+                elif row.password:
+                    # Kredensial warisan berformat plaintext.
+                    authenticated = (row.password == pwd_clean)
+                    if authenticated:
+                        conn.execute(text("""
+                            UPDATE ai_assistant_dev.users
+                            SET password_hash = :h, password = NULL
+                            WHERE LOWER(username) = LOWER(:u)
+                        """), {"h": hash_password(pwd_clean), "u": uname_clean})
+                        conn.commit()
+                        logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
+
+            # Bila otentikasi lokal gagal atau user belum ada, periksa database terpusat ai_auth
+            if not authenticated:
+                try:
+                    import psycopg
+                    from config import get_settings
+                    auth_db_url = get_settings().auth_database_url
+                    if auth_db_url:
+                        with psycopg.connect(auth_db_url) as auth_conn:
+                            with auth_conn.cursor() as cur:
+                                cur.execute(
+                                    "SELECT id, username, password_hash, is_active FROM users WHERE LOWER(username) = LOWER(%s)",
+                                    (uname_clean,),
+                                )
+                                auth_row = cur.fetchone()
+                                if auth_row and auth_row[2] and auth_row[3]:
+                                    if verify_scrypt_password(pwd_clean, auth_row[2]):
+                                        authenticated = True
+                                        logger.info(f"User '{uname_clean}' berhasil diverifikasi via ai_auth.")
+                                        if row:
+                                            conn.execute(text("""
+                                                UPDATE ai_assistant_dev.users
+                                                SET password_hash = :h, password = NULL, force_change_password = FALSE
+                                                WHERE LOWER(username) = LOWER(:u)
+                                            """), {"h": hash_password(pwd_clean), "u": uname_clean})
+                                            conn.commit()
+                                        else:
+                                            ensure_user_exists(uname_clean)
+                                            conn.execute(text("""
+                                                UPDATE ai_assistant_dev.users
+                                                SET password_hash = :h, password = NULL, force_change_password = FALSE
+                                                WHERE LOWER(username) = LOWER(:u)
+                                            """), {"h": hash_password(pwd_clean), "u": uname_clean})
+                                            conn.commit()
+                except Exception as ex_auth:
+                    logger.warning(f"Error fallback verifikasi ai_auth: {ex_auth}")
+
+            if authenticated:
+                return get_user_by_username(row.username if row else uname_clean)
+    except Exception as e:
+        logger.error(f"Error authenticate_user: {e}")
+
+    return None
+
+
+def change_user_password(username: str, old_password: str, new_password: str):
+    """Ubah password user yang sedang login."""
+    if not new_password or len(new_password) < 8:
+        return {"success": False, "message": "Password baru minimal 8 karakter."}
+
+    uname_clean = (username or "").strip()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT password, password_hash FROM ai_assistant_dev.users
+                WHERE LOWER(username) = LOWER(:u)
+            """), {"u": uname_clean}).fetchone()
+
+            if not row:
+                return {"success": False, "message": "User tidak ditemukan."}
+
+            from auth import hash_password, verify_password, is_bcrypt_hash
+            if row.password_hash and is_bcrypt_hash(row.password_hash):
+                valid_old = verify_password(old_password, row.password_hash)
+            else:
+                valid_old = bool(row.password) and row.password == old_password
+
+            if not valid_old:
+                return {"success": False, "message": "Password lama salah."}
+
+            conn.execute(text("""
+                UPDATE ai_assistant_dev.users
+                SET password_hash = :new_h, password = NULL, force_change_password = FALSE
+                WHERE LOWER(username) = LOWER(:u)
+            """), {"new_h": hash_password(new_password), "u": uname_clean})
+            conn.commit()
+            sync_password_to_ai_auth(uname_clean, new_password)
+            return {"success": True, "message": "Password berhasil diperbarui."}
+    except Exception as e:
+        logger.error(f"Error change_user_password: {e}")
+        return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
 
 
 def get_user_roles(username: str, active_only: bool = True) -> list:
@@ -1074,6 +1299,7 @@ def reset_mcp_server_to_default(server_id: str) -> dict:
         "sap": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SAP ERP Gateway", "desc": "Live Data, Tabel & ABAP Code SAP"},
         "rag": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "RAG Knowledge Gateway", "desc": "Vector DB, SOP & Tech Docs"},
         "sql": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SQL & Database Gateway", "desc": "Relational SQL & Query Tools"},
+        "email": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "Email Gateway", "desc": "Email, Calendar & Mail Archive Gateway"},
     }
     if sid not in defaults:
         return {"success": False, "message": f"Server '{sid}' bukan server sistem bawaan."}
@@ -1786,13 +2012,19 @@ def list_all_users():
         return []
 
 def create_new_user(username: str, password: str = None, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
-    """Buat preferensi user baru di database (identitas dikelola Dashboard OIDC)."""
+    """Buat user baru di database ai_assistant_dev.users."""
+    uname_clean = (username or "").strip()
+    if not uname_clean:
+        return {"success": False, "message": "Username tidak boleh kosong."}
+
+    from auth import hash_password
+    pwd_hash = hash_password(password) if password else None
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
+            existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean}).fetchone()
             if existing:
-                return {"success": False, "message": f"User '{username}' sudah ada."}
+                return {"success": False, "message": f"User '{uname_clean}' sudah ada."}
 
             clean_roles = []
             for r in (roles or ([role] if role else ["user"])):
@@ -1809,21 +2041,57 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
                 jl_clean = "staff"
 
             conn.execute(text("""
-                INSERT INTO ai_assistant_dev.users (username, full_name, role, assistant_persona, division_code, job_level)
-                VALUES (:u, :fn, :r, :persona, :dc, :jl)
-            """), {"u": username.strip(), "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona, "dc": div_clean, "jl": jl_clean})
+                INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
+                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc, :jl)
+            """), {"u": uname_clean, "p": pwd_hash, "fn": (full_name or "").strip(),
+                   "r": primary_role, "persona": persona or "", "fcp": force_change_password,
+                   "dc": div_clean, "jl": jl_clean})
             for r in clean_roles:
                 conn.execute(text("""
                     INSERT INTO ai_assistant_dev.user_roles (username, role)
                     VALUES (:u, :r)
                     ON CONFLICT (username, role) DO NOTHING
-                """), {"u": username.strip(), "r": r})
+                """), {"u": uname_clean, "r": r})
 
             conn.commit()
-            return {"success": True, "message": f"User '{username}' berhasil dibuat."}
+            if password:
+                sync_password_to_ai_auth(uname_clean, password)
+            return {"success": True, "message": f"User '{uname_clean}' berhasil dibuat."}
     except Exception as e:
         logger.error(f"Error create_new_user: {e}")
+        return {"success": False, "message": str(e)}
+
+
+def reset_user_password_by_admin(username: str, new_password: str, force_change: bool = True) -> dict:
+    """Admin mereset password pengguna dan mengaktifkan status force_change_password (pending reset)."""
+    if not new_password or len(new_password) < 8:
+        return {"success": False, "message": "Password baru minimal 8 karakter."}
+    uname_clean = (username or "").strip()
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
+                {"u": uname_clean},
+            ).fetchone()
+            if not existing:
+                return {"success": False, "message": "User tidak ditemukan."}
+
+            from auth import hash_password
+            conn.execute(text("""
+                UPDATE ai_assistant_dev.users
+                SET password_hash = :p, password = NULL, force_change_password = :fcp
+                WHERE LOWER(username) = LOWER(:u)
+            """), {
+                "u": uname_clean,
+                "p": hash_password(new_password),
+                "fcp": force_change,
+            })
+            conn.commit()
+            sync_password_to_ai_auth(uname_clean, new_password)
+            return {"success": True, "message": f"Password user '{username}' berhasil direset."}
+    except Exception as e:
+        logger.error(f"Error reset_user_password_by_admin: {e}")
         return {"success": False, "message": str(e)}
 
 def ensure_user_exists(username: str, role: str = "user", roles: list = None, full_name: str = ""):
@@ -1944,8 +2212,15 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                     jl_clean = "staff"
                 updates.append("job_level = :jl")
                 params["jl"] = jl_clean
-            # Password tidak lagi dikelola di SAP AI Assistant (dikelola oleh Dashboard OIDC)
-
+            if password is not None and password.strip():
+                if len(password.strip()) < 8:
+                    return {"success": False, "message": "Password minimal 8 karakter."}
+                from auth import hash_password
+                updates.append("password_hash = :pwd, password = NULL")
+                params["pwd"] = hash_password(password.strip())
+            if force_change_password is not None:
+                updates.append("force_change_password = :fcp")
+                params["fcp"] = force_change_password
             if updates:
                 sql = f"UPDATE ai_assistant_dev.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
@@ -2212,17 +2487,21 @@ def compute_user_rag_tags(
     return sorted(list(effective))
 
 def delete_user_by_admin(username: str):
-    """Hapus user beserta sesi chat-nya (kecuali akun superadmin itu sendiri)."""
+    """Hapus user beserta data terkait (kecuali akun superadmin itu sendiri)."""
+    uname_clean = (username or "").strip()
+    if uname_clean.upper() == "TRSTDEV":
+        return {"success": False, "message": "Akun bootstrap superadmin 'TRSTDEV' tidak boleh dihapus."}
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # Hapus sessions user terlebih dahulu jika FK belum ON DELETE CASCADE
-            conn.execute(text("DELETE FROM ai_assistant_dev.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
-            res = conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+            conn.execute(text("DELETE FROM ai_assistant_dev.user_sap_credentials WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
+            conn.execute(text("DELETE FROM ai_assistant_dev.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
+            conn.execute(text("DELETE FROM ai_assistant_dev.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
+            res = conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
             conn.commit()
             if res.rowcount == 0:
                 return {"success": False, "message": "User tidak ditemukan."}
-            return {"success": True, "message": f"User '{username}' berhasil dihapus."}
+            return {"success": True, "message": f"User '{uname_clean}' berhasil dihapus."}
     except Exception as e:
         logger.error(f"Error delete_user_by_admin: {e}")
         return {"success": False, "message": str(e)}
@@ -3876,7 +4155,7 @@ def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list
         query = """
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
-                   created_at, updated_at
+                   created_at, updated_at, lease_owner, lease_until
             FROM ai_assistant_dev.scheduled_tasks
             WHERE 1=1
         """
@@ -3887,22 +4166,14 @@ def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list
         if only_active:
             query += " AND is_active = TRUE"
         query += " ORDER BY created_at DESC"
-        
         rows = conn.execute(text(query), params).fetchall()
         return [
             {
-                "id": r[0],
-                "user_id": r[1],
-                "title": r[2],
-                "prompt": r[3],
-                "cron_expression": r[4],
-                "email_to": r[5],
-                "is_active": bool(r[6]),
-                "last_run_at": _iso(r[7]),
-                "last_status": r[8],
-                "last_result": r[9],
-                "created_at": _iso(r[10]),
-                "updated_at": _iso(r[11]),
+                "id": r[0], "user_id": r[1], "title": r[2], "prompt": r[3],
+                "cron_expression": r[4], "email_to": r[5], "is_active": bool(r[6]),
+                "last_run_at": _iso(r[7]), "last_status": r[8], "last_result": r[9],
+                "created_at": _iso(r[10]), "updated_at": _iso(r[11]),
+                "lease_owner": r[12], "lease_until": _iso(r[13]),
             }
             for r in rows
         ]
@@ -3917,27 +4188,19 @@ def get_scheduled_task(task_id: str) -> dict | None:
         r = conn.execute(text("""
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
-                   created_at, updated_at
+                   created_at, updated_at, lease_owner, lease_until
             FROM ai_assistant_dev.scheduled_tasks
             WHERE id = :tid
         """), {"tid": task_id}).fetchone()
         if not r:
             return None
         return {
-            "id": r[0],
-            "user_id": r[1],
-            "title": r[2],
-            "prompt": r[3],
-            "cron_expression": r[4],
-            "email_to": r[5],
-            "is_active": bool(r[6]),
-            "last_run_at": _iso(r[7]),
-            "last_status": r[8],
-            "last_result": r[9],
-            "created_at": _iso(r[10]),
-            "updated_at": _iso(r[11]),
+            "id": r[0], "user_id": r[1], "title": r[2], "prompt": r[3],
+            "cron_expression": r[4], "email_to": r[5], "is_active": bool(r[6]),
+            "last_run_at": _iso(r[7]), "last_status": r[8], "last_result": r[9],
+            "created_at": _iso(r[10]), "updated_at": _iso(r[11]),
+            "lease_owner": r[12], "lease_until": _iso(r[13]),
         }
-
 
 def create_scheduled_task(
     user_id: str,
@@ -3997,24 +4260,72 @@ def update_scheduled_task(task_id: str, **kwargs) -> dict | None:
     return get_scheduled_task(task_id)
 
 
-def record_task_run(task_id: str, status: str, result: str = None):
-    """Mencatat riwayat eksekusi terakhir pemantauan."""
+def claim_scheduled_task(
+    task_id: str,
+    lease_owner: str,
+    lease_seconds: int = 300,
+    allow_inactive: bool = False,
+) -> dict | None:
+    """Klaim atomik satu eksekusi; lease kedaluwarsa dapat diambil worker lain."""
     engine = get_engine()
     with engine.connect() as conn:
-        conn.execute(text("""
+        active_filter = "" if allow_inactive else "AND is_active = TRUE"
+        row = conn.execute(text(f"""
             UPDATE ai_assistant_dev.scheduled_tasks
-            SET last_run_at = CURRENT_TIMESTAMP,
-                last_status = :status,
-                last_result = :result,
+            SET lease_owner = :owner,
+                lease_until = CURRENT_TIMESTAMP + make_interval(secs => :lease_seconds),
+                last_run_at = CURRENT_TIMESTAMP,
+                last_status = 'running',
+                last_result = 'Sedang diproses oleh asisten AI...',
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :tid
-        """), {
-            "tid": task_id,
-            "status": status[:64],
-            "result": result[:2000] if result else None,
-        })
+              {active_filter}
+              AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)
+            RETURNING id
+        """), {"tid": task_id, "owner": lease_owner, "lease_seconds": lease_seconds}).fetchone()
         conn.commit()
+    return get_scheduled_task(task_id) if row else None
 
+
+def record_task_run(task_id: str, status: str, result: str = None, lease_owner: str = None) -> bool:
+    """Mencatat riwayat eksekusi terakhir pemantauan dan membersihkan lease."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        if lease_owner:
+            res = conn.execute(text("""
+                UPDATE ai_assistant_dev.scheduled_tasks
+                SET last_run_at = CURRENT_TIMESTAMP,
+                    last_status = :status,
+                    last_result = :result,
+                    lease_owner = NULL,
+                    lease_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :tid AND lease_owner = :owner
+            """), {
+                "tid": task_id,
+                "owner": lease_owner,
+                "status": status[:64],
+                "result": result[:2000] if result else None,
+            })
+            conn.commit()
+            return res.rowcount == 1
+        else:
+            conn.execute(text("""
+                UPDATE ai_assistant_dev.scheduled_tasks
+                SET last_run_at = CURRENT_TIMESTAMP,
+                    last_status = :status,
+                    last_result = :result,
+                    lease_owner = NULL,
+                    lease_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :tid
+            """), {
+                "tid": task_id,
+                "status": status[:64],
+                "result": result[:2000] if result else None,
+            })
+            conn.commit()
+            return True
 
 def delete_scheduled_task(task_id: str) -> bool:
     """Menghapus pemantauan terjadwal."""

@@ -7,6 +7,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone, timedelta
+import uuid
 import markdown
 import database
 from models import ChatRequest
@@ -266,8 +267,10 @@ def build_monitoring_email_html(title: str, markdown_text: str, now_wib_str: str
     return full_email
 
 
-async def execute_task(task: dict) -> dict:
-    """Mengeksekusi satu tugas pemantauan terjadwal."""
+async def execute_task(task: dict, lease_owner: str = None) -> dict:
+    """Mengeksekusi satu tugas pemantauan terjadwal yang sudah diklaim."""
+    if not lease_owner:
+        lease_owner = task.get("lease_owner") or uuid.uuid4().hex
     task_id = task.get("id")
     title = task.get("title", "Pemantauan Terjadwal")
     prompt = task.get("prompt", "")
@@ -275,8 +278,6 @@ async def execute_task(task: dict) -> dict:
     email_to = task.get("email_to")
 
     logger.info(f"Menjalankan pemantauan terjadwal: '{title}' (ID: {task_id}) untuk user {user_id}")
-    database.record_task_run(task_id, "running", "Sedang diproses oleh asisten AI...")
-
     try:
         # Import lazily to avoid circular dependencies
         from agent import process_chat
@@ -356,12 +357,12 @@ async def execute_task(task: dict) -> dict:
             except Exception as mail_err:
                 logger.warning(f"Kesalahan saat mengirim email pemantauan ke {email_to}: {mail_err}")
 
-        database.record_task_run(task_id, "success", result_text[:1800])
+        database.record_task_run(task_id, "success", result_text[:1800], lease_owner)
         return {"status": "success", "result": result_text}
 
     except Exception as e:
         logger.error(f"Gagal mengeksekusi pemantauan '{title}': {e}", exc_info=True)
-        database.record_task_run(task_id, "failed", str(e)[:1800])
+        database.record_task_run(task_id, "failed", str(e)[:1800], lease_owner)
         return {"status": "failed", "error": str(e)}
 
 
@@ -376,8 +377,10 @@ async def run_scheduler_loop():
 
             for task in tasks:
                 if should_run(task, now):
-                    # Jalankan eksekusi di latar belakang agar tidak memblok loop
-                    asyncio.create_task(execute_task(task))
+                    lease_owner = uuid.uuid4().hex
+                    claimed_task = database.claim_scheduled_task(task["id"], lease_owner)
+                    if claimed_task:
+                        asyncio.create_task(execute_task(claimed_task, lease_owner))
 
         except asyncio.CancelledError:
             logger.info("Background Worker Pemantauan Terjadwal dihentikan.")

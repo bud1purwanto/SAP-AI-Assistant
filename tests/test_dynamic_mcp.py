@@ -79,14 +79,11 @@ def test_dynamic_mcp_crud_and_validation(client, admin_auth):
 
 
 def test_dynamic_mcp_endpoints(client, admin_auth):
-    """Local MCP registry CRUD endpoints are decommissioned (410 Gone).
-
-    Upstream MCP server configuration now lives in the Dashboard MCP Gateway.
-    SAP admins must use the Dashboard; the legacy REST endpoints return 410.
-    """
-    # GET /api/admin/mcp/servers -> 410 Gone
+    """Admin server list exposes live Dashboard MCP status; mutations remain gone."""
+    # GET /api/admin/mcp/servers -> live status list
     res = client.get("/api/admin/mcp/servers", headers=admin_auth)
-    assert res.status_code == 410
+    assert res.status_code == 200
+    assert isinstance(res.json()["servers"], list)
 
     # POST create -> 410
     new_srv = {
@@ -139,10 +136,12 @@ def test_admin_stats_dynamic_mcp(client, admin_auth):
 def test_mcp_manager_requires_dashboard_token(monkeypatch):
     from auth import set_dashboard_access_token
     from mcp_manager import MCPManager
+    from config import settings
+
+    monkeypatch.setattr(settings, "dashboard_mcp_api_token", "")
     set_dashboard_access_token(None)
     with pytest.raises(PermissionError):
         MCPManager().get_client("rag")
-
 
 def test_mcp_manager_uses_dashboard_bearer_token(monkeypatch):
     from auth import set_dashboard_access_token
@@ -164,11 +163,135 @@ def test_mcp_manager_uses_dashboard_bearer_token(monkeypatch):
 
     set_dashboard_access_token(None)
 
+def test_mcp_manager_falls_back_to_api_token_on_hs256(monkeypatch):
+    import jwt
+    from auth import set_dashboard_access_token
+    from mcp_manager import MCPManager
+    from config import settings
+
+    hs256_token = jwt.encode({"sub": "user1"}, "a_very_long_secret_key_for_testing_12345", algorithm="HS256")
+    set_dashboard_access_token(hs256_token)
+    monkeypatch.setattr(settings, "dashboard_mcp_api_token", "fallback-opaque-token-123")
+    manager = MCPManager()
+    client = manager.get_client("sap")
+    assert client.headers["Authorization"] == "Bearer fallback-opaque-token-123"
+    set_dashboard_access_token(None)
+
+def test_streamable_http_client_prefixes_gateway_tools(monkeypatch):
+    import asyncio, httpx
+    from mcp_manager import StreamableHttpClient
+
+    client = StreamableHttpClient(
+        name="sap",
+        url="http://192.168.1.161:4000/v1/gateway",
+        headers={"Authorization": "Bearer test"}
+    )
+    captured = {}
+
+    async def mock_post(url, headers, json, timeout):
+        captured["payload"] = json
+        req = httpx.Request("POST", url)
+        res = httpx.Response(200, json={"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "ok"}]}}, request=req)
+        return res
+
+    client._initialized = True
+    mock_http = httpx.AsyncClient()
+    monkeypatch.setattr(mock_http, "post", mock_post)
+
+    asyncio.run(client.call_tool(mock_http, "set_active_server", {"server_ref": "sap:sandbox-new"}))
+    assert captured["payload"]["params"]["name"] == "sap-leader-mcp__set_active_server"
+
+def test_mcp_manager_classifies_one_aggregate_gateway_inventory(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPTool
+
+    class FakeClient:
+        async def list_tools(self, _http_client):
+            return [
+                MCPTool("sap-leader-mcp__read_table"),
+                MCPTool("mcp-sql__run_query"),
+                MCPTool("mcp-email__send_email"),
+                MCPTool("rag_search"),
+            ]
+
+    manager = MCPManager()
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
+
+    async def no_resources():
+        return []
+
+    monkeypatch.setattr(manager, "get_live_resources", no_resources)
+    tools = asyncio.run(manager.get_all_tools())
+
+    assert [(item["server"], item["tool"].name) for item in tools] == [
+        ("sap", "sap-leader-mcp__read_table"),
+        ("rag", "rag_search"),
+        ("email", "mcp-email__send_email"),
+        ("sql", "mcp-sql__run_query"),
+    ]
+
+
+def test_mcp_manager_sql_auto_targets_default_resource(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPCallResult, MCPContentItem
+
+    manager = MCPManager()
+    captured = {}
+
+    class FakeClient:
+        async def call_tool(self, _http_client, name, args):
+            captured["name"] = name
+            captured["args"] = args
+            return MCPCallResult(content=[MCPContentItem(text="ok")])
+
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
+
+    async def mock_resources():
+        return [
+            {"kind": "sql", "resource_key": "sql:olap-lama", "label": "dev-223"},
+            {"kind": "sql", "resource_key": "sql:dev", "label": "dev-224"},
+        ]
+
+    monkeypatch.setattr(manager, "get_live_resources", mock_resources)
+    res = asyncio.run(manager.call_tool("sql", "list_databases", {}))
+
+    assert not res.is_error
+    assert captured["args"]["resource_key"] == "sql:olap-lama"
+    assert captured["args"]["server"] == "sql:olap-lama"
+
+
+def test_mcp_manager_humanizes_missing_sql_password(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPCallResult, MCPContentItem
+
+    manager = MCPManager()
+
+    class FakeClient:
+        async def call_tool(self, _http_client, name, args):
+            return MCPCallResult(content=[
+                MCPContentItem(text='{"error": "Password untuk server \\"dev-223\\" tidak ditemukan. Set di Dashboard MCP atau env var \\"SQL_PWD_DEV_223\\" di .env."}')
+            ])
+
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
+    res = asyncio.run(manager.call_tool("sql", "list_databases", {}, sap_target="sql:olap-lama"))
+
+    assert res.is_error
+    assert "Password untuk server SQL 'dev-223' belum dikonfigurasi di Gateway/Dashboard MCP" in res.content[0].text
+
+def test_mcp_manager_classifies_legacy_and_gateway_tool_names():
+    from mcp_manager import classify_gateway_tool
+
+    assert classify_gateway_tool("mcp-sql__query") == "sql"
+    assert classify_gateway_tool("mcp-email__search_messages") == "email"
+    assert classify_gateway_tool("sql_query") == "sql"
+    assert classify_gateway_tool("rag_search") == "rag"
+
 def test_admin_mcp_direct_server_crud_removed(client, admin_auth):
-    """Local MCP registry CRUD endpoints are decommissioned (410 Gone / 404)."""
-    # GET list
+    """Only the live MCP server list remains; all local registry mutations are gone."""
+    # GET list returns live resources.
     r_get = client.get("/api/admin/mcp/servers", headers=admin_auth)
-    assert r_get.status_code in (404, 410), r_get.status_code
+    assert r_get.status_code == 200
+    assert isinstance(r_get.json()["servers"], list)
     # POST create
     r_post = client.post(
         "/api/admin/mcp/servers",

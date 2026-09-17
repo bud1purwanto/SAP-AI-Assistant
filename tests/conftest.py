@@ -139,7 +139,7 @@ def make_user(db):
     """Buat cookie sesi user (signed). Identitas dikelola Dashboard OIDC."""
 
     def _make(username, password="Passw0rd123", **kwargs):
-        from auth import create_session_cookie
+        from auth import create_session_cookie, create_access_token
         from sqlalchemy import text
 
         role = kwargs.get("role", "user")
@@ -158,6 +158,13 @@ def make_user(db):
             )
             conn.commit()
 
+        access_token = create_access_token(
+            username=username,
+            role=role,
+            roles=roles,
+            org_units=kwargs.get("org_units", []),
+            is_guest=False,
+        )
         cookie = create_session_cookie({
             "sub": username,
             "username": username,
@@ -165,6 +172,7 @@ def make_user(db):
             "roles": roles,
             "org_units": kwargs.get("org_units", []),
             "is_guest": False,
+            "access_token": access_token,
         })
         return {"Cookie": f"sap_session={cookie}"}
 

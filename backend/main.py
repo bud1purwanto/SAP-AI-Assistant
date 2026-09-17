@@ -5,16 +5,19 @@ import re
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from agent import process_chat
 from artifacts import get_artifact
 from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
+    create_access_token,
+    decode_access_token,
     create_session_cookie,
     decode_session_cookie,
     generate_code_verifier,
@@ -22,17 +25,22 @@ from auth import (
     get_current_principal,
     get_current_user,
     get_current_user_optional,
+    get_dashboard_access_token,
+    set_dashboard_access_token,
 )
 from auth import require_superadmin as require_superadmin_token
 from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
+    authenticate_user,
+    change_user_password,
     consume_guest_quota,
     attach_uploads_to_session,
     create_chat_session,
     ensure_user_exists,
     create_new_user,
+    reset_user_password_by_admin,
     clone_role,
     create_role,
     get_role_impact,
@@ -91,12 +99,6 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
-    list_mcp_servers,
-    get_mcp_server,
-    create_mcp_server,
-    update_mcp_server,
-    delete_mcp_server,
-    reset_mcp_server_to_default,
     list_divisions,
     get_division,
     create_division,
@@ -224,6 +226,86 @@ import json as _json
 import jwt
 
 
+_jwks_clients: dict[str, jwt.PyJWKClient] = {}
+
+
+def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
+    if jwks_url not in _jwks_clients:
+        _jwks_clients[jwks_url] = jwt.PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=3600)
+    return _jwks_clients[jwks_url]
+
+
+def _dashboard_jwks_url() -> str:
+    configured = getattr(settings, "dashboard_jwks_url", "")
+    return configured.strip() or f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/jwks"
+
+
+def _allowed_redirect_hosts() -> set[str]:
+    hosts = {urlparse(settings.dashboard_oidc_redirect_uri).netloc}
+    hosts.update(
+        host.strip()
+        for host in getattr(settings, "dashboard_oidc_allowed_redirect_hosts", "").split(",")
+        if host.strip()
+    )
+    hosts.update({"testserver", "backend:8000", "localhost:8000"})
+    return {host for host in hosts if host}
+
+
+def _redirect_uri_for_request(request: Request) -> str:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if host and host in _allowed_redirect_hosts() and host not in ("testserver", "backend:8000", "localhost:8000"):
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+        return f"{proto}://{host}/api/auth/callback"
+    return settings.dashboard_oidc_redirect_uri
+
+
+def _verify_oidc_id_token(id_token: str, expected_nonce: str | None) -> dict[str, Any]:
+    if not id_token or not str(id_token).strip():
+        raise HTTPException(status_code=400, detail="Dashboard tidak mengembalikan ID token.")
+
+    try:
+        header = jwt.get_unverified_header(id_token)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Header ID token tidak valid: {exc}") from exc
+
+    if header.get("alg") != "RS256":
+        raise HTTPException(status_code=400, detail="Algoritma ID token tidak didukung; harus RS256.")
+
+    try:
+        signing_key = _get_jwks_client(_dashboard_jwks_url()).get_signing_key_from_jwt(id_token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Gagal mengambil signing key OIDC: {exc}") from exc
+
+    try:
+        claims = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer=settings.dashboard_oidc_issuer,
+            audience=settings.dashboard_oidc_client_id,
+            options={
+                "verify_signature": True,
+                "verify_iss": True,
+                "verify_aud": True,
+                "verify_exp": True,
+                "require": ["exp", "iss", "aud", "sub"],
+            },
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="ID token OIDC kedaluwarsa.") from exc
+    except jwt.InvalidIssuerError as exc:
+        raise HTTPException(status_code=401, detail="Issuer ID token OIDC tidak valid.") from exc
+    except jwt.InvalidAudienceError as exc:
+        raise HTTPException(status_code=401, detail="Audience ID token OIDC tidak valid.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"ID token OIDC tidak valid: {exc}") from exc
+
+    if expected_nonce:
+        token_nonce = claims.get("nonce")
+        if not token_nonce or token_nonce != expected_nonce:
+            raise HTTPException(status_code=400, detail="Nonce OIDC tidak cocok.")
+    return claims
+
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
@@ -231,178 +313,98 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-@app.get("/api/auth/login")
-async def oidc_login(request: Request):
-    """Redirect ke Dashboard OIDC /authorize dengan PKCE (S256)."""
-    verifier = generate_code_verifier()
-    challenge = generate_code_challenge(verifier)
-    import secrets as _secrets
-    state = _secrets.token_urlsafe(24)
-    nonce = _secrets.token_urlsafe(16)
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
-    # Tentukan redirect_uri secara dinamis berdasarkan Host request jika tersedia
-    redirect_uri = settings.dashboard_oidc_redirect_uri
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
-    if host and host not in ("testserver", "backend:8000", "localhost:8000"):
-        proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
-        redirect_uri = f"{proto}://{host}/api/auth/callback"
 
-    # Simpan verifier, state, dan redirect_uri dalam cookie ephemeral yang ditandatangani.
-    flow_payload = {
-        "verifier": verifier,
-        "state": state,
-        "nonce": nonce,
-        "redirect_uri": redirect_uri,
-    }
-    flow_cookie = create_session_cookie(flow_payload)
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
-    authorize_url = (
-        f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/authorize"
-        f"?response_type=code"
-        f"&client_id={settings.dashboard_oidc_client_id}"
-        f"&redirect_uri={redirect_uri}"
-        f"&scope=openid%20profile%20email%20mcp:connect"
-        f"&state={state}"
-        f"&nonce={nonce}"
-        f"&code_challenge={challenge}"
-        f"&code_challenge_method=S256"
+
+@app.post("/api/auth/login")
+@app.post("/api/login")
+async def auth_login(req: LoginRequest, response: Response):
+    """Login langsung dengan username dan password."""
+    username = (req.username or "").strip()
+    password = (req.password or "").strip()
+    if not username or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username dan password wajib diisi.",
+        )
+
+    user = authenticate_user(username, password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Username atau password salah.",
+        )
+
+    roles = user.get("roles") or [user.get("role", "user")]
+    primary_role = user.get("role") or (roles[0] if roles else "user")
+
+    access_token = create_access_token(
+        username=user["username"],
+        role=primary_role,
+        roles=roles,
+        full_name=user.get("full_name", ""),
+        force_change_password=bool(user.get("force_change_password", False)),
+        division_code=user.get("division_code"),
+        job_level=user.get("job_level", "staff"),
     )
-
-    resp = RedirectResponse(url=authorize_url, status_code=307)
-    resp.set_cookie(
-        key="sap_oidc_flow",
-        value=flow_cookie,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite=settings.session_cookie_samesite,
-        max_age=300,  # 5 menit untuk menyelesaikan callback
-    )
-    return resp
-
-
-@app.get("/api/auth/callback")
-async def oidc_callback(request: Request):
-    """Terima authorization code, tukar dengan Dashboard OIDC, set session cookie."""
-    code = request.query_params.get("code")
-    state = request.query_params.get("state")
-    error = request.query_params.get("error")
-
-    if error:
-        raise HTTPException(status_code=400, detail=f"Login dibatalkan: {error}")
-
-    if not code or not state:
-        raise HTTPException(status_code=400, detail="Parameter code dan state wajib ada.")
-
-    # Verifikasi state terhadap cookie ephemeral.
-    flow_cookie = request.cookies.get("sap_oidc_flow")
-    if not flow_cookie:
-        raise HTTPException(status_code=400, detail="Sesi OIDC telah kedaluwarsa. Silakan login ulang.")
-    flow_data = decode_session_cookie(flow_cookie)
-    if not flow_data or flow_data.get("state") != state:
-        raise HTTPException(status_code=400, detail="State OIDC tidak cocok. Silakan login ulang.")
-
-    verifier = flow_data.get("verifier", "")
-
-    # Tukar code dengan token via Dashboard OIDC token endpoint.
-    token_url = f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/token"
-    redirect_uri = flow_data.get("redirect_uri") or settings.dashboard_oidc_redirect_uri
-    token_data = {
-        "grant_type": "authorization_code",
-        "client_id": settings.dashboard_oidc_client_id,
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "code_verifier": verifier,
-    }
-    if settings.dashboard_oidc_client_secret:
-        token_data["client_secret"] = settings.dashboard_oidc_client_secret
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as http:
-            resp = await http.post(token_url, data=token_data)
-        if resp.status_code != 200:
-            logger.error(f"Dashboard OIDC token error: {resp.status_code} {resp.text[:300]}")
-            raise HTTPException(status_code=502, detail="Gagal menukar kode otorisasi dengan Dashboard.")
-        token_json = resp.json()
-    except httpx.RequestError as e:
-        logger.error(f"Dashboard OIDC tidak dapat dihubungi: {e}")
-        raise HTTPException(status_code=502, detail="Dashboard OIDC tidak dapat dihubungi.")
-
-    # Ekstrak klaim dari access_token dan id_token (JWT tidak ditandatangani ulang;
-    # Dashboard adalah otoritas, kita hanya membaca klaim untuk identitas sesi).
-    access_token = token_json.get("access_token", "")
-    if not access_token or not str(access_token).strip():
-        raise HTTPException(status_code=502, detail="Dashboard tidak mengembalikan access token.")
-    id_token = token_json.get("id_token", "")
-
-    claims = {}
-    for raw_jwt in (access_token, id_token):
-        if not raw_jwt:
-            continue
-        try:
-            claims.update(jwt.decode(raw_jwt, options={"verify_signature": False}))
-        except Exception:
-            pass
-    # Validasi nonce OIDC
-    expected_nonce = flow_data.get("nonce")
-    if expected_nonce:
-        token_nonce = claims.get("nonce")
-        if token_nonce and token_nonce != expected_nonce:
-            raise HTTPException(status_code=400, detail="Nonce OIDC tidak cocok.")
-        # Jika id_token ada tetapi nonce tidak cocok atau tidak disertakan ketika diharapkan
-        if id_token and not token_nonce:
-            raise HTTPException(status_code=400, detail="Nonce OIDC tidak ditemukan pada id_token.")
-
-    sub = claims.get("sub")
-    if not sub or not str(sub).strip():
-        raise HTTPException(status_code=400, detail="Token OIDC tidak memuat klaim 'sub'.")
-    sub = str(sub).strip()
-
-    username = claims.get("username") or claims.get("preferred_username") or claims.get("name") or sub
-    roles = claims.get("roles") or [claims.get("role", "user")] if claims.get("role") else claims.get("roles", ["user"])
-    if isinstance(roles, str):
-        roles = [roles]
-    if not roles:
-        roles = ["user"]
-    org_units = claims.get("org_units", [])
-    if isinstance(org_units, str):
-        org_units = [org_units]
-
-    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else (roles[0] if roles else "user")
 
     principal = {
-        "sub": str(sub),
-        "username": str(username),
+        "sub": user["username"],
+        "username": user["username"],
         "role": primary_role,
         "roles": roles,
-        "org_units": org_units,
+        "full_name": user.get("full_name", ""),
+        "assistant_persona": user.get("assistant_persona", ""),
+        "force_change_password": bool(user.get("force_change_password", False)),
+        "division_code": user.get("division_code"),
+        "division_name": user.get("division_name"),
+        "job_level": user.get("job_level", "staff"),
+        "org_units": [],
         "is_guest": False,
         "access_token": access_token,
     }
 
-    # Sinkronisasi user ke basis data lokal agar preferensi & relasi lokal berjalan
-    try:
-        ensure_user_exists(
-            username=str(username),
-            role=primary_role,
-            roles=roles,
-            full_name=claims.get("full_name") or claims.get("name") or "",
-        )
-    except Exception as e:
-        logger.warning(f"Gagal sinkronisasi user lokal saat OIDC callback: {e}")
-
     session_cookie = create_session_cookie(principal)
-    redirect_url = "/"
-    resp = RedirectResponse(url=redirect_url, status_code=302)
-    resp.set_cookie(
+    set_dashboard_access_token(access_token)
+    response.set_cookie(
         key=settings.session_cookie_name,
         value=session_cookie,
         httponly=True,
         secure=settings.session_cookie_secure,
         samesite=settings.session_cookie_samesite,
         max_age=settings.session_expire_hours * 3600,
+        path="/",
     )
-    resp.delete_cookie("sap_oidc_flow")
-    return resp
+
+    return {
+        "status": "success",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            **principal,
+            "authenticated": True,
+        },
+    }
+
+
+@app.post("/api/auth/change-password")
+@app.post("/api/change-password")
+async def auth_change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    """Mengubah password pengguna saat ini."""
+    if not req.new_password or len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password baru minimal 8 karakter.")
+
+    res = change_user_password(user["username"], req.old_password, req.new_password)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message", "Gagal mengubah password."))
+    return {"status": "success", "message": res.get("message")}
 
 
 @app.post("/api/auth/logout")
@@ -462,6 +464,7 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
     return profile
 
 
+@app.get("/api/auth/me")
 @app.get("/api/me")
 async def get_me(user: dict = Depends(get_current_user)):
     """Kembalikan profil user terautentikasi (401 bila belum login)."""
@@ -1137,22 +1140,7 @@ async def get_admin_stats_endpoint(
     except Exception as e:
         logger.warning(f"Auto-sync resources gagal: {e}")
     stats["mcp_status"] = mcp_st
-    try:
-        servers = list_mcp_servers(enabled_only=False)
-        for s in servers:
-            sid = s["id"]
-            st = mcp_st.get(sid, {})
-            s["online"] = st.get("online", False)
-            s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
-            s["tool_count"] = st.get("tool_count", 0)
-            s["tools_count"] = st.get("tools_count", s["tool_count"])
-            s["active_server"] = st.get("active_server", "-")
-            if "error" in st:
-                s["error"] = st["error"]
-        stats["mcp_servers"] = servers
-    except Exception as ex:
-        logger.warning(f"Gagal memuat list mcp_servers untuk stats: {ex}")
-        stats["mcp_servers"] = []
+    stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
     return stats
 
 
@@ -1425,6 +1413,25 @@ async def update_user_endpoint(
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
     access_control.invalidate_effective_roles_cache(username)
+    return res
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+    force_change: bool = True
+
+
+@app.post("/api/admin/users/{username}/reset-password")
+async def reset_password_endpoint(
+    username: str,
+    req: AdminResetPasswordRequest,
+    admin: dict = Depends(require_superadmin),
+):
+    """Reset password user oleh Super Admin."""
+    if not req.new_password or len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password baru minimal 8 karakter.")
+    res = reset_user_password_by_admin(username, req.new_password, force_change=req.force_change)
+    if not res["success"]:
+        raise HTTPException(status_code=400, detail=res["message"])
     return res
 
 
@@ -2156,6 +2163,7 @@ async def get_admin_access_resources_endpoint(admin: dict = Depends(require_supe
 @app.post("/api/admin/access/resources/sync")
 async def sync_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
     """Sinkronisasi live penemuan resource dari MCP gateway."""
+    await mcp_manager.get_live_resources(force_refresh=True)
     st = await mcp_manager.check_servers_status()
     synced = access_control.sync_resources_from_mcp(st)
     return {
@@ -2259,8 +2267,9 @@ _MCP_DEPRECATED_DETAIL = (
 
 @app.get("/api/admin/mcp/servers")
 async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmin)):
-    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
-
+    """Mengambil status live seluruh server MCP upstream terdaftar."""
+    st = await mcp_manager.check_servers_status()
+    return {"servers": list(st.values()) if isinstance(st, dict) else []}
 
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
@@ -2290,15 +2299,16 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
     headers = req.headers or {}
     transport = req.transport_type or "http"
     if req.server_id:
-        srv = get_mcp_server(req.server_id)
-        if srv:
-            url = srv.get("url") or url
-            if not req.auth_token:
-                auth_token = srv.get("auth_token") or ""
-            if not req.headers:
-                headers = srv.get("headers") or {}
-            transport = srv.get("transport_type") or transport
-
+        client = mcp_manager.get_client(req.server_id)
+        if client and getattr(client, "url", None):
+            url = client.url
+            if not req.auth_token and getattr(client, "headers", None):
+                auth_hdr = client.headers.get("Authorization", "")
+                if auth_hdr.startswith("Bearer "):
+                    auth_token = auth_hdr[7:]
+            if not req.headers and getattr(client, "headers", None):
+                headers = dict(client.headers)
+            transport = getattr(client, "transport_type", "http")
     if not url:
         raise HTTPException(status_code=400, detail="URL endpoint MCP wajib diisi untuk pengetesan koneksi.")
 
@@ -2440,8 +2450,10 @@ async def chat_stream_endpoint(
     apa yang sedang dikerjakan.
     """
     is_guest = not user or bool(user.get("is_guest", True))
+    dashboard_token = (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
     queue: asyncio.Queue = asyncio.Queue()
-
     async def on_progress(*args, **event):
         if args:
             keys = ["stage", "label", "step", "max_steps"]
@@ -2459,6 +2471,8 @@ async def chat_stream_endpoint(
             await queue.put({"type": "token", "text": text})
 
     async def run():
+        if dashboard_token:
+            set_dashboard_access_token(dashboard_token)
         try:
             response = await _run_chat(
                 request, chat_req, user, on_progress=on_progress, on_token=on_token
@@ -2554,8 +2568,10 @@ async def _run_chat(
     on_token=None,
 ) -> ChatResponse:
     """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
+    dashboard_token = (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
     is_guest = user.get("is_guest", True)
-
     if is_guest:
         # Kuota harian ditegakkan di server; penghitung di browser tidak dipercaya.
         quota = consume_guest_quota(
@@ -2885,8 +2901,18 @@ async def run_scheduled_task_endpoint(task_id: str, user: dict = Depends(get_cur
     if task["user_id"] != username and "admin" not in roles:
         raise HTTPException(status_code=403, detail="Akses ditolak")
 
+    import uuid
     from scheduler import execute_task
-    asyncio.create_task(execute_task(task))
+
+    lease_owner = f"manual_{uuid.uuid4().hex[:12]}"
+    claimed_task = database.claim_scheduled_task(task_id, lease_owner, allow_inactive=True)
+    if not claimed_task:
+        raise HTTPException(
+            status_code=409,
+            detail="Tugas terjadwal sedang berjalan atau terkunci oleh worker lain"
+        )
+
+    asyncio.create_task(execute_task(claimed_task, lease_owner))
     return {"message": "Pemantauan sedang dijalankan di latar belakang"}
 
 

@@ -351,7 +351,7 @@ def _jalankan_rfc(monkeypatch, role, function_name):
         "nine_router_base_url": "http://x/v1", "nine_router_model": "m",
         "openrouter_enabled": False,
     })
-
+    monkeypatch.setattr(database, "get_user_sap_credential", lambda u, t: {"sap_user": "MOCK", "sap_password": "PW", "sap_client": "100"})
     asyncio.run(agent_module.process_chat(
         ChatRequest(message="jalankan transaksi"), role, "", username="penguji",
     ))

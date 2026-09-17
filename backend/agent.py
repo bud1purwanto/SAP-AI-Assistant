@@ -893,15 +893,20 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     # Ambil kredensial SAP khusus pengguna ini jika ada untuk target SAP ini
     user_sap_credentials = None
-    if sap_target:
-        try:
-            from database import get_user_sap_credential
-            user_sap_credentials = get_user_sap_credential(username, sap_target)
-            if user_sap_credentials:
-                logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target}' (user: {user_sap_credentials.get('sap_user')})")
-        except Exception as ex:
-            logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
-
+    try:
+        from database import get_user_sap_credential, list_user_sap_credentials
+        target_to_lookup = sap_target or "default"
+        user_sap_credentials = get_user_sap_credential(username, target_to_lookup)
+        if not user_sap_credentials and not sap_target:
+            configured_targets = list_user_sap_credentials(username)
+            if configured_targets:
+                first_target = configured_targets[0].get("target") or "default"
+                user_sap_credentials = get_user_sap_credential(username, first_target)
+                sap_target = first_target
+        if user_sap_credentials:
+            logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target or 'default'}' (user: {user_sap_credentials.get('sap_user')})")
+    except Exception as ex:
+        logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
     # Normalisasi user_role ke list roles untuk access control
     roles_list = access_control.normalize_roles(user_role)
     roles_str_primary = roles_list[0] if roles_list else "user"
@@ -960,8 +965,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     for item in all_mcp_tools:
         server = item["server"]
         t = item["tool"]
-        tool_name = f"{server}__{t.name}".replace("-", "_")
-
+        # Jika nama tool dari gateway sudah memiliki prefix (misal 'mcp-sql__run_query' atau 'sap-leader-mcp__read_table'),
+        # cukup bersihkan format identifier tanpa menumpuk prefix ganda.
+        clean_tool_name = t.name.replace("-", "_")
+        if clean_tool_name.startswith(f"{server}__") or clean_tool_name.startswith(f"mcp_{server}__") or clean_tool_name.startswith("sap_leader_mcp__"):
+            tool_name = clean_tool_name
+        else:
+            tool_name = f"{server}__{clean_tool_name}"
         # Cek otorisasi konektor & hak tulis
         if access_control.is_access_control_enabled():
             if server == "email" and "email" not in allowed_conn:
@@ -1010,6 +1020,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             }
         })
         tool_map[tool_name] = {"server": server, "mcp_name": t.name}
+        # Daftarkan juga variasi prefix standar agar pemanggilan teks fleksibel
+        base_name = clean_tool_name.split("__", 1)[-1]
+        tool_map[f"{server}__{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[f"{server}__sql_{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[f"{server}__sap_{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[clean_tool_name] = {"server": server, "mcp_name": t.name}
 
     # 3. Setup LLM (Berdasarkan konfigurasi mode chat & fallback provider)
     llm_primary = _buat_llm(primary_provider, primary_model_name, sys_cfg)
@@ -1674,6 +1690,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                             access_control.log_audit(username, "sap", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SAP dilarang)")
                             messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP. Jangan memanggil tool ini lagi."))
                             continue
+                        if server_name == "sap":
+                            from database import get_user_sap_credential, list_user_sap_credentials
+                            active_target = sap_target or "default"
+                            active_creds = user_sap_credentials or get_user_sap_credential(username, active_target)
+                            if not active_creds and not sap_target:
+                                conf_targets = list_user_sap_credentials(username)
+                                if conf_targets:
+                                    first_tgt = conf_targets[0].get("target") or "default"
+                                    active_creds = get_user_sap_credential(username, first_tgt)
+                                    active_target = first_tgt
+                                    user_sap_credentials = active_creds
+                                    sap_target = active_target
+
+                            if not active_creds or not active_creds.get("sap_user") or not active_creds.get("sap_password"):
+                                logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
+                                messages.append(HumanMessage(
+                                    content=(
+                                        f"SISTEM: Eksekusi tool SAP dibatalkan karena pengguna '{username}' belum mengonfigurasi "
+                                        f"kredensial SAP pribadi untuk target '{active_target}'. "
+                                        "Kepatuhan keamanan mewajibkan setiap operasi SAP dijalankan menggunakan akun SAP pengguna masing-masing. "
+                                        "Sampaikan kepada pengguna untuk membuka menu Pengaturan Akun (Settings -> Akun SAP) "
+                                        "dan memasukkan username serta password SAP mereka."
+                                    )
+                                ))
+                                continue
 
                     # Yang mengalir tadi adalah panggilan tool berbentuk teks,
                     # bukan jawaban untuk pengguna.
@@ -1920,6 +1961,30 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     tool_call_id=tool_id
                 ))
                 continue
+            if server_name == "sap":
+                from database import get_user_sap_credential, list_user_sap_credentials
+                active_target = sap_target or "default"
+                active_creds = user_sap_credentials or get_user_sap_credential(username, active_target)
+                if not active_creds and not sap_target:
+                    conf_targets = list_user_sap_credentials(username)
+                    if conf_targets:
+                        first_tgt = conf_targets[0].get("target") or "default"
+                        active_creds = get_user_sap_credential(username, first_tgt)
+                        active_target = first_tgt
+                        user_sap_credentials = active_creds
+                        sap_target = active_target
+
+                if not active_creds or not active_creds.get("sap_user") or not active_creds.get("sap_password"):
+                    logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
+                    messages.append(ToolMessage(
+                        content=(
+                            f"Akses SAP Ditolak: Kredensial SAP pribadi belum dikonfigurasi untuk akun '{username}' pada server target '{active_target}'. "
+                            "Setiap pemanggilan data atau transaksi SAP wajib dijalankan menggunakan kredensial SAP masing-masing pengguna. "
+                            "Silakan buka menu Pengaturan Akun (Settings -> Akun SAP) untuk memasukkan username dan password SAP Anda."
+                        ),
+                        tool_call_id=tool_id
+                    ))
+                    continue
             
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)

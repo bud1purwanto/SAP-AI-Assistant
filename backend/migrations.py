@@ -975,6 +975,16 @@ def _m0022_user_job_levels(conn):
     """))
 
 
+def _m0023_scheduled_task_leases(conn):
+    """Lease lintas worker untuk mencegah eksekusi tugas terjadwal ganda."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant_dev.scheduled_tasks
+        ADD COLUMN IF NOT EXISTS lease_owner VARCHAR(64),
+        ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ;
+    """))
+
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -998,6 +1008,7 @@ MIGRATIONS = [
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
+    ("0023_scheduled_task_leases", _m0023_scheduled_task_leases),
 ]
 
 

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # 1. INFRASTRUKTUR SERVER & DATABASE (Wajib di .env untuk Level Server)
     # ==============================================================================
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
+    auth_database_url: str = "postgresql://admin_rag:Trias123@192.168.1.162:5432/ai_auth"
 
     # --- Dashboard OIDC BFF ---
     # Autentikasi dilakukan via Dashboard OIDC; SAP bertindak sebagai BFF
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     dashboard_oidc_client_id: str = "sap-ai-assistant"
     dashboard_oidc_client_secret: str | None = None
     dashboard_oidc_redirect_uri: str = "http://localhost:5173/api/auth/callback"
+    dashboard_oidc_allowed_redirect_hosts: str = ""
+    dashboard_jwks_url: str = ""
     dashboard_mcp_gateway_url: str = "http://127.0.0.1:3000/api/mcp"
 
     # --- Session Cookie ---
@@ -39,6 +42,11 @@ class Settings(BaseSettings):
     session_secret: str = "sap-ai-assistant-enterprise-session-secret-abap-2026"
     session_expire_hours: int = 24
 
+    # --- Standalone Auth & JWT ---
+    jwt_secret: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 720
+    bootstrap_admin_password: str = "ChangeMe!2024"
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"
     guest_daily_limit: int = 1
@@ -105,6 +113,8 @@ def _load_settings() -> Settings:
 
 
 settings = _load_settings()
+def get_settings() -> Settings:
+    return settings
 
 # Produksi: startup gagal bila seting Dashboard wajib tidak ada atau tidak aman.
 _EPHEMERAL_SESSION_SECRET = False
