@@ -22,12 +22,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -d "/var/www/Enterprise-AI-Assistant" ]; then
+          if [ -d "/var/www/Enterprise AI Assistant" ]; then
+            TARGET_DIR="/var/www/Enterprise AI Assistant"
+          elif [ -d "/var/www/Enterprise-AI-Assistant" ]; then
             TARGET_DIR="/var/www/Enterprise-AI-Assistant"
           elif [ -d "/var/www/SAP-AI-Assistant" ]; then
             TARGET_DIR="/var/www/SAP-AI-Assistant"
           else
-            TARGET_DIR="/var/www/Enterprise-AI-Assistant"
+            TARGET_DIR="/var/www/Enterprise AI Assistant"
           fi
 
           echo "APP_DIR=${TARGET_DIR}" >> "$GITHUB_ENV"
@@ -48,13 +50,13 @@ jobs:
           cd ..
 
           # Pastikan docker network tersedia
-          sudo docker network create enterprise-ai-net 2>/dev/null || true
+          docker network create enterprise-ai-net 2>/dev/null || true
 
           # Hapus container lama (baik nama baru maupun legacy)
-          sudo docker rm -f enterprise-ai-frontend enterprise-ai-backend sap-ai-frontend sap-ai-backend 2>/dev/null || true
+          docker rm -f enterprise-ai-frontend enterprise-ai-backend sap-ai-frontend sap-ai-backend 2>/dev/null || true
           
-          sudo docker build -t enterprise-ai-backend-img:latest -f Dockerfile.backend .
-          sudo docker build -t enterprise-ai-frontend-img:latest -f Dockerfile.frontend .
+          docker build -t enterprise-ai-backend-img:latest -f Dockerfile.backend .
+          docker build -t enterprise-ai-frontend-img:latest -f Dockerfile.frontend .
           
           # Jalankan Backend
           ENV_FILE="$APP_DIR/backend/.env"
@@ -62,7 +64,7 @@ jobs:
             ENV_FILE="$APP_DIR/deploy/.env.production.example"
           fi
 
-          sudo docker run -d \
+          docker run -d \
             --name enterprise-ai-backend \
             --network enterprise-ai-net \
             --network-alias backend \
@@ -76,7 +78,7 @@ jobs:
           sleep 3
 
           # Jalankan Frontend
-          sudo docker run -d \
+          docker run -d \
             --name enterprise-ai-frontend \
             --network enterprise-ai-net \
             --add-host=host.docker.internal:host-gateway \
@@ -96,9 +98,9 @@ jobs:
             sleep 1
           done
           echo "::error::API backend tidak merespons (502 / Offline) setelah 30 detik."
-          sudo -n docker ps --filter name=enterprise-ai || true
+          docker ps --filter name=enterprise-ai || true
           echo "--- LOG BACKEND ---"
-          sudo -n docker logs --tail 50 enterprise-ai-backend || true
+          docker logs --tail 50 enterprise-ai-backend || true
           echo "--- LOG FRONTEND ---"
-          sudo -n docker logs --tail 50 enterprise-ai-frontend || true
+          docker logs --tail 50 enterprise-ai-frontend || true
           exit 1
