@@ -1,0 +1,31 @@
+[Unit]
+Description=Enterprise AI Assistant FastAPI Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/Enterprise-AI-Assistant/backend
+Environment="PATH=/var/www/Enterprise-AI-Assistant/backend/venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=-/var/www/Enterprise-AI-Assistant/backend/.env
+
+# Menjalankan Uvicorn di localhost port 8005
+ExecStart=/var/www/Enterprise-AI-Assistant/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8005 --workers 2
+
+# Auto restart on failure
+Restart=always
+RestartSec=5s
+
+# Security Hardening
+PrivateTmp=true
+ProtectSystem=full
+NoNewPrivileges=true
+
+# Logging ke systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=enterprise-ai-backend
+
+[Install]
+WantedBy=multi-user.target
+

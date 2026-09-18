@@ -1,15 +1,26 @@
 # PostgreSQL untuk pengembangan lokal.
+# ==============================================================================
+# Docker Compose: Enterprise AI Assistant (Full Stack & Local Dev)
+# ==============================================================================
 #
 # Aplikasi ini hanya berjalan di atas PostgreSQL — dukungan SQLite sudah
 # dihapus — sehingga database harus tersedia sebelum backend dinyalakan.
+# Penggunaan:
+#   1. Jalankan hanya Database (untuk dev backend di host):
+#      docker compose up -d postgres
 #
 #   docker compose up -d
 #   cd backend && uvicorn main:app --reload
+#   2. Jalankan Seluruh Stack (Postgres + Backend + Frontend):
+#      docker compose up -d --build
 #
+# ==============================================================================
+
 services:
   postgres:
     image: postgres:16
     container_name: sap-ai-postgres
+    container_name: enterprise-ai-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -19,11 +30,51 @@ services:
       - "5432:5432"
     volumes:
       - sap-ai-pgdata:/var/lib/postgresql/data
+      - enterprise-ai-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ABAP_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - enterprise-ai-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: enterprise-ai-backend
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - backend/.env
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - enterprise-ai-net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: enterprise-ai-frontend
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    depends_on:
+      - backend
+    networks:
+      - enterprise-ai-net
+
+networks:
+  enterprise-ai-net:
+    driver: bridge
+    name: enterprise-ai-net
 
 volumes:
   sap-ai-pgdata:
+  enterprise-ai-pgdata:

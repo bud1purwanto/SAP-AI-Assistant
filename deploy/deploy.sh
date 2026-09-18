@@ -1,6 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # Script Otomatisasi Deployment SAP AI Assistant untuk Linux (Ubuntu/Debian)
+# Script Otomatisasi Deployment Enterprise AI Assistant untuk Linux (Ubuntu/Debian)
 # Jalankan langsung di direktori project:
 # chmod +x deploy/deploy.sh && sudo ./deploy/deploy.sh
 # ==============================================================================
@@ -8,6 +9,7 @@
 set -e
 
 echo "🚀 [1/7] Memulai Deployment SAP AI Assistant..."
+echo "🚀 [1/7] Memulai Deployment Enterprise AI Assistant..."
 
 # 1. Update paket & Install Dependency Sistem
 echo "📦 [2/7] Menginstal paket dependensi sistem (Python3, python3-venv, Nginx, Node.js)..."
@@ -67,8 +69,11 @@ npm run build
 # 5. Generate Systemd Service secara Dinamis sesuai direktori proyek
 echo "⚙️ [5/7] Mendaftarkan Systemd Service (sap-ai-backend)..."
 cat << EOF > /etc/systemd/system/sap-ai-backend.service
+echo "⚙️ [5/7] Mendaftarkan Systemd Service (enterprise-ai-backend)..."
+cat << EOF > /etc/systemd/system/enterprise-ai-backend.service
 [Unit]
 Description=SAP AI Assistant FastAPI Backend Service
+Description=Enterprise AI Assistant FastAPI Backend Service
 After=network.target
 
 [Service]
@@ -85,13 +90,19 @@ RestartSec=5s
 WantedBy=multi-user.target
 EOF
 
+# Buat symlink sap-ai-backend.service untuk kompatibilitas ke belakang
+ln -sf /etc/systemd/system/enterprise-ai-backend.service /etc/systemd/system/sap-ai-backend.service 2>/dev/null || true
+
 systemctl daemon-reload
 systemctl enable sap-ai-backend
 systemctl restart sap-ai-backend
+systemctl enable enterprise-ai-backend
+systemctl restart enterprise-ai-backend
 
 # 6. Generate Nginx Configuration secara Dinamis sesuai direktori frontend/dist
 echo "🌐 [6/7] Mengonfigurasi Web Server Nginx (Port 8085)..."
 cat << EOF > /etc/nginx/sites-available/sap-ai
+cat << EOF > /etc/nginx/sites-available/enterprise-ai
 upstream sap_backend {
     server 127.0.0.1:8005;
     keepalive 32;
@@ -100,6 +111,7 @@ upstream sap_backend {
 server {
     listen 8085;
     server_name sap-ai.local _;
+    server_name enterprise-ai.local sap-ai.local _;
 
     root ${PROJECT_DIR}/frontend/dist;
     index index.html;
@@ -181,10 +193,14 @@ server {
 EOF
 
 ln -sf /etc/nginx/sites-available/sap-ai /etc/nginx/sites-enabled/sap-ai
+ln -sf /etc/nginx/sites-available/enterprise-ai /etc/nginx/sites-enabled/enterprise-ai
+ln -sf /etc/nginx/sites-available/enterprise-ai /etc/nginx/sites-available/sap-ai 2>/dev/null || true
 
 # Izinkan port 8080 di firewall jika UFW aktif
+# Izinkan port 8085 di firewall jika UFW aktif
 if command -v ufw &> /dev/null; then
     ufw allow 8080/tcp || true
+    ufw allow 8085/tcp || true
 fi
 
 # Uji konfigurasi nginx & reload
@@ -196,9 +212,11 @@ echo "🎉 [7/7] DEPLOYMENT SELESAI & BERHASIL!"
 echo "=========================================================="
 echo "Status Backend Service:"
 systemctl status sap-ai-backend --no-pager || true
+systemctl status enterprise-ai-backend --no-pager || systemctl status sap-ai-backend --no-pager || true
 echo ""
 echo "Aplikasi siap diakses pada browser di:"
 echo "👉 http://<IP_SERVER>:8080  (Contoh: http://192.168.88.83:8080)"
+echo "👉 http://<IP_SERVER>:8085  (Contoh: http://192.168.88.83:8085)"
 echo "Akun Super Admin Default:"
 echo "Username: TRSTDEV"
 echo "Password: ronin03"

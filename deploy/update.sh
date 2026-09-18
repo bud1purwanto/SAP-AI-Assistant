@@ -1,6 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # Script Cepat Update SAP AI Assistant di Linux Server
+# Script Cepat Update Enterprise AI Assistant di Linux Server
 # Jalankan: chmod +x deploy/update.sh && sudo ./deploy/update.sh
 # ==============================================================================
 
@@ -46,6 +47,10 @@ echo "🐍 [2/4] Memeriksa & mengupdate dependensi backend..."
 cd "${PROJECT_DIR}/backend"
 if [ -f "venv/bin/pip" ]; then
     ./venv/bin/pip install -r requirements.txt --quiet
+elif [ -f "${PROJECT_DIR}/backend/venv/bin/pip" ]; then
+    "${PROJECT_DIR}/backend/venv/bin/pip" install -r requirements.txt --quiet
+elif [ -f "/var/www/Enterprise-AI-Assistant/backend/venv/bin/pip" ]; then
+    /var/www/Enterprise-AI-Assistant/backend/venv/bin/pip install -r requirements.txt --quiet
 elif [ -f "/var/www/SAP-AI-Assistant/backend/venv/bin/pip" ]; then
     /var/www/SAP-AI-Assistant/backend/venv/bin/pip install -r requirements.txt --quiet
 else
@@ -59,6 +64,7 @@ npm run build
 
 echo "⚙️ [4/5] Merestart service backend..."
 sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
+sudo systemctl restart enterprise-ai-backend 2>/dev/null || sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart enterprise-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
 
 echo "🌐 [5/5] Memperbarui konfigurasi Nginx & reload..."
 NGINX_SOURCE="${PROJECT_DIR}/deploy/nginx-sap-ai.conf"
@@ -71,12 +77,15 @@ fi
 if ! sudo cp "${NGINX_SOURCE}" "${NGINX_TARGET}" 2>/dev/null; then
     cp "${NGINX_SOURCE}" "${NGINX_TARGET}"
 fi
+sudo cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/enterprise-ai" 2>/dev/null || cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/enterprise-ai" || true
+sudo cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/sap-ai" 2>/dev/null || cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/sap-ai" || true
 
 if ! sudo nginx -t; then
     nginx -t
 fi
 if ! sudo systemctl reload nginx 2>/dev/null; then
     systemctl reload nginx
+    systemctl reload nginx || true
 fi
 
 echo "=========================================================="
