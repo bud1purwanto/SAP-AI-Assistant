@@ -1,6 +1,5 @@
 #!/bin/bash
 # ==============================================================================
-# Script Cepat Update SAP AI Assistant di Linux Server
 # Script Cepat Update Enterprise AI Assistant di Linux Server
 # Jalankan: chmod +x deploy/update.sh && sudo ./deploy/update.sh
 # ==============================================================================
@@ -9,14 +8,6 @@ set -e
 
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "${PROJECT_DIR}"
-
-# Catatan tentang izin repositori.
-#
-# Versi sebelumnya memeriksa `[ -w .git/objects ]` lebih dulu. Pemeriksaan itu
-# LOLOS pada run 43 tetapi git tetap gagal: git menulis ke sub-direktori
-# .git/objects/xx dan .git/objects/pack, yang izinnya bisa berbeda dari induknya.
-# Menebak dari bit izin ternyata tidak dapat diandalkan, jadi sekarang kegagalan
-# git yang sesungguhnya yang dibaca lalu diterjemahkan menjadi petunjuk konkret.
 
 echo "🔄 [1/4] Mengambil kode terbaru dari Git..."
 git config --global --add safe.directory "${PROJECT_DIR}" 2>/dev/null || true
@@ -63,20 +54,15 @@ NODE_ENV=development npm install --include=dev
 npm run build
 
 echo "⚙️ [4/5] Merestart service backend..."
-sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
 sudo systemctl restart enterprise-ai-backend 2>/dev/null || sudo systemctl restart sap-ai-backend 2>/dev/null || systemctl restart enterprise-ai-backend 2>/dev/null || systemctl restart sap-ai-backend 2>/dev/null || true
 
 echo "🌐 [5/5] Memperbarui konfigurasi Nginx & reload..."
 NGINX_SOURCE="${PROJECT_DIR}/deploy/nginx-sap-ai.conf"
-NGINX_TARGET="/etc/nginx/sites-available/sap-ai"
 if [ ! -f "${NGINX_SOURCE}" ]; then
     echo "❌ Konfigurasi Nginx tidak ditemukan: ${NGINX_SOURCE}"
     exit 1
 fi
 
-if ! sudo cp "${NGINX_SOURCE}" "${NGINX_TARGET}" 2>/dev/null; then
-    cp "${NGINX_SOURCE}" "${NGINX_TARGET}"
-fi
 sudo cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/enterprise-ai" 2>/dev/null || cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/enterprise-ai" || true
 sudo cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/sap-ai" 2>/dev/null || cp "${NGINX_SOURCE}" "/etc/nginx/sites-available/sap-ai" || true
 
@@ -84,7 +70,6 @@ if ! sudo nginx -t; then
     nginx -t
 fi
 if ! sudo systemctl reload nginx 2>/dev/null; then
-    systemctl reload nginx
     systemctl reload nginx || true
 fi
 

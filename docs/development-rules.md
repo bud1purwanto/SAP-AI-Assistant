@@ -4,8 +4,6 @@
 
 ## 1. Guardrail Wajib
 
-1. Semua development, edit, dan test hanya dilakukan di `/data/Projects/SAP-AI-Assistant/`.
-2. Jangan mengakses atau memodifikasi `/var/www/SAP-AI-Assistant/` tanpa instruksi eksplisit.
 1. Semua development, edit, dan test hanya dilakukan di `/data/Projects/Enterprise AI Assistant/`.
 2. Jangan mengakses atau memodifikasi `/var/www/Enterprise-AI-Assistant/` atau `/var/www/SAP-AI-Assistant/` tanpa instruksi eksplisit.
 3. Jangan auto-deploy ke production.

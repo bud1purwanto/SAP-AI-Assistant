@@ -1,4 +1,3 @@
-name: Deploy SAP AI Assistant
 name: Deploy Enterprise AI Assistant
 
 on:
@@ -11,9 +10,6 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
-env:
-  APP_DIR: /var/www/SAP-AI-Assistant
-
 permissions:
   contents: read
 
@@ -22,12 +18,9 @@ jobs:
     name: Auto Deploy to Linux Server
     runs-on: self-hosted
     steps:
-      - name: Checkout kode terbaru
       - name: Deteksi direktori aplikasi & Checkout kode terbaru
         run: |
           set -euo pipefail
-          git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
-          cd "$APP_DIR"
 
           if [ -d "/var/www/Enterprise-AI-Assistant" ]; then
             TARGET_DIR="/var/www/Enterprise-AI-Assistant"
@@ -48,24 +41,19 @@ jobs:
         run: |
           cd "$APP_DIR"
           
-          # Build frontend dulu (butuh node + vite via npm run build)
           # Build frontend (butuh node + vite via npm run build)
           cd frontend && npm ci && npm run build && cd ..
 
-          sudo docker rm -f sap-ai-frontend sap-ai-backend 2>/dev/null || true
           # Pastikan docker network tersedia
           sudo docker network create enterprise-ai-net 2>/dev/null || true
 
           # Hapus container lama (baik nama baru maupun legacy)
           sudo docker rm -f enterprise-ai-frontend enterprise-ai-backend sap-ai-frontend sap-ai-backend 2>/dev/null || true
           
-          sudo docker build -t sap-ai-backend-img:latest -f Dockerfile.backend .
-          sudo docker build -t sap-ai-frontend-img:latest -f Dockerfile.frontend .
           sudo docker build -t enterprise-ai-backend-img:latest -f Dockerfile.backend .
           sudo docker build -t enterprise-ai-frontend-img:latest -f Dockerfile.frontend .
           
           sudo docker run -d \
-            --name sap-ai-backend \
             --name enterprise-ai-backend \
             --network enterprise-ai-net \
             --network-alias backend \
@@ -73,17 +61,13 @@ jobs:
             -p 8006:8005 \
             --env-file backend/.env \
             -v "$APP_DIR/backend:/app:ro" \
-            sap-ai-backend-img:latest
             enterprise-ai-backend-img:latest
 
           sudo docker run -d \
-            --name sap-ai-frontend \
             --name enterprise-ai-frontend \
             --network enterprise-ai-net \
             --restart=unless-stopped \
             -p 8086:80 \
-            --link sap-ai-backend:backend \
-            sap-ai-frontend-img:latest
             enterprise-ai-frontend-img:latest
           
           echo "Docker Containers restarted (Zero Downtime)"
@@ -98,6 +82,5 @@ jobs:
             sleep 1
           done
           echo "::error::Frontend tidak merespons setelah 30 detik."
-          sudo -n docker ps --filter name=sap-ai
           sudo -n docker ps --filter name=enterprise-ai
           exit 1
