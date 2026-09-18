@@ -57,25 +57,35 @@ def get_engine():
             "Dukungan SQLite telah dihapus."
         )
 
-    try:
-        engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
-        with engine.connect():
-            pass
-    except Exception as e:
-        logger.error(f"Koneksi PostgreSQL gagal: {e}")
-        # Pesan ini sering menjadi satu-satunya petunjuk saat pengembang baru
-        # menjalankan proyek, jadi sebutkan langkah perbaikannya secara konkret.
-        target = db_url.split("@")[-1] if "@" in db_url else db_url
-        raise RuntimeError(
-            f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
-            "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
-            "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
-            "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
-        ) from e
+    candidates = [db_url]
+    if "@127.0.0.1" in db_url or "@localhost" in db_url:
+        candidates.append(db_url.replace("@127.0.0.1", "@host.docker.internal").replace("@localhost", "@host.docker.internal"))
+        candidates.append(db_url.replace("@127.0.0.1", "@enterprise-ai-postgres").replace("@localhost", "@enterprise-ai-postgres"))
 
-    _engine = engine
-    logger.info("Database PostgreSQL berhasil terhubung.")
-    return _engine
+    last_error = None
+    for candidate_url in candidates:
+        try:
+            engine = create_engine(candidate_url, pool_pre_ping=True, pool_timeout=3)
+            with engine.connect():
+                pass
+            _engine = engine
+            if candidate_url != db_url:
+                logger.info(f"Database PostgreSQL berhasil terhubung via fallback: {candidate_url.split('@')[-1]}")
+            else:
+                logger.info("Database PostgreSQL berhasil terhubung.")
+            return _engine
+        except Exception as e:
+            last_error = e
+            continue
+
+    logger.error(f"Koneksi PostgreSQL gagal: {last_error}")
+    target = db_url.split("@")[-1] if "@" in db_url else db_url
+    raise RuntimeError(
+        f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
+        "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
+        "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
+        "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
+    ) from last_error
 
 
 def init_db():
