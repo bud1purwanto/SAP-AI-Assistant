@@ -7,7 +7,7 @@ Aturan ini wajib dipatuhi oleh semua asisten AI (Antigravity/Gemini/Agents) dala
 - **ISOLASI DIREKTORI KERJA**: Seluruh pekerjaan pengembangan, modifikasi kode, dan pengujian HANYA boleh dilakukan di dalam workspace:
   `/data/Projects/Enterprise AI Assistant/`
   Jangan pernah menjalankan perintah yang mengakses atau memodifikasi `/var/www/Enterprise-AI-Assistant/` atau `/var/www/SAP-AI-Assistant/`.
-- **DILARANG PUSH TANPA REVIEW & PERSETUJUAN EKSPLISIT**: Jangan pernah melakukan `git push` ke remote repository (termasuk branch `main`) secara sepihak. Berikan rincian perubahan (diff) kepada pengguna terlebih dahulu untuk direview, dan tunggu konfirmasi/persetujuan eksplisit sebelum push.
+- **DILARANG COMMIT & PUSH OTOMATIS (STRICT)**: Jangan pernah melakukan `git commit` maupun `git push` ke repository secara otomatis atau sepihak. Biarkan seluruh perubahan tetap di *working tree* untuk direview oleh pengguna. Tunggu perintah/konfirmasi eksplisit dari pengguna sebelum melakukan commit atau push.
 
 ## 2. Keamanan Database & Integritas Data (STRICT / SANGAT KETAT)
 - **DILARANG DROP DATABASE ATAU SKEMA**: Jangan pernah menjalankan perintah `DROP DATABASE`, `DROP SCHEMA`, atau menghapus objek struktur database lainnya tanpa instruksi/permintaan tertulis yang eksplisit dari pengguna.

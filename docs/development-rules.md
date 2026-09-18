@@ -7,7 +7,7 @@
 1. Semua development, edit, dan test hanya dilakukan di `/data/Projects/Enterprise AI Assistant/`.
 2. Jangan mengakses atau memodifikasi `/var/www/Enterprise-AI-Assistant/` atau `/var/www/SAP-AI-Assistant/` tanpa instruksi eksplisit.
 3. Jangan auto-deploy ke production.
-4. Jangan `git push` sebelum pengguna menerima ringkasan/diff dan memberi persetujuan eksplisit.
+4. Dilarang melakukan `git commit` maupun `git push` secara otomatis. Semua perubahan harus tetap di working tree untuk direview pengguna sampai ada instruksi eksplisit.
 5. Jangan menjalankan `DROP DATABASE`, `DROP SCHEMA`, `DROP` object, `TRUNCATE`, atau `DELETE` data tanpa permintaan tertulis yang eksplisit.
 6. Perubahan database harus non-destruktif dan menjaga data lama.
 7. Jangan mengubah copy/istilah existing kecuali diminta.
