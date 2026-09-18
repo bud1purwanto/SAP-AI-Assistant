@@ -41,8 +41,11 @@ jobs:
         run: |
           cd "$APP_DIR"
           
-          # Build frontend (butuh node + vite via npm run build)
-          cd frontend && npm ci && npm run build && cd ..
+          # Build frontend
+          cd frontend
+          npm install
+          npm run build
+          cd ..
 
           # Pastikan docker network tersedia
           sudo docker network create enterprise-ai-net 2>/dev/null || true
@@ -53,6 +56,12 @@ jobs:
           sudo docker build -t enterprise-ai-backend-img:latest -f Dockerfile.backend .
           sudo docker build -t enterprise-ai-frontend-img:latest -f Dockerfile.frontend .
           
+          # Jalankan Backend
+          ENV_FILE="$APP_DIR/backend/.env"
+          if [ ! -f "$ENV_FILE" ]; then
+            ENV_FILE="$APP_DIR/deploy/.env.production.example"
+          fi
+
           sudo docker run -d \
             --name enterprise-ai-backend \
             --network enterprise-ai-net \
@@ -60,13 +69,17 @@ jobs:
             --add-host=host.docker.internal:host-gateway \
             --restart=unless-stopped \
             -p 8006:8005 \
-            --env-file backend/.env \
-            -v "$APP_DIR/backend:/app:ro" \
+            --env-file "$ENV_FILE" \
             enterprise-ai-backend-img:latest
 
+          # Beri jeda sejenak agar backend menyelesaikan inisialisasi DB
+          sleep 3
+
+          # Jalankan Frontend
           sudo docker run -d \
             --name enterprise-ai-frontend \
             --network enterprise-ai-net \
+            --add-host=host.docker.internal:host-gateway \
             --restart=unless-stopped \
             -p 8086:80 \
             enterprise-ai-frontend-img:latest
