@@ -57,6 +57,7 @@ jobs:
             --name enterprise-ai-backend \
             --network enterprise-ai-net \
             --network-alias backend \
+            --add-host=host.docker.internal:host-gateway \
             --restart=unless-stopped \
             -p 8006:8005 \
             --env-file backend/.env \
@@ -72,15 +73,19 @@ jobs:
           
           echo "Docker Containers restarted (Zero Downtime)"
 
-      - name: Pastikan frontend merespons
+      - name: Pastikan frontend & backend merespons
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 5 http://127.0.0.1:8086 >/dev/null 2>&1; then
-              echo "Frontend berjalan setelah ${i} detik."
+            if curl -fsS --max-time 5 http://127.0.0.1:8086/api/config >/dev/null 2>&1; then
+              echo "Aplikasi & API backend berjalan normal setelah ${i} detik."
               exit 0
             fi
             sleep 1
           done
-          echo "::error::Frontend tidak merespons setelah 30 detik."
-          sudo -n docker ps --filter name=enterprise-ai
+          echo "::error::API backend tidak merespons (502 / Offline) setelah 30 detik."
+          sudo -n docker ps --filter name=enterprise-ai || true
+          echo "--- LOG BACKEND ---"
+          sudo -n docker logs --tail 50 enterprise-ai-backend || true
+          echo "--- LOG FRONTEND ---"
+          sudo -n docker logs --tail 50 enterprise-ai-frontend || true
           exit 1

@@ -69,6 +69,7 @@ sudo docker run -d \
   --name enterprise-ai-backend \
   --network enterprise-ai-net \
   --network-alias backend \
+  --add-host=host.docker.internal:host-gateway \
   --restart=unless-stopped \
   -p 8006:8005 \
   --env-file backend/.env \
