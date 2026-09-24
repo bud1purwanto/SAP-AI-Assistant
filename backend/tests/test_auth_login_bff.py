@@ -78,3 +78,22 @@ def test_mapper_handles_missing_departments_divisions_positions():
     assert p["job_level"] == "staff"
     assert p["roles"] == ["viewer"]
     assert p["force_change_password"] is False
+
+
+@respx.mock
+def test_logout_clears_cookie_even_when_upstream_fails(client):
+    # Establish session first.
+    respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        return_value=httpx.Response(200, json={"accessToken": "t", "expiresIn": 60, "user": DASH_USER_OK})
+    )
+    client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+
+    upstream = respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/logout").mock(
+        side_effect=httpx.ConnectError("down")
+    )
+    r = client.post("/api/auth/logout")
+    assert r.status_code in (200, 204)
+    assert upstream.called
+    # Cookie cleared: Set-Cookie header with empty/max-age=0.
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "sap_session=" in set_cookie and ("Max-Age=0" in set_cookie or "Expires=" in set_cookie)

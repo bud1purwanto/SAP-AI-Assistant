@@ -408,14 +408,15 @@ async def auth_change_password(req: ChangePasswordRequest, user: dict = Depends(
 
 
 @app.post("/api/auth/logout")
-async def oidc_logout():
-    """Hapus cookie sesi BFF."""
-    resp = Response(
-        content=_json.dumps({"status": "success", "message": "Berhasil logout"}),
-        media_type="application/json",
-    )
-    resp.delete_cookie(settings.session_cookie_name, path="/")
-    return resp
+async def auth_logout(response: Response):
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"{base}/v1/auth/logout")
+    except Exception as e:
+        logger.warning(f"upstream logout failed (ignored): {e}")
+    response.delete_cookie(settings.session_cookie_name, path="/")
+    return {"status": "ok"}
 
 
 @app.get("/api/auth/session")
