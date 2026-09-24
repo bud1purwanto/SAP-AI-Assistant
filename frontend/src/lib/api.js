@@ -246,22 +246,6 @@ export const api = {
   adminUpdateRoleMode: (payload) =>
     apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
 
-  // Access Control MCP
-  adminAccessResources: () => apiFetch('/api/admin/access/resources'),
-  adminSyncAccessResources: () => apiFetch('/api/admin/access/resources/sync', { method: 'POST' }),
-  adminAccessRoles: () => apiFetch('/api/admin/access/roles'),
-  adminUpdateAccessRoles: (payload) =>
-    apiFetch('/api/admin/access/roles', { method: 'PUT', body: payload }),
-  adminUserAccess: (username) =>
-    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`),
-  adminUpdateUserAccess: (username, payload) =>
-    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
-  adminBulkUserAccess: (payload) =>
-    apiFetch('/api/admin/access/bulk', { method: 'POST', body: payload }),
-  adminAccessAudit: (limit = 100, offset = 0) =>
-    apiFetch(`/api/admin/access/audit?limit=${limit}&offset=${offset}`),
-  adminToggleAccessMaster: (enabled) =>
-    apiFetch('/api/admin/access/enabled', { method: 'POST', body: { enabled } }),
 
   // Per-user SAP Credentials
   mySapCredentials: () => apiFetch('/api/me/sap-credentials'),

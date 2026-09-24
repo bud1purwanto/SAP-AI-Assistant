@@ -4,7 +4,6 @@ import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
-import AdminAccessControl from './AdminAccessControl';
 import AdminRoles from './AdminRoles';
 import AdminDivisions from './AdminDivisions';
 import AdminChatAudit from './AdminChatAudit';
@@ -694,7 +693,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         { id: 'users', icon: Users, label: t('admin.tabUsers') },
         { id: 'divisions', icon: Building2, label: t('admin.tabDivisions') || (language === 'en' ? 'Divisions' : 'Divisi') },
         { id: 'roles', icon: UserCog, label: language === 'en' ? 'Roles' : 'Peran' },
-        { id: 'access', icon: ShieldCheck, label: t('admin.tabAccess') },
         { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
       ],
     },
@@ -1373,14 +1371,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   <Edit3 className="w-4 h-4" />
                                 </button>
                                 <button
-                                  onClick={() => setActiveTab('access')}
-                                  className="p-1.5 text-content-subtle hover:text-emerald-400 hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
-                                  title={language === 'en' ? 'Manage MCP access' : 'Kelola hak akses MCP'}
-                                  aria-label={`Akses MCP ${u.username}`}
-                                >
-                                  <ShieldCheck className="w-4 h-4" />
-                                </button>
-                                <button
                                   onClick={() => handleDeleteUser(u.username)}
                                   disabled={u.username === user.username}
                                   className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -1756,16 +1746,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               <AdminRoles onRefreshRoles={fetchMasterRoles} />
             )}
 
-            {/* TAB: ACCESS CONTROL MCP */}
-            {activeTab === 'access' && (
-              <AdminAccessControl
-                setActionSuccess={setActionSuccess}
-                setActionError={setActionError}
-                setConfirmModal={setConfirmModal}
-                masterRoles={masterRoles}
-                onRefreshRoles={fetchMasterRoles}
-              />
-            )}
 
             {/* TAB: CHAT MODES */}
             {activeTab === 'chat_modes' && (
