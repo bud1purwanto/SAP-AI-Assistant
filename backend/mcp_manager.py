@@ -667,11 +667,7 @@ class MCPManager:
         """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
         sap_client = self.get_client("sap")
         last_error = None
-        try:
-            import access_control
-            sap_resource_key = access_control.canonical_resource_key(f"sap:{target_sap}")
-        except Exception:
-            sap_resource_key = target_sap if str(target_sap).startswith("sap:") else f"sap:{target_sap}"
+        sap_resource_key = target_sap if str(target_sap).startswith("sap:") else f"sap:{target_sap}"
         payload = {"server_ref": target_sap, "resource_key": sap_resource_key}
         if sap_credentials:
             if sap_credentials.get("sap_user"):
@@ -878,11 +874,7 @@ class MCPManager:
         extra_sap_headers = {}
         if server_name == "sap":
             if isinstance(final_args, dict) and sap_target and "resource_key" not in final_args:
-                try:
-                    import access_control
-                    final_args["resource_key"] = access_control.canonical_resource_key(f"sap:{sap_target}")
-                except Exception:
-                    final_args["resource_key"] = sap_target if str(sap_target).startswith("sap:") else f"sap:{sap_target}"
+                final_args["resource_key"] = sap_target if str(sap_target).startswith("sap:") else f"sap:{sap_target}"
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
             if sap_credentials:

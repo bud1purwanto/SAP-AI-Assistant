@@ -3834,19 +3834,6 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
             WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:t)
         """), {"u": clean_user, "t": clean_target}).fetchone()
 
-        # Fallback pencarian bila target disimpan dengan alias kanonikal lain
-        if not row:
-            try:
-                import access_control
-                can_key = access_control.canonical_resource_key(f"sap:{clean_target}")
-                sub = can_key.split(":", 1)[1] if ":" in can_key else can_key
-                if sub.lower() != clean_target.lower():
-                    row = conn.execute(text("""
-                        SELECT encrypted_data FROM ai_assistant_dev.user_sap_credentials
-                        WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:sub)
-                    """), {"u": clean_user, "sub": sub}).fetchone()
-            except Exception:
-                pass
     
     if not row or not row[0]:
         return None

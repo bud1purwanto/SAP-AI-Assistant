@@ -99,7 +99,6 @@ from database import (
     get_division_impact,
 )
 from mcp_manager import mcp_manager
-import access_control
 from models import ChatRequest, ChatResponse, UsageStats, ScheduledTaskCreate, ScheduledTaskUpdate
 
 logger = logging.getLogger(__name__)
@@ -140,17 +139,12 @@ async def lifespan(app: FastAPI):
     # Server produksi bisa berjalan berminggu-minggu tanpa restart, sehingga
     # pembersihan saat startup saja tidak cukup.
     cleanup = asyncio.create_task(_artifact_cleanup_loop())
-    # Server produksi berjalan dengan >1 worker (deploy/deploy.sh --workers 2);
-    # listener ini membuat perubahan role dari satu worker langsung terlihat di
-    # worker lain, alih-alih menunggu TTL cache 30 detik.
-    role_listener = access_control.start_role_change_listener()
     from scheduler import run_scheduler_loop
     scheduler_task = asyncio.create_task(run_scheduler_loop())
     try:
         yield
     finally:
         cleanup.cancel()
-        role_listener.cancel()
         scheduler_task.cancel()
 
 
@@ -309,8 +303,7 @@ def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
     divs = dash_user.get("divisions") or []
     poss = dash_user.get("positions") or []
     raw_role = dash_user.get("rawRole") or dash_user.get("role") or "user"
-    from access_control import normalize_roles
-    roles = normalize_roles([raw_role])
+    roles = [str(r).strip().lower() for r in ([raw_role] if isinstance(raw_role, str) else (raw_role or ["user"])) if str(r).strip()] or ["user"]
     primary = roles[0] if roles else "user"
     first_div = divs[0] if divs else {}
     first_pos = poss[0] if poss else {}
@@ -474,19 +467,10 @@ async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
 async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
     """Mengambil daftar server SAP terdaftar dengan status otorisasi dan konfigurasi kredensial pengguna."""
     username = user["username"]
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    if not user_roles:
-        user_roles = ["user"]
-    
     # 1. Ambil status live dan sub_servers dari MCP SAP
     raw_status = await mcp_manager.check_servers_status()
     sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
-    
-    # 2. Ambil resolusi akses RBAC pengguna
-    user_access = access_control.resolve_access(username, user_roles)
-    is_superadmin = "superadmin" in access_control.normalize_roles(user_roles)
-    
-    # 3. Ambil target kredensial yang sudah pernah disimpan pengguna
+    # 2. Ambil target kredensial yang sudah pernah disimpan pengguna
     user_creds = database.list_user_sap_credentials(username)
     saved_targets = {c.get("target", "").lower().strip() for c in user_creds if c.get("target")}
 
@@ -497,23 +481,13 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
         client = str(srv.get("client") or "100")
         env = srv.get("environment", "development")
         prod_warn = bool(srv.get("production_warning", False))
-        
-        # Cari alias kanonikal
         aliases = srv.get("aliases") or []
         primary_alias = aliases[0] if aliases else name.lower().replace(" ", "-")
-        
-        # Pengecekan otorisasi RBAC
-        can_key = access_control.canonical_resource_key(f"sap:{primary_alias}")
-        perm = user_access.get(can_key)
-        is_allowed = is_superadmin or bool(perm and perm.get("allowed"))
-        
-        # Cek apakah sudah tersimpan di database pengguna
         has_credential = (
             primary_alias.lower() in saved_targets or
             name.lower() in saved_targets or
             any(a.lower() in saved_targets for a in aliases)
         )
-        
         servers.append({
             "name": name,
             "alias": primary_alias,
@@ -522,7 +496,7 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
             "client": client,
             "environment": env,
             "production_warning": prod_warn,
-            "is_allowed": is_allowed,
+            "is_allowed": True,
             "has_credential": has_credential,
         })
         
@@ -540,18 +514,7 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
         raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
     
     username = user["username"]
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    
-    # 1. Pastikan pengguna berhak mengakses target SAP ini (RBAC check)
-    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
-        try:
-            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
-        except HTTPException:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengakses server SAP '{target}'."
-            )
-            
+
     # 2. Siapkan username dan password: jika kosong saat pengujian, coba gunakan yang tersimpan
     user_to_test = (req.sap_user or "").strip()
     pass_to_test = (req.sap_password or "").strip()
@@ -783,15 +746,6 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
         
     # Pastikan hak otorisasi server
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
-        try:
-            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
-        except HTTPException:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengonfigurasi kredensial server SAP '{target}'."
-            )
 
     # Cek apakah target sudah ada jika bukan is_update
     existing = get_user_sap_credential(username, target)
@@ -1096,15 +1050,7 @@ async def get_mcp_servers(user: dict = Depends(get_current_user_optional)):
     Bila kontrol akses aktif, sub-servers disaring khusus untuk server yang diizinkan bagi pengguna saat ini.
     """
     raw = await mcp_manager.check_servers_status()
-    try:
-        access_control.sync_resources_from_mcp(raw)
-    except Exception as e:
-        logger.warning(f"Auto-sync resources gagal: {e}")
-    username = user.get("username", "guest") if user else "guest"
-    is_guest = not user or bool(user.get("is_guest", True))
-    token_roles = user.get("roles", [user.get("role", "guest")]) if user else ["guest"]
-    user_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
-    return access_control.filter_servers_for_user(raw, username=username, role=user_roles)
+    return raw
 
 
 # --- SUPER ADMIN ENDPOINTS ---
@@ -1118,10 +1064,6 @@ async def get_admin_stats_endpoint(
     """Mengambil metrik statistik sistem & status live MCP servers."""
     stats = get_admin_system_stats(period=period, top_users_limit=limit)
     mcp_st = await mcp_manager.check_servers_status()
-    try:
-        access_control.sync_resources_from_mcp(mcp_st)
-    except Exception as e:
-        logger.warning(f"Auto-sync resources gagal: {e}")
     stats["mcp_status"] = mcp_st
     stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
     return stats
@@ -1391,7 +1333,6 @@ async def update_user_endpoint(
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
     return res
 
 
@@ -1405,7 +1346,6 @@ async def delete_user_endpoint(username: str, admin: dict = Depends(require_supe
     res = delete_user_by_admin(username)
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
     return res
 
 
@@ -1587,14 +1527,6 @@ async def create_admin_role_endpoint(
             daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
             per_minute_limit=int(pml),
         )
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="CREATE_ROLE",
-            detail=f"Peran '{c_clean}' dibuat (label='{req.label.strip()}', can_modify_program={bool(req.can_modify_program)}, enabled={bool(req.enabled)})",
-        )
         return {"status": "success", "role": new_role}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1633,14 +1565,6 @@ async def clone_admin_role_endpoint(
             label=req.label.strip(),
             description=(req.description or "").strip(),
         )
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="CLONE_ROLE",
-            detail=f"Peran '{c_clean}' dibuat dengan mengkloning izin dari '{src_clean}'",
-        )
         return {"status": "success", "role": new_role}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1673,17 +1597,6 @@ async def update_admin_role_endpoint(
             suspended=req.suspended,
             sort_order=req.sort_order,
         )
-        access_control.broadcast_access_change()
-        changed = {
-            k: v for k, v in req.model_dump(exclude_none=True).items()
-        }
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="UPDATE_ROLE",
-            detail=f"Peran '{c_clean}' diperbarui: {changed}",
-        )
         return {"status": "success", "role": updated}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1701,14 +1614,6 @@ async def delete_admin_role_endpoint(
     c_clean = code.strip().lower()
     try:
         delete_role(c_clean)
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="DELETE_ROLE",
-            detail=f"Peran '{c_clean}' dihapus.",
-        )
         return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1885,9 +1790,17 @@ async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_use
     username = user.get("username", "guest") if user else "guest"
     is_guest = not user or bool(user.get("is_guest", True))
     token_roles = (user.get("roles") or [user.get("role", "user")]) if user else ["guest"]
-    # Role diambil ulang dari database (bukan token) agar pencabutan/penonaktifan
-    # role langsung berlaku tanpa menunggu token kedaluwarsa.
-    active_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
+    if is_guest or not username or username == "guest":
+        active_roles = token_roles if isinstance(token_roles, list) else [token_roles]
+    else:
+        try:
+            active_roles = database.get_user_roles(username, active_only=True)
+        except Exception:
+            active_roles = token_roles if isinstance(token_roles, list) else [token_roles]
+    if isinstance(active_roles, str):
+        active_roles = [active_roles]
+    elif not active_roles:
+        active_roles = ["user"]
 
     # Union seluruh mode yang diizinkan untuk setiap peran aktif pengguna
     modes_by_code = {}
@@ -2092,128 +2005,6 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
 
 
-# --- MCP ACCESS CONTROL ADMIN ENDPOINTS ---
-
-class AdminUpdateRoleAccessRequest(BaseModel):
-    role: str
-    items: List[dict]
-
-
-class AdminUpdateUserAccessRequest(BaseModel):
-    items: List[dict]
-
-
-class AdminBulkUserAccessRequest(BaseModel):
-    usernames: List[str]
-    resource_key: str
-    state: str = "inherit"  # "inherit", "allow", "deny"
-    can_write: bool = False
-    valid_until: Optional[str] = None
-
-
-class AdminToggleAccessMasterRequest(BaseModel):
-    enabled: bool
-
-
-@app.get("/api/admin/access/resources")
-async def get_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil katalog lengkap sumber daya MCP."""
-    return {"resources": access_control.get_all_resources(include_archived=False)}
-
-
-@app.post("/api/admin/access/resources/sync")
-async def sync_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
-    """Sinkronisasi live penemuan resource dari MCP gateway."""
-    await mcp_manager.get_live_resources(force_refresh=True)
-    st = await mcp_manager.check_servers_status()
-    synced = access_control.sync_resources_from_mcp(st)
-    return {
-        "status": "success",
-        "synced_count": len(synced),
-        "synced_keys": synced,
-        "resources": access_control.get_all_resources(include_archived=False),
-    }
-
-
-@app.get("/api/admin/access/roles")
-async def get_admin_access_roles_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil matriks izin Role x Resource."""
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-    except Exception as e:
-        logger.warning(f"Auto-sync on get_admin_access_roles gagal: {e}")
-    return access_control.get_all_roles_matrix()
-
-
-@app.put("/api/admin/access/roles")
-async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui set izin resource untuk role tertentu."""
-    role_clean = (req.role or "").strip().lower()
-    if role_clean != "superadmin" and not get_role_by_code(role_clean):
-        raise HTTPException(status_code=404, detail=f"Peran '{req.role}' tidak ditemukan.")
-
-    actor = admin.get("username", "admin")
-    ok = access_control.update_role_access(role_clean, req.items, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
-    access_control.broadcast_access_change()
-    return {"status": "success", "role": role_clean}
-
-
-@app.get("/api/admin/access/users/{username}")
-async def get_admin_access_user_endpoint(username: str, admin: dict = Depends(require_superadmin)):
-    """Mengambil izin spesifik pengguna beserta resolusi warisan rolenya."""
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-    except Exception as e:
-        logger.warning(f"Auto-sync on get_admin_access_user gagal: {e}")
-    return access_control.get_user_matrix(username)
-
-
-@app.put("/api/admin/access/users/{username}")
-async def update_admin_access_user_endpoint(username: str, req: AdminUpdateUserAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Menyimpan override izin resource untuk pengguna tertentu."""
-    actor = admin.get("username", "admin")
-    ok = access_control.update_user_access(username, req.items, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal memperbarui izin pengguna.")
-    access_control.broadcast_access_change()
-    return {"status": "success", "username": username}
-
-
-@app.post("/api/admin/access/bulk")
-async def bulk_update_admin_access_user_endpoint(req: AdminBulkUserAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui izin satu resource secara massal (bulk) untuk banyak pengguna."""
-    actor = admin.get("username", "admin")
-    count = access_control.bulk_update_user_access(
-        usernames=req.usernames,
-        resource_key=req.resource_key,
-        state=req.state,
-        can_write=req.can_write,
-        valid_until=req.valid_until,
-        actor=actor,
-    )
-    access_control.broadcast_access_change()
-    return {"status": "success", "updated_count": count}
-
-
-@app.get("/api/admin/access/audit")
-async def get_admin_access_audit_endpoint(limit: int = 100, offset: int = 0, admin: dict = Depends(require_superadmin)):
-    """Mengambil log audit perubahan hak akses MCP."""
-    return {"logs": access_control.get_audit_logs(limit=limit, offset=offset)}
-
-
-@app.post("/api/admin/access/enabled")
-async def toggle_admin_access_master_endpoint(req: AdminToggleAccessMasterRequest, admin: dict = Depends(require_superadmin)):
-    """Mengaktifkan atau menonaktifkan master switch kontrol akses MCP."""
-    actor = admin.get("username", "admin")
-    ok = access_control.set_access_control_master(req.enabled, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal mengubah status master switch akses MCP.")
-    return {"status": "success", "mcp_access_control_enabled": req.enabled}
-
 
 # --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS (DECOMMISSIONED) ---
 #
@@ -2285,8 +2076,7 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
 # --- CHAT ---
 
 def _batas_peran(role: Union[str, list, None]) -> dict:
-    """Batas yang berlaku untuk peran pengguna (mendukung multi-role). 0 = tanpa batas."""
-    roles = access_control.normalize_roles(role)
+    roles = [role] if isinstance(role, str) else (role or ["user"])
     if "superadmin" in roles:
         return {"daily_token_limit": 0, "per_minute_limit": 0}
 
@@ -2351,7 +2141,7 @@ def status_kuota(username: str, role: Union[str, list, None]) -> dict:
         "estimated": pakai["estimated"],
         "usage_date": pakai["usage_date"],
         "role": primary_role,
-        "roles": access_control.normalize_roles(role),
+        "roles": [role] if isinstance(role, str) else (role or ["user"]),
     }
 
 
