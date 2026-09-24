@@ -355,12 +355,15 @@ async def auth_login(req: LoginRequest, response: Response):
 
     base = settings.dashboard_oidc_issuer.rstrip("/")
     try:
+        login_payload = {"username": username, "password": password}
+        if settings.dashboard_oidc_client_id:
+            login_payload["clientCode"] = settings.dashboard_oidc_client_id
         async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{base}/v1/auth/login",
-                json={"username": username, "password": password,
-                      "clientCode": settings.dashboard_oidc_client_id},
-            )
+            r = await client.post(f"{base}/v1/auth/login", json=login_payload)
+            # Bila clientCode tidak terdaftar di dashboard-mcp, retry 1x tanpa clientCode.
+            if r.status_code == 400 and "client code" in r.text.lower() and "clientCode" in login_payload:
+                logger.warning(f"clientCode '{settings.dashboard_oidc_client_id}' tidak dikenal dashboard-mcp; retry tanpa clientCode.")
+                r = await client.post(f"{base}/v1/auth/login", json={"username": username, "password": password})
     except httpx.HTTPError as e:
         logger.error(f"dashboard-mcp unreachable during login: {e}")
         raise HTTPException(status_code=502, detail="Layanan autentikasi tidak tersedia.")
