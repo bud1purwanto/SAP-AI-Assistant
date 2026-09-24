@@ -204,8 +204,6 @@ export const api = {
   adminCreateUser: (payload) => apiFetch('/api/admin/users', { method: 'POST', body: payload }),
   adminUpdateUser: (username, payload) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
-  adminResetPassword: (username, payload) =>
-    apiFetch(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, { method: 'POST', body: payload }),
   adminDeleteUser: (username) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   adminDivisions: () => apiFetch('/api/admin/divisions'),

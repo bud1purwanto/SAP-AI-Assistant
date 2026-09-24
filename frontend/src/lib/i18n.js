@@ -217,7 +217,6 @@ export const TRANSLATIONS = {
     'settings.title': 'Settings',
     'settings.tabPersona': 'Persona & Preferences',
     'settings.tabLanguage': 'Language / Bahasa',
-    'settings.tabSecurity': 'Security & Password',
     'settings.tabSap': 'SAP Login',
     'settings.tabRouter': 'AI Provider',
     'settings.tabMcp': 'MCP Connections',
@@ -270,21 +269,6 @@ export const TRANSLATIONS = {
     'settings.sapUpdatedSuccess': "SAP credentials for '{target}' updated successfully.",
     'settings.sapSaveFailed': 'Failed to save SAP credentials.',
     'settings.sapLoadingServers': 'Loading available SAP servers...',
-
-    // Security Tab (Password Change)
-    'security.title': 'Change Account Password',
-    'security.oldPass': 'Current Password',
-    'security.oldPassPlaceholder': 'Enter current password',
-    'security.newPass': 'New Password',
-    'security.newPassPlaceholder': 'Minimum 8 characters',
-    'security.confirmPass': 'Confirm New Password',
-    'security.confirmPassPlaceholder': 'Re-enter new password',
-    'security.submit': 'Update Password',
-    'security.processing': 'Updating…',
-    'security.success': 'Password updated successfully!',
-    'security.failed': 'Failed to update password.',
-    'security.mismatch': 'Password confirmation does not match.',
-    'security.tooShort': 'New password must be at least 4 characters.',
 
     // Login Modal
     'login.title': 'Enterprise AI Assistant Login',
@@ -674,7 +658,6 @@ export const TRANSLATIONS = {
     'settings.title': 'Pengaturan',
     'settings.tabPersona': 'Persona & Profil',
     'settings.tabLanguage': 'Bahasa / Language',
-    'settings.tabSecurity': 'Keamanan & Sandi',
     'settings.tabSap': 'Akun SAP (Login)',
     'settings.tabRouter': 'AI Provider',
     'settings.tabMcp': 'Koneksi Data',
@@ -727,21 +710,6 @@ export const TRANSLATIONS = {
     'settings.sapUpdatedSuccess': "Kredensial SAP untuk '{target}' berhasil diperbarui.",
     'settings.sapSaveFailed': 'Gagal menyimpan kredensial SAP.',
     'settings.sapLoadingServers': 'Memuat daftar server SAP yang tersedia...',
-
-    // Security Tab (Password Change)
-    'security.title': 'Ubah Password Akun',
-    'security.oldPass': 'Password Saat Ini',
-    'security.oldPassPlaceholder': 'Masukkan password lama',
-    'security.newPass': 'Password Baru',
-    'security.newPassPlaceholder': 'Minimal 8 karakter',
-    'security.confirmPass': 'Konfirmasi Password Baru',
-    'security.confirmPassPlaceholder': 'Ulangi password baru',
-    'security.submit': 'Perbarui Password',
-    'security.processing': 'Memproses…',
-    'security.success': 'Password berhasil diperbarui!',
-    'security.failed': 'Gagal mengubah password.',
-    'security.mismatch': 'Konfirmasi password tidak cocok.',
-    'security.tooShort': 'Password baru minimal 4 karakter.',
 
     // Login Modal
     'login.title': 'Masuk Enterprise AI Assistant',
