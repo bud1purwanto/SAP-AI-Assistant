@@ -405,51 +405,14 @@ class MCPManager:
             logger.debug(f"Dashboard MCP resources endpoint tidak dapat dihubungi: {ex}")
         return None
 
-    async def get_live_resources(self, force_refresh: bool = False) -> list[dict]:
-        """Ambil list resource MCP terkini langsung dari dashboard-mcp dengan TTL caching."""
-        now = time.time()
-        if not force_refresh and self._resources_cache_time > 0 and (now - self._resources_cache_time < self._cache_ttl):
-            return self._resources_cache
-
+    async def check_servers_status(self) -> dict:
+        status = {}
+        # Dapatkan list server dari tabel ai_assistant_dev.mcp_servers jika ada
+        db_servers_dict = {}
         try:
-            async with httpx.AsyncClient() as http_client:
-                data = await self._fetch_dashboard_resources(http_client)
-                if data and isinstance(data, dict):
-                    resources = data.get("resources", [])
-                    if isinstance(resources, list):
-                        self._resources_cache = resources
-                        self._resources_cache_time = now
-                        return self._resources_cache
-        except Exception as e:
-            logger.warning(f"Gagal mengambil live resources dari dashboard-mcp: {e}")
-
-        return self._resources_cache
-
-    def get_live_resources_sync(self, force_refresh: bool = False) -> list[dict]:
-        """Versi synchronous untuk mengambil list resource MCP dengan TTL caching atau sync fetch."""
-        now = time.time()
-        if not force_refresh and self._resources_cache_time > 0 and (now - self._resources_cache_time < self._cache_ttl):
-            return self._resources_cache
-
-        if not settings.dashboard_mcp_url:
-            return self._resources_cache
-
-        url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
-        headers = {}
-        if settings.dashboard_mcp_api_token:
-            headers["Authorization"] = f"Bearer {settings.dashboard_mcp_api_token}"
-
-        try:
-            with httpx.Client(timeout=4.0) as client:
-                r = client.get(url, headers=headers)
-                if r.status_code == 200:
-                    data = r.json()
-                    if isinstance(data, dict):
-                        resources = data.get("resources", [])
-                        if isinstance(resources, list):
-                            self._resources_cache = resources
-                            self._resources_cache_time = now
-                            return self._resources_cache
+            from database import list_mcp_servers
+            db_list = list_mcp_servers(enabled_only=False)
+            db_servers_dict = {s["id"]: s for s in db_list}
         except Exception as ex:
             logger.debug(f"Sync fetch dashboard resources gagal: {ex}")
 

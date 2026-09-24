@@ -338,25 +338,37 @@ def get_all_resources(include_archived: bool = False) -> List[Dict[str, Any]]:
 
 
 def load_aliases_from_db(force_refresh: bool = False):
-    """Memuat alias dinamis dari get_all_resources()."""
-    global _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP, _DYNAMIC_GENERAL_MAP, _LAST_ALIAS_MAP_SYNC
+    """Memuat alias dinamis dari ai_assistant_dev.mcp_resources."""
+    global _DYNAMIC_SAP_MAP, _DYNAMIC_SQL_MAP, _LAST_ALIAS_MAP_SYNC
     now = time.time()
     if not force_refresh and (_DYNAMIC_SAP_MAP or _DYNAMIC_SQL_MAP) and (now - _LAST_ALIAS_MAP_SYNC < _ALIAS_CACHE_TTL):
         return
 
     try:
-        resources = get_all_resources(include_archived=False)
-        for r in resources:
-            rk = r.get("resource_key")
-            if not rk:
-                continue
-            kind = r.get("kind", "")
-            label = r.get("label", "")
-            sid = r.get("sid", "")
-            rk_str = str(rk).strip()
-            rk_lower = rk_str.lower()
-            sub = rk_lower.split(":", 1)[1] if ":" in rk_lower else rk_lower
-            prefix = rk_str.split(":", 1)[0].lower()
+        engine = database.get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT resource_key, kind, label, sid FROM ai_assistant_dev.mcp_resources WHERE archived = FALSE")
+            ).fetchall()
+            for rk, kind, label, sid in rows:
+                if not rk:
+                    continue
+                rk_str = str(rk).strip()
+                rk_lower = rk_str.lower()
+                sub = rk_lower.split(":", 1)[1] if ":" in rk_lower else rk_lower
+                prefix = rk_str.split(":", 1)[0].lower()
+
+                if kind == "service" or prefix == "service":
+                    _DYNAMIC_GENERAL_MAP[rk_lower] = rk_str
+                    _DYNAMIC_GENERAL_MAP[sub] = rk_str
+                    if label:
+                        _DYNAMIC_GENERAL_MAP[str(label).lower().strip()] = rk_str
+                    continue
+
+                target_map = _DYNAMIC_SQL_MAP if (kind == "sql" or prefix == "sql") else _DYNAMIC_SAP_MAP
+
+                target_map[rk_lower] = rk_str
+                target_map[sub] = rk_str
 
             if kind == "service" or prefix == "service":
                 _DYNAMIC_GENERAL_MAP[rk_lower] = rk_str
@@ -534,10 +546,97 @@ def sync_resources_from_mcp(status_dict: dict) -> List[str]:
         else:
             register_mcp_aliases(can_key, name, [sid_clean])
 
-        if can_key not in upserted_keys:
-            upserted_keys.append(can_key)
+        resources_to_sync.append({
+            "key": can_key,
+            "kind": kind,
+            "label": name,
+            "sid": "",
+            "client": "",
+            "is_production": is_prod,
+            "archived": is_archived,
+        })
+
+    try:
+        with engine.begin() as conn:
+            for item in resources_to_sync:
+                conn.execute(
+                    text("""
+                    INSERT INTO ai_assistant_dev.mcp_resources
+                        (resource_key, kind, label, sid, client, is_production, last_seen_at, archived)
+                    VALUES
+                        (:k, :kind, :label, :sid, :cli, :prod, :now, :archived)
+                    ON CONFLICT (resource_key) DO UPDATE SET
+                        label = EXCLUDED.label,
+                        sid = CASE WHEN EXCLUDED.sid <> '' THEN EXCLUDED.sid ELSE ai_assistant_dev.mcp_resources.sid END,
+                        client = CASE WHEN EXCLUDED.client <> '' THEN EXCLUDED.client ELSE ai_assistant_dev.mcp_resources.client END,
+                        is_production = EXCLUDED.is_production,
+                        last_seen_at = :now,
+                        archived = EXCLUDED.archived
+                """),
+                    {
+                        "k": item["key"],
+                        "kind": item["kind"],
+                        "label": item["label"],
+                        "sid": item["sid"],
+                        "cli": item["client"],
+                        "prod": item["is_production"],
+                        "archived": item.get("archived", False),
+                        "now": now,
+                    },
+                )
+                upserted_keys.append(item["key"])
+
+            # Non-destructively archive any custom dynamic resources that were removed from mcp_servers
+            active_keys = [item["key"] for item in resources_to_sync]
+            if active_keys:
+                conn.execute(
+                    text("""
+                    UPDATE ai_assistant_dev.mcp_resources
+                    SET archived = TRUE
+                    WHERE kind IN ('service', 'sql')
+                      AND resource_key NOT IN ('service:rag', 'service:email')
+                      AND NOT (resource_key = ANY(CAST(:active_keys AS text[])))
+                      AND resource_key NOT LIKE 'sap:%'
+                    """),
+                    {"active_keys": active_keys}
+                )
+    except Exception as e:
+        logger.error(f"Gagal sinkronisasi mcp_resources dari MCP: {e}")
 
     return upserted_keys
+
+
+def get_all_resources(include_archived: bool = False) -> List[Dict[str, Any]]:
+    """Mengambil semua daftar resource yang tercatat dalam katalog."""
+    engine = database.get_engine()
+    query = """
+        SELECT resource_key, kind, label, sid, client, is_production, first_seen_at, last_seen_at, archived
+        FROM ai_assistant_dev.mcp_resources
+    """
+    if not include_archived:
+        query += " WHERE archived = FALSE"
+    query += " ORDER BY kind ASC, is_production ASC, resource_key ASC"
+
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text(query)).fetchall()
+            return [
+                {
+                    "resource_key": r[0],
+                    "kind": r[1],
+                    "label": r[2],
+                    "sid": r[3],
+                    "client": r[4],
+                    "is_production": bool(r[5]),
+                    "first_seen_at": r[6].isoformat() if r[6] else None,
+                    "last_seen_at": r[7].isoformat() if r[7] else None,
+                    "archived": bool(r[8]),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Gagal mengambil resource MCP: {e}")
+        return []
 
 
 def resolve_access(username: str, role: Union[str, List[str], None] = "user") -> Dict[str, Dict[str, Any]]:

@@ -309,22 +309,17 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 );
             """))
-            # Pastikan sequence terpasang jika tabel dibuat tanpa default SERIAL
-            for seq_tbl in ("skills", "chat_messages"):
-                try:
-                    conn.execute(text(f"""
-                        DO $$
-                        BEGIN
-                            CREATE SEQUENCE IF NOT EXISTS ai_assistant_dev.{seq_tbl}_id_seq;
-                            PERFORM setval('ai_assistant_dev.{seq_tbl}_id_seq', COALESCE((SELECT MAX(id) FROM ai_assistant_dev.{seq_tbl}), 0) + 1, false);
-                            ALTER TABLE ai_assistant_dev.{seq_tbl} ALTER COLUMN id SET DEFAULT nextval('ai_assistant_dev.{seq_tbl}_id_seq');
-                        EXCEPTION WHEN OTHERS THEN
-                            NULL;
-                        END $$;
-                    """))
-                except Exception as ex_seq:
-                    logger.debug(f"Pengecekan sequence {seq_tbl}_id_seq: {ex_seq}")
 
+            # 6. Seed User TRSTDEV (superadmin) jika belum ada
+            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
+            if not res_dev:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.users (username, password_hash, role, assistant_persona)
+                    VALUES ('TRSTDEV', :pwd, 'superadmin', :persona)
+                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
+                logger.warning(
+                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
+                )
 
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
             res_sap = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
@@ -559,69 +554,60 @@ def authenticate_user(username: str, password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT username, password, password_hash, full_name, role, assistant_persona,
-                       force_change_password, division_code, job_level
-                FROM ai_assistant_dev.users
-                WHERE LOWER(username) = LOWER(:u)
+                SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                       u.division_code, d.name AS division_name, u.job_level
+                FROM ai_assistant_dev.users u
+                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+                WHERE LOWER(u.username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
 
             from auth import hash_password, verify_password, is_bcrypt_hash
             authenticated = False
 
-            if row:
-                stored_hash = row.password_hash
-                if stored_hash and is_bcrypt_hash(stored_hash):
-                    authenticated = verify_password(pwd_clean, stored_hash)
-                elif row.password:
-                    # Kredensial warisan berformat plaintext.
-                    authenticated = (row.password == pwd_clean)
-                    if authenticated:
-                        conn.execute(text("""
-                            UPDATE ai_assistant_dev.users
-                            SET password_hash = :h, password = NULL
-                            WHERE LOWER(username) = LOWER(:u)
-                        """), {"h": hash_password(pwd_clean), "u": uname_clean})
-                        conn.commit()
-                        logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
-
-            # Bila otentikasi lokal gagal atau user belum ada, periksa database terpusat ai_auth
-            if not authenticated:
-                try:
-                    import psycopg
-                    from config import get_settings
-                    auth_db_url = get_settings().auth_database_url
-                    if auth_db_url:
-                        with psycopg.connect(auth_db_url) as auth_conn:
-                            with auth_conn.cursor() as cur:
-                                cur.execute(
-                                    "SELECT id, username, password_hash, is_active FROM users WHERE LOWER(username) = LOWER(%s)",
-                                    (uname_clean,),
-                                )
-                                auth_row = cur.fetchone()
-                                if auth_row and auth_row[2] and auth_row[3]:
-                                    if verify_scrypt_password(pwd_clean, auth_row[2]):
-                                        authenticated = True
-                                        logger.info(f"User '{uname_clean}' berhasil diverifikasi via ai_auth.")
-                                        if row:
-                                            conn.execute(text("""
-                                                UPDATE ai_assistant_dev.users
-                                                SET password_hash = :h, password = NULL, force_change_password = FALSE
-                                                WHERE LOWER(username) = LOWER(:u)
-                                            """), {"h": hash_password(pwd_clean), "u": uname_clean})
-                                            conn.commit()
-                                        else:
-                                            ensure_user_exists(uname_clean)
-                                            conn.execute(text("""
-                                                UPDATE ai_assistant_dev.users
-                                                SET password_hash = :h, password = NULL, force_change_password = FALSE
-                                                WHERE LOWER(username) = LOWER(:u)
-                                            """), {"h": hash_password(pwd_clean), "u": uname_clean})
-                                            conn.commit()
-                except Exception as ex_auth:
-                    logger.warning(f"Error fallback verifikasi ai_auth: {ex_auth}")
+            if is_bcrypt_hash(stored_hash):
+                authenticated = verify_password(pwd_clean, stored_hash)
+            elif row.password:
+                # Kredensial warisan berformat plaintext.
+                authenticated = row.password == pwd_clean
+                if authenticated:
+                    conn.execute(text("""
+                        UPDATE ai_assistant_dev.users
+                        SET password_hash = :h, password = NULL
+                        WHERE LOWER(username) = LOWER(:u)
+                    """), {"h": hash_password(pwd_clean), "u": uname_clean})
+                    conn.commit()
+                    logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
 
             if authenticated:
-                return get_user_by_username(row.username if row else uname_clean)
+                role_rows = conn.execute(text("""
+                    SELECT ur.role 
+                    FROM ai_assistant_dev.user_roles ur
+                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
+                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
+                    ORDER BY ur.created_at ASC
+                """), {"u": uname_clean}).fetchall()
+                roles = [r.role for r in role_rows if r.role]
+                if not roles:
+                    single = conn.execute(text("""
+                        SELECT u.role 
+                        FROM ai_assistant_dev.users u
+                        JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
+                        WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
+                    """), {"u": uname_clean}).scalar()
+                    roles = [single] if single else ["user"]
+
+                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+                return {
+                    "username": row.username,
+                    "full_name": row.full_name or "",
+                    "role": primary_role,
+                    "roles": roles,
+                    "assistant_persona": row.assistant_persona or "",
+                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
+                    "division_code": row.division_code or None,
+                    "division_name": getattr(row, "division_name", None) or None,
+                    "job_level": getattr(row, "job_level", None) or "staff",
+                }
     except Exception as e:
         logger.error(f"Error authenticate_user: {e}")
 
@@ -638,7 +624,7 @@ def change_user_password(username: str, old_password: str, new_password: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT password, password_hash FROM ai_assistant_dev.users
+                SELECT password, password_hash, force_change_password FROM ai_assistant_dev.users
                 WHERE LOWER(username) = LOWER(:u)
             """), {"u": uname_clean}).fetchone()
 
@@ -2022,7 +2008,7 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean}).fetchone()
+            existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if existing:
                 return {"success": False, "message": f"User '{uname_clean}' sudah ada."}
 
@@ -2072,7 +2058,7 @@ def reset_user_password_by_admin(username: str, new_password: str, force_change:
         with engine.connect() as conn:
             existing = conn.execute(
                 text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
-                {"u": uname_clean},
+                {"u": username.strip()},
             ).fetchone()
             if not existing:
                 return {"success": False, "message": "User tidak ditemukan."}
@@ -2494,10 +2480,9 @@ def delete_user_by_admin(username: str):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("DELETE FROM ai_assistant_dev.user_sap_credentials WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
-            conn.execute(text("DELETE FROM ai_assistant_dev.user_roles WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
-            conn.execute(text("DELETE FROM ai_assistant_dev.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
-            res = conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": uname_clean})
+            # Hapus sessions user terlebih dahulu jika FK belum ON DELETE CASCADE
+            conn.execute(text("DELETE FROM ai_assistant_dev.chat_sessions WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
+            res = conn.execute(text("DELETE FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()})
             conn.commit()
             if res.rowcount == 0:
                 return {"success": False, "message": "User tidak ditemukan."}
@@ -2714,6 +2699,67 @@ def purge_expired_artifacts() -> int:
         logger.error(f"Error purge_expired_artifacts: {e}")
         return 0
 
+
+# --- PEMBATASAN PERCOBAAN LOGIN ---
+
+def check_login_block(client_key: str):
+    """Kembalikan sisa detik penguncian, atau 0 bila tidak terkunci."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT EXTRACT(EPOCH FROM (locked_until - CURRENT_TIMESTAMP)) AS sisa
+                FROM ai_assistant_dev.login_attempts
+                WHERE client_key = :k AND locked_until IS NOT NULL
+                  AND locked_until > CURRENT_TIMESTAMP
+            """), {"k": client_key}).fetchone()
+            return int(row.sisa) if row and row.sisa else 0
+    except Exception as e:
+        logger.error(f"Error check_login_block: {e}")
+        return 0
+
+
+def register_login_failure(client_key: str, max_failures: int, lock_seconds: int) -> int:
+    """Catat satu kegagalan login; kunci sementara bila melewati ambang.
+
+    Mengembalikan jumlah kegagalan berturut-turut setelah pencatatan.
+    """
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                INSERT INTO ai_assistant_dev.login_attempts (client_key, failures)
+                VALUES (:k, 1)
+                ON CONFLICT (client_key) DO UPDATE
+                SET failures = ai_assistant_dev.login_attempts.failures + 1
+                RETURNING failures
+            """), {"k": client_key}).fetchone()
+            failures = row.failures if row else 1
+
+            if failures >= max_failures:
+                conn.execute(text("""
+                    UPDATE ai_assistant_dev.login_attempts
+                    SET locked_until = CURRENT_TIMESTAMP + make_interval(secs => :sec),
+                        failures = 0
+                    WHERE client_key = :k
+                """), {"k": client_key, "sec": lock_seconds})
+            conn.commit()
+            return failures
+    except Exception as e:
+        logger.error(f"Error register_login_failure: {e}")
+        return 0
+
+
+def clear_login_failures(client_key: str):
+    """Bersihkan catatan kegagalan setelah login berhasil."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("DELETE FROM ai_assistant_dev.login_attempts WHERE client_key = :k"),
+                         {"k": client_key})
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error clear_login_failures: {e}")
 
 
 def count_user_artifacts(owner: str) -> int:
@@ -4155,7 +4201,7 @@ def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list
         query = """
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
-                   created_at, updated_at, lease_owner, lease_until
+                   created_at, updated_at
             FROM ai_assistant_dev.scheduled_tasks
             WHERE 1=1
         """
@@ -4188,7 +4234,7 @@ def get_scheduled_task(task_id: str) -> dict | None:
         r = conn.execute(text("""
             SELECT id, user_id, title, prompt, cron_expression, email_to,
                    is_active, last_run_at, last_status, last_result,
-                   created_at, updated_at, lease_owner, lease_until
+                   created_at, updated_at
             FROM ai_assistant_dev.scheduled_tasks
             WHERE id = :tid
         """), {"tid": task_id}).fetchone()
@@ -4269,63 +4315,20 @@ def claim_scheduled_task(
     """Klaim atomik satu eksekusi; lease kedaluwarsa dapat diambil worker lain."""
     engine = get_engine()
     with engine.connect() as conn:
-        active_filter = "" if allow_inactive else "AND is_active = TRUE"
-        row = conn.execute(text(f"""
+        conn.execute(text("""
             UPDATE ai_assistant_dev.scheduled_tasks
-            SET lease_owner = :owner,
-                lease_until = CURRENT_TIMESTAMP + make_interval(secs => :lease_seconds),
-                last_run_at = CURRENT_TIMESTAMP,
-                last_status = 'running',
-                last_result = 'Sedang diproses oleh asisten AI...',
+            SET last_run_at = CURRENT_TIMESTAMP,
+                last_status = :status,
+                last_result = :result,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :tid
-              {active_filter}
-              AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)
-            RETURNING id
-        """), {"tid": task_id, "owner": lease_owner, "lease_seconds": lease_seconds}).fetchone()
+        """), {
+            "tid": task_id,
+            "status": status[:64],
+            "result": result[:2000] if result else None,
+        })
         conn.commit()
-    return get_scheduled_task(task_id) if row else None
 
-
-def record_task_run(task_id: str, status: str, result: str = None, lease_owner: str = None) -> bool:
-    """Mencatat riwayat eksekusi terakhir pemantauan dan membersihkan lease."""
-    engine = get_engine()
-    with engine.connect() as conn:
-        if lease_owner:
-            res = conn.execute(text("""
-                UPDATE ai_assistant_dev.scheduled_tasks
-                SET last_run_at = CURRENT_TIMESTAMP,
-                    last_status = :status,
-                    last_result = :result,
-                    lease_owner = NULL,
-                    lease_until = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :tid AND lease_owner = :owner
-            """), {
-                "tid": task_id,
-                "owner": lease_owner,
-                "status": status[:64],
-                "result": result[:2000] if result else None,
-            })
-            conn.commit()
-            return res.rowcount == 1
-        else:
-            conn.execute(text("""
-                UPDATE ai_assistant_dev.scheduled_tasks
-                SET last_run_at = CURRENT_TIMESTAMP,
-                    last_status = :status,
-                    last_result = :result,
-                    lease_owner = NULL,
-                    lease_until = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :tid
-            """), {
-                "tid": task_id,
-                "status": status[:64],
-                "result": result[:2000] if result else None,
-            })
-            conn.commit()
-            return True
 
 def delete_scheduled_task(task_id: str) -> bool:
     """Menghapus pemantauan terjadwal."""

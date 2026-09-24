@@ -51,41 +51,22 @@ def test_bearer_token_authenticates_protected_endpoint(client):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 200
-    data = res.json()
-    assert data.get("username") == "TRSTDEV"
-    assert data.get("authenticated") is True
+    assert body["access_token"] and body["role"] == "superadmin"
 
 
-def test_session_cookie_authenticates_protected_endpoint(client):
-    """Cookie sesi sap_session dapat digunakan untuk autentikasi endpoint terlindungi."""
-    login_res = client.post(
-        "/api/auth/login",
-        json={"username": "TRSTDEV", "password": settings.bootstrap_admin_password},
-    )
-    assert login_res.status_code == 200
-    cookie_header = login_res.headers.get("set-cookie", "")
-    # Ambil nilai cookie sap_session
-    cookie_val = None
-    for part in cookie_header.split(";"):
-        if part.strip().startswith("sap_session="):
-            cookie_val = part.strip().split("=", 1)[1]
-            break
-
-    assert cookie_val is not None
-    res = client.get(
-        "/api/auth/session",
-        headers={"Cookie": f"sap_session={cookie_val}"},
-    )
-    assert res.status_code == 200
-    data = res.json()
-    assert data.get("username") == "TRSTDEV"
-    assert data.get("authenticated") is True
+def test_password_stored_as_bcrypt_hash(db):
+    with db.get_engine().connect() as conn:
+        row = conn.execute(
+            text("SELECT password, password_hash FROM ai_assistant_dev.users WHERE username = :u"),
+            {"u": ADMIN_USER},
+        ).fetchone()
+    assert row.password_hash.startswith("$2b$")
+    assert not row.password
 
 
-def test_forged_session_cookie_rejected(client):
-    """Cookie sesi palsu atau rusak wajib ditolak dengan 401."""
-    client.cookies.clear()
-    res = client.get("/api/sessions", headers={"Cookie": "sap_session=bukan.token.valid"})
+def test_user_name_header_no_longer_authenticates(client):
+    """Identitas dulu diambil dari header yang dapat dipalsukan siapa pun."""
+    res = client.get("/api/admin/users", headers={"X-User-Name": ADMIN_USER})
     assert res.status_code == 401
 
 
