@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     # 1. INFRASTRUKTUR SERVER & DATABASE (Wajib di .env untuk Level Server)
     # ==============================================================================
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
-    auth_database_url: str = "postgresql://admin_rag:Trias123@192.168.1.162:5432/ai_auth"
 
     # --- Dashboard OIDC BFF ---
     # Autentikasi dilakukan via Dashboard OIDC; SAP bertindak sebagai BFF
@@ -42,11 +41,6 @@ class Settings(BaseSettings):
     session_secret: str = "sap-ai-assistant-enterprise-session-secret-abap-2026"
     session_expire_hours: int = 24
 
-    # --- Standalone Auth & JWT ---
-    jwt_secret: str = ""
-    jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 720
-    bootstrap_admin_password: str = "ChangeMe!2024"
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"
     guest_daily_limit: int = 1

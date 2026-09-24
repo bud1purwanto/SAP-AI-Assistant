@@ -17,9 +17,6 @@ from artifacts import get_artifact
 from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
     create_session_cookie,
-    decode_session_cookie,
-    generate_code_verifier,
-    generate_code_challenge,
     get_current_principal,
     get_current_user,
     get_current_user_optional,
@@ -31,13 +28,11 @@ from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
-    change_user_password,
     consume_guest_quota,
     attach_uploads_to_session,
     create_chat_session,
     ensure_user_exists,
     create_new_user,
-    reset_user_password_by_admin,
     clone_role,
     create_role,
     get_role_impact,
@@ -348,9 +343,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class ChangePasswordRequest(BaseModel):
-    old_password: str
-    new_password: str
 
 
 @app.post("/api/auth/login")
@@ -393,19 +385,6 @@ async def auth_login(req: LoginRequest, response: Response):
         "token_type": "bearer",
         "user": {**principal, "authenticated": True},
     }
-
-@app.post("/api/auth/change-password")
-@app.post("/api/change-password")
-async def auth_change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
-    """Mengubah password pengguna saat ini."""
-    if not req.new_password or len(req.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password baru minimal 8 karakter.")
-
-    res = change_user_password(user["username"], req.old_password, req.new_password)
-    if not res.get("success"):
-        raise HTTPException(status_code=400, detail=res.get("message", "Gagal mengubah password."))
-    return {"status": "success", "message": res.get("message")}
-
 
 @app.post("/api/auth/logout")
 async def auth_logout(response: Response):
@@ -1362,9 +1341,7 @@ class AdminUpdateUserRequest(BaseModel):
     role: Optional[str] = None
     roles: Optional[List[str]] = None
     assistant_persona: Optional[str] = None
-    password: Optional[str] = None
     full_name: Optional[str] = None
-    force_change_password: Optional[bool] = None
     division_code: Optional[str] = None
     job_level: Optional[str] = None
 
@@ -1400,12 +1377,10 @@ async def update_user_endpoint(
 
     res = update_user_by_admin(
         username=username,
-        password=req.password if req.password else None,
         role=req.role,
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
-        force_change_password=req.force_change_password,
         division_code=req.division_code,
         update_division=(req.division_code is not None),
         job_level=req.job_level,
@@ -1416,24 +1391,6 @@ async def update_user_endpoint(
     access_control.invalidate_effective_roles_cache(username)
     return res
 
-class AdminResetPasswordRequest(BaseModel):
-    new_password: str
-    force_change: bool = True
-
-
-@app.post("/api/admin/users/{username}/reset-password")
-async def reset_password_endpoint(
-    username: str,
-    req: AdminResetPasswordRequest,
-    admin: dict = Depends(require_superadmin),
-):
-    """Reset password user oleh Super Admin."""
-    if not req.new_password or len(req.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Password baru minimal 8 karakter.")
-    res = reset_user_password_by_admin(username, req.new_password, force_change=req.force_change)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
 
 
 @app.delete("/api/admin/users/{username}")

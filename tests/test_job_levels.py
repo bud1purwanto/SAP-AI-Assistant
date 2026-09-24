@@ -61,7 +61,6 @@ def test_user_job_level_crud(db):
     # Create user dengan job_level leader
     res = create_new_user(
         username=uname,
-        password="Password123!",
         role="user",
         full_name="User Leader Test",
         division_code="IT",
@@ -99,7 +98,6 @@ def test_user_job_level_crud(db):
     uname_default = "user_jl_default"
     res2 = create_new_user(
         username=uname_default,
-        password="Password123!",
         role="user",
     )
     assert res2["success"] is True

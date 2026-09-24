@@ -310,17 +310,6 @@ def init_db():
                 );
             """))
 
-            # 6. Seed User TRSTDEV (superadmin) jika belum ada
-            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
-            if not res_dev:
-                conn.execute(text("""
-                    INSERT INTO ai_assistant_dev.users (username, password_hash, role, assistant_persona)
-                    VALUES ('TRSTDEV', :pwd, 'superadmin', :persona)
-                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
-                logger.warning(
-                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
-                )
-
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
             res_sap = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
             if not res_sap or not res_sap.value:
@@ -428,229 +417,11 @@ def init_db():
             # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
             run_migrations(conn)
 
-            # Seed user TRSTDEV (superadmin) jika belum ada
-            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
-            if not res_dev:
-                from auth import hash_password
-                conn.execute(text("""
-                    INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona)
-                    VALUES ('TRSTDEV', :pwd, 'Super Administrator', 'superadmin', :persona)
-                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
-                conn.execute(text("""
-                    INSERT INTO ai_assistant_dev.user_roles (username, role)
-                    VALUES ('TRSTDEV', 'superadmin')
-                    ON CONFLICT (username, role) DO NOTHING
-                """))
-                logger.warning(
-                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
-                )
-
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant_dev' berhasil diinisialisasi.")
     except Exception as e:
         logger.error(f"Gagal inisialisasi database: {e}")
         raise
-
-
-def hash_scrypt_password(password: str) -> str:
-    """Buat password hash dengan format scrypt yang kompatibel dengan Dashboard MCP / ai_auth."""
-    import hashlib, os
-    salt = os.urandom(16)
-    derived = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,
-        n=16384,
-        r=8,
-        p=1,
-        maxmem=0,
-        dklen=64,
-    )
-    return f"scrypt$16384$8$1${salt.hex()}${derived.hex()}"
-
-
-def verify_scrypt_password(password: str, scrypt_hash: str) -> bool:
-    """Verifikasi password terhadap hash scrypt ai_auth (scrypt$16384$8$1$<salt_hex>$<derived_hex>)."""
-    import hashlib, hmac
-    try:
-        parts = scrypt_hash.split("$")
-        if len(parts) != 6 or parts[0] != "scrypt":
-            return False
-        n = int(parts[1])
-        r = int(parts[2])
-        p = int(parts[3])
-        salt = bytes.fromhex(parts[4])
-        expected = bytes.fromhex(parts[5])
-        derived = hashlib.scrypt(
-            password.encode("utf-8"),
-            salt=salt,
-            n=n,
-            r=r,
-            p=p,
-            maxmem=0,
-            dklen=len(expected),
-        )
-        return hmac.compare_digest(derived, expected)
-    except Exception as e:
-        logger.debug(f"verify_scrypt_password failed: {e}")
-        return False
-
-
-def sync_password_to_ai_auth(username: str, plain_password: str) -> bool:
-    """Sinkronkan password ke database terpusat ai_auth (PostgreSQL) menggunakan format scrypt dan cabut active refresh_tokens."""
-    import psycopg
-    from config import get_settings
-
-    uname_clean = (username or "").strip()
-    if not uname_clean or not plain_password:
-        return False
-
-    auth_db_url = get_settings().auth_database_url
-    if not auth_db_url:
-        return False
-
-    try:
-        scrypt_hash = hash_scrypt_password(plain_password)
-        with psycopg.connect(auth_db_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE users
-                    SET password_hash = %s, updated_at = NOW()
-                    WHERE LOWER(username) = LOWER(%s)
-                    RETURNING id
-                    """,
-                    (scrypt_hash, uname_clean),
-                )
-                row = cur.fetchone()
-                if row:
-                    user_id = row[0]
-                    cur.execute(
-                        """
-                        UPDATE refresh_tokens
-                        SET revoked_at = NOW()
-                        WHERE user_id = %s AND revoked_at IS NULL
-                        """,
-                        (user_id,),
-                    )
-            conn.commit()
-            logger.info(f"Password user '{uname_clean}' berhasil disinkronkan ke ai_auth.")
-            return True
-    except Exception as e:
-        logger.warning(f"Gagal sinkronisasi password ke ai_auth untuk user '{uname_clean}': {e}")
-        return False
-
-
-def authenticate_user(username: str, password: str):
-    """Verifikasi login user (username case-insensitive).
-    Password diverifikasi terhadap hash bcrypt atau database terpusat ai_auth.
-    Instalasi lama yang masih menyimpan plaintext akan otomatis di-upgrade ke hash.
-    """
-    uname_clean = (username or "").strip()
-    pwd_clean = (password or "").strip()
-    if not uname_clean or not pwd_clean:
-        return None
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
-                       u.division_code, d.name AS division_name, u.job_level
-                FROM ai_assistant_dev.users u
-                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
-                WHERE LOWER(u.username) = LOWER(:u)
-            """), {"u": uname_clean}).fetchone()
-
-            from auth import hash_password, verify_password, is_bcrypt_hash
-            authenticated = False
-
-            if is_bcrypt_hash(stored_hash):
-                authenticated = verify_password(pwd_clean, stored_hash)
-            elif row.password:
-                # Kredensial warisan berformat plaintext.
-                authenticated = row.password == pwd_clean
-                if authenticated:
-                    conn.execute(text("""
-                        UPDATE ai_assistant_dev.users
-                        SET password_hash = :h, password = NULL
-                        WHERE LOWER(username) = LOWER(:u)
-                    """), {"h": hash_password(pwd_clean), "u": uname_clean})
-                    conn.commit()
-                    logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
-
-            if authenticated:
-                role_rows = conn.execute(text("""
-                    SELECT ur.role 
-                    FROM ai_assistant_dev.user_roles ur
-                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
-                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
-                    ORDER BY ur.created_at ASC
-                """), {"u": uname_clean}).fetchall()
-                roles = [r.role for r in role_rows if r.role]
-                if not roles:
-                    single = conn.execute(text("""
-                        SELECT u.role 
-                        FROM ai_assistant_dev.users u
-                        JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
-                        WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
-                    """), {"u": uname_clean}).scalar()
-                    roles = [single] if single else ["user"]
-
-                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
-                return {
-                    "username": row.username,
-                    "full_name": row.full_name or "",
-                    "role": primary_role,
-                    "roles": roles,
-                    "assistant_persona": row.assistant_persona or "",
-                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
-                    "division_code": row.division_code or None,
-                    "division_name": getattr(row, "division_name", None) or None,
-                    "job_level": getattr(row, "job_level", None) or "staff",
-                }
-    except Exception as e:
-        logger.error(f"Error authenticate_user: {e}")
-
-    return None
-
-
-def change_user_password(username: str, old_password: str, new_password: str):
-    """Ubah password user yang sedang login."""
-    if not new_password or len(new_password) < 8:
-        return {"success": False, "message": "Password baru minimal 8 karakter."}
-
-    uname_clean = (username or "").strip()
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT password, password_hash, force_change_password FROM ai_assistant_dev.users
-                WHERE LOWER(username) = LOWER(:u)
-            """), {"u": uname_clean}).fetchone()
-
-            if not row:
-                return {"success": False, "message": "User tidak ditemukan."}
-
-            from auth import hash_password, verify_password, is_bcrypt_hash
-            if row.password_hash and is_bcrypt_hash(row.password_hash):
-                valid_old = verify_password(old_password, row.password_hash)
-            else:
-                valid_old = bool(row.password) and row.password == old_password
-
-            if not valid_old:
-                return {"success": False, "message": "Password lama salah."}
-
-            conn.execute(text("""
-                UPDATE ai_assistant_dev.users
-                SET password_hash = :new_h, password = NULL, force_change_password = FALSE
-                WHERE LOWER(username) = LOWER(:u)
-            """), {"new_h": hash_password(new_password), "u": uname_clean})
-            conn.commit()
-            sync_password_to_ai_auth(uname_clean, new_password)
-            return {"success": True, "message": "Password berhasil diperbarui."}
-    except Exception as e:
-        logger.error(f"Error change_user_password: {e}")
-        return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
 
 
 def get_user_roles(username: str, active_only: bool = True) -> list:
@@ -753,7 +524,7 @@ def get_user_by_username(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                SELECT u.username, u.full_name, u.role, u.assistant_persona,
                        u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant_dev.users u
                 LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
@@ -784,7 +555,6 @@ def get_user_by_username(username: str):
                     "role": primary_role,
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or "",
-                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
                     "job_level": getattr(row, "job_level", None) or "staff",
@@ -1959,7 +1729,7 @@ def list_all_users():
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                SELECT u.username, u.full_name, u.role, u.assistant_persona,
                        u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant_dev.users u
                 LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
@@ -1986,7 +1756,6 @@ def list_all_users():
                     "role": r.role,
                     "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
                     "assistant_persona": r.assistant_persona or "",
-                    "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                     "division_code": r.division_code or None,
                     "division_name": getattr(r, "division_name", None) or None,
                     "job_level": getattr(r, "job_level", None) or "staff",
@@ -1998,13 +1767,12 @@ def list_all_users():
         return []
 
 def create_new_user(username: str, password: str = None, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
+    # deprecated: password & force_change_password ignored post-dashboard-mcp cutover
     """Buat user baru di database ai_assistant_dev.users."""
     uname_clean = (username or "").strip()
     if not uname_clean:
         return {"success": False, "message": "Username tidak boleh kosong."}
 
-    from auth import hash_password
-    pwd_hash = hash_password(password) if password else None
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -2027,10 +1795,10 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
                 jl_clean = "staff"
 
             conn.execute(text("""
-                INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
-                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc, :jl)
-            """), {"u": uname_clean, "p": pwd_hash, "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona or "", "fcp": force_change_password,
+                INSERT INTO ai_assistant_dev.users (username, full_name, role, assistant_persona, division_code, job_level)
+                VALUES (:u, :fn, :r, :persona, :dc, :jl)
+            """), {"u": uname_clean, "fn": (full_name or "").strip(),
+                   "r": primary_role, "persona": persona or "",
                    "dc": div_clean, "jl": jl_clean})
             for r in clean_roles:
                 conn.execute(text("""
@@ -2040,45 +1808,12 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
                 """), {"u": uname_clean, "r": r})
 
             conn.commit()
-            if password:
-                sync_password_to_ai_auth(uname_clean, password)
             return {"success": True, "message": f"User '{uname_clean}' berhasil dibuat."}
     except Exception as e:
         logger.error(f"Error create_new_user: {e}")
         return {"success": False, "message": str(e)}
 
 
-def reset_user_password_by_admin(username: str, new_password: str, force_change: bool = True) -> dict:
-    """Admin mereset password pengguna dan mengaktifkan status force_change_password (pending reset)."""
-    if not new_password or len(new_password) < 8:
-        return {"success": False, "message": "Password baru minimal 8 karakter."}
-    uname_clean = (username or "").strip()
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(
-                text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
-                {"u": username.strip()},
-            ).fetchone()
-            if not existing:
-                return {"success": False, "message": "User tidak ditemukan."}
-
-            from auth import hash_password
-            conn.execute(text("""
-                UPDATE ai_assistant_dev.users
-                SET password_hash = :p, password = NULL, force_change_password = :fcp
-                WHERE LOWER(username) = LOWER(:u)
-            """), {
-                "u": uname_clean,
-                "p": hash_password(new_password),
-                "fcp": force_change,
-            })
-            conn.commit()
-            sync_password_to_ai_auth(uname_clean, new_password)
-            return {"success": True, "message": f"Password user '{username}' berhasil direset."}
-    except Exception as e:
-        logger.error(f"Error reset_user_password_by_admin: {e}")
-        return {"success": False, "message": str(e)}
 
 def ensure_user_exists(username: str, role: str = "user", roles: list = None, full_name: str = ""):
     """Pastikan user dari Dashboard OIDC ada di database lokal ai_assistant_dev.users.
@@ -2139,7 +1874,8 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                          full_name: str = None, roles: list = None, force_change_password: bool = None,
                          division_code: str = None, update_division: bool = False,
                          job_level: str = None, update_job_level: bool = False):
-    """Admin mengupdate data user (role, roles, persona, division, job_level, dan optional reset password)."""
+    # deprecated: password & force_change_password ignored post-dashboard-mcp cutover
+    """Admin mengupdate data user (role, roles, persona, division, job_level)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -2198,15 +1934,6 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                     jl_clean = "staff"
                 updates.append("job_level = :jl")
                 params["jl"] = jl_clean
-            if password is not None and password.strip():
-                if len(password.strip()) < 8:
-                    return {"success": False, "message": "Password minimal 8 karakter."}
-                from auth import hash_password
-                updates.append("password_hash = :pwd, password = NULL")
-                params["pwd"] = hash_password(password.strip())
-            if force_change_password is not None:
-                updates.append("force_change_password = :fcp")
-                params["fcp"] = force_change_password
             if updates:
                 sql = f"UPDATE ai_assistant_dev.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
