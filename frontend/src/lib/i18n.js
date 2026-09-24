@@ -269,6 +269,10 @@ export const TRANSLATIONS = {
     'settings.sapUpdatedSuccess': "SAP credentials for '{target}' updated successfully.",
     'settings.sapSaveFailed': 'Failed to save SAP credentials.',
     'settings.sapLoadingServers': 'Loading available SAP servers...',
+    'sap.bindRequired': 'SAP credentials required. Go to Settings > SAP Credentials to set up your account.',
+    'sap.tokenBound': 'SAP token successfully bound for {target}.',
+    'sap.tokenNotAvailable': 'Token binding not yet available. Credentials saved locally.',
+    'sap.bindingToken': 'Binding SAP token...',
 
     // Login Modal
     'login.title': 'Enterprise AI Assistant Login',
@@ -721,6 +725,10 @@ export const TRANSLATIONS = {
     'settings.sapUpdatedSuccess': "Kredensial SAP untuk '{target}' berhasil diperbarui.",
     'settings.sapSaveFailed': 'Gagal menyimpan kredensial SAP.',
     'settings.sapLoadingServers': 'Memuat daftar server SAP yang tersedia...',
+    'sap.bindRequired': 'Kredensial SAP diperlukan. Buka Pengaturan > Kredensial SAP untuk mengatur akun Anda.',
+    'sap.tokenBound': 'Token SAP berhasil diikat untuk {target}.',
+    'sap.tokenNotAvailable': 'Token binding belum tersedia. Kredensial disimpan secara lokal.',
+    'sap.bindingToken': 'Mengikat token SAP...',
 
     // Login Modal
     'login.title': 'Masuk Enterprise AI Assistant',

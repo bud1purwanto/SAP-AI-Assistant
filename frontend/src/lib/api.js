@@ -65,10 +65,19 @@ function connectionErrorMessage() {
 }
 
 export class ApiError extends Error {
-  constructor(message, status) {
-    super(message);
+  constructor(message, status, detail = null) {
+    super(typeof message === 'string' ? message : (message?.message || JSON.stringify(message)));
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail !== null ? detail : message;
+    if (typeof message === 'object' && message?.code) {
+      this.code = message.code;
+    } else if (typeof this.detail === 'string') {
+      try {
+        const obj = JSON.parse(this.detail);
+        if (obj?.code) this.code = obj.code;
+      } catch {}
+    }
   }
 }
 
@@ -252,6 +261,7 @@ export const api = {
   availableSapServers: () => apiFetch('/api/me/sap-credentials/available-servers'),
   saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
   testSapConnection: (payload) => apiFetch('/api/me/sap-credentials/test', { method: 'POST', body: payload }),
+  bindSapToken: (target) => apiFetch('/api/me/sap-credentials/bind-token', { method: 'POST', body: { target } }),
   deleteMySapCredential: (target) =>
     apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
 

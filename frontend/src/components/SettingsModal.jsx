@@ -11,6 +11,7 @@ import {
   Eye, 
   EyeOff, 
   Globe, 
+  Info,
   Loader2,
   Lock, 
   Save, 
@@ -25,7 +26,7 @@ import {
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 
-const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
+const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToast: parentShowToast }) => {
   const { language, setLanguage, t, languages } = useLanguage();
   const [activeTab, setActiveTab] = useState(initialTab || 'persona');
   const [config, setConfig] = useState({
@@ -71,6 +72,16 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
   const [sapCredMsg, setSapCredMsg] = useState({ type: '', text: '' });
   const [savingSapCred, setSavingSapCred] = useState(false);
 
+  const showToast = useCallback((message, type = 'info') => {
+    setSapCredMsg({
+      type: type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'),
+      text: message
+    });
+    if (typeof parentShowToast === 'function') {
+      parentShowToast(message, type);
+    }
+  }, [parentShowToast]);
+
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (targetDropdownRef.current && !targetDropdownRef.current.contains(e.target)) {
@@ -111,7 +122,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       const currentRole = user?.role || 'user';
       setUserRole(currentRole);
       setSaveStatus('');
-      setPassMessage({ type: '', text: '' });
       setSapCredMsg({ type: '', text: '' });
       setTestResult(null);
       setIsEditMode(false);
@@ -279,6 +289,19 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       setIsEditMode(false);
       setEditingTarget(null);
       setTestResult(null);
+
+      // After credential saved successfully, attempt token binding
+      try {
+        const bindResult = await api.bindSapToken(sapTarget);
+        if (bindResult.token_bound) {
+          showToast(t('sap.tokenBound').replace('{target}', sapTarget), 'success');
+        } else {
+          showToast(t('sap.tokenNotAvailable'), 'info');
+        }
+      } catch (bindErr) {
+        console.warn('Token binding failed, credentials saved:', bindErr);
+        showToast(t('sap.tokenNotAvailable'), 'info');
+      }
 
       const updated = await api.mySapCredentials();
       setSapCreds(Array.isArray(updated) ? updated : []);
@@ -516,9 +539,17 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                 <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
                   sapCredMsg.type === 'success'
                     ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : sapCredMsg.type === 'info'
+                    ? 'bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300'
                     : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400'
                 }`}>
-                  {sapCredMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  {sapCredMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : sapCredMsg.type === 'info' ? (
+                    <Info className="w-4 h-4 shrink-0 text-sky-500 dark:text-sky-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  )}
                   <span className="font-medium">{sapCredMsg.text}</span>
                 </div>
               )}

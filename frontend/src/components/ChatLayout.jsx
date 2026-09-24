@@ -157,6 +157,29 @@ const ChatLayout = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('persona');
+  const [toast, setToast] = useState(null);
+
+  const openSettings = useCallback((tab = 'persona') => {
+    setSettingsTab(tab === 'sap' ? 'sapCreds' : tab);
+    setIsSettingsOpen(true);
+  }, []);
+
+  const showToast = useCallback((message, type = 'info', options = {}) => {
+    setToast({
+      message,
+      type,
+      action: options?.action,
+      id: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
@@ -1053,6 +1076,20 @@ const ChatLayout = () => {
         }));
         return;
       }
+      if (err?.code === 'NEED_SAP_CREDENTIAL' || err?.detail?.includes?.('NEED_SAP_CREDENTIAL') || err?.message?.includes?.('NEED_SAP_CREDENTIAL')) {
+        setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
+        let parsed = err;
+        try {
+          parsed = typeof err.detail === 'string' ? JSON.parse(err.detail) : (typeof err.message === 'string' && err.message.includes('NEED_SAP_CREDENTIAL') ? JSON.parse(err.message) : err);
+        } catch {
+          parsed = err;
+        }
+        showToast(parsed?.message || t('sap.bindRequired'), 'warning', {
+          action: { label: t('settings.title'), onClick: () => openSettings('sap') }
+        });
+        return; // Don't show generic error
+      }
+
       // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
       // Pengguna yang sudah masuk tidak dibantu modal login — kuotanya yang
       // habis, bukan sesinya. Angka pada banner disegarkan supaya cocok.
@@ -1623,8 +1660,7 @@ const ChatLayout = () => {
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
-                        setSettingsTab('persona');
-                        setIsSettingsOpen(true);
+                        openSettings('persona');
                       }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
@@ -1638,8 +1674,7 @@ const ChatLayout = () => {
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
-                        setSettingsTab('sapCreds');
-                        setIsSettingsOpen(true);
+                        openSettings('sapCreds');
                       }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
@@ -2322,6 +2357,7 @@ const ChatLayout = () => {
         onClose={() => setIsSettingsOpen(false)}
         user={user}
         initialTab={settingsTab}
+        showToast={showToast}
       />
 
       <ScheduledTasksModal
@@ -2369,6 +2405,47 @@ const ChatLayout = () => {
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          role="alert"
+          className={`fixed bottom-5 right-5 z-50 max-w-md p-4 rounded-2xl shadow-xl border flex items-start gap-3 transition-all animate-fadeIn ${
+            toast.type === 'warning'
+              ? 'bg-amber-50 dark:bg-amber-950/90 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+              : toast.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+              : toast.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/90 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+              : 'bg-surface border-line text-content shadow-lg'
+          }`}
+        >
+          <div className="flex-1 text-xs font-medium space-y-2">
+            <p className="leading-relaxed">{toast.message}</p>
+            {toast.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  const cb = toast.action.onClick;
+                  setToast(null);
+                  cb?.();
+                }}
+                className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-colors cursor-pointer"
+              >
+                {toast.action.label}
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="p-1 text-content-muted hover:text-content cursor-pointer shrink-0"
+            aria-label={t('common.close')}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
