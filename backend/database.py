@@ -843,8 +843,7 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             query = """
-                SELECT id, name, description, url, transport_type, auth_token, headers, 
-                       icon, is_system, enabled, display_order, created_at, updated_at
+                SELECT id, name, url, enabled, display_order
                 FROM ai_assistant_dev.mcp_servers
             """
             params = {}
@@ -858,17 +857,9 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
                 servers.append({
                     "id": r.id,
                     "name": r.name,
-                    "description": r.description or "",
                     "url": r.url,
-                    "transport_type": r.transport_type or "http",
-                    "auth_token": r.auth_token or "",
-                    "headers": r.headers if isinstance(r.headers, dict) else {},
-                    "icon": r.icon or "Server",
-                    "is_system": bool(r.is_system),
                     "enabled": bool(r.enabled),
                     "display_order": r.display_order or 0,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
-                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 })
             return servers
     except Exception as e:
@@ -885,8 +876,7 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                SELECT id, name, description, url, transport_type, auth_token, headers,
-                       icon, is_system, enabled, display_order, created_at, updated_at
+                SELECT id, name, url, enabled, display_order
                 FROM ai_assistant_dev.mcp_servers
                 WHERE LOWER(id) = LOWER(:id)
             """), {"id": sid}).fetchone()
@@ -895,20 +885,44 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
             return {
                 "id": r.id,
                 "name": r.name,
-                "description": r.description or "",
                 "url": r.url,
-                "transport_type": r.transport_type or "http",
-                "auth_token": r.auth_token or "",
-                "headers": r.headers if isinstance(r.headers, dict) else {},
-                "icon": r.icon or "Server",
-                "is_system": bool(r.is_system),
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
     except Exception as e:
         logger.error(f"Error get_mcp_server: {e}")
+        return None
+
+
+def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True) -> Optional[dict]:
+    """Menyimpan atau memperbarui server MCP (name, url, enabled)."""
+    sid = (sid or "").strip().lower()
+    name = (name or "").strip()
+    url = (url or "").strip()
+    if not sid or not name or not url:
+        return None
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT id, display_order FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            if existing:
+                conn.execute(text("""
+                    UPDATE ai_assistant_dev.mcp_servers
+                    SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                    WHERE LOWER(id) = LOWER(:id)
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled)})
+                order = existing.display_order or 0
+            else:
+                max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant_dev.mcp_servers")).scalar() or 0
+                order = max_order + 1
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.mcp_servers (id, name, url, enabled, display_order)
+                    VALUES (:id, :name, :url, :enabled, :order)
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "order": order})
+            conn.commit()
+            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order}
+    except Exception as e:
+        logger.error(f"Error save_mcp_server: {e}")
         return None
 
 
@@ -917,158 +931,69 @@ def create_mcp_server(data: dict) -> dict:
     sid = (data.get("id") or "").strip().lower()
     name = (data.get("name") or "").strip()
     url = (data.get("url") or "").strip()
+    enabled = bool(data.get("enabled", True))
     if not sid:
         return {"success": False, "message": "ID/Key server MCP wajib diisi."}
     if not name:
         return {"success": False, "message": "Nama server MCP wajib diisi."}
     if not url:
         return {"success": False, "message": "URL endpoint MCP wajib diisi."}
+    res = save_mcp_server(sid=sid, name=name, url=url, enabled=enabled)
+    if res:
+        return {"success": True, "message": f"Server MCP '{name}' berhasil ditambahkan.", "id": sid, "server": res}
+    return {"success": False, "message": "Gagal menambahkan server MCP."}
 
-    desc = data.get("description", "").strip()
-    transport = (data.get("transport_type") or "http").strip().lower()
-    token = data.get("auth_token", "").strip() if data.get("auth_token") else ""
-    headers = data.get("headers", {})
-    if not isinstance(headers, dict):
-        headers = {}
-    icon = data.get("icon", "Server")
-    enabled = bool(data.get("enabled", True))
 
+def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[str] = None, enabled: Optional[bool] = None, **kwargs) -> Optional[dict]:
+    """Memperbarui informasi server MCP (name, url, enabled). Mendukung pemanggilan argumen atau dict (backward-compat)."""
+    sid = (server_id or "").strip().lower()
+    if not sid:
+        return None
+    # Handle dictionary passed as name (backward-compat: update_mcp_server(sid, {...}))
+    if isinstance(name, dict):
+        data = name
+        name = data.get("name")
+        url = data.get("url")
+        enabled = data.get("enabled")
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT id, name, url, enabled, display_order FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            if not existing:
+                return None
+            new_name = name.strip() if name is not None else existing.name
+            new_url = url.strip() if url is not None else existing.url
+            new_enabled = bool(enabled) if enabled is not None else bool(existing.enabled)
+            conn.execute(text("""
+                UPDATE ai_assistant_dev.mcp_servers
+                SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                WHERE LOWER(id) = LOWER(:id)
+            """), {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled})
+            conn.commit()
+            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0}
+    except Exception as e:
+        logger.error(f"Error update_mcp_server: {e}")
+        return None
+
+
+def delete_mcp_server(server_id: str) -> bool:
+    """Menghapus server MCP."""
+    sid = (server_id or "").strip().lower()
+    if not sid:
+        return False
     try:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(text("SELECT id FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
-            if existing:
-                return {"success": False, "message": f"Server MCP dengan ID '{sid}' sudah ada."}
-
-            max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant_dev.mcp_servers")).scalar() or 0
-
-            conn.execute(text("""
-                INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, headers, icon, is_system, enabled, display_order)
-                VALUES (:id, :name, :desc, :url, :transport, :token, :headers, :icon, FALSE, :enabled, :order)
-            """), {
-                "id": sid, "name": name, "desc": desc, "url": url, "transport": transport,
-                "token": token, "headers": json.dumps(headers), "icon": icon, "enabled": enabled,
-                "order": max_order + 1
-            })
-            conn.commit()
-            return {"success": True, "message": f"Server MCP '{name}' berhasil ditambahkan.", "id": sid}
-    except Exception as e:
-        logger.error(f"Error create_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal menambahkan server MCP: {str(e)}"}
-
-
-def update_mcp_server(server_id: str, data: dict) -> dict:
-    """Memperbarui informasi server MCP (nama, deskripsi, url, token, status)."""
-    sid = (server_id or "").strip().lower()
-    if not sid:
-        return {"success": False, "message": "ID server tidak valid."}
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if not existing:
-                return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
-
-            fields = []
-            params = {"id": sid}
-
-            if "name" in data and data["name"] is not None:
-                fields.append("name = :name")
-                params["name"] = data["name"].strip()
-
-            if "description" in data and data["description"] is not None:
-                fields.append("description = :description")
-                params["description"] = data["description"].strip()
-
-            if "url" in data and data["url"] is not None:
-                fields.append("url = :url")
-                params["url"] = data["url"].strip()
-
-            if "transport_type" in data and data["transport_type"] is not None:
-                fields.append("transport_type = :transport_type")
-                params["transport_type"] = data["transport_type"].strip().lower()
-
-            if "auth_token" in data and data["auth_token"] is not None:
-                fields.append("auth_token = :auth_token")
-                params["auth_token"] = data["auth_token"].strip()
-
-            if "headers" in data and data["headers"] is not None:
-                fields.append("headers = :headers")
-                h = data["headers"] if isinstance(data["headers"], dict) else {}
-                params["headers"] = json.dumps(h)
-
-            if "icon" in data and data["icon"] is not None:
-                fields.append("icon = :icon")
-                params["icon"] = data["icon"]
-
-            if "enabled" in data and data["enabled"] is not None:
-                fields.append("enabled = :enabled")
-                params["enabled"] = bool(data["enabled"])
-
-            if "display_order" in data and data["display_order"] is not None:
-                fields.append("display_order = :display_order")
-                params["display_order"] = int(data["display_order"])
-
-            if not fields:
-                return {"success": True, "message": "Tidak ada perubahan."}
-
-            fields.append("updated_at = CURRENT_TIMESTAMP")
-            set_clause = ", ".join(fields)
-            conn.execute(text(f"UPDATE ai_assistant_dev.mcp_servers SET {set_clause} WHERE LOWER(id) = LOWER(:id)"), params)
-            conn.commit()
-
-            return {"success": True, "message": f"Server MCP '{sid}' berhasil diperbarui."}
-    except Exception as e:
-        logger.error(f"Error update_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal memperbarui server MCP: {str(e)}"}
-
-
-def delete_mcp_server(server_id: str) -> dict:
-    """Menghapus server MCP kustom."""
-    sid = (server_id or "").strip().lower()
-    if not sid:
-        return {"success": False, "message": "ID server tidak valid."}
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, name, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
-            if not existing:
-                return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
-
-            if existing.is_system:
-                return {"success": False, "message": f"Server sistem bawaan '{existing.name}' tidak dapat dihapus. Anda dapat menonaktifkannya melalui toggle status."}
-
+                return False
             conn.execute(text("DELETE FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid})
             conn.commit()
-            return {"success": True, "message": f"Server MCP '{existing.name}' berhasil dihapus."}
+            return True
     except Exception as e:
         logger.error(f"Error delete_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal menghapus server MCP: {str(e)}"}
+        return False
 
-
-def reset_mcp_server_to_default(server_id: str) -> dict:
-    """Mengembalikan server MCP sistem ke URL gateway terpusat."""
-    sid = (server_id or "").strip().lower()
-    defaults = {
-        "sap": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SAP ERP Gateway", "desc": "Live Data, Tabel & ABAP Code SAP"},
-        "rag": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "RAG Knowledge Gateway", "desc": "Vector DB, SOP & Tech Docs"},
-        "sql": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "SQL & Database Gateway", "desc": "Relational SQL & Query Tools"},
-        "email": {"url": settings.dashboard_mcp_gateway_url, "token": "", "name": "Email Gateway", "desc": "Email, Calendar & Mail Archive Gateway"},
-    }
-    if sid not in defaults:
-        return {"success": False, "message": f"Server '{sid}' bukan server sistem bawaan."}
-
-    d = defaults[sid]
-    return update_mcp_server(sid, {
-        "url": d["url"],
-        "auth_token": d["token"],
-        "name": d["name"],
-        "description": d["desc"],
-        "enabled": True,
-        "transport_type": "http"
-    })
 # --- CHAT SESSION & HISTORY FUNCTIONS ---
 
 def create_chat_session(username: str, title: str = "Percakapan Baru"):

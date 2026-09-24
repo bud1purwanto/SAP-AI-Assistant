@@ -252,54 +252,27 @@ class MCPManager:
         self._cache_ttl: float = 10.0
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
-        """Resolve the Dashboard MCP Gateway URL for the named connector.
-
-        All MCP traffic is routed exclusively through ``settings.dashboard_mcp_gateway_url``.
-        The Dashboard gateway performs upstream routing and MCP authorization; SAP no
-        longer stores or forwards direct upstream URLs or static bearer tokens such as
-        ``Trias123``.
-
-        Aggregate connectors (sap/rag/sql/email) hit the gateway base; named routes use
-        ``{gateway}/{name}`` only when the Dashboard grants that server.
-        """
+        """Resolve MCP server URL: local DB first, gateway fallback."""
+        from database import list_mcp_servers
+        # Check local registry
+        servers = list_mcp_servers(enabled_only=True)
+        for s in servers:
+            if s["id"] == name or s["name"] == name:
+                return s["url"].rstrip("/"), {}
+        # Fallback to gateway for unregistered connectors
         gateway_base = (settings.dashboard_mcp_gateway_url or "").rstrip("/")
         if not gateway_base:
-            raise RuntimeError(
-                "dashboard_mcp_gateway_url is not configured — SAP cannot route MCP traffic."
-            )
-        # Aggregate connectors are served at the gateway base; the gateway fans out
-        # to the appropriate upstream based on the JSON-RPC method/tool name.
-        # Named (custom) connectors are addressed at {gateway}/{name}.
+            raise RuntimeError("No MCP URL found for '{}' and gateway not configured.".format(name))
         if name in ("sap", "rag", "sql", "email"):
-            url = gateway_base
-        else:
-            url = f"{gateway_base}/{name}"
-        # No static upstream auth token — the Dashboard gateway authenticates the
-        # SAP backend via a service assertion / shared-secret header (see get_client).
-        headers: dict = {}
-        return url, headers
+            return gateway_base, {}
+        return f"{gateway_base}/{name}", {}
 
     def get_client(self, name: str) -> StreamableHttpClient:
-        """Return a per-user Dashboard Gateway client with a required bearer token."""
+        """Per-user MCP client authenticated with user's OIDC Bearer token."""
         from auth import get_dashboard_access_token
-
         access_token = get_dashboard_access_token()
-        # If access_token is an internal local JWT (HS256 from local auth),
-        # the Dashboard Gateway expects RS256 or an ApiClient token.
-        # Fall back to dashboard_mcp_api_token if configured.
-        if access_token and access_token.count(".") == 2:
-            try:
-                import jwt as _jwt
-                unverified = _jwt.get_unverified_header(access_token)
-                if unverified.get("alg") != "RS256" and getattr(settings, "dashboard_mcp_api_token", None):
-                    access_token = settings.dashboard_mcp_api_token
-            except Exception:
-                pass
-
-        if not access_token and getattr(settings, "dashboard_mcp_api_token", None):
-            access_token = settings.dashboard_mcp_api_token
         if not access_token:
-            raise PermissionError("Dashboard access token is required for MCP gateway requests.")
+            raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
         gw_headers["Authorization"] = f"Bearer {access_token}"

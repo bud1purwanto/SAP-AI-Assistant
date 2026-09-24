@@ -2006,16 +2006,7 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
 
 
 
-# --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS (DECOMMISSIONED) ---
-#
-# MCP upstream configuration is now managed exclusively by the Dashboard MCP
-# Gateway. SAP no longer stores or mutates upstream MCP server URLs/tokens; the
-# endpoints below return 410 Gone and direct admins to the Dashboard.
-_MCP_DEPRECATED_DETAIL = (
-    "MCP server configuration has moved to the Dashboard MCP Gateway. "
-    "Configure upstream MCP servers, tokens, and access policies there."
-)
-
+# --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS ---
 
 @app.get("/api/admin/mcp/servers")
 async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmin)):
@@ -2023,26 +2014,29 @@ async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmi
     st = await mcp_manager.check_servers_status()
     return {"servers": list(st.values()) if isinstance(st, dict) else []}
 
+
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
+    result = database.save_mcp_server(sid=req.name.lower().replace(" ", "-"), name=req.name, url=req.url, enabled=getattr(req, "enabled", True))
+    if not result:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan server MCP.")
+    return {"success": True, "server": result}
 
 
 @app.put("/api/admin/mcp/servers/{server_id}")
 async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
+    result = database.update_mcp_server(server_id, name=getattr(req, "name", None), url=getattr(req, "url", None), enabled=getattr(req, "enabled", None))
+    if not result:
+        raise HTTPException(status_code=404, detail="Server MCP tidak ditemukan.")
+    return {"success": True, "server": result}
 
 
 @app.delete("/api/admin/mcp/servers/{server_id}")
 async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
-
-
-@app.post("/api/admin/mcp/servers/{server_id}/reset")
-async def reset_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    raise HTTPException(status_code=410, detail=_MCP_DEPRECATED_DETAIL)
-
-
+    ok = database.delete_mcp_server(server_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Server MCP tidak ditemukan.")
+    return {"success": True}
 @app.post("/api/admin/mcp/test")
 async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admin: dict = Depends(require_superadmin)):
     """Uji konektivitas real-time ke gateway MCP (latensi ms, status online, dan pendeteksian tools)."""
