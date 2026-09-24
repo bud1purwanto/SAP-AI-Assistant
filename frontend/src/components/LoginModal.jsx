@@ -59,7 +59,7 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
     e.preventDefault();
     const cleanUser = username.trim();
     if (!cleanUser || !password) {
-      setError(t('login.failed') || 'Username dan password wajib diisi.');
+      setError(t('login.required'));
       return;
     }
 
@@ -85,10 +85,14 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
           window.location.reload();
         }
       } else {
-        setError(t('login.failed') || 'Login gagal. Periksa username dan password.');
+        setError(t('login.failed'));
       }
     } catch (err) {
-      setError(err?.message || t('login.failed') || 'Login gagal.');
+      const status = err?.response?.status ?? err?.status;
+      let msgKey = 'login.failed';
+      if (status === 400) msgKey = 'login.required';
+      else if (status === 502) msgKey = 'login.dashboard_unreachable';
+      setError(t(msgKey));
     } finally {
       setIsLoading(false);
     }

@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, KeyRound, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
 import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
 import ConfirmModal from './ConfirmModal';
-import ForceChangePasswordModal from './ForceChangePasswordModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import ScheduledTasksModal from './ScheduledTasksModal';
@@ -706,7 +705,6 @@ const ChatLayout = () => {
                   role: data.role,
                   roles: data.roles || [data.role],
                   assistant_persona: data.assistant_persona,
-                  force_change_password: Boolean(data.force_change_password),
                 };
                 saveSession(data.access_token, userData);
                 
@@ -1176,14 +1174,6 @@ const ChatLayout = () => {
   };
 
 
-  const handleForcePasswordChanged = () => {
-    setUser((prev) => {
-      const updated = { ...prev, force_change_password: false };
-      saveSession(null, updated);
-      return updated;
-    });
-  };
-
   const handleLogout = () => {
     api.logout().catch(() => {});
     clearSession();
@@ -1641,21 +1631,6 @@ const ChatLayout = () => {
                     >
                       <Bot className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
                       <span className="truncate">{t('settings.tabPersona')}</span>
-                    </button>
-
-                    {/* Keamanan & Sandi */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        setSettingsTab('security');
-                        setIsSettingsOpen(true);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
-                      role="menuitem"
-                    >
-                      <KeyRound className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
-                      <span className="truncate">{t('settings.tabSecurity')}</span>
                     </button>
 
                     {/* SAP Login */}
@@ -2362,12 +2337,6 @@ const ChatLayout = () => {
         onRefreshModes={fetchModes}
       />
 
-      <ForceChangePasswordModal
-        isOpen={Boolean(user && user.role !== 'guest' && user.force_change_password)}
-        user={user}
-        onSuccess={handleForcePasswordChanged}
-        onLogout={handleLogout}
-      />
 
       {/* Confirmation Modal - Logout */}
       <ConfirmModal

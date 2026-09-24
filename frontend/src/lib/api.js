@@ -158,11 +158,6 @@ export const api = {
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),
-  changePassword: (oldPassword, newPassword) =>
-    apiFetch('/api/auth/change-password', {
-      method: 'POST',
-      body: { old_password: oldPassword, new_password: newPassword },
-    }),
 
   listSessions: () => apiFetch('/api/sessions'),
   createSession: (title) => apiFetch('/api/sessions', { method: 'POST', body: { title } }),
