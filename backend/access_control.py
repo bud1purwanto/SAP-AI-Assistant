@@ -370,41 +370,29 @@ def load_aliases_from_db(force_refresh: bool = False):
                 target_map[rk_lower] = rk_str
                 target_map[sub] = rk_str
 
-            if kind == "service" or prefix == "service":
-                _DYNAMIC_GENERAL_MAP[rk_lower] = rk_str
-                _DYNAMIC_GENERAL_MAP[sub] = rk_str
                 if label:
-                    _DYNAMIC_GENERAL_MAP[str(label).lower().strip()] = rk_str
-                continue
-
-            target_map = _DYNAMIC_SQL_MAP if (kind == "sql" or prefix == "sql") else _DYNAMIC_SAP_MAP
-
-            target_map[rk_lower] = rk_str
-            target_map[sub] = rk_str
-
-            if label:
-                lbl = str(label).lower().strip()
-                target_map[lbl] = rk_str
-                target_map[f"{prefix}:{lbl}"] = rk_str
-                target_map[lbl.replace("-", " ")] = rk_str
-                target_map[lbl.replace(" ", "-")] = rk_str
-                if "(" in lbl and ")" in lbl:
-                    main_part = lbl.split("(")[0].strip()
-                    target_map[main_part] = rk_str
-                    target_map[f"{prefix}:{main_part}"] = rk_str
-                    target_map[main_part.replace(" ", "-")] = rk_str
-                    sub_parts = lbl.split("(")[1].split(")")[0].split(",")
-                    for p in sub_parts:
-                        p_str = p.strip()
-                        if p_str:
-                            target_map[p_str] = rk_str
-                            target_map[f"{prefix}:{p_str}"] = rk_str
-                            target_map[p_str.replace(" ", "-")] = rk_str
-                            target_map[p_str.replace("-", " ")] = rk_str
-            if sid and (kind == "sap" or prefix == "sap"):
-                sid_lower = str(sid).lower().strip()
-                target_map[sid_lower] = rk_str
-                target_map[f"sap:{sid_lower}"] = rk_str
+                    lbl = str(label).lower().strip()
+                    target_map[lbl] = rk_str
+                    target_map[f"{prefix}:{lbl}"] = rk_str
+                    target_map[lbl.replace("-", " ")] = rk_str
+                    target_map[lbl.replace(" ", "-")] = rk_str
+                    if "(" in lbl and ")" in lbl:
+                        main_part = lbl.split("(")[0].strip()
+                        target_map[main_part] = rk_str
+                        target_map[f"{prefix}:{main_part}"] = rk_str
+                        target_map[main_part.replace(" ", "-")] = rk_str
+                        sub_parts = lbl.split("(")[1].split(")")[0].split(",")
+                        for p in sub_parts:
+                            p_str = p.strip()
+                            if p_str:
+                                target_map[p_str] = rk_str
+                                target_map[f"{prefix}:{p_str}"] = rk_str
+                                target_map[p_str.replace(" ", "-")] = rk_str
+                                target_map[p_str.replace("-", " ")] = rk_str
+                if sid and (kind == "sap" or prefix == "sap"):
+                    sid_lower = str(sid).lower().strip()
+                    target_map[sid_lower] = rk_str
+                    target_map[f"sap:{sid_lower}"] = rk_str
     except Exception as e:
         logger.warning(f"Gagal memuat alias dinamis dari live resources: {e}")
 
