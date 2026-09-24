@@ -453,6 +453,18 @@ export const TRANSLATIONS = {
     'common.success': 'Success',
     'common.processing': 'Processing…',
     'common.loading': 'Loading…',
+
+    // MCP Server Registry
+    'mcp.serverName': 'Server Name',
+    'mcp.serverUrl': 'Server URL',
+    'mcp.enabled': 'Enabled',
+    'mcp.addServer': 'Add MCP Server',
+    'mcp.editServer': 'Edit MCP Server',
+    'mcp.deleteConfirm': 'Delete this MCP server?',
+    'mcp.saved': 'MCP server saved.',
+    'mcp.deleted': 'MCP server deleted.',
+    'mcp.testSuccess': 'Connection successful.',
+    'mcp.testFailed': 'Connection failed.',
   },
 
   id: {
@@ -889,6 +901,18 @@ export const TRANSLATIONS = {
     'common.success': 'Berhasil',
     'common.processing': 'Memproses…',
     'common.loading': 'Memuat…',
+
+    // MCP Server Registry
+    'mcp.serverName': 'Nama Server',
+    'mcp.serverUrl': 'URL Server',
+    'mcp.enabled': 'Aktif',
+    'mcp.addServer': 'Tambah Server MCP',
+    'mcp.editServer': 'Edit Server MCP',
+    'mcp.deleteConfirm': 'Hapus server MCP ini?',
+    'mcp.saved': 'Server MCP disimpan.',
+    'mcp.deleted': 'Server MCP dihapus.',
+    'mcp.testSuccess': 'Koneksi berhasil.',
+    'mcp.testFailed': 'Koneksi gagal.',
   }
 };
 

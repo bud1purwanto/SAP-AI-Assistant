@@ -257,12 +257,10 @@ export const api = {
 
   // Dynamic MCP Servers
   adminMcpServers: () => apiFetch('/api/admin/mcp/servers'),
-  adminCreateMcpServer: (payload) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: payload }),
-  adminUpdateMcpServer: (id, payload) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+  adminCreateMcpServer: (data) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: data }),
+  adminUpdateMcpServer: (id, data) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: data }),
   adminDeleteMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  adminResetMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
-  adminTestMcpConnection: (payload) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: payload }),
-
+  adminTestMcpConnection: (data) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: data }),
   // Scheduled Tasks & Monitoring
   getScheduledTasks: () => apiFetch('/api/scheduled-tasks'),
   createScheduledTask: (payload) => apiFetch('/api/scheduled-tasks', { method: 'POST', body: payload }),
