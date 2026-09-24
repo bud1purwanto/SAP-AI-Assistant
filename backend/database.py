@@ -174,6 +174,18 @@ def init_db():
                 );
             """))
 
+            # 3c. Buat Tabel ai_assistant_dev.user_sap_tokens untuk Multi-User MCP SAP Bound Tokens
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_sap_tokens (
+                    username VARCHAR(50) NOT NULL,
+                    target VARCHAR(50) NOT NULL,
+                    encrypted_token TEXT NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (username, target)
+                );
+            """))
+
             # 4. Buat Tabel ai_assistant_dev.chat_sessions
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS ai_assistant_dev.chat_sessions (
@@ -3827,6 +3839,47 @@ def delete_user_sap_credential(username: str, target: str) -> bool:
         """), {"u": clean_user, "t": clean_target})
         conn.commit()
     return True
+
+
+def save_user_sap_token(username: str, target: str, token: str, expires_at=None) -> bool:
+    enc = encrypt_fernet(token)
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant_dev.user_sap_tokens (username, target, encrypted_token, expires_at, updated_at)
+            VALUES (:u, :t, :e, :exp, CURRENT_TIMESTAMP)
+            ON CONFLICT (username, target)
+            DO UPDATE SET encrypted_token = :e, expires_at = :exp, updated_at = CURRENT_TIMESTAMP
+        """), {"u": username, "t": target, "e": enc, "exp": expires_at})
+        conn.commit()
+    return True
+
+
+def get_user_sap_token(username: str, target: str) -> Optional[Dict[str, Any]]:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT encrypted_token, expires_at FROM ai_assistant_dev.user_sap_tokens
+            WHERE username = :u AND target = :t
+        """), {"u": username, "t": target}).fetchone()
+    if not row:
+        return None
+    enc_token = getattr(row, "encrypted_token", row[0])
+    exp_at = getattr(row, "expires_at", row[1])
+    token = decrypt_fernet(enc_token)
+    if not token:
+        return None
+    return {"token": token, "expires_at": exp_at}
+
+
+def delete_user_sap_token(username: str, target: str) -> bool:
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            DELETE FROM ai_assistant_dev.user_sap_tokens WHERE username = :u AND target = :t
+        """), {"u": username, "t": target})
+        conn.commit()
+    return result.rowcount > 0
 
 
 # ---------------------------------------------------------------------------

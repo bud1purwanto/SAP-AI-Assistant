@@ -13,6 +13,7 @@ from conversation import trim_history
 from models import ChatRequest, ChatResponse, SourceReference, UsageStats
 from config import settings
 
+from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 # Penanda yang membuat teks perlu dibersihkan sebelum ditampilkan. Selama
@@ -893,22 +894,54 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # Ambil kredensial SAP khusus pengguna ini jika ada untuk target SAP ini
     user_sap_credentials = None
     try:
-        from database import get_user_sap_credential, list_user_sap_credentials
+        from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+        from datetime import datetime, timezone
         target_to_lookup = sap_target or "default"
-        user_sap_credentials = get_user_sap_credential(username, target_to_lookup)
+        tok = get_user_sap_token(username, target_to_lookup)
+        if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+            user_sap_credentials = {"sap_token": tok["token"], "username": username}
+        else:
+            user_sap_credentials = get_user_sap_credential(username, target_to_lookup)
+            if user_sap_credentials:
+                user_sap_credentials["username"] = username
         if not user_sap_credentials and not sap_target:
             configured_targets = list_user_sap_credentials(username)
             if configured_targets:
                 first_target = configured_targets[0].get("target") or "default"
-                user_sap_credentials = get_user_sap_credential(username, first_target)
+                tok = get_user_sap_token(username, first_target)
+                if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                    user_sap_credentials = {"sap_token": tok["token"], "username": username}
+                else:
+                    user_sap_credentials = get_user_sap_credential(username, first_target)
+                    if user_sap_credentials:
+                        user_sap_credentials["username"] = username
                 sap_target = first_target
         if user_sap_credentials:
-            logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target or 'default'}' (user: {user_sap_credentials.get('sap_user')})")
+            logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target or 'default'}'")
     except Exception as ex:
         logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
     # Normalisasi user_role ke list roles
     roles_list = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
     roles_str_primary = roles_list[0] if roles_list else "user"
+
+    # Pre-tool SAP onboarding check
+    if target_srv.startswith("sap") or (sap_target and target_system == "sap"):
+        from database import get_user_sap_credential, get_user_sap_token
+        cred = get_user_sap_credential(username, target_srv)
+        tok = get_user_sap_token(username, target_srv)
+        if not cred and sap_target:
+            cred = get_user_sap_credential(username, sap_target)
+        if not tok and sap_target:
+            tok = get_user_sap_token(username, sap_target)
+        if not cred and not tok and user_sap_credentials:
+            cred = user_sap_credentials
+        if not cred and not tok:
+            # User has neither credential nor token for this SAP target
+            raise HTTPException(
+                status_code=428,  # Precondition Required
+                detail=json.dumps({"code": "NEED_SAP_CREDENTIAL", "target": target_srv,
+                                   "message": "Kredensial SAP diperlukan untuk target ini. Silakan hubungkan kredensial SAP Anda di menu Pengaturan."})
+            )
 
     try:
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
@@ -1602,7 +1635,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 t_name = text_tool_match.group(1)
                 t_args_str = text_tool_match.group(2)
                 try:
-                    import json
                     t_args = json.loads(t_args_str)
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
@@ -1613,19 +1645,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                             continue
                         rag_call_count += 1
                     if server_name == "sap":
-                        from database import get_user_sap_credential, list_user_sap_credentials
+                        from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+                        from datetime import datetime, timezone
                         active_target = sap_target or "default"
-                        active_creds = user_sap_credentials or get_user_sap_credential(username, active_target)
+                        active_creds = user_sap_credentials
+                        if not active_creds:
+                            tok = get_user_sap_token(username, active_target)
+                            if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                                active_creds = {"sap_token": tok["token"], "username": username}
+                            else:
+                                active_creds = get_user_sap_credential(username, active_target)
                         if not active_creds and not sap_target:
                             conf_targets = list_user_sap_credentials(username)
                             if conf_targets:
                                 first_tgt = conf_targets[0].get("target") or "default"
-                                active_creds = get_user_sap_credential(username, first_tgt)
+                                tok = get_user_sap_token(username, first_tgt)
+                                if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                                    active_creds = {"sap_token": tok["token"], "username": username}
+                                else:
+                                    active_creds = get_user_sap_credential(username, first_tgt)
                                 active_target = first_tgt
                                 user_sap_credentials = active_creds
                                 sap_target = active_target
 
-                        if not active_creds or not active_creds.get("sap_user") or not active_creds.get("sap_password"):
+                        has_auth = bool(active_creds and (active_creds.get("sap_token") or (active_creds.get("sap_user") and active_creds.get("sap_password"))))
+                        if not has_auth:
                             logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
                             messages.append(HumanMessage(
                                 content=(
@@ -1788,19 +1832,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 ))
                 continue
             if server_name == "sap":
-                from database import get_user_sap_credential, list_user_sap_credentials
+                from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+                from datetime import datetime, timezone
                 active_target = sap_target or "default"
-                active_creds = user_sap_credentials or get_user_sap_credential(username, active_target)
+                active_creds = user_sap_credentials
+                if not active_creds:
+                    tok = get_user_sap_token(username, active_target)
+                    if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                        active_creds = {"sap_token": tok["token"], "username": username}
+                    else:
+                        active_creds = get_user_sap_credential(username, active_target)
                 if not active_creds and not sap_target:
                     conf_targets = list_user_sap_credentials(username)
                     if conf_targets:
                         first_tgt = conf_targets[0].get("target") or "default"
-                        active_creds = get_user_sap_credential(username, first_tgt)
+                        tok = get_user_sap_token(username, first_tgt)
+                        if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                            active_creds = {"sap_token": tok["token"], "username": username}
+                        else:
+                            active_creds = get_user_sap_credential(username, first_tgt)
                         active_target = first_tgt
                         user_sap_credentials = active_creds
                         sap_target = active_target
 
-                if not active_creds or not active_creds.get("sap_user") or not active_creds.get("sap_password"):
+                has_auth = bool(active_creds and (active_creds.get("sap_token") or (active_creds.get("sap_user") and active_creds.get("sap_password"))))
+                if not has_auth:
                     logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
                     messages.append(ToolMessage(
                         content=(

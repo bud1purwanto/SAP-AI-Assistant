@@ -984,6 +984,20 @@ def _m0023_scheduled_task_leases(conn):
     """))
 
 
+def _m0024_user_sap_tokens(conn):
+    """Per-user SAP bound-token storage (token from dashboard-mcp)."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_sap_tokens (
+            username VARCHAR(50) NOT NULL,
+            target VARCHAR(50) NOT NULL,
+            encrypted_token TEXT NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, target)
+        );
+    """))
+
+
 
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
@@ -1009,6 +1023,7 @@ MIGRATIONS = [
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
     ("0023_scheduled_task_leases", _m0023_scheduled_task_leases),
+    ("0024_user_sap_tokens", _m0024_user_sap_tokens),
 ]
 
 
@@ -1049,6 +1064,7 @@ def _execute_identity_migration(conn, username_to_sub_map: dict):
         ("user_resource_access", "username"),
         ("user_roles", "username"),
         ("user_sap_credentials", "username"),
+        ("user_sap_tokens", "username"),
         ("scheduled_tasks", "user_id"),
         ("token_usage", "username"),
         ("request_log", "username"),
@@ -1080,6 +1096,7 @@ def _execute_identity_migration(conn, username_to_sub_map: dict):
         ("user_resource_access", "username"),
         ("user_roles", "username"),
         ("user_sap_credentials", "username"),
+        ("user_sap_tokens", "username"),
         ("scheduled_tasks", "user_id"),
         ("token_usage", "username"),
         ("request_log", "username"),
@@ -1110,6 +1127,7 @@ def _execute_identity_migration(conn, username_to_sub_map: dict):
             ("user_resource_access", "username"),
             ("user_roles", "username"),
             ("user_sap_credentials", "username"),
+            ("user_sap_tokens", "username"),
             ("scheduled_tasks", "user_id"),
             ("token_usage", "username"),
             ("request_log", "username"),

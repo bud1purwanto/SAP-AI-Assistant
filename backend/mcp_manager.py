@@ -654,12 +654,30 @@ class MCPManager:
         if target_sap and "X-SAP-Server" not in req_headers:
             req_headers["X-SAP-Server"] = target_sap
         if sap_credentials:
-            if sap_credentials.get("sap_user") and "X-SAP-User" not in req_headers:
-                req_headers["X-SAP-User"] = sap_credentials["sap_user"]
-            if sap_credentials.get("sap_password") and "X-SAP-Password" not in req_headers:
-                req_headers["X-SAP-Password"] = sap_credentials["sap_password"]
-            if sap_credentials.get("sap_client") and "X-SAP-Client" not in req_headers:
-                req_headers["X-SAP-Client"] = sap_credentials["sap_client"]
+            username = sap_credentials.get("username")
+            target = target_sap
+            if username and target and "X-SAP-Token" not in req_headers:
+                from database import get_user_sap_token, get_user_sap_credential
+                from datetime import datetime, timezone
+                tok = get_user_sap_token(username, target)
+                if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                    req_headers["X-SAP-Token"] = tok["token"]
+                else:
+                    # ponytail: fallback to plaintext credentials until dashboard-mcp sap-token endpoint ships
+                    cred = get_user_sap_credential(username, target)
+                    if cred:
+                        req_headers["X-SAP-User"] = cred["sap_user"]
+                        req_headers["X-SAP-Password"] = cred["sap_password"]
+                        req_headers["X-SAP-Client"] = cred.get("sap_client", "100")
+            if sap_credentials.get("sap_token") and "X-SAP-Token" not in req_headers:
+                req_headers["X-SAP-Token"] = sap_credentials["sap_token"]
+            if "X-SAP-Token" not in req_headers:
+                if sap_credentials.get("sap_user") and "X-SAP-User" not in req_headers:
+                    req_headers["X-SAP-User"] = sap_credentials["sap_user"]
+                if sap_credentials.get("sap_password") and "X-SAP-Password" not in req_headers:
+                    req_headers["X-SAP-Password"] = sap_credentials["sap_password"]
+                if sap_credentials.get("sap_client") and "X-SAP-Client" not in req_headers:
+                    req_headers["X-SAP-Client"] = sap_credentials["sap_client"]
             if sap_credentials.get("sap_language") and "X-SAP-Language" not in req_headers:
                 req_headers["X-SAP-Language"] = sap_credentials["sap_language"]
         for attempt in range(2):
@@ -851,12 +869,30 @@ class MCPManager:
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
             if sap_credentials:
-                if sap_credentials.get("sap_user"):
-                    extra_sap_headers["X-SAP-User"] = sap_credentials["sap_user"]
-                if sap_credentials.get("sap_password"):
-                    extra_sap_headers["X-SAP-Password"] = sap_credentials["sap_password"]
-                if sap_credentials.get("sap_client"):
-                    extra_sap_headers["X-SAP-Client"] = sap_credentials["sap_client"]
+                username = sap_credentials.get("username")
+                target = sap_target
+                if username and target:
+                    from database import get_user_sap_token, get_user_sap_credential
+                    from datetime import datetime, timezone
+                    tok = get_user_sap_token(username, target)
+                    if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                        extra_sap_headers["X-SAP-Token"] = tok["token"]
+                    else:
+                        # ponytail: fallback to plaintext credentials until dashboard-mcp sap-token endpoint ships
+                        cred = get_user_sap_credential(username, target)
+                        if cred:
+                            extra_sap_headers["X-SAP-User"] = cred["sap_user"]
+                            extra_sap_headers["X-SAP-Password"] = cred["sap_password"]
+                            extra_sap_headers["X-SAP-Client"] = cred.get("sap_client", "100")
+                if sap_credentials.get("sap_token") and "X-SAP-Token" not in extra_sap_headers:
+                    extra_sap_headers["X-SAP-Token"] = sap_credentials["sap_token"]
+                if "X-SAP-Token" not in extra_sap_headers:
+                    if sap_credentials.get("sap_user"):
+                        extra_sap_headers["X-SAP-User"] = sap_credentials["sap_user"]
+                    if sap_credentials.get("sap_password"):
+                        extra_sap_headers["X-SAP-Password"] = sap_credentials["sap_password"]
+                    if sap_credentials.get("sap_client"):
+                        extra_sap_headers["X-SAP-Client"] = sap_credentials["sap_client"]
                 if sap_credentials.get("sap_language"):
                     extra_sap_headers["X-SAP-Language"] = sap_credentials["sap_language"]
 

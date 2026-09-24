@@ -456,6 +456,10 @@ class UserSapCredentialRequest(BaseModel):
     is_update: bool = False
 
 
+
+class BindSapTokenRequest(BaseModel):
+    target: str
+
 @app.get("/api/me/sap-credentials")
 async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
     """Ambil daftar konfigurasi kredensial SAP milik pengguna saat ini (tanpa password plaintext)."""
@@ -781,6 +785,46 @@ async def delete_my_sap_credential(target: str, user: dict = Depends(get_current
         raise HTTPException(status_code=400, detail="Target tidak valid.")
     ok = delete_user_sap_credential(user["username"], target_clean)
     return {"success": ok, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
+
+
+@app.post("/api/me/sap-credentials/bind-token")
+async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_current_user)):
+    """Generate a bound SAP token via dashboard-mcp and store it locally."""
+    from database import get_user_sap_credential, save_user_sap_token
+    from auth import get_dashboard_access_token
+    username = user["username"]
+    target = (req.target or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target SAP wajib diisi.")
+    cred = get_user_sap_credential(username, target)
+    if not cred:
+        raise HTTPException(status_code=404, detail=f"Kredensial SAP untuk '{target}' tidak ditemukan. Simpan kredensial terlebih dahulu.")
+    access_token = get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{base}/v1/integration/sap-tokens",
+                json={"target": target, "sap_user": cred["sap_user"],
+                      "sap_password": cred["sap_password"], "sap_client": cred.get("sap_client", "100")},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for sap-token bind: {e}")
+        raise HTTPException(status_code=502, detail="Layanan token SAP tidak tersedia.")
+    if r.status_code in (404, 501):
+        # ponytail: dashboard-mcp endpoint not yet implemented; credential saved, token not bound
+        logger.warning(f"dashboard-mcp /v1/integration/sap-tokens returned {r.status_code}; fallback to legacy X-SAP headers")
+        return {"success": True, "token_bound": False, "message": "Kredensial disimpan. Token binding belum tersedia di dashboard."}
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    data = r.json()
+    from datetime import datetime, timezone, timedelta
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expiresIn", 86400))
+    save_user_sap_token(username, target, data["token"], expires_at)
+    return {"success": True, "token_bound": True, "expires_at": expires_at.isoformat()}
 
 
 # --- KONFIGURASI ---
