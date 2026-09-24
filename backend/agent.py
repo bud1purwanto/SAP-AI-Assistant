@@ -927,12 +927,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # Pre-tool SAP onboarding check
     if target_srv.startswith("sap") or (sap_target and target_system == "sap"):
         from database import get_user_sap_credential, get_user_sap_token
+        from datetime import datetime, timezone
         cred = get_user_sap_credential(username, target_srv)
         tok = get_user_sap_token(username, target_srv)
         if not cred and sap_target:
             cred = get_user_sap_credential(username, sap_target)
         if not tok and sap_target:
             tok = get_user_sap_token(username, sap_target)
+        if tok and tok.get("expires_at") and tok["expires_at"] <= datetime.now(timezone.utc):
+            tok = None
         if not cred and not tok and user_sap_credentials:
             cred = user_sap_credentials
         if not cred and not tok:

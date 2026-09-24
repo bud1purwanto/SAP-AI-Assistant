@@ -635,7 +635,7 @@ def get_system_config():
     token_limit_enabled = bool(settings.token_limit_enabled)
     chat_modes_enabled = True
     ai_suggestions_enabled = True
-    mcp_access_control_enabled = False
+    mcp_access_control_enabled = False  # vestigial
 
     try:
         engine = get_engine()
@@ -654,8 +654,8 @@ def get_system_config():
                     chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'ai_suggestions_enabled' and r.value is not None:
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
-                elif r.key == 'mcp_access_control_enabled' and r.value is not None:
-                    mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'mcp_access_control_enabled' and r.value is not None:  # vestigial
+                    mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')  # vestigial
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -697,7 +697,7 @@ def get_system_config():
         "token_limit_enabled": token_limit_enabled,
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
-        "mcp_access_control_enabled": mcp_access_control_enabled,
+        "mcp_access_control_enabled": mcp_access_control_enabled,  # vestigial
     }
 
 def update_system_config(
@@ -717,7 +717,7 @@ def update_system_config(
     token_limit_enabled: bool = None,
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
-    mcp_access_control_enabled: bool = None,
+    mcp_access_control_enabled: bool = None,  # vestigial
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
@@ -744,12 +744,12 @@ def update_system_config(
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if ai_suggestions_enabled else "false"})
 
-            if mcp_access_control_enabled is not None:
+            if mcp_access_control_enabled is not None:  # vestigial
                 conn.execute(text("""
                     INSERT INTO ai_assistant_dev.system_config (key, value)
-                    VALUES ('mcp_access_control_enabled', :val)
+                    VALUES ('mcp_access_control_enabled', :val)  -- vestigial
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """), {"val": "true" if mcp_access_control_enabled else "false"})
+                """), {"val": "true" if mcp_access_control_enabled else "false"})  # vestigial
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
@@ -3838,6 +3838,7 @@ def delete_user_sap_credential(username: str, target: str) -> bool:
             WHERE username = :u AND target = :t
         """), {"u": clean_user, "t": clean_target})
         conn.commit()
+    delete_user_sap_token(clean_user, clean_target)
     return True
 
 

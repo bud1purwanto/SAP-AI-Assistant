@@ -346,7 +346,7 @@ def _m0007_akses_mcp_per_user(conn):
     # Seed Master Switch: default 'false' (OFF) agar transisi aman
     conn.execute(text("""
         INSERT INTO ai_assistant_dev.system_config (key, value)
-        VALUES ('mcp_access_control_enabled', 'false')
+        VALUES ('mcp_access_control_enabled', 'false')  -- vestigial
         ON CONFLICT (key) DO NOTHING
     """))
 

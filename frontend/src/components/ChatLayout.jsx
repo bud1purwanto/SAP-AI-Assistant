@@ -1084,7 +1084,8 @@ const ChatLayout = () => {
         } catch {
           parsed = err;
         }
-        showToast(parsed?.message || t('sap.bindRequired'), 'warning', {
+        const toastMsg = language === 'en' ? t('sap.bindRequired') : (parsed?.message || t('sap.bindRequired'));
+        showToast(toastMsg, 'warning', {
           action: { label: t('settings.title'), onClick: () => openSettings('sap') }
         });
         return; // Don't show generic error

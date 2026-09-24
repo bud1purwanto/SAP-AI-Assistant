@@ -362,8 +362,6 @@ class MCPManager:
             return None
         url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
         headers = {}
-        if settings.dashboard_mcp_api_token:
-            headers["Authorization"] = f"Bearer {settings.dashboard_mcp_api_token}"
         try:
             r = await http_client.get(url, headers=headers, timeout=4.0)
             if r.status_code == 200:

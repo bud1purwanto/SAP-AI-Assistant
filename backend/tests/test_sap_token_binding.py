@@ -140,3 +140,19 @@ def test_agent_need_sap_credential_guard():
         payload = json.loads(exc_info.value.detail)
         assert payload.get("code") == "NEED_SAP_CREDENTIAL"
         assert payload.get("target") == "sap:unconfigured-target"
+
+
+def test_delete_my_sap_credential_removes_token():
+    """Deleting a SAP credential also deletes any bound token for that target."""
+    import asyncio
+    import main as app_module
+    from unittest.mock import patch, MagicMock
+
+    with patch("database.delete_user_sap_credential", return_value=True) as mock_del_cred, \
+         patch("database.delete_user_sap_token", return_value=True) as mock_del_tok:
+        res = asyncio.run(
+            app_module.delete_my_sap_credential("dev-srv", user={"username": "alice", "roles": ["user"]})
+        )
+        assert res["success"] is True
+        mock_del_cred.assert_called_once_with("alice", "dev-srv")
+        mock_del_tok.assert_called_once_with("alice", "dev-srv")

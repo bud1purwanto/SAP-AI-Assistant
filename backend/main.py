@@ -779,11 +779,12 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
 @app.delete("/api/me/sap-credentials/{target}")
 async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
     """Hapus kredensial SAP pribadi untuk target tertentu."""
-    from database import delete_user_sap_credential
+    from database import delete_user_sap_credential, delete_user_sap_token
     target_clean = (target or "").strip()
     if not target_clean:
         raise HTTPException(status_code=400, detail="Target tidak valid.")
     ok = delete_user_sap_credential(user["username"], target_clean)
+    delete_user_sap_token(user["username"], target_clean)
     return {"success": ok, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
 
 
@@ -799,7 +800,7 @@ async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_curr
     cred = get_user_sap_credential(username, target)
     if not cred:
         raise HTTPException(status_code=404, detail=f"Kredensial SAP untuk '{target}' tidak ditemukan. Simpan kredensial terlebih dahulu.")
-    access_token = get_dashboard_access_token()
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
         raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
     base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
@@ -2085,17 +2086,12 @@ async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends
 async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admin: dict = Depends(require_superadmin)):
     """Uji konektivitas real-time ke gateway MCP (latensi ms, status online, dan pendeteksian tools)."""
     url = req.url
-    auth_token = req.auth_token or ""
     headers = req.headers or {}
     transport = req.transport_type or "http"
     if req.server_id:
         client = mcp_manager.get_client(req.server_id)
         if client and getattr(client, "url", None):
             url = client.url
-            if not req.auth_token and getattr(client, "headers", None):
-                auth_hdr = client.headers.get("Authorization", "")
-                if auth_hdr.startswith("Bearer "):
-                    auth_token = auth_hdr[7:]
             if not req.headers and getattr(client, "headers", None):
                 headers = dict(client.headers)
             transport = getattr(client, "transport_type", "http")
@@ -2104,7 +2100,7 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
 
     result = await mcp_manager.test_connection(
         url=url,
-        auth_token=auth_token,
+        auth_token="",
         headers=headers,
         transport_type=transport
     )

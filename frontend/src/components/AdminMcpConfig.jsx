@@ -387,7 +387,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-accent text-accent-contrast text-xs font-semibold hover:bg-accent/90 cursor-pointer disabled:opacity-50"
                 >
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{editingId ? t('mcp.saved').replace(/\.$/, '') : t('mcp.addServer')}</span>
+                  <span>{editingId ? t('common.save') : t('mcp.addServer')}</span>
                 </button>
               </div>
             </form>

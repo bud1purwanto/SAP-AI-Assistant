@@ -82,7 +82,8 @@ class Settings(BaseSettings):
 
     # Dashboard MCP Integration
     dashboard_mcp_url: str = "http://127.0.0.1:3000"
-    dashboard_mcp_api_token: str = ""  # Vestigial: per-user tokens used exclusively via OIDC Bearer tokens
+    # ponytail: vestigial — static MCP token no longer used at runtime; remove when env vars cleaned up
+    dashboard_mcp_api_token: str = ""  # vestigial
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
