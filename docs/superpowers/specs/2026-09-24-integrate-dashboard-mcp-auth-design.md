@@ -126,8 +126,30 @@ BFF cookie TTL == `expiresIn` from dashboard-mcp. When expired, `/api/auth/sessi
 - `changePassword` function (lines 161–165)
 
 ### frontend/src/components/ForceChangePasswordModal.jsx
-- Delete file entirely. Remove import/render from parent component.
+- Delete file entirely. Remove import from `ChatLayout.jsx:10` and render block at `ChatLayout.jsx:2365-2369`.
+- Remove `handleForcePasswordChanged` callback and `force_change_password` field reads/writes in `ChatLayout.jsx:709,1181`.
+- Remove `force_change_password` badge render in `AdminDashboard.jsx:1339-1342`.
+- Remove `force_change_password` checkbox + form state in `AdminDashboard.jsx:146,536,567,1897-1898`.
+- Remove password-change section in `SettingsModal.jsx:222-226` (calls deleted `api.changePassword`).
 
+### backend/main.py — DELETE handlers
+- `/api/auth/change-password` (lines ~397-407).
+- Strip `password` and `force_change_password` fields from `AdminUpdateUserRequest` (line 1364, 1366) and their forwarding at lines 1402, 1407.
+- DELETE `/api/admin/users/{username}/reset-password` endpoint (lines 1418-1435) and `AdminResetPasswordRequest` model.
+
+### backend/database.py — additional DELETE
+- `reset_user_password_by_admin` (line 2051) — no local passwords to reset.
+- `force_change_password` column references in SELECT projections: lines 756, 787, 1962, 1989. Leave column in DDL per §Migration Policy below.
+- `create_new_user`: drop `password_hash` INSERT (line 2030) and `force_change_password` param (line 2000, 2033). Function becomes identity-seed only; rename optional, keep signature-compatible for callers.
+- `update_user_by_admin`: drop `password` hash branch (line 2206) and `force_change_password` update (lines 2207-2209).
+
+## 4b. Migration Policy
+
+Existing `_execute_identity_migration` (migrations.py:1124) DROPs `password`, `password_hash`, `force_change_password`. This violates AGENTS.md §2 ("never drop databases/schemas").
+
+Decision: **do NOT run that migration**. Columns stay in schema as vestigial nullable fields. All code paths stop reading/writing them. If future cleanup is desired, it goes through an explicit operator-approved destructive migration ticket, not this feature.
+
+Consequence: `ensure_user_exists` seeding path keeps working unchanged (it never touched those columns). Existing rows retain whatever value they had; ignored by new code.
 ### Tests
 - Any test importing removed symbols: delete, don't patch.
 - Rewrite tests that exercise login flow to mock `httpx` call to dashboard-mcp instead of `authenticate_user`.
