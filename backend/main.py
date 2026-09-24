@@ -16,8 +16,6 @@ from agent import process_chat
 from artifacts import get_artifact
 from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
-    create_access_token,
-    decode_access_token,
     create_session_cookie,
     decode_session_cookie,
     generate_code_verifier,
@@ -33,7 +31,6 @@ from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
-    authenticate_user,
     change_user_password,
     consume_guest_quota,
     attach_uploads_to_session,
@@ -306,6 +303,39 @@ def _verify_oidc_id_token(id_token: str, expected_nonce: str | None) -> dict[str
             raise HTTPException(status_code=400, detail="Nonce OIDC tidak cocok.")
     return claims
 
+def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
+    """Map dashboard-mcp PublicUser to ai-assistant principal dict.
+
+    ponytail: single-department/single-division assumption matches current
+    consumers of `org_units`/`division_code`. Upgrade path: pluralize keys
+    when multi-org scoping lands.
+    """
+    depts = dash_user.get("departments") or []
+    divs = dash_user.get("divisions") or []
+    poss = dash_user.get("positions") or []
+    raw_role = dash_user.get("rawRole") or dash_user.get("role") or "user"
+    from access_control import normalize_roles
+    roles = normalize_roles([raw_role])
+    primary = roles[0] if roles else "user"
+    first_div = divs[0] if divs else {}
+    first_pos = poss[0] if poss else {}
+    return {
+        "sub": dash_user["id"],
+        "username": dash_user["username"],
+        "full_name": dash_user.get("displayName") or dash_user.get("display_name") or dash_user["username"],
+        "role": primary,
+        "roles": roles,
+        "assistant_persona": "",  # populated lazily by ensure_user_exists
+        "force_change_password": False,
+        "division_code": first_div.get("code"),
+        "division_name": first_div.get("name"),
+        "job_level": str(first_pos.get("jobLevel", "staff")).lower(),
+        "org_units": [d["name"] for d in depts if d.get("name")],
+        "access_token": access_token,
+        "is_guest": False,
+    }
+
+
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded:
@@ -326,73 +356,43 @@ class ChangePasswordRequest(BaseModel):
 @app.post("/api/auth/login")
 @app.post("/api/login")
 async def auth_login(req: LoginRequest, response: Response):
-    """Login langsung dengan username dan password."""
     username = (req.username or "").strip()
     password = (req.password or "").strip()
     if not username or not password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username dan password wajib diisi.",
-        )
+        raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
 
-    user = authenticate_user(username, password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Username atau password salah.",
-        )
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{base}/v1/auth/login",
+                json={"username": username, "password": password,
+                      "clientCode": settings.dashboard_oidc_client_id},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable during login: {e}")
+        raise HTTPException(status_code=502, detail="Layanan autentikasi tidak tersedia.")
 
-    roles = user.get("roles") or [user.get("role", "user")]
-    primary_role = user.get("role") or (roles[0] if roles else "user")
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Username atau password salah.")
 
-    access_token = create_access_token(
-        username=user["username"],
-        role=primary_role,
-        roles=roles,
-        full_name=user.get("full_name", ""),
-        force_change_password=bool(user.get("force_change_password", False)),
-        division_code=user.get("division_code"),
-        job_level=user.get("job_level", "staff"),
-    )
-
-    principal = {
-        "sub": user["username"],
-        "username": user["username"],
-        "role": primary_role,
-        "roles": roles,
-        "full_name": user.get("full_name", ""),
-        "assistant_persona": user.get("assistant_persona", ""),
-        "force_change_password": bool(user.get("force_change_password", False)),
-        "division_code": user.get("division_code"),
-        "division_name": user.get("division_name"),
-        "job_level": user.get("job_level", "staff"),
-        "org_units": [],
-        "is_guest": False,
-        "access_token": access_token,
-    }
-
-    session_cookie = create_session_cookie(principal)
-    set_dashboard_access_token(access_token)
+    session = r.json()
+    principal = _map_dashboard_user(session["user"], session["accessToken"])
     response.set_cookie(
         key=settings.session_cookie_name,
-        value=session_cookie,
+        value=create_session_cookie(principal),
         httponly=True,
         secure=settings.session_cookie_secure,
         samesite=settings.session_cookie_samesite,
-        max_age=settings.session_expire_hours * 3600,
+        max_age=int(session.get("expiresIn") or settings.session_expire_hours * 3600),
         path="/",
     )
-
     return {
         "status": "success",
-        "access_token": access_token,
+        "access_token": session["accessToken"],
         "token_type": "bearer",
-        "user": {
-            **principal,
-            "authenticated": True,
-        },
+        "user": {**principal, "authenticated": True},
     }
-
 
 @app.post("/api/auth/change-password")
 @app.post("/api/change-password")

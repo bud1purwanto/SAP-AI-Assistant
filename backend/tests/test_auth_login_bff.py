@@ -1,0 +1,80 @@
+import httpx
+import pytest
+import respx
+from fastapi.testclient import TestClient
+
+from main import app, _map_dashboard_user
+from config import settings
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+DASH_USER_OK = {
+    "id": "u-123",
+    "username": "alice",
+    "email": "alice@example.com",
+    "role": "admin",
+    "rawRole": "ADMIN",
+    "isActive": True,
+    "departments": [{"id": "d1", "name": "Engineering"}],
+    "divisions": [{"id": "dv1", "name": "Platform", "code": "PLAT"}],
+    "positions": [{"id": "p1", "name": "Senior Eng", "jobLevel": 5, "divisionId": "dv1"}],
+}
+
+
+@respx.mock
+def test_login_success_sets_cookie_and_returns_principal(client):
+    route = respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        return_value=httpx.Response(
+            200, json={"accessToken": "tok-abc", "expiresIn": 3600, "user": DASH_USER_OK}
+        )
+    )
+    r = client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["access_token"] == "tok-abc"
+    assert body["user"]["username"] == "alice"
+    assert body["user"]["role"] == "admin"
+    assert body["user"]["org_units"] == ["Engineering"]
+    assert body["user"]["division_code"] == "PLAT"
+    assert body["user"]["force_change_password"] is False
+    assert "sap_session" in r.cookies
+    assert route.called
+
+
+@respx.mock
+def test_login_wrong_password_returns_401_no_cookie(client):
+    respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        return_value=httpx.Response(401, json={"message": "invalid credentials"})
+    )
+    r = client.post("/api/auth/login", json={"username": "alice", "password": "bad"})
+    assert r.status_code == 401
+    assert "sap_session" not in r.cookies
+
+
+@respx.mock
+def test_login_dashboard_unreachable_returns_502(client):
+    respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        side_effect=httpx.ConnectError("down")
+    )
+    r = client.post("/api/auth/login", json={"username": "alice", "password": "pw"})
+    assert r.status_code == 502
+
+
+def test_empty_credentials_rejected_before_http_call(client):
+    r = client.post("/api/auth/login", json={"username": "", "password": ""})
+    assert r.status_code == 400
+
+
+def test_mapper_handles_missing_departments_divisions_positions():
+    p = _map_dashboard_user({"id": "x", "username": "bob", "role": "viewer"}, "tok")
+    assert p["org_units"] == []
+    assert p["division_code"] is None
+    assert p["division_name"] is None
+    assert p["job_level"] == "staff"
+    assert p["roles"] == ["viewer"]
+    assert p["force_change_password"] is False
