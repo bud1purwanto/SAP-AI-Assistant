@@ -218,6 +218,19 @@ SAP_TOOL_NAMES = {
     "get_where_used",
 }
 
+SQL_TOOL_NAMES = {
+    "list_databases",
+    "run_query",
+    "run_parameterized_query",
+    "list_tables",
+    "describe_table",
+    "search_objects",
+    "get_object_definition",
+    "explain_query",
+    "get_table_stats",
+    "reload_config",
+}
+
 
 def strip_gateway_tool_prefix(tool_name: str) -> str:
     """Return the upstream MCP tool name without Dashboard gateway namespace."""
@@ -244,6 +257,8 @@ def classify_gateway_tool(tool_name: str) -> str:
         return "rag"
     if base in SAP_TOOL_NAMES:
         return "sap"
+    if base in SQL_TOOL_NAMES:
+        return "sql"
     return "rag"
 
 
