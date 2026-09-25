@@ -878,19 +878,33 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     await report("connecting", "Menyiapkan permintaan…")
 
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih dan otorisasi pengguna)
-    target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
+    target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or ""
+    # Multi-MCP: bila user mengirim target eksplisit per-sistem (sap_target / sql_target),
+    # turunkan ke format prefix agar kompatibel dengan seluruh pipeline lama.
+    if not target_srv or target_srv == "all":
+        if chat_req.sap_target:
+            target_srv = f"sap:{chat_req.sap_target}"
+        elif chat_req.sql_target:
+            target_srv = f"sql:{chat_req.sql_target}"
+        else:
+            target_srv = "sap"
+    # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
+    # gunakan perilaku lama (fallback server_filter-based exclusivity).
+    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors else None
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
     target_system = "sql" if target_srv.startswith("sql:") else "sap"
     sap_target = (
         target_srv.split(":", 1)[1]
-        if ":" in target_srv
-        else (target_srv if target_srv not in ("sap", "sql", "all", "*") else None)
+        if ":" in target_srv and target_srv.startswith("sap:")
+        else (chat_req.sap_target if chat_req.sap_target else None)
     )
-    if sap_target:
-        logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
-
+    sql_target = (
+        target_srv.split(":", 1)[1]
+        if ":" in target_srv and target_srv.startswith("sql:")
+        else (chat_req.sql_target if chat_req.sql_target else None)
+    )
     # Ambil kredensial SAP khusus pengguna ini jika ada untuk target SAP ini
     user_sap_credentials = None
     try:
@@ -947,7 +961,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             )
 
     try:
-        all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
+        all_mcp_tools = await mcp_manager.get_all_tools(
+            server_filter=target_srv, allowed_connectors=allowed_connectors
+        )
     except TypeError:
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     if not all_mcp_tools:
