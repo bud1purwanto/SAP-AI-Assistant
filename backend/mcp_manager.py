@@ -876,15 +876,17 @@ class MCPManager:
         arguments: dict,
         sap_target: str = None,
         sap_credentials: Optional[dict] = None,
+        sql_target: str = None,
     ) -> MCPCallResult:
         """Panggil satu tool MCP.
 
-        Untuk server SAP/SQL, `sap_target` menyatakan sistem server mana yang dituju.
+        Untuk server SAP/SQL, `sap_target`/`sql_target` menyatakan sistem server mana yang dituju.
         `sap_credentials` dapat menyediakan kredensial per-user (sap_user, sap_password, sap_client).
         Penetapan target dan pemanggilan tool dilakukan di bawah satu lock agar
         request user lain tidak dapat menyisip di antaranya dan mengalihkan
         query ke sistem yang salah.
         """
+
         # Bersihkan meta-key yang lazim disisipkan LLM (seperti 'reason', 'comment', 'note')
         # yang ditolak ketat oleh interface PyRFC SAP ('field reason not found').
         final_args = arguments
@@ -965,8 +967,9 @@ class MCPManager:
                     extra_headers=extra_sap_headers,
                 )
             if server_name == "sql":
-                target = sap_target
-                if not target:
+                target = sql_target
+                if not target and sap_target and str(sap_target).startswith("sql:"):
+                    target = sap_target.split(":", 1)[1]
                     try:
                         resources = await self.get_live_resources()
                         sql_res = [r for r in resources if r.get("kind") == "sql"]

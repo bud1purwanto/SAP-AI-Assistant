@@ -1705,7 +1705,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     await reset_stream()
                     await report("tool", _describe_tool(server_name, actual_tool_name, t_args), iteration)
                     tool_result = await mcp_manager.call_tool(
-                        server_name, actual_tool_name, t_args, sap_target=sap_target, sap_credentials=user_sap_credentials
+                        server_name,
+                        actual_tool_name,
+                        t_args,
+                        sap_target=sap_target,
+                        sap_credentials=user_sap_credentials,
+                        sql_target=sql_target,
                     )
                     
                     res_str = ""
@@ -1890,7 +1895,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args), iteration)
                 result = await mcp_manager.call_tool(
-                    server_name, mcp_name, tool_args, sap_target=sap_target, sap_credentials=user_sap_credentials
+                    server_name,
+                    mcp_name,
+                    tool_args,
+                    sap_target=sap_target,
+                    sap_credentials=user_sap_credentials,
+                    sql_target=sql_target,
                 )
                 texts = []
                 if result.content:
