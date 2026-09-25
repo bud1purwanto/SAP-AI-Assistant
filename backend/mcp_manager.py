@@ -361,7 +361,9 @@ class MCPManager:
         if not settings.dashboard_mcp_url:
             return None
         url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
-        headers = {}
+        from auth import get_dashboard_access_token
+        token = get_dashboard_access_token() or getattr(settings, "dashboard_mcp_api_token", "")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
         try:
             r = await http_client.get(url, headers=headers, timeout=4.0)
             if r.status_code == 200:
@@ -375,19 +377,6 @@ class MCPManager:
         except Exception as ex:
             logger.debug(f"Dashboard MCP resources endpoint tidak dapat dihubungi: {ex}")
         return None
-
-    async def check_servers_status(self) -> dict:
-        status = {}
-        # Dapatkan list server dari tabel ai_assistant_dev.mcp_servers jika ada
-        db_servers_dict = {}
-        try:
-            from database import list_mcp_servers
-            db_list = list_mcp_servers(enabled_only=False)
-            db_servers_dict = {s["id"]: s for s in db_list}
-        except Exception as ex:
-            logger.debug(f"Sync fetch dashboard resources gagal: {ex}")
-
-        return self._resources_cache
 
     async def check_servers_status(self) -> dict:
         """Cek status seluruh server MCP dengan dashboard-mcp sebagai sumber otoritatif utama."""
