@@ -749,36 +749,35 @@ class MCPManager:
 
     async def get_all_tools(self, server_filter: str = "all", allowed_connectors: Optional[set] = None) -> list[dict]:
         tools = []
-        is_sql_mode = server_filter.startswith("sql:") or server_filter == "sql"
-        is_sap_mode = server_filter.startswith("sap:") or server_filter == "sap"
-
-        # Bila pengguna secara eksplisit memilih SQL, aktifkan SQL + RAG dan nonaktifkan SAP
-        # agar model tidak keliru memanggil tool SAP.
-        if is_sql_mode:
-            is_sap = False
-            is_sql = True
-            is_rag = True
-        elif is_sap_mode:
-            is_sap = True
-            is_sql = False
-            is_rag = True
-        else:
-            is_sap = True
-            is_sql = True
-            is_rag = True
-
-        # Terapkan pembatasan konektor dari access control bila ada
-        is_email = True
+        # Mode multi-konektor independen dari pemilihan pengguna. Bila user memberikan
+        # allowed_connectors secara eksplisit, aktifkan HANYA konektor yang dipilih secara
+        # independen satu sama lain — TIDAK lagi saling meniadakan. Ini memungkinkan SAP
+        # + SQL + RAG secara simultan dalam satu sesi chat bila dicentang user.
         if allowed_connectors is not None:
-            if "sap" not in allowed_connectors:
+            is_sap = "sap" in allowed_connectors
+            is_sql = "sql" in allowed_connectors
+            is_rag = "rag" in allowed_connectors
+            is_email = "email" in allowed_connectors
+        else:
+            # Fallback untuk panggilan lama (tanpa pilihan user): perilaku semula — prefix
+            # "sql:" atau "sap:" tetap exclusif agar model tidak keliru memanggil tool.
+            is_sql_mode = server_filter.startswith("sql:") or server_filter == "sql"
+            is_sap_mode = server_filter.startswith("sap:") or server_filter == "sap"
+            if is_sql_mode:
                 is_sap = False
-            if "sql" not in allowed_connectors:
+                is_sql = True
+                is_rag = True
+                is_email = True
+            elif is_sap_mode:
+                is_sap = True
                 is_sql = False
-            if "rag" not in allowed_connectors:
-                is_rag = False
-            if "email" not in allowed_connectors:
-                is_email = False
-
+                is_rag = True
+                is_email = True
+            else:
+                is_sap = True
+                is_sql = True
+                is_rag = True
+                is_email = True
         async with httpx.AsyncClient() as http_client:
             # SAP Tools
             if is_sap:
