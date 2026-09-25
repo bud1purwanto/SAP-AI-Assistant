@@ -469,6 +469,13 @@ export const TRANSLATIONS = {
     'mcp.deleted': 'MCP server deleted.',
     'mcp.testSuccess': 'Connection successful.',
     'mcp.testFailed': 'Connection failed.',
+    'mcp.multiHub': 'MCP Connectors',
+    'mcp.enableSap': 'SAP ERP',
+    'mcp.enableSql': 'SQL Database',
+    'mcp.enableRag': 'RAG Knowledge',
+    'mcp.enableEmail': 'Email',
+    'mcp.selected': 'Selected',
+    'mcp.notSelected': 'Not selected',
   },
 
   id: {
@@ -910,7 +917,6 @@ export const TRANSLATIONS = {
     'common.processing': 'Memproses…',
     'common.loading': 'Memuat…',
 
-    // MCP Server Registry
     'mcp.serverName': 'Nama Server',
     'mcp.serverUrl': 'URL Server',
     'mcp.enabled': 'Aktif',
@@ -921,6 +927,13 @@ export const TRANSLATIONS = {
     'mcp.deleted': 'Server MCP dihapus.',
     'mcp.testSuccess': 'Koneksi berhasil.',
     'mcp.testFailed': 'Koneksi gagal.',
+    'mcp.multiHub': 'Konektor MCP Aktif',
+    'mcp.enableSap': 'SAP ERP',
+    'mcp.enableSql': 'Database SQL',
+    'mcp.enableRag': 'Dokumen RAG',
+    'mcp.enableEmail': 'Email',
+    'mcp.selected': 'Dipilih',
+    'mcp.notSelected': 'Tidak dipilih',
   }
 };
 

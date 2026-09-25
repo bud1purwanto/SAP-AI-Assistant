@@ -93,6 +93,7 @@ const hidePendingArtifact = (text) => {
 
 const aliasOf = (srv) => srv?.alias || srv?.aliases?.[0] || srv?.name?.toLowerCase()?.replace(/\s+/g, '-') || srv?.sid?.toLowerCase() || 'default';
 const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
+const CONNECTOR_CONFIG_STORAGE_KEY = 'mcp_user_connectors_config_v1';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
@@ -130,12 +131,25 @@ const ChatLayout = () => {
   const [error, setError] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
-
   const [activeServer, setActiveServer] = useState(() => {
     try {
       return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || 'sap:sandbox-new';
     } catch {
       return 'sap:sandbox-new';
+    }
+  });
+  // Konfigurasi multi-konektor milik pengguna (self-service): konektor SAP / SQL /
+  // RAG / Email mana yang diaktifkan per sesi + target instance masing-masing.
+  const [connectorConfig, setConnectorConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CONNECTOR_CONFIG_STORAGE_KEY) || '{}');
+      return {
+        enabled: Array.isArray(saved.enabled) ? saved.enabled : ['sap', 'rag'],
+        sapTarget: saved.sapTarget || null,
+        sqlTarget: saved.sqlTarget || null,
+      };
+    } catch {
+      return { enabled: ['sap', 'rag'], sapTarget: null, sqlTarget: null };
     }
   });
   const [mcpStatus, setMcpStatus] = useState(null);
@@ -402,6 +416,36 @@ const ChatLayout = () => {
     } catch (e) {
       console.error('Gagal menyimpan target server ke localStorage:', e);
     }
+    const [system, target] = newServer.split(':', 2);
+    if ((system === 'sap' || system === 'sql') && target) {
+      setConnectorConfig((prev) => {
+        const next = {
+          ...prev,
+          [system === 'sap' ? 'sapTarget' : 'sqlTarget']: target,
+          enabled: prev.enabled.includes(system) ? prev.enabled : [...prev.enabled, system],
+        };
+        localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  };
+
+  const handleConnectorToggle = (connectorId) => {
+    setConnectorConfig((prev) => {
+      const isCurrentlyEnabled = prev.enabled.includes(connectorId);
+      const nextEnabled = isCurrentlyEnabled
+        ? prev.enabled.filter((id) => id !== connectorId)
+        : [...prev.enabled, connectorId];
+      // Minimal 1 konektor harus aktif agar model tidak kosong
+      const finalEnabled = nextEnabled.length > 0 ? nextEnabled : [connectorId];
+      const nextConfig = { ...prev, enabled: finalEnabled };
+      try {
+        localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+      } catch (e) {
+        console.error('Gagal menyimpan konfigurasi konektor MCP:', e);
+      }
+      return nextConfig;
+    });
   };
 
   // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
@@ -983,12 +1027,22 @@ const ChatLayout = () => {
         .filter((m) => !m.isWelcome)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
+      const [activeSystemForPayload, activeTargetForPayload] = activeServer.split(':', 2);
+      const enabledConnectors = Array.isArray(connectorConfig.enabled) && connectorConfig.enabled.length > 0
+        ? connectorConfig.enabled
+        : ['sap', 'rag'];
+      const sapTarget = connectorConfig.sapTarget || (activeSystemForPayload === 'sap' ? activeTargetForPayload : undefined);
+      const sqlTarget = connectorConfig.sqlTarget || (activeSystemForPayload === 'sql' ? activeTargetForPayload : undefined);
+
       const data = await chatWithProgress(
         {
           message: text,
           history,
           session_id: targetSessionId,
           active_server: activeServer,
+          enabled_connectors: enabledConnectors,
+          sap_target: sapTarget,
+          sql_target: sqlTarget,
           attachment_ids: attachments.map((a) => a.upload_id),
           mode: selectedMode || undefined,
         },
@@ -2013,53 +2067,49 @@ const ChatLayout = () => {
                         </div>
                       </div>
 
-                      {/* COMPANION KNOWLEDGE & SERVICES (RAG & Email) */}
+                      {/* MULTI-MCP CONNECTOR SELECTOR */}
                       <div className="pt-2 border-t border-line/60">
                         <p className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle mb-1">
-                          {language === 'en' ? 'Companion Integrations' : 'Integrasi Pendukung'}
+                          {t('mcp.multiHub')}
                         </p>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {/* RAG Knowledge Base */}
-                          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-opacity ${
-                            mcpStatus?.rag?.allowed !== false
-                              ? 'bg-surface-sunken/60 border-line/60'
-                              : 'bg-surface-sunken/30 border-line/30 opacity-50'
-                          }`}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <BookOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <span className="font-semibold text-[11px] text-content truncate">RAG Knowledge</span>
-                            </div>
-                            {mcpStatus?.rag?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Active' : 'Aktif'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-content-subtle">
-                                <Lock className="w-2.5 h-2.5" /> {language === 'en' ? 'Locked' : 'Terkunci'}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Email Service */}
-                          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-opacity ${
-                            mcpStatus?.email?.allowed !== false
-                              ? 'bg-surface-sunken/60 border-line/60'
-                              : 'bg-surface-sunken/30 border-line/30 opacity-50'
-                          }`}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                              <span className="font-semibold text-[11px] text-content truncate">Email</span>
-                            </div>
-                            {mcpStatus?.email?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Ready' : 'Siap'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-content-subtle">
-                                <Lock className="w-2.5 h-2.5" /> {language === 'en' ? 'Locked' : 'Terkunci'}
-                              </span>
-                            )}
-                          </div>
+                          {[
+                            { id: 'sap', label: t('mcp.enableSap'), icon: Server, color: 'text-indigo-400', allowed: sapSubServers.length > 0 },
+                            { id: 'sql', label: t('mcp.enableSql'), icon: Database, color: 'text-blue-400', allowed: sqlSubServers.length > 0 },
+                            { id: 'rag', label: t('mcp.enableRag'), icon: BookOpen, color: 'text-amber-400', allowed: mcpStatus?.rag?.allowed !== false },
+                            { id: 'email', label: t('mcp.enableEmail'), icon: Mail, color: 'text-purple-400', allowed: mcpStatus?.email?.allowed !== false },
+                          ].map(({ id, label, icon: Icon, color, allowed }) => {
+                            const enabled = allowed && connectorConfig.enabled.includes(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                disabled={!allowed}
+                                aria-pressed={enabled}
+                                aria-label={`${label}: ${enabled ? t('mcp.selected') : t('mcp.notSelected')}`}
+                                onClick={() => handleConnectorToggle(id)}
+                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-all ${
+                                  !allowed
+                                    ? 'bg-surface-sunken/30 border-line/30 opacity-50 cursor-not-allowed'
+                                    : enabled
+                                      ? 'bg-accent/10 border-accent/40 text-content cursor-pointer'
+                                      : 'bg-surface-sunken/60 border-line/60 text-content-muted hover:border-accent/30 cursor-pointer'
+                                }`}
+                              >
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                                  <span className="font-semibold text-[11px] truncate">{label}</span>
+                                </span>
+                                {!allowed ? (
+                                  <Lock className="w-3 h-3 text-content-subtle shrink-0" />
+                                ) : enabled ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                ) : (
+                                  <span className="w-3 h-3 rounded-full border border-content-subtle shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
