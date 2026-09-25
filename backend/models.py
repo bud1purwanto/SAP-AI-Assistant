@@ -26,7 +26,12 @@ class ChatRequest(BaseModel):
     active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     attachment_ids: List[str] = Field(default_factory=list, description="ID lampiran sebagai konteks")
     mode: Optional[str] = Field(default=None, description="Kode mode chat yang dipilih (misal: 'fast', 'medium', 'expert')")
-
+    enabled_connectors: Optional[List[str]] = Field(
+        default=None,
+        description="Daftar ID konektor MCP yang diaktifkan pengguna, misal: ['sap', 'sql', 'rag']",
+    )
+    sap_target: Optional[str] = Field(default=None, description="Target server SAP yang dipilih, misal: 'sandbox-new'")
+    sql_target: Optional[str] = Field(default=None, description="Target database SQL yang dipilih, misal: 'dev-223'")
 class GeneratedArtifact(BaseModel):
     """Berkas (Excel/CSV) yang dihasilkan asisten dan siap diunduh."""
     artifact_id: str = Field(..., description="ID untuk mengunduh berkas")
