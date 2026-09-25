@@ -51,3 +51,13 @@ def test_all_connectors_enabled():
         tools = asyncio.run(m.get_all_tools(server_filter="all", allowed_connectors={"sap", "sql", "rag", "email"}))
     servers = {t["server"] for t in tools}
     assert servers == {"sap", "sql", "rag", "email"}
+
+
+def test_classify_bare_sql_tools():
+    from mcp_manager import classify_gateway_tool
+    assert classify_gateway_tool("list_databases") == "sql"
+    assert classify_gateway_tool("run_query") == "sql"
+    assert classify_gateway_tool("describe_table") == "sql"
+    assert classify_gateway_tool("read_table") == "sap"
+    assert classify_gateway_tool("rag_search") == "rag"
+    assert classify_gateway_tool("send_email") == "email"
