@@ -475,6 +475,7 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
     if dashboard_token:
         set_dashboard_access_token(dashboard_token)
     # 1. Ambil status live dan sub_servers dari MCP SAP
+    raw_status = await mcp_manager.check_servers_status()
     sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
     # 2. Ambil target kredensial yang sudah pernah disimpan pengguna
     user_creds = database.list_user_sap_credentials(username)

@@ -198,23 +198,51 @@ def is_email_tool(tool_name: str) -> bool:
     return any(kw in name for kw in ("email", "mail", "calendar", "inbox", "archive"))
 
 
+# Penampung nama tool internal server MCP SAP yang tidak diawali namespace
+# (nama upstream telanjang dari endpoint gateway per-server). Dipakai
+# `classify_gateway_tool` agar tool SAP tidak jatuh ke default 'rag'.
+SAP_TOOL_NAMES = {
+    "set_active_server",
+    "get_system_info",
+    "get_server_date",
+    "get_tcode_info",
+    "check_system_locks",
+    "read_table",
+    "call_function",
+    "get_sap_document",
+    "read_program",
+    "read_table_structure",
+    "search_programs",
+    "read_function_module",
+    "read_class",
+    "get_where_used",
+}
+
+
 def strip_gateway_tool_prefix(tool_name: str) -> str:
     """Return the upstream MCP tool name without Dashboard gateway namespace."""
     name = str(tool_name or "")
     return name.split("__", 1)[1] if "__" in name else name
 
-
 def classify_gateway_tool(tool_name: str) -> str:
-    """Classify a tool name returned by the Dashboard gateway."""
+    """Classify a tool name returned by the Dashboard gateway.
+
+    Tools came from the aggregate gateway list, where names are either
+    namespaced ('sap-leader-mcp__read_table', 'mcp-rag__rag_search') or bare
+    upstream names ('read_table') returned by a per-server gateway endpoint.
+    Bare SAP server tools must classify as sap, not fall into the rag default.
+    """
     name = str(tool_name or "").lower()
     base = strip_gateway_tool_prefix(name)
     if name.startswith("mcp-sql__") or base.startswith("sql_"):
         return "sql"
     if name.startswith("mcp-email__") or is_email_tool(base):
         return "email"
+    if name.startswith("sap-leader-mcp__") or base.startswith("sap_"):
+        return "sap"
     if name.startswith("mcp-rag__") or base.startswith("rag_"):
         return "rag"
-    if name.startswith("sap-leader-mcp__") or base.startswith("sap_"):
+    if base in SAP_TOOL_NAMES:
         return "sap"
     return "rag"
 
