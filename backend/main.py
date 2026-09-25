@@ -471,8 +471,10 @@ async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
 async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
     """Mengambil daftar server SAP terdaftar dengan status otorisasi dan konfigurasi kredensial pengguna."""
     username = user["username"]
+    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
     # 1. Ambil status live dan sub_servers dari MCP SAP
-    raw_status = await mcp_manager.check_servers_status()
     sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
     # 2. Ambil target kredensial yang sudah pernah disimpan pengguna
     user_creds = database.list_user_sap_credentials(username)
@@ -516,8 +518,12 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
     target = (req.target or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
-    
+
     username = user["username"]
+    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
+
 
     # 2. Siapkan username dan password: jika kosong saat pengujian, coba gunakan yang tersimpan
     user_to_test = (req.sap_user or "").strip()

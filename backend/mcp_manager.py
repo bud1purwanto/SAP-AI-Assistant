@@ -378,6 +378,21 @@ class MCPManager:
             logger.debug(f"Dashboard MCP resources endpoint tidak dapat dihubungi: {ex}")
         return None
 
+    async def get_live_resources(self) -> list:
+        """Ambil list resource dinamis dari cache atau fetch langsung."""
+        if self._resources_cache and (time.time() - self._resources_cache_time < 30):
+            return self._resources_cache
+        try:
+            async with httpx.AsyncClient() as http_client:
+                dash_data = await self._fetch_dashboard_resources(http_client)
+                if dash_data and isinstance(dash_data, dict):
+                    resources = dash_data.get("resources", [])
+                    if isinstance(resources, list):
+                        return resources
+        except Exception as ex:
+            logger.debug(f"Error fetching live resources: {ex}")
+        return self._resources_cache or []
+
     async def check_servers_status(self) -> dict:
         """Cek status seluruh server MCP dengan dashboard-mcp sebagai sumber otoritatif utama."""
         try:
