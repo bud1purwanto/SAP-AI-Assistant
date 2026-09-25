@@ -181,6 +181,9 @@ export const api = {
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 
   mcpServers: () => apiFetch('/api/mcp/servers', { auth: true }),
+  mcpAccessTargets: () => apiFetch('/api/mcp/access-requests/available', { auth: true }),
+  requestMcpAccess: (payload) => apiFetch('/api/mcp/access-requests', { method: 'POST', body: payload, auth: true }),
+  myMcpAccessRequests: () => apiFetch('/api/mcp/access-requests/me', { auth: true }),
 
   chat: (payload, signal) =>
     apiFetch('/api/chat', { method: 'POST', body: payload, auth: true, signal }),

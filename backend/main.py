@@ -835,6 +835,77 @@ async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_curr
     return {"success": True, "token_bound": True, "expires_at": expires_at.isoformat()}
 
 
+class RequestMcpAccessPayload(BaseModel):
+    connectionId: str
+    reason: Optional[str] = None
+
+
+@app.get("/api/mcp/access-requests/available")
+async def get_available_mcp_access_requests(user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp /v1/access-requests/available."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{base}/v1/access-requests/available",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for access requests available: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
+
+@app.post("/api/mcp/access-requests")
+async def submit_mcp_access_request(req: RequestMcpAccessPayload, user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp POST /v1/access-requests."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{base}/v1/access-requests",
+                json={"connectionId": req.connectionId, "reason": req.reason},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for submitting access request: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 201 and r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
+
+@app.get("/api/mcp/access-requests/me")
+async def get_my_mcp_access_requests(user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp GET /v1/access-requests/me."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{base}/v1/access-requests/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for access requests history: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
 # --- KONFIGURASI ---
 
 class ConfigUpdate(BaseModel):

@@ -12,10 +12,12 @@ import SettingsModal from './SettingsModal';
 import ScheduledTasksModal from './ScheduledTasksModal';
 import QuotaBanner, { QuotaChip } from './QuotaBanner';
 import SidePanel from './SidePanel';
+import RequestAccessModal from './RequestAccessModal';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
+import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 import { useTypewriterStream } from '../hooks/useTypewriterStream';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import {
@@ -153,6 +155,13 @@ const ChatLayout = () => {
     }
   });
   const [mcpStatus, setMcpStatus] = useState(null);
+  const {
+    targets: mcpAccessTargets,
+    refresh: refreshMcpAccessTargets,
+    lookupTarget: lookupMcpAccessTarget,
+    submitRequest: submitMcpAccessRequest,
+  } = useMcpAccessRequests(!isGuest);
+  const [accessRequestModal, setAccessRequestModal] = useState({ isOpen: false, target: null });
   const [sapSubServers, setSapSubServers] = useState([]);
   const [sqlSubServers, setSqlSubServers] = useState([]);
   const [modesList, setModesList] = useState([]);
@@ -1028,18 +1037,46 @@ const ChatLayout = () => {
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
       const [activeSystemForPayload, activeTargetForPayload] = activeServer.split(':', 2);
-      const enabledConnectors = Array.isArray(connectorConfig.enabled) && connectorConfig.enabled.length > 0
+      const initialConnectors = Array.isArray(connectorConfig.enabled) && connectorConfig.enabled.length > 0
         ? connectorConfig.enabled
         : ['sap', 'rag'];
-      const sapTarget = connectorConfig.sapTarget || (activeSystemForPayload === 'sap' ? activeTargetForPayload : undefined);
-      const sqlTarget = connectorConfig.sqlTarget || (activeSystemForPayload === 'sql' ? activeTargetForPayload : undefined);
+      let sapTarget = connectorConfig.sapTarget || (activeSystemForPayload === 'sap' ? activeTargetForPayload : undefined);
+      let sqlTarget = connectorConfig.sqlTarget || (activeSystemForPayload === 'sql' ? activeTargetForPayload : undefined);
 
+      const sapAccess = sapTarget ? lookupMcpAccessTarget({ name: sapTarget, resource_key: `sap:${sapTarget}` }) : null;
+      const sqlAccess = sqlTarget ? lookupMcpAccessTarget({ name: sqlTarget, resource_key: `sql:${sqlTarget}` }) : null;
+      const isSapLocked = sapAccess && sapAccess.accessState !== 'approved';
+      const isSqlLocked = sqlAccess && sqlAccess.accessState !== 'approved';
+
+      let safeActiveServer = activeServer;
+      if (isSapLocked) {
+        sapTarget = undefined;
+        if (activeSystemForPayload === 'sap') safeActiveServer = 'general';
+      }
+      if (isSqlLocked) {
+        sqlTarget = undefined;
+        if (activeSystemForPayload === 'sql') safeActiveServer = 'general';
+      }
+
+      const isConnectorLocked = (connectorId) => {
+        const connectorTargets = mcpAccessTargets.filter((entry) => {
+          const serverType = String(entry.serverType || '').toLowerCase();
+          const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+          return serverType === connectorId || resourceKey.startsWith(`${connectorId}:`);
+        });
+        return connectorTargets.length > 0 && !connectorTargets.some((entry) => entry.accessState === 'approved');
+      };
+      const enabledConnectors = initialConnectors.filter((c) => {
+        if (c === 'sap' && isSapLocked) return false;
+        if (c === 'sql' && isSqlLocked) return false;
+        return !isConnectorLocked(c);
+      });
       const data = await chatWithProgress(
         {
           message: text,
           history,
           session_id: targetSessionId,
-          active_server: activeServer,
+          active_server: safeActiveServer,
           enabled_connectors: enabledConnectors,
           sap_target: sapTarget,
           sql_target: sqlTarget,
@@ -1834,7 +1871,11 @@ const ChatLayout = () => {
                   <button
                     id="sap-target"
                     type="button"
-                    onClick={() => setIsServerDropdownOpen((prev) => !prev)}
+                    onClick={() => {
+                      const opening = !isServerDropdownOpen;
+                      setIsServerDropdownOpen(opening);
+                      if (opening && !isGuest) refreshMcpAccessTargets();
+                    }}
                     className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
                       isProductionTarget
                         ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
@@ -1958,22 +1999,43 @@ const ChatLayout = () => {
                                   srv.name?.toLowerCase()?.includes('prod') ||
                                   srv.name?.toLowerCase()?.includes('prd')
                                 );
+                                const accessEntry = lookupMcpAccessTarget(srv);
+                                const isLocked = accessEntry && accessEntry.accessState !== 'approved';
+                                const isPending = accessEntry?.accessState === 'pending';
+                                const isRejected = accessEntry?.accessState === 'rejected';
                                 const isOffline = srv.state === 'offline' || srv.online === false;
                                 return (
                                   <button
                                     key={srv.number ?? srvKey}
                                     type="button"
                                     onClick={() => {
+                                      if (isLocked) {
+                                        if (isPending) {
+                                          showToast(t('mcp.statusPending'), 'info');
+                                        } else {
+                                          setAccessRequestModal({
+                                            isOpen: true,
+                                            target: {
+                                              connectionId: accessEntry?.connectionId || srv.id,
+                                              name: srv.name,
+                                              serverType: 'sql',
+                                            },
+                                          });
+                                        }
+                                        return;
+                                      }
                                       handleServerChange(`sql:${srvKey}`);
                                       setIsServerDropdownOpen(false);
                                     }}
-                                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
-                                      isSelected
-                                        ? isPrd
-                                          ? 'bg-danger/15 text-danger font-bold border border-danger/30'
-                                          : 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
-                                        : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
-                                    }`}
+                                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left ${
+                                      isLocked
+                                        ? 'bg-surface-sunken/40 text-content-muted border border-transparent hover:border-amber-500/30'
+                                        : isSelected
+                                          ? isPrd
+                                            ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                            : 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
+                                          : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                                    } cursor-pointer`}
                                   >
                                     <div className="flex items-center gap-2 min-w-0 truncate">
                                       <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-zinc-500' : isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
@@ -1988,13 +2050,28 @@ const ChatLayout = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
-                                      {isPrd && (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                          PRD
+                                      {isLocked ? (
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1 leading-none ${
+                                          isPending
+                                            ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                            : isRejected
+                                            ? 'bg-danger/15 text-danger border border-danger/30'
+                                            : 'bg-surface-sunken text-content-subtle border border-line'
+                                        }`}>
+                                          <Lock className="w-2.5 h-2.5" />
+                                          {isPending ? t('mcp.statusPending') : isRejected ? t('mcp.statusRejected') : t('mcp.statusLocked')}
                                         </span>
-                                      )}
-                                      {isSelected && (
-                                        <Check className={`w-3.5 h-3.5 shrink-0 ${isPrd ? 'text-danger' : 'text-blue-400'}`} />
+                                      ) : (
+                                        <>
+                                          {isPrd && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                              PRD
+                                            </span>
+                                          )}
+                                          {isSelected && (
+                                            <Check className={`w-3.5 h-3.5 shrink-0 ${isPrd ? 'text-danger' : 'text-blue-400'}`} />
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   </button>
@@ -2017,20 +2094,41 @@ const ChatLayout = () => {
                                   srv.sid?.toLowerCase()?.includes('prt') ||
                                   srv.sid?.toLowerCase()?.includes('trp')
                                 );
+                                const accessEntry = lookupMcpAccessTarget(srv);
+                                const isLocked = accessEntry && accessEntry.accessState !== 'approved';
+                                const isPending = accessEntry?.accessState === 'pending';
+                                const isRejected = accessEntry?.accessState === 'rejected';
                                 return (
                                   <button
                                     key={srv.number ?? srvAlias}
                                     type="button"
                                     onClick={() => {
+                                      if (isLocked) {
+                                        if (isPending) {
+                                          showToast(t('mcp.statusPending'), 'info');
+                                        } else {
+                                          setAccessRequestModal({
+                                            isOpen: true,
+                                            target: {
+                                              connectionId: accessEntry?.connectionId || srv.id,
+                                              name: srv.name,
+                                              serverType: 'sap',
+                                            },
+                                          });
+                                        }
+                                        return;
+                                      }
                                       handleServerChange(`${activeSystem}:${srvAlias}`);
                                       setIsServerDropdownOpen(false);
                                     }}
                                     className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
-                                      isSelected
-                                        ? isPrd
-                                          ? 'bg-danger/15 text-danger font-bold border border-danger/30'
-                                          : 'bg-accent/15 text-accent font-bold border border-accent/30'
-                                        : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                                      isLocked
+                                        ? 'bg-surface-sunken/40 text-content-muted border border-transparent hover:border-amber-500/30'
+                                        : isSelected
+                                          ? isPrd
+                                            ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                            : 'bg-accent/15 text-accent font-bold border border-accent/30'
+                                          : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
                                     }`}
                                   >
                                     <div className="flex items-center gap-2 min-w-0 truncate">
@@ -2043,15 +2141,30 @@ const ChatLayout = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
-                                      {isPrd && (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                          {t('nav.productionWarning')}
+                                      {isLocked ? (
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1 leading-none ${
+                                          isPending
+                                            ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                            : isRejected
+                                            ? 'bg-danger/15 text-danger border border-danger/30'
+                                            : 'bg-surface-sunken text-content-subtle border border-line'
+                                        }`}>
+                                          <Lock className="w-2.5 h-2.5" />
+                                          {isPending ? t('mcp.statusPending') : isRejected ? t('mcp.statusRejected') : t('mcp.statusLocked')}
                                         </span>
-                                      )}
-                                      {isSelected && (
-                                        <Check className={`w-3.5 h-3.5 shrink-0 ${
-                                          isPrd ? 'text-danger' : 'text-accent'
-                                        }`} />
+                                      ) : (
+                                        <>
+                                          {isPrd && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                              {t('nav.productionWarning')}
+                                            </span>
+                                          )}
+                                          {isSelected && (
+                                            <Check className={`w-3.5 h-3.5 shrink-0 ${
+                                              isPrd ? 'text-danger' : 'text-accent'
+                                            }`} />
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   </button>
@@ -2079,7 +2192,17 @@ const ChatLayout = () => {
                             { id: 'rag', label: t('mcp.enableRag'), icon: BookOpen, color: 'text-amber-400', allowed: mcpStatus?.rag?.allowed !== false },
                             { id: 'email', label: t('mcp.enableEmail'), icon: Mail, color: 'text-purple-400', allowed: mcpStatus?.email?.allowed !== false },
                           ].map(({ id, label, icon: Icon, color, allowed }) => {
-                            const enabled = allowed && connectorConfig.enabled.includes(id);
+                            const accessTargets = mcpAccessTargets.filter((entry) => {
+                              const serverType = String(entry.serverType || '').toLowerCase();
+                              const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+                              return serverType === id || resourceKey.startsWith(`${id}:`);
+                            });
+                            const approvedTarget = accessTargets.find((entry) => entry.accessState === 'approved');
+                            const requestableTarget = accessTargets.find((entry) => entry.canRequest) || accessTargets[0];
+                            const isAccessLocked = accessTargets.length > 0 && !approvedTarget;
+                            const isAccessPending = requestableTarget?.accessState === 'pending';
+                            const connectorAllowed = allowed && !isAccessLocked;
+                            const enabled = connectorAllowed && connectorConfig.enabled.includes(id);
                             return (
                               <button
                                 key={id}
@@ -2087,20 +2210,32 @@ const ChatLayout = () => {
                                 disabled={!allowed}
                                 aria-pressed={enabled}
                                 aria-label={`${label}: ${enabled ? t('mcp.selected') : t('mcp.notSelected')}`}
-                                onClick={() => handleConnectorToggle(id)}
+                                onClick={() => {
+                                  if (isAccessLocked) {
+                                    if (isAccessPending) {
+                                      showToast(t('mcp.statusPending'), 'info');
+                                    } else if (requestableTarget) {
+                                      setAccessRequestModal({ isOpen: true, target: requestableTarget });
+                                    }
+                                    return;
+                                  }
+                                  handleConnectorToggle(id);
+                                }}
                                 className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-all ${
                                   !allowed
                                     ? 'bg-surface-sunken/30 border-line/30 opacity-50 cursor-not-allowed'
-                                    : enabled
-                                      ? 'bg-accent/10 border-accent/40 text-content cursor-pointer'
-                                      : 'bg-surface-sunken/60 border-line/60 text-content-muted hover:border-accent/30 cursor-pointer'
+                                    : isAccessLocked
+                                      ? 'bg-surface-sunken/40 border-amber-500/20 text-content-muted cursor-pointer'
+                                      : enabled
+                                        ? 'bg-accent/10 border-accent/40 text-content cursor-pointer'
+                                        : 'bg-surface-sunken/60 border-line/60 text-content-muted hover:border-accent/30 cursor-pointer'
                                 }`}
                               >
                                 <span className="flex items-center gap-1.5 min-w-0">
                                   <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
                                   <span className="font-semibold text-[11px] truncate">{label}</span>
                                 </span>
-                                {!allowed ? (
+                                {!allowed || isAccessLocked ? (
                                   <Lock className="w-3 h-3 text-content-subtle shrink-0" />
                                 ) : enabled ? (
                                   <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -2424,6 +2559,17 @@ const ChatLayout = () => {
         onRefreshModes={fetchModes}
       />
 
+
+      <RequestAccessModal
+        isOpen={accessRequestModal.isOpen}
+        target={accessRequestModal.target}
+        onClose={() => setAccessRequestModal({ isOpen: false, target: null })}
+        onSubmit={async (connectionId, reason) => {
+          await submitMcpAccessRequest(connectionId, reason);
+          showToast(t('mcp.requestSent'), 'success');
+          await refreshMcpAccessTargets();
+        }}
+      />
 
       {/* Confirmation Modal - Logout */}
       <ConfirmModal
