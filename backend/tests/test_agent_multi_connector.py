@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 from models import ChatRequest
+from agent import process_chat
 
 
 def test_agent_passes_allowed_connectors():
