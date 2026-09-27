@@ -1045,8 +1045,8 @@ const ChatLayout = () => {
 
       const sapAccess = sapTarget ? lookupMcpAccessTarget({ name: sapTarget, resource_key: `sap:${sapTarget}` }) : null;
       const sqlAccess = sqlTarget ? lookupMcpAccessTarget({ name: sqlTarget, resource_key: `sql:${sqlTarget}` }) : null;
-      const isSapLocked = sapAccess && sapAccess.accessState !== 'approved';
-      const isSqlLocked = sqlAccess && sqlAccess.accessState !== 'approved';
+      const isSapLocked = Boolean(sapTarget) && (!sapAccess || sapAccess.accessState !== 'approved');
+      const isSqlLocked = Boolean(sqlTarget) && (!sqlAccess || sqlAccess.accessState !== 'approved');
 
       let safeActiveServer = activeServer;
       if (isSapLocked) {
@@ -1064,7 +1064,7 @@ const ChatLayout = () => {
           const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
           return serverType === connectorId || resourceKey.startsWith(`${connectorId}:`);
         });
-        return connectorTargets.length > 0 && !connectorTargets.some((entry) => entry.accessState === 'approved');
+        return !connectorTargets.some((entry) => entry.accessState === 'approved');
       };
       const enabledConnectors = initialConnectors.filter((c) => {
         if (c === 'sap' && isSapLocked) return false;
@@ -2000,7 +2000,7 @@ const ChatLayout = () => {
                                   srv.name?.toLowerCase()?.includes('prd')
                                 );
                                 const accessEntry = lookupMcpAccessTarget(srv);
-                                const isLocked = accessEntry && accessEntry.accessState !== 'approved';
+                                const isLocked = !accessEntry || accessEntry.accessState !== 'approved';
                                 const isPending = accessEntry?.accessState === 'pending';
                                 const isRejected = accessEntry?.accessState === 'rejected';
                                 const isOffline = srv.state === 'offline' || srv.online === false;
@@ -2012,15 +2012,17 @@ const ChatLayout = () => {
                                       if (isLocked) {
                                         if (isPending) {
                                           showToast(t('mcp.statusPending'), 'info');
-                                        } else {
+                                        } else if (accessEntry) {
                                           setAccessRequestModal({
                                             isOpen: true,
                                             target: {
-                                              connectionId: accessEntry?.connectionId || srv.id,
+                                              connectionId: accessEntry.connectionId,
                                               name: srv.name,
                                               serverType: 'sql',
                                             },
                                           });
+                                        } else {
+                                          showToast(t('mcp.requestFailed'), 'error');
                                         }
                                         return;
                                       }
@@ -2095,7 +2097,7 @@ const ChatLayout = () => {
                                   srv.sid?.toLowerCase()?.includes('trp')
                                 );
                                 const accessEntry = lookupMcpAccessTarget(srv);
-                                const isLocked = accessEntry && accessEntry.accessState !== 'approved';
+                                const isLocked = !accessEntry || accessEntry.accessState !== 'approved';
                                 const isPending = accessEntry?.accessState === 'pending';
                                 const isRejected = accessEntry?.accessState === 'rejected';
                                 return (
@@ -2106,15 +2108,17 @@ const ChatLayout = () => {
                                       if (isLocked) {
                                         if (isPending) {
                                           showToast(t('mcp.statusPending'), 'info');
-                                        } else {
+                                        } else if (accessEntry) {
                                           setAccessRequestModal({
                                             isOpen: true,
                                             target: {
-                                              connectionId: accessEntry?.connectionId || srv.id,
+                                              connectionId: accessEntry.connectionId,
                                               name: srv.name,
                                               serverType: 'sap',
                                             },
                                           });
+                                        } else {
+                                          showToast(t('mcp.requestFailed'), 'error');
                                         }
                                         return;
                                       }
@@ -2199,7 +2203,7 @@ const ChatLayout = () => {
                             });
                             const approvedTarget = accessTargets.find((entry) => entry.accessState === 'approved');
                             const requestableTarget = accessTargets.find((entry) => entry.canRequest) || accessTargets[0];
-                            const isAccessLocked = accessTargets.length > 0 && !approvedTarget;
+                            const isAccessLocked = !approvedTarget;
                             const isAccessPending = requestableTarget?.accessState === 'pending';
                             const connectorAllowed = allowed && !isAccessLocked;
                             const enabled = connectorAllowed && connectorConfig.enabled.includes(id);
@@ -2216,6 +2220,8 @@ const ChatLayout = () => {
                                       showToast(t('mcp.statusPending'), 'info');
                                     } else if (requestableTarget) {
                                       setAccessRequestModal({ isOpen: true, target: requestableTarget });
+                                    } else {
+                                      showToast(t('mcp.requestFailed'), 'error');
                                     }
                                     return;
                                   }
