@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 
+import bcrypt
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,24 @@ GUEST_ROLE = "guest"
 
 _dashboard_tokens: dict[str, tuple[str, datetime]] = {}
 _dashboard_access_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_access_token", default=None)
+
+
+# --- Password Hashing (bcrypt) ---
+
+def hash_password(password: str) -> str:
+    """Hash password menggunakan bcrypt."""
+    pwd = (password or "").encode("utf-8")
+    return bcrypt.hashpw(pwd[:72], bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verifikasi kecocokan password terhadap hash bcrypt."""
+    if not password or not hashed:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 # --- Signed Session Cookie ---
 

@@ -281,6 +281,11 @@ export const api = {
   adminRoleModes: () => apiFetch('/api/admin/modes/roles'),
   adminUpdateRoleMode: (payload) =>
     apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
+  adminModesUsersList: () => apiFetch('/api/admin/modes/users'),
+  adminUserModes: (username) =>
+    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`),
+  adminUpdateUserModes: (username, payload) =>
+    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
 
 
   // Per-user SAP Credentials

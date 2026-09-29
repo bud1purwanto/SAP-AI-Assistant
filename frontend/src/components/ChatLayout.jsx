@@ -1149,6 +1149,14 @@ const ChatLayout = () => {
         if (c === 'sql' && isSqlLocked) return false;
         return !isConnectorLocked(c);
       });
+      const lockedConnectors = ['rag'].filter((connectorId) =>
+        mcpAccessTargets.some((entry) => {
+          const serverType = String(entry.serverType || '').toLowerCase();
+          const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+          return (serverType === connectorId || resourceKey.startsWith(`${connectorId}:`))
+            && entry.accessState !== 'approved';
+        }) && isConnectorLocked(connectorId),
+      );
       const data = await chatWithProgress(
         {
           message: text,
@@ -1156,6 +1164,7 @@ const ChatLayout = () => {
           session_id: targetSessionId,
           active_server: safeActiveServer,
           enabled_connectors: enabledConnectors,
+          locked_connectors: lockedConnectors,
           sap_target: sapTarget,
           sql_target: sqlTarget,
           attachment_ids: attachments.map((a) => a.upload_id),

@@ -2,9 +2,10 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import uuid
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
@@ -37,6 +38,7 @@ from database import (
     create_user_session,
     invalidate_existing_user_sessions,
     get_user_session,
+    get_user_by_username,
     update_session_heartbeat,
     kick_user_session,
     kick_all_user_sessions,
@@ -102,6 +104,10 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
+    get_modes_for_user,
+    get_user_modes_matrix,
+    set_user_mode_override,
+    get_all_user_mode_overrides,
     list_divisions,
     get_division,
     create_division,
@@ -342,6 +348,68 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+def _detect_client_device(
+    ua_str: str,
+    req_name: Optional[str] = None,
+    req_type: Optional[str] = None,
+    req_os: Optional[str] = None,
+    req_browser: Optional[str] = None,
+):
+    ua = ua_str or ""
+    ua_lower = ua.lower()
+
+    os_name = req_os
+    if not os_name:
+        if "iphone" in ua_lower or "ipad" in ua_lower or "ipod" in ua_lower:
+            os_name = "iOS"
+        elif "android" in ua_lower:
+            os_name = "Android"
+        elif "windows" in ua_lower:
+            os_name = "Windows"
+        elif "macintosh" in ua_lower or "mac os" in ua_lower:
+            os_name = "macOS"
+        elif "linux" in ua_lower:
+            os_name = "Linux"
+        else:
+            os_name = "OS Web"
+
+    device_type = req_type
+    if not device_type:
+        if "ipad" in ua_lower or "tablet" in ua_lower:
+            device_type = "tablet"
+        elif "mobi" in ua_lower or "iphone" in ua_lower or "android" in ua_lower:
+            device_type = "mobile"
+        else:
+            device_type = "desktop"
+
+    browser_name = req_browser
+    if not browser_name:
+        if "edg" in ua_lower:
+            browser_name = "Edge"
+        elif "chrome" in ua_lower and "chromium" not in ua_lower:
+            browser_name = "Chrome"
+        elif "safari" in ua_lower and "chrome" not in ua_lower:
+            browser_name = "Safari"
+        elif "firefox" in ua_lower:
+            browser_name = "Firefox"
+        elif "opera" in ua_lower or "opr" in ua_lower:
+            browser_name = "Opera"
+        else:
+            browser_name = "Web Browser"
+
+    device_name = req_name
+    if not device_name:
+        if device_type == "mobile":
+            device_name = f"HP ({browser_name} - {os_name})"
+        elif device_type == "tablet":
+            device_name = f"Tablet ({browser_name} - {os_name})"
+        else:
+            device_name = f"PC ({browser_name} - {os_name})"
+
+    terminal_info = f"{browser_name} / {os_name}"
+    return device_name, device_type, os_name, browser_name, terminal_info
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -355,50 +423,177 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/auth/login")
 @app.post("/api/login")
-async def auth_login(req: LoginRequest, response: Response):
+async def auth_login(req: LoginRequest, request: Request, response: Response):
     username = (req.username or "").strip()
     password = (req.password or "").strip()
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
 
+    client_ip = _client_ip(request)
+    ua_str = request.headers.get("user-agent", "")
+    dev_name, dev_type, dev_os, dev_browser, term_info = _detect_client_device(
+        ua_str, req.device_name, req.device_type, req.os, req.browser
+    )
+
     base = settings.dashboard_oidc_issuer.rstrip("/")
+    login_success = False
+    principal = None
+    access_token = None
+    session_exp_sec = settings.session_expire_hours * 3600
+
+    # 1. Coba autentikasi via Central Dashboard OIDC
     try:
         login_payload = {"username": username, "password": password}
         if settings.dashboard_oidc_client_id:
             login_payload["clientCode"] = settings.dashboard_oidc_client_id
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(f"{base}/v1/auth/login", json=login_payload)
-            # Bila clientCode tidak terdaftar di dashboard-mcp, retry 1x tanpa clientCode.
-            if r.status_code == 400 and "client code" in r.text.lower() and "clientCode" in login_payload:
-                logger.warning(f"clientCode '{settings.dashboard_oidc_client_id}' tidak dikenal dashboard-mcp; retry tanpa clientCode.")
-                r = await client.post(f"{base}/v1/auth/login", json={"username": username, "password": password})
-    except httpx.HTTPError as e:
-        logger.error(f"dashboard-mcp unreachable during login: {e}")
-        raise HTTPException(status_code=502, detail="Layanan autentikasi tidak tersedia.")
+            # Bila gagal dengan clientCode (400 atau 401), retry 1x tanpa clientCode
+            if r.status_code in (400, 401) and "clientCode" in login_payload:
+                logger.warning(f"Login dengan clientCode gagal ({r.status_code}); mencoba tanpa clientCode.")
+                r_retry = await client.post(f"{base}/v1/auth/login", json={"username": username, "password": password})
+                if r_retry.status_code == 200:
+                    r = r_retry
 
-    if r.status_code != 200:
+            if r.status_code == 200:
+                session = r.json()
+                principal = _map_dashboard_user(session["user"], session["accessToken"])
+                access_token = session["accessToken"]
+                session_exp_sec = int(session.get("expiresIn") or settings.session_expire_hours * 3600)
+                login_success = True
+            else:
+                logger.warning(f"Dashboard OIDC login failed for '{username}': HTTP {r.status_code} {r.text[:200]}")
+    except httpx.HTTPError as e:
+        logger.warning(f"dashboard-mcp unreachable during login: {e}")
+
+    # 2. Fallback: Autentikasi database lokal jika OIDC gagal / belum terdaftar di OIDC
+    if not login_success:
+        local_user = get_user_by_username(username)
+        if local_user and (local_user.get("password_hash") or local_user.get("password")):
+            from auth import verify_password
+            stored_hash = local_user.get("password_hash")
+            stored_plain = local_user.get("password")
+            if (stored_hash and verify_password(password, stored_hash)) or (stored_plain and stored_plain == password):
+                roles = local_user.get("roles") or [local_user.get("role", "user")]
+                primary_role = local_user.get("role") or roles[0]
+                access_token = f"local_token_{secrets.token_hex(16)}"
+                principal = {
+                    "sub": local_user["username"],
+                    "username": local_user["username"],
+                    "role": primary_role,
+                    "roles": roles,
+                    "full_name": local_user.get("full_name", ""),
+                    "assistant_persona": local_user.get("assistant_persona", ""),
+                    "division_code": local_user.get("division_code"),
+                    "division_name": local_user.get("division_name"),
+                    "job_level": local_user.get("job_level", "staff"),
+                    "org_units": [],
+                    "access_token": access_token,
+                    "is_guest": False,
+                }
+                ensure_user_exists(
+                    username=principal["username"],
+                    role=principal["role"],
+                    roles=principal["roles"],
+                    full_name=principal["full_name"],
+                )
+                login_success = True
+                logger.info(f"User '{username}' berhasil login via database lokal.")
+
+    if not login_success or not principal:
+        record_auth_audit_log(
+            event_type="LOGIN_FAILED",
+            username=username,
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            user_agent=ua_str,
+            status="FAILED",
+            details="Username atau password salah.",
+        )
         raise HTTPException(status_code=401, detail="Username atau password salah.")
 
-    session = r.json()
-    principal = _map_dashboard_user(session["user"], session["accessToken"])
+    # Single-session enforcement & daftarkan sesi baru
+    session_id = str(uuid.uuid4())
+    kicked = invalidate_existing_user_sessions(
+        username=principal["username"],
+        reason=f"Akun Anda telah login di perangkat lain ({dev_name} - {client_ip}). Sesi di perangkat ini dinonaktifkan.",
+    )
+    for old_s in kicked:
+        record_auth_audit_log(
+            event_type="SESSION_KICKED_NEW_LOGIN",
+            username=principal["username"],
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            status="WARNING",
+            details=f"Sesi lama ({old_s.get('device_name')} - {old_s.get('ip_address')}) diputuskan otomatis karena login baru dari {dev_name} ({client_ip}).",
+        )
+
+    sess_expires_at = datetime.now(timezone.utc) + timedelta(seconds=session_exp_sec)
+
+    create_user_session(
+        session_id=session_id,
+        username=principal["username"],
+        device_name=dev_name,
+        device_type=dev_type,
+        terminal_info=term_info,
+        os=dev_os,
+        browser=dev_browser,
+        ip_address=client_ip,
+        user_agent=ua_str,
+        expires_at=sess_expires_at,
+    )
+
+    record_auth_audit_log(
+        event_type="LOGIN_SUCCESS",
+        username=principal["username"],
+        ip_address=client_ip,
+        device_name=dev_name,
+        device_type=dev_type,
+        browser=dev_browser,
+        os=dev_os,
+        user_agent=ua_str,
+        status="SUCCESS",
+        details="Login berhasil.",
+    )
+
+    principal["session_id"] = session_id
+
     response.set_cookie(
         key=settings.session_cookie_name,
         value=create_session_cookie(principal),
         httponly=True,
         secure=settings.session_cookie_secure,
         samesite=settings.session_cookie_samesite,
-        max_age=int(session.get("expiresIn") or settings.session_expire_hours * 3600),
+        max_age=session_exp_sec,
         path="/",
     )
     return {
         "status": "success",
-        "access_token": session["accessToken"],
+        "access_token": access_token,
         "token_type": "bearer",
+        "session_id": session_id,
+        "device_name": dev_name,
         "user": {**principal, "authenticated": True},
     }
 
 @app.post("/api/auth/logout")
-async def auth_logout(response: Response):
+@app.post("/api/logout")
+async def auth_logout(response: Response, user: dict = Depends(get_current_user_optional)):
+    session_id = user.get("session_id") if user else None
+    if session_id:
+        terminate_session_logout(session_id)
+        record_auth_audit_log(
+            event_type="LOGOUT",
+            username=user.get("username", ""),
+            status="SUCCESS",
+            details="Pengguna keluar secara sukarela (logout).",
+        )
     base = settings.dashboard_oidc_issuer.rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -452,6 +647,27 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
         profile["division_code"] = local.get("division_code")
         profile["division_name"] = local.get("division_name")
         profile["job_level"] = local.get("job_level", "staff")
+
+    session_id = user.get("session_id")
+    if not session_id and not user.get("is_guest") and user.get("username"):
+        session_id = str(uuid.uuid4())
+        sess_expires_at = datetime.now(timezone.utc) + timedelta(hours=getattr(settings, "session_expire_hours", 24))
+        create_user_session(
+            session_id=session_id,
+            username=user["username"],
+            device_name="Browser Session",
+            device_type="desktop",
+            terminal_info="Web Browser",
+            os="Unknown",
+            browser="Web Browser",
+            ip_address="127.0.0.1",
+            user_agent="",
+            expires_at=sess_expires_at,
+        )
+        user["session_id"] = session_id
+    if session_id:
+        profile["session_id"] = session_id
+
     return profile
 
 
@@ -460,6 +676,32 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
 async def get_me(user: dict = Depends(get_current_user)):
     """Kembalikan profil user terautentikasi (401 bila belum login)."""
     return await auth_session(user)
+
+
+class HeartbeatRequest(BaseModel):
+    current_action: Optional[str] = None
+    current_path: Optional[str] = None
+    is_idle: bool = False
+
+
+@app.post("/api/auth/heartbeat")
+async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
+    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & mengecek status keaktifan sesi."""
+    session_id = user.get("session_id")
+    if not session_id:
+        return {"status": "ok", "is_active": True}
+    is_active, reason = update_session_heartbeat(
+        session_id=session_id,
+        current_action=req.current_action,
+        current_path=req.current_path,
+        is_idle=req.is_idle,
+    )
+    if not is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
+        )
+    return {"status": "ok", "is_active": True}
 
 # --- PER-USER SAP CREDENTIALS ---
 
@@ -1218,6 +1460,66 @@ async def get_admin_top_users_endpoint(
 ):
     """Mengambil daftar user teraktif berdasarkan filter periode tanpa reload MCP."""
     return get_top_active_users(period=period, limit=limit)
+
+
+# --- ADMIN SESSION MONITOR & SECURITY LOGS ---
+
+@app.get("/api/admin/user-sessions")
+async def get_admin_user_sessions_endpoint(
+    status: str = "active",
+    q: Optional[str] = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Mengambil daftar sesi aktif dan metrik telemetri pengguna."""
+    return list_active_sessions(status_filter=status, search=q)
+
+
+class AdminKickSessionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@app.post("/api/admin/user-sessions/{session_id}/kick")
+async def admin_kick_session_endpoint(
+    session_id: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Admin memutuskan sesi pengguna tertentu secara paksa."""
+    reason = req.reason if req else None
+    success = kick_user_session(session_id, admin["username"], reason=reason)
+    if not success:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau sudah tidak aktif.")
+    return {"status": "success", "message": "Sesi berhasil diputuskan."}
+
+
+@app.post("/api/admin/users/{username}/kick-sessions")
+async def admin_kick_user_sessions_endpoint(
+    username: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Admin memutuskan semua sesi aktif pengguna tertentu."""
+    reason = req.reason if req else None
+    kicked_count = kick_all_user_sessions(username, admin["username"], reason=reason)
+    return {
+        "status": "success",
+        "kicked_count": kicked_count,
+        "message": f"{kicked_count} sesi aktif berhasil diputuskan.",
+    }
+
+
+@app.get("/api/admin/security-logs")
+async def get_admin_security_logs_endpoint(
+    username: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: dict = Depends(require_superadmin),
+):
+    """Mengambil riwayat log audit autentikasi sistem."""
+    return list_auth_audit_logs(
+        username=username, event_type=event_type, limit=limit, offset=offset
+    )
 
 
 # --- PERAN ---
@@ -2159,6 +2461,99 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
 
 
+class AdminUserModeOverrideItem(BaseModel):
+    mode_code: str
+    state: Optional[str] = None  # "inherit" | "allow" | "deny"
+    enabled: Optional[bool] = None
+
+
+class AdminUpdateUserModeRequest(BaseModel):
+    mode_code: Optional[str] = None
+    state: Optional[str] = None
+    enabled: Optional[bool] = None
+    items: Optional[List[AdminUserModeOverrideItem]] = None
+
+
+@app.get("/api/admin/modes/users")
+async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mendapatkan daftar pengguna beserta ringkasan status override mode chat."""
+    users = list_all_users()
+    all_ovrs = get_all_user_mode_overrides()
+    ovrs_by_user = {}
+    for o in all_ovrs:
+        u = o["username"].lower()
+        if u not in ovrs_by_user:
+            ovrs_by_user[u] = []
+        ovrs_by_user[u].append(o)
+
+    result = []
+    for u in users:
+        u_name = u.get("username", "")
+        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
+        result.append({
+            "username": u_name,
+            "full_name": u.get("full_name", ""),
+            "role": u.get("role", "user"),
+            "roles": u.get("roles", [u.get("role", "user")]),
+            "division_name": u.get("division_name"),
+            "override_count": len(u_ovrs),
+            "overrides": u_ovrs,
+        })
+    return result
+
+
+@app.get("/api/admin/modes/users/{username}")
+async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
+    """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
+    res = get_user_modes_matrix(username)
+    if "error" in res and res.get("error") == "User not found":
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+    return res
+
+
+@app.put("/api/admin/modes/users/{username}")
+async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
+    """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
+    user_row = get_user_by_username(username)
+    if not user_row:
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+
+    items_to_process = []
+    if req.items is not None:
+        items_to_process = req.items
+    elif req.mode_code:
+        items_to_process = [AdminUserModeOverrideItem(
+            mode_code=req.mode_code,
+            state=req.state,
+            enabled=req.enabled,
+        )]
+
+    if not items_to_process:
+        raise HTTPException(status_code=400, detail="Tidak ada data mode yang diperbarui.")
+
+    success_count = 0
+    for item in items_to_process:
+        m_code = (item.mode_code or "").strip().lower()
+        if not m_code:
+            continue
+        st = item.state
+        if st is None and item.enabled is not None:
+            st = "allow" if item.enabled else "deny"
+        elif st is None:
+            st = "inherit"
+
+        ok = set_user_mode_override(username, m_code, st)
+        if ok:
+            success_count += 1
+
+    return {
+        "status": "success",
+        "username": username,
+        "updated": success_count,
+        "matrix": get_user_modes_matrix(username),
+    }
+
+
 
 # --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS ---
 
@@ -2374,8 +2769,8 @@ async def chat_stream_endpoint(
             await queue.put({"type": "result", "data": response.model_dump()})
         except HTTPException as e:
             await queue.put({"type": "error", "status": e.status_code, "detail": e.detail})
-        except Exception as e:
-            logger.error(f"Chat streaming gagal: {e}")
+        except Exception:
+            logger.exception("Chat streaming gagal")
             await queue.put({"type": "error", "status": 500, "detail": "Terjadi kesalahan saat memproses permintaan."})
         finally:
             await queue.put(None)

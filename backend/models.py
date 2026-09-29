@@ -30,6 +30,11 @@ class ChatRequest(BaseModel):
         default=None,
         description="Daftar ID konektor MCP yang diaktifkan pengguna, misal: ['sap', 'sql', 'rag']",
     )
+    locked_connectors: List[str] = Field(
+        default_factory=list,
+        description="Konektor yang diketahui terkunci oleh status akses dashboard untuk pesan bantuan pengguna.",
+    )
+    language: str = Field(default="id", description="Bahasa jawaban: id atau en")
     sap_target: Optional[str] = Field(default=None, description="Target server SAP yang dipilih, misal: 'sandbox-new'")
     sql_target: Optional[str] = Field(default=None, description="Target database SQL yang dipilih, misal: 'dev-223'")
 class GeneratedArtifact(BaseModel):

@@ -10,6 +10,19 @@ from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AI
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import estimate_tokens, trim_history
+from analysis_policy import (
+    AnalysisState,
+    classify_request,
+    build_investigation_plan,
+    record_tool_evidence,
+    evaluate_evidence_sufficiency,
+    build_retry_instruction,
+    get_rag_budget,
+    build_final_answer_contract,
+)
+from analysis_strategies import build_strategy_guidance
+from evidence_validators import validate_evidence
+from answer_quality import review_answer
 from models import ChatRequest, ChatResponse, SourceReference, UsageStats
 from config import settings
 
@@ -438,6 +451,24 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     raw_lower = raw_message.lower()
     is_en = getattr(chat_req, "language", "id") == "en"
 
+    # Status terkunci berasal dari katalog akses dashboard yang sudah dilihat UI.
+    # Jangan meminta model menebak apakah penolakan izin berarti server offline.
+    rag_requested = bool(re.match(r"^/(?:sop|rag|doc|kb)(?:\s|$)", raw_message, re.IGNORECASE))
+    rag_requested = rag_requested or (chat_req.active_server or "").lower() == "rag"
+    if rag_requested and "rag" in chat_req.locked_connectors:
+        return ChatResponse(
+            reply=(
+                "You don't have access to RAG Knowledge yet. Open the MCP connector menu, "
+                "select the locked RAG Knowledge connection, and request access from a superadmin. "
+                "Once approved, try your request again."
+                if is_en else
+                "Anda belum memiliki akses ke RAG Knowledge. Buka menu konektor MCP, "
+                "pilih RAG Knowledge yang terkunci, lalu ajukan permintaan akses kepada superadmin. "
+                "Setelah disetujui, ulangi permintaan Anda."
+            ),
+            sources=[],
+        )
+
     if raw_lower in ("/", "/help", "/?", "/menu", "/commands", "/command"):
         roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
         user_roles_lower = [str(r).lower() for r in roles_list]
@@ -768,6 +799,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         get_system_config,
         get_chat_mode_by_code,
         get_default_chat_mode,
+        get_modes_for_role,
         get_modes_for_user,
     )
     sys_cfg = get_system_config()
@@ -1038,7 +1070,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             target_srv = "sap"
     # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
     # gunakan perilaku lama (fallback server_filter-based exclusivity).
-    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors else None
+    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors is not None else None
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.

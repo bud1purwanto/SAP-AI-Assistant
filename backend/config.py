@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     session_cookie_samesite: str = "lax"
     session_secret: str = "sap-ai-assistant-enterprise-session-secret-abap-2026"
     session_expire_hours: int = 24
+    jwt_expire_minutes: int = 24 * 60
 
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"

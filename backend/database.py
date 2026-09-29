@@ -559,7 +559,8 @@ def get_user_by_username(username: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona,
-                       u.division_code, d.name AS division_name, u.job_level
+                       u.division_code, d.name AS division_name, u.job_level,
+                       u.password_hash, u.password
                 FROM {DB_SCHEMA}.users u
                 LEFT JOIN {DB_SCHEMA}.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
@@ -598,6 +599,8 @@ def get_user_by_username(username: str):
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
                     "job_level": getattr(row, "job_level", None) or "staff",
+                    "password_hash": getattr(row, "password_hash", None),
+                    "password": getattr(row, "password", None),
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
@@ -1775,10 +1778,13 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
             if jl_clean not in ("staff", "leader", "manager"):
                 jl_clean = "staff"
 
+            from auth import hash_password
+            pwd_hash = hash_password(password) if password and password.strip() else None
+
             conn.execute(text("""
-                INSERT INTO {DB_SCHEMA}.users (username, full_name, role, assistant_persona, division_code, job_level)
-                VALUES (:u, :fn, :r, :persona, :dc, :jl)
-            """), {"u": uname_clean, "fn": (full_name or "").strip(),
+                INSERT INTO {DB_SCHEMA}.users (username, password_hash, full_name, role, assistant_persona, division_code, job_level)
+                VALUES (:u, :p, :fn, :r, :persona, :dc, :jl)
+            """), {"u": uname_clean, "p": pwd_hash, "fn": (full_name or "").strip(),
                    "r": primary_role, "persona": persona or "",
                    "dc": div_clean, "jl": jl_clean})
             for r in clean_roles:
@@ -1915,6 +1921,10 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                     jl_clean = "staff"
                 updates.append("job_level = :jl")
                 params["jl"] = jl_clean
+            if password is not None and password.strip():
+                from auth import hash_password
+                updates.append("password_hash = :pwd, password = NULL")
+                params["pwd"] = hash_password(password.strip())
             if updates:
                 sql = f"UPDATE {DB_SCHEMA}.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
@@ -1922,6 +1932,36 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
             return {"success": True, "message": f"User '{username}' berhasil diperbarui."}
     except Exception as e:
         logger.error(f"Error update_user_by_admin: {e}")
+        return {"success": False, "message": str(e)}
+
+
+def reset_user_password_by_admin(username: str, new_password: str) -> dict:
+    """Set atau reset password user langsung di database lokal."""
+    if not new_password or len(new_password) < 6:
+        return {"success": False, "message": "Password minimal 6 karakter."}
+    uname_clean = (username or "").strip()
+    try:
+        from auth import hash_password
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(
+                text("SELECT username FROM {DB_SCHEMA}.users WHERE LOWER(username) = LOWER(:u)"),
+                {"u": uname_clean},
+            ).fetchone()
+            if not existing:
+                return {"success": False, "message": "User tidak ditemukan."}
+            conn.execute(text("""
+                UPDATE {DB_SCHEMA}.users
+                SET password_hash = :p, password = NULL
+                WHERE LOWER(username) = LOWER(:u)
+            """), {
+                "u": uname_clean,
+                "p": hash_password(new_password),
+            })
+            conn.commit()
+            return {"success": True, "message": f"Password user '{uname_clean}' berhasil diperbarui."}
+    except Exception as e:
+        logger.error(f"Error reset_user_password_by_admin: {e}")
         return {"success": False, "message": str(e)}
 
 
@@ -3988,15 +4028,32 @@ def encrypt_fernet(data: str) -> str:
 
 
 def decrypt_fernet(encrypted_data: str) -> Optional[str]:
-    """Decrypt a ciphertext string using Fernet with session_secret."""
+    """Decrypt a ciphertext string using Fernet with session_secret (with legacy key fallback)."""
     if not encrypted_data:
         return None
     try:
         f = Fernet(_get_fernet_key())
         return f.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
     except Exception:
-        logger.warning("Gagal mendekripsi data kredensial SAP dengan session_secret.")
-        return None
+        pass
+
+    # Fallback ke kunci legacy sebelum migrasi OIDC
+    legacy_secrets = [
+        "sap-ai-assistant-enterprise-secure-jwt-key-abap-2026-prod",
+        "default_secret_key_change_in_prod",
+        "test-session-secret-test-session-secret-1234567890",
+    ]
+    for leg in legacy_secrets:
+        try:
+            f_leg = Fernet(_get_fernet_key(leg))
+            decrypted = f_leg.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
+            logger.info("Berhasil mendekripsi kredensial SAP menggunakan legacy key.")
+            return decrypted
+        except Exception:
+            continue
+
+    logger.warning("Gagal mendekripsi data kredensial SAP dengan session_secret.")
+    return None
 
 def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
     """Save encrypted SAP credentials for a specific user and SAP target.
@@ -4370,9 +4427,9 @@ def create_user_session(
     user_agent: Optional[str] = None,
     expires_at: Optional[datetime] = None,
 ) -> Optional[dict]:
-    """Mendaftarkan sesi aktif pengguna baru ke database."""
     if not expires_at:
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+        exp_minutes = getattr(settings, "jwt_expire_minutes", None) or (getattr(settings, "session_expire_hours", 24) * 60)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=int(exp_minutes))
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""
