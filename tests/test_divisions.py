@@ -66,7 +66,6 @@ def test_user_division_assignment(db):
     # Buat user dengan divisi IT
     res = create_new_user(
         username=uname,
-        password="Password123!",
         role="user",
         full_name="User Divisi Test",
         division_code="IT",

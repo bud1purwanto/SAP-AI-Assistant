@@ -721,8 +721,16 @@ def test_quota_unaffected_by_disable_but_lost_on_suspend(client, admin_auth):
             "roles": [code],
         })
         assert res_user.status_code == 200
-        login = client.post("/api/login", json={"username": "quota_split_user", "password": "Password123!"})
-        auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        from auth import create_session_cookie
+        cookie = create_session_cookie({
+            "sub": "quota_split_user",
+            "username": "quota_split_user",
+            "role": code,
+            "roles": [code],
+            "org_units": [],
+            "is_guest": False,
+        })
+        auth = {"Cookie": f"sap_session={cookie}"}
 
         # Baseline: kuota peran berlaku
         res_q1 = client.get("/api/quota", headers=auth)

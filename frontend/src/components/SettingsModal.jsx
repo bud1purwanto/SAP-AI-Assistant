@@ -11,9 +11,8 @@ import {
   Eye, 
   EyeOff, 
   Globe, 
-  KeyRound, 
+  Info,
   Loader2,
-  Lock, 
   Save, 
   Server, 
   ShieldCheck, 
@@ -27,7 +26,7 @@ import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 
-const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
+const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToast: parentShowToast }) => {
   const { language, setLanguage, t, languages } = useLanguage();
   const [activeTab, setActiveTab] = useState(initialTab || 'persona');
   const [config, setConfig] = useState({
@@ -50,16 +49,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
   const [userRole, setUserRole] = useState(user?.role || 'user');
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
-
-  // Password Change state
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showOldPass, setShowOldPass] = useState(false);
-  const [showNewPass, setShowNewPass] = useState(false);
-  const [showConfirmPass, setShowConfirmPass] = useState(false);
-  const [passMessage, setPassMessage] = useState({ type: '', text: '' });
-  const [isChangingPass, setIsChangingPass] = useState(false);
 
   // SAP Per-user credentials state
   const [sapCreds, setSapCreds] = useState([]);
@@ -95,6 +84,29 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
     });
     return accessEntry?.accessState === 'approved';
   }, [lookupMcpAccessTarget]);
+
+  const { lookupTarget: lookupMcpAccessTarget } = useMcpAccessRequests(
+    isOpen && Boolean(user?.username && user?.role !== 'guest'),
+  );
+  const isSapTargetUnlocked = useCallback((server) => {
+    if (!server || server.is_allowed === false) return false;
+    const serverKey = server.alias || server.name;
+    const accessEntry = lookupMcpAccessTarget({
+      ...server,
+      resource_key: server.resource_key || (serverKey ? `sap:${serverKey}` : undefined),
+      resourceKey: server.resourceKey || (serverKey ? `sap:${serverKey}` : undefined),
+    });
+    return accessEntry?.accessState === 'approved';
+  }, [lookupMcpAccessTarget]);
+  const showToast = useCallback((message, type = 'info') => {
+    setSapCredMsg({
+      type: type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'),
+      text: message
+    });
+    if (typeof parentShowToast === 'function') {
+      parentShowToast(message, type);
+    }
+  }, [parentShowToast]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -136,7 +148,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       const currentRole = user?.role || 'user';
       setUserRole(currentRole);
       setSaveStatus('');
-      setPassMessage({ type: '', text: '' });
       setSapCredMsg({ type: '', text: '' });
       setTestResult(null);
       setIsEditMode(false);
@@ -209,41 +220,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       setSaveStatus('error');
     }
     setIsSaving(false);
-  };
-
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    setPassMessage({ type: '', text: '' });
-
-    if (newPassword !== confirmPassword) {
-      setPassMessage({ 
-        type: 'error', 
-        text: language === 'en' ? 'New passwords do not match.' : 'Konfirmasi password tidak cocok.' 
-      });
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      setPassMessage({ 
-        type: 'error', 
-        text: language === 'en' ? 'New password must be at least 8 characters.' : 'Password baru minimal 8 karakter.' 
-      });
-      return;
-    }
-
-    setIsChangingPass(true);
-    try {
-      await api.changePassword(oldPassword, newPassword);
-      setPassMessage({ type: 'success', text: t('security.success') });
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setTimeout(() => onClose(), 1200);
-    } catch (err) {
-      setPassMessage({ type: 'error', text: err.message || t('security.failed') });
-    } finally {
-      setIsChangingPass(false);
-    }
   };
 
   const handleStartEdit = (cred) => {
@@ -338,6 +314,19 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
       setEditingTarget(null);
       setTestResult(null);
 
+      // After credential saved successfully, attempt token binding
+      try {
+        const bindResult = await api.bindSapToken(sapTarget);
+        if (bindResult.token_bound) {
+          showToast(t('sap.tokenBound').replace('{target}', sapTarget), 'success');
+        } else {
+          showToast(t('sap.tokenNotAvailable'), 'info');
+        }
+      } catch (bindErr) {
+        console.warn('Token binding failed, credentials saved:', bindErr);
+        showToast(t('sap.tokenNotAvailable'), 'info');
+      }
+
       const updated = await api.mySapCredentials();
       setSapCreds(Array.isArray(updated) ? updated : []);
       await loadSapServers();
@@ -368,16 +357,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
             ? 'Customize your display name and AI assistant response persona' 
             : 'Sesuaikan nama tampilan dan gaya respons asisten AI Anda',
           maxWidth: 'max-w-lg'
-        };
-      case 'security':
-        return {
-          icon: <KeyRound className="w-5 h-5 text-white" />,
-          gradient: 'from-amber-500 via-orange-500 to-rose-600 shadow-amber-500/25',
-          title: t('settings.tabSecurity'),
-          subtitle: language === 'en'
-            ? 'Update your account login password securely'
-            : 'Perbarui kata sandi masuk akun Anda secara aman',
-          maxWidth: 'max-w-md'
         };
       case 'sapCreds':
         return {
@@ -578,111 +557,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
           )}
 
           {/* ========================================================= */}
-          {/* 2. DEDICATED VIEW: KEAMANAN & KATA SANDI                  */}
-          {/* ========================================================= */}
-          {activeTab === 'security' && isLoggedIn && (
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              {passMessage.text && (
-                <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
-                  passMessage.type === 'success'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400'
-                }`}>
-                  {passMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                  <span className="font-medium">{passMessage.text}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">
-                  {t('security.oldPass')}
-                </label>
-                <div className="relative">
-                  <input 
-                    type={showOldPass ? "text" : "password"}
-                    required
-                    value={oldPassword}
-                    onChange={e => setOldPassword(e.target.value)}
-                    className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 pr-11 text-sm text-content focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
-                    placeholder={t('security.oldPassPlaceholder')}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowOldPass(!showOldPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-1 cursor-pointer"
-                  >
-                    {showOldPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">
-                  {t('security.newPass')}
-                </label>
-                <div className="relative">
-                  <input 
-                    type={showNewPass ? "text" : "password"}
-                    required
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 pr-11 text-sm text-content focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
-                    placeholder={t('security.newPassPlaceholder')}
-                    minLength={8}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowNewPass(!showNewPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-1 cursor-pointer"
-                  >
-                    {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-content-secondary mb-1.5 uppercase tracking-wider">
-                  {t('security.confirmPass')}
-                </label>
-                <div className="relative">
-                  <input 
-                    type={showConfirmPass ? "text" : "password"}
-                    required
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    className="w-full bg-surface-sunken border border-line rounded-2xl px-4 py-2.5 pr-11 text-sm text-content focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
-                    placeholder={t('security.confirmPassPlaceholder')}
-                    minLength={8}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPass(!showConfirmPass)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-1 cursor-pointer"
-                  >
-                    {showConfirmPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="pt-1">
-                <p className="text-[11px] text-content-muted flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span>Minimal 8 karakter. Sandi akan dienkripsi dengan aman.</span>
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isChangingPass}
-                className="w-full mt-2 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-2xl text-xs font-bold shadow-md shadow-amber-600/20 transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <KeyRound className="w-4 h-4" />
-                <span>{isChangingPass ? t('security.processing') : (language === 'en' ? 'Update Password' : 'Perbarui Kata Sandi')}</span>
-              </button>
-            </form>
-          )}
-
-          {/* ========================================================= */}
           {/* 3. DEDICATED VIEW: AKUN SAP (LOGIN RFC)                   */}
           {/* ========================================================= */}
           {activeTab === 'sapCreds' && isLoggedIn && (
@@ -701,9 +575,17 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona' }) => {
                 <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${
                   sapCredMsg.type === 'success'
                     ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                    : sapCredMsg.type === 'info'
+                    ? 'bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300'
                     : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400'
                 }`}>
-                  {sapCredMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                  {sapCredMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : sapCredMsg.type === 'info' ? (
+                    <Info className="w-4 h-4 shrink-0 text-sky-500 dark:text-sky-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                  )}
                   <span className="font-medium">{sapCredMsg.text}</span>
                 </div>
               )}

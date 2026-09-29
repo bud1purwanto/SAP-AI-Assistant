@@ -1,7 +1,6 @@
 import { API_BASE_URL } from '../config';
 import { getClientDeviceInfo } from './deviceDetection';
 
-const TOKEN_KEY = 'sap_assistant_token';
 const USER_KEY = 'sap_assistant_user';
 
 /** Dipanggil saat server menolak token (401) agar UI dapat mengembalikan ke layar login. */
@@ -10,12 +9,9 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = typeof fn === 'function' ? fn : () => {};
 }
 
+/** Auth is handled exclusively via HTTP-only session cookies; kept for signature compat. */
 export function getToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY) || '';
-  } catch {
-    return '';
-  }
+  return '';
 }
 
 export function getStoredUser() {
@@ -27,10 +23,12 @@ export function getStoredUser() {
   }
 }
 
-export function saveSession(token, user) {
+export function saveSession(_tokenOrUser, maybeUser) {
   try {
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    const user = maybeUser !== undefined ? maybeUser : _tokenOrUser;
+    if (user) {
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    }
   } catch {
     /* penyimpanan tidak tersedia — sesi hanya bertahan selama tab terbuka */
   }
@@ -38,7 +36,6 @@ export function saveSession(token, user) {
 
 export function clearSession() {
   try {
-    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   } catch {
     /* diabaikan */
@@ -69,10 +66,19 @@ function connectionErrorMessage() {
 }
 
 export class ApiError extends Error {
-  constructor(message, status) {
-    super(message);
+  constructor(message, status, detail = null) {
+    super(typeof message === 'string' ? message : (message?.message || JSON.stringify(message)));
     this.name = 'ApiError';
     this.status = status;
+    this.detail = detail !== null ? detail : message;
+    if (typeof message === 'object' && message?.code) {
+      this.code = message.code;
+    } else if (typeof this.detail === 'string') {
+      try {
+        const obj = JSON.parse(this.detail);
+        if (obj?.code) this.code = obj.code;
+      } catch {}
+    }
   }
 }
 
@@ -84,20 +90,27 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const token = getToken();
-  if (auth && token) headers.Authorization = `Bearer ${token}`;
-
   let res;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'include',
       signal,
     });
   } catch (err) {
     if (err.name === 'AbortError') throw err;
     throw new ApiError(connectionErrorMessage(), 0);
+  }
+
+  if (res.status === 401) {
+    if (auth) {
+      clearSession();
+      onUnauthorized();
+      throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
+    }
+    return null;
   }
 
   if (res.status === 204) return null;
@@ -152,33 +165,17 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
 }
 
 export const api = {
-  login: (username, password, extraDevice = {}) => {
-    const dev = getClientDeviceInfo();
-    return apiFetch('/api/login', {
+  login: (username, password) =>
+    apiFetch('/api/auth/login', {
       method: 'POST',
-      body: {
-        username,
-        password,
-        device_name: extraDevice.device_name || dev.device_name,
-        device_type: extraDevice.device_type || dev.device_type,
-        os: extraDevice.os || dev.os,
-        browser: extraDevice.browser || dev.browser,
-      },
+      body: { username, password },
       auth: false,
-    });
-  },
-  heartbeat: (payload = {}) =>
-    apiFetch('/api/auth/heartbeat', { method: 'POST', body: payload }),
-  logout: () =>
-    apiFetch('/api/logout', { method: 'POST' }),
+    }),
+  authSession: () => apiFetch('/api/auth/session', { auth: false }),
+  logout: () => apiFetch('/api/auth/logout', { method: 'POST', auth: false }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
   saveConfig: (payload) => apiFetch('/api/config', { method: 'POST', body: payload }),
-  changePassword: (oldPassword, newPassword) =>
-    apiFetch('/api/change-password', {
-      method: 'POST',
-      body: { old_password: oldPassword, new_password: newPassword },
-    }),
 
   listSessions: () => apiFetch('/api/sessions'),
   createSession: (title) => apiFetch('/api/sessions', { method: 'POST', body: { title } }),
@@ -193,6 +190,9 @@ export const api = {
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 
   mcpServers: () => apiFetch('/api/mcp/servers', { auth: true }),
+  mcpAccessTargets: () => apiFetch('/api/mcp/access-requests/available', { auth: true }),
+  requestMcpAccess: (payload) => apiFetch('/api/mcp/access-requests', { method: 'POST', body: payload, auth: true }),
+  myMcpAccessRequests: () => apiFetch('/api/mcp/access-requests/me', { auth: true }),
 
   chat: (payload, signal) =>
     apiFetch('/api/chat', { method: 'POST', body: payload, auth: true, signal }),
@@ -225,8 +225,6 @@ export const api = {
   adminCreateUser: (payload) => apiFetch('/api/admin/users', { method: 'POST', body: payload }),
   adminUpdateUser: (username, payload) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
-  adminResetPassword: (username, payload) =>
-    apiFetch(`/api/admin/users/${encodeURIComponent(username)}/reset-password`, { method: 'POST', body: payload }),
   adminDeleteUser: (username) =>
     apiFetch(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' }),
   adminDivisions: () => apiFetch('/api/admin/divisions'),
@@ -283,45 +281,23 @@ export const api = {
   adminRoleModes: () => apiFetch('/api/admin/modes/roles'),
   adminUpdateRoleMode: (payload) =>
     apiFetch('/api/admin/modes/roles', { method: 'PUT', body: payload }),
-  adminModesUsersList: () => apiFetch('/api/admin/modes/users'),
-  adminUserModes: (username) =>
-    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`),
-  adminUpdateUserModes: (username, payload) =>
-    apiFetch(`/api/admin/modes/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
 
-  // Access Control MCP
-  adminAccessResources: () => apiFetch('/api/admin/access/resources'),
-  adminSyncAccessResources: () => apiFetch('/api/admin/access/resources/sync', { method: 'POST' }),
-  adminAccessRoles: () => apiFetch('/api/admin/access/roles'),
-  adminUpdateAccessRoles: (payload) =>
-    apiFetch('/api/admin/access/roles', { method: 'PUT', body: payload }),
-  adminUserAccess: (username) =>
-    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`),
-  adminUpdateUserAccess: (username, payload) =>
-    apiFetch(`/api/admin/access/users/${encodeURIComponent(username)}`, { method: 'PUT', body: payload }),
-  adminBulkUserAccess: (payload) =>
-    apiFetch('/api/admin/access/bulk', { method: 'POST', body: payload }),
-  adminAccessAudit: (limit = 100, offset = 0) =>
-    apiFetch(`/api/admin/access/audit?limit=${limit}&offset=${offset}`),
-  adminToggleAccessMaster: (enabled) =>
-    apiFetch('/api/admin/access/enabled', { method: 'POST', body: { enabled } }),
 
   // Per-user SAP Credentials
   mySapCredentials: () => apiFetch('/api/me/sap-credentials'),
   availableSapServers: () => apiFetch('/api/me/sap-credentials/available-servers'),
   saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
   testSapConnection: (payload) => apiFetch('/api/me/sap-credentials/test', { method: 'POST', body: payload }),
+  bindSapToken: (target) => apiFetch('/api/me/sap-credentials/bind-token', { method: 'POST', body: { target } }),
   deleteMySapCredential: (target) =>
     apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
 
   // Dynamic MCP Servers
   adminMcpServers: () => apiFetch('/api/admin/mcp/servers'),
-  adminCreateMcpServer: (payload) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: payload }),
-  adminUpdateMcpServer: (id, payload) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: payload }),
+  adminCreateMcpServer: (data) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: data }),
+  adminUpdateMcpServer: (id, data) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: data }),
   adminDeleteMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  adminResetMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
-  adminTestMcpConnection: (payload) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: payload }),
-
+  adminTestMcpConnection: (data) => apiFetch('/api/admin/mcp/test', { method: 'POST', body: data }),
   // Scheduled Tasks & Monitoring
   getScheduledTasks: () => apiFetch('/api/scheduled-tasks'),
   createScheduledTask: (payload) => apiFetch('/api/scheduled-tasks', { method: 'POST', body: payload }),
@@ -338,9 +314,8 @@ export const api = {
  */
 export async function fetchArtifactBlob(artifactId) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/artifacts/${artifactId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
 
   if (res.status === 401) {
@@ -363,12 +338,11 @@ export async function uploadAttachment(file, sessionId) {
   form.append('file', file);
   if (sessionId) form.append('session_id', sessionId);
 
-  const token = getToken();
   let res;
   try {
     res = await fetch(`${API_BASE_URL}/api/uploads`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
       body: form,
     });
   } catch {
@@ -391,9 +365,8 @@ export async function uploadAttachment(file, sessionId) {
 /** URL pratinjau lampiran; perlu token sehingga diambil sebagai blob. */
 export async function fetchAttachmentBlob(uploadId) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   const res = await fetch(`${API_BASE_URL}/api/uploads/${uploadId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'include',
   });
   if (!res.ok) throw new ApiError(isEn ? 'Failed to load attachment.' : 'Lampiran tidak dapat dimuat.', res.status);
   return res.blob();
@@ -404,15 +377,14 @@ export async function fetchAttachmentBlob(uploadId) {
  */
 export async function chatWithProgress(payload, { onProgress, onToken, signal } = {}) {
   const isEn = getActiveLanguage() === 'en';
-  const token = getToken();
   let res;
   try {
     res = await fetch(`${API_BASE_URL}/api/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
+      credentials: 'include',
       body: JSON.stringify(payload),
       signal,
     });

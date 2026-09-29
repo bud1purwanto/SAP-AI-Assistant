@@ -96,6 +96,99 @@ def test_scheduled_tasks_database_crud(db):
     assert db.get_scheduled_task(task_id) is None
 
 
+def test_task_lease_allows_one_owner_and_fences_stale_completion(db):
+    task = db.create_scheduled_task(
+        user_id="TRSTDEV",
+        title="Lease test",
+        prompt="check",
+        cron_expression="daily",
+    )
+
+    first = db.claim_scheduled_task(task["id"], "worker-a")
+    assert first is not None
+    assert db.claim_scheduled_task(task["id"], "worker-b") is None
+
+    from sqlalchemy import text
+    with db.get_engine().connect() as conn:
+        conn.execute(text("""
+            UPDATE ai_assistant_dev.scheduled_tasks
+            SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second'
+            WHERE id = :tid
+        """), {"tid": task["id"]})
+        conn.commit()
+
+    second = db.claim_scheduled_task(task["id"], "worker-b")
+    assert second is not None
+    assert db.record_task_run(task["id"], "success", "stale", lease_owner="worker-a") is False
+    assert db.record_task_run(task["id"], "success", "current", lease_owner="worker-b") is True
+
+    completed = db.get_scheduled_task(task["id"])
+    assert completed["last_status"] == "success"
+    assert completed["last_result"] == "current"
+    assert completed["lease_owner"] is None
+    assert completed["lease_until"] == ""
+
+
+
+def test_scheduled_task_lease_inactive_and_manual_conflict(db, client, admin_auth):
+    task = db.create_scheduled_task(
+        user_id="TRSTDEV",
+        title="Inactive & Conflict Test",
+        prompt="test prompt",
+        cron_expression="daily",
+        is_active=False
+    )
+    task_id = task["id"]
+
+    # 1. Scheduled claim rejects inactive task
+    assert db.claim_scheduled_task(task_id, "worker-1", allow_inactive=False) is None
+
+    # 2. Manual claim allows inactive task
+    claimed = db.claim_scheduled_task(task_id, "manual-worker", allow_inactive=True)
+    assert claimed is not None
+    assert claimed["lease_owner"] == "manual-worker"
+
+    # 3. API run returns 409 conflict when task is currently leased
+    resp = client.post(f"/api/scheduled-tasks/{task_id}/run", headers=admin_auth)
+    assert resp.status_code == 409
+
+    # 4. Once lease is released, API run succeeds (200)
+    assert db.record_task_run(task_id, "success", "done", lease_owner="manual-worker") is True
+    with patch("scheduler.execute_task") as mock_exec:
+        resp = client.post(f"/api/scheduled-tasks/{task_id}/run", headers=admin_auth)
+        assert resp.status_code == 200
+
+    db.delete_scheduled_task(task_id)
+
+
+@pytest.mark.asyncio
+async def test_execute_task_failure_clears_lease(db):
+    from scheduler import execute_task
+
+    task = db.create_scheduled_task(
+        user_id="TRSTDEV",
+        title="Failing Task Test",
+        prompt="will fail",
+        cron_expression="daily",
+    )
+    task_id = task["id"]
+    lease_owner = "worker-fail-test"
+    claimed = db.claim_scheduled_task(task_id, lease_owner)
+    assert claimed is not None
+
+    with patch("agent.process_chat", side_effect=RuntimeError("Simulated LLM crash")):
+        res = await execute_task(claimed, lease_owner=lease_owner)
+        assert res["status"] == "failed"
+
+    after_fail = db.get_scheduled_task(task_id)
+    assert after_fail["last_status"] == "failed"
+    assert "Simulated LLM crash" in after_fail["last_result"]
+    assert after_fail["lease_owner"] is None
+    assert after_fail["lease_until"] == ""
+
+    db.delete_scheduled_task(task_id)
+
+
 def test_scheduled_tasks_api_endpoints(db, client, admin_auth):
     # 1. Create task via API
     resp = client.post("/api/scheduled-tasks", json={

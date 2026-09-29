@@ -1,6 +1,6 @@
-# ==============================================================================
-# Docker Compose: Enterprise AI Assistant (Full Stack & Local Dev)
-# ==============================================================================
+name: ai-assistant
+
+# PostgreSQL untuk pengembangan lokal.
 #
 # Penggunaan:
 #   1. Jalankan hanya Database (untuk dev backend di host):
@@ -32,28 +32,24 @@ services:
 
   backend:
     build: ./backend
-    container_name: sap-ai-backend
+    container_name: ai-assistant-backend
     restart: unless-stopped
     env_file:
       - ./backend/.env
-    environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB
-      DASHBOARD_MCP_URL: ${DASHBOARD_MCP_URL:-http://host.docker.internal:4000}
-      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:-d99e37cfb69a93a18c80caa4fe871755c695dd7c7ae6a939b829c5352e3c534c}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8006:8000"
+      - "0.0.0.0:8006:8000"
     networks:
       - default
       - ai-workspace
 
   frontend:
     build: ./frontend
-    container_name: sap-ai-frontend
+    container_name: ai-assistant-frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "0.0.0.0:5173:80"
     depends_on:
       - backend
 

@@ -112,10 +112,12 @@ Pengaturan token API dan database harus di-setel di dalam `backend/.env`. Docker
 
 #### Variabel Wajib:
 | Variabel | Kegunaan |
-|----------|----------|
-| `OPENROUTER_API_KEY` | (Wajib) API key untuk koneksi ke model AI. |
-| `DATABASE_URL` | (Wajib) Koneksi PostgreSQL (contoh: `postgresql+psycopg://postgres:postgres@enterprise-ai-postgres:5432/ABAP_DB` atau host PostgreSQL). |
-| `MCP_SAP_TYPE` | Pilih `sse` untuk akses gateway MCP. |
+| :--- | :--- |
+| `DATABASE_URL` | Koneksi PostgreSQL (**Wajib**). Semua riwayat chat, user, config MCP, dan skill disimpan di sini. |
+| `SESSION_SECRET` | Kunci penandatangan cookie sesi OIDC (**Wajib** di produksi). Buat dengan `openssl rand -base64 48`. |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Password akun superadmin awal `TRSTDEV` saat tabel users pertama kali diinisialisasi. |
+| `CORS_ALLOW_ORIGINS` | Origin frontend yang diizinkan (gunakan `*` atau domain/IP Anda). |
+| `QUOTA_TIMEZONE` | Zona waktu penentu pergantian hari kuota token (bawaan `Asia/Jakarta`). Dengan UTC, kuota tim Indonesia akan reset pukul 07.00 — di tengah jam kerja. |
 
 Jika Anda mengubah file `.env`, container backend harus direstart:
 ```bash

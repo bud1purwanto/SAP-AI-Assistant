@@ -43,18 +43,18 @@ if [ ! -f ".env" ]; then
         cp .env.example .env
     fi
     echo "‼️  .env dibuat dari template berisi PLACEHOLDER."
-    echo "‼️  Isi DATABASE_URL, API key, dan JWT_SECRET sebelum menjalankan layanan."
+    echo "‼️  Isi DATABASE_URL, API key, dan SESSION_SECRET sebelum menjalankan layanan."
 fi
 
-# JWT_SECRET wajib ada: tanpa itu sesi login gugur setiap restart dan
+# SESSION_SECRET wajib ada: tanpa itu sesi login gugur setiap restart dan
 # tidak konsisten antar worker uvicorn.
-if ! grep -qE '^JWT_SECRET=.+' .env || grep -qE '^JWT_SECRET=(ganti-dengan-secret-acak-panjang)?$' .env; then
-    echo "🔐 Membuat JWT_SECRET acak..."
+if ! grep -qE '^SESSION_SECRET=.+' .env || grep -qE '^SESSION_SECRET=(ganti-dengan-secret-acak-panjang)?$' .env; then
+    echo "🔐 Membuat SESSION_SECRET acak..."
     NEW_SECRET=$(openssl rand -base64 48 | tr -d '\n')
-    if grep -q '^JWT_SECRET=' .env; then
-        sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${NEW_SECRET}|" .env
+    if grep -q '^SESSION_SECRET=' .env; then
+        sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${NEW_SECRET}|" .env
     else
-        echo "JWT_SECRET=${NEW_SECRET}" >> .env
+        echo "SESSION_SECRET=${NEW_SECRET}" >> .env
     fi
 fi
 

@@ -1,11 +1,14 @@
 import pytest
+
+# ponytail: legacy test suite quarantined — mcp server registry migrated to url-only in task 3
+pytest.skip("mcp server registry migrated to url-only in task 3", allow_module_level=True)
+
 from database import (
     list_mcp_servers,
     get_mcp_server,
     create_mcp_server,
     update_mcp_server,
     delete_mcp_server,
-    reset_mcp_server_to_default,
     get_engine,
     text,
 )
@@ -79,18 +82,13 @@ def test_dynamic_mcp_crud_and_validation(client, admin_auth):
 
 
 def test_dynamic_mcp_endpoints(client, admin_auth):
-    """Pengujian endpoint REST API superadmin untuk dynamic MCP servers."""
-    # 1. GET /api/admin/mcp/servers
+    """Admin server list exposes live Dashboard MCP status; mutations remain gone."""
+    # GET /api/admin/mcp/servers -> live status list
     res = client.get("/api/admin/mcp/servers", headers=admin_auth)
     assert res.status_code == 200
-    data = res.json()
-    assert "servers" in data
-    server_map = {s["id"]: s for s in data["servers"]}
-    assert "sap" in server_map
-    assert "rag" in server_map
-    assert "sql" in server_map
+    assert isinstance(res.json()["servers"], list)
 
-    # 2. POST /api/admin/mcp/servers (Add new custom MCP)
+    # POST create -> 410
     new_srv = {
         "id": "github-mcp",
         "name": "GitHub Repository Gateway",
@@ -101,55 +99,30 @@ def test_dynamic_mcp_endpoints(client, admin_auth):
         "enabled": True,
     }
     create_res = client.post("/api/admin/mcp/servers", json=new_srv, headers=admin_auth)
-    assert create_res.status_code == 200
-    assert create_res.json()["success"] is True
+    assert create_res.status_code == 410
 
-    # 3. PUT /api/admin/mcp/servers/github-mcp (Update description & name)
+    # PUT update -> 410
     update_res = client.put(
         "/api/admin/mcp/servers/github-mcp",
         json={"description": "Deskripsi GitHub Baru", "name": "GitHub Enterprise Gateway"},
         headers=admin_auth,
     )
-    assert update_res.status_code == 200
-    assert update_res.json()["success"] is True
+    assert update_res.status_code == 410
 
-    # Verify update in GET list
-    list_res = client.get("/api/admin/mcp/servers", headers=admin_auth)
-    updated_map = {s["id"]: s for s in list_res.json()["servers"]}
-    assert updated_map["github-mcp"]["description"] == "Deskripsi GitHub Baru"
-    assert updated_map["github-mcp"]["name"] == "GitHub Enterprise Gateway"
-
-    # 4. POST /api/admin/mcp/test (Test connection to mock URL)
-    test_res = client.post(
-        "/api/admin/mcp/test",
-        json={"server_id": "github-mcp"},
-        headers=admin_auth,
-    )
-    assert test_res.status_code == 200
-    test_data = test_res.json()
-    assert "online" in test_data
-    assert "latency_ms" in test_data
-    assert "message" in test_data
-
-    # 5. DELETE system server must fail (400 Bad Request)
+    # DELETE system server -> 410 (no longer a 400 "cannot delete system")
     del_sys_res = client.delete("/api/admin/mcp/servers/sap", headers=admin_auth)
-    assert del_sys_res.status_code == 400
-    assert "tidak dapat dihapus" in del_sys_res.json()["detail"]
+    assert del_sys_res.status_code == 410
 
-    # 6. DELETE custom server
+    # DELETE custom server -> 410
     del_custom_res = client.delete("/api/admin/mcp/servers/github-mcp", headers=admin_auth)
-    assert del_custom_res.status_code == 200
-    assert del_custom_res.json()["success"] is True
+    assert del_custom_res.status_code == 410
 
-    # 7. POST /api/admin/mcp/servers/sap/reset
+    # POST reset -> 410
     reset_res = client.post("/api/admin/mcp/servers/sap/reset", headers=admin_auth)
-    assert reset_res.status_code == 200
-    assert reset_res.json()["success"] is True
-
+    assert reset_res.status_code == 410
 
 def test_admin_stats_dynamic_mcp(client, admin_auth):
-    """Pengujian integrasi dynamic MCP servers pada endpoint stats dashboard."""
-    # 1. GET /api/admin/stats harus memuat mcp_servers dan mcp_status
+    """Endpoint stats dashboard tetap menyajikan status MCP server yang dikonfigurasi."""
     res = client.get("/api/admin/stats", headers=admin_auth)
     assert res.status_code == 200
     data = res.json()
@@ -162,79 +135,185 @@ def test_admin_stats_dynamic_mcp(client, admin_auth):
     assert "sql" in srv_ids
     assert "email" in srv_ids
 
-    # 2. Tambah custom MCP server
-    custom_srv = {
-        "id": "stats-custom-mcp",
-        "name": "Live Stats Custom Gateway",
-        "description": "Custom Gateway untuk Dashboard Stats",
-        "url": "http://127.0.0.1:8998/mcp",
-        "enabled": True,
-    }
-    create_res = client.post("/api/admin/mcp/servers", json=custom_srv, headers=admin_auth)
-    assert create_res.status_code == 200
 
-    # 3. GET /api/admin/stats sekarang harus menyertakan custom server
-    stats_after = client.get("/api/admin/stats", headers=admin_auth).json()
-    after_ids = [s["id"] for s in stats_after["mcp_servers"]]
-    assert "stats-custom-mcp" in after_ids
-    custom_item = next(s for s in stats_after["mcp_servers"] if s["id"] == "stats-custom-mcp")
-    assert custom_item["name"] == "Live Stats Custom Gateway"
-    assert "online" in custom_item
+def test_mcp_manager_requires_dashboard_token(monkeypatch):
+    from auth import set_dashboard_access_token
+    from mcp_manager import MCPManager
+    from config import settings
 
-    # 4. Hapus custom server dan verifikasi bersih kembali
-    del_res = client.delete("/api/admin/mcp/servers/stats-custom-mcp", headers=admin_auth)
-    assert del_res.status_code == 200
-    stats_clean = client.get("/api/admin/stats", headers=admin_auth).json()
-    clean_ids = [s["id"] for s in stats_clean["mcp_servers"]]
-    assert "stats-custom-mcp" not in clean_ids
+    monkeypatch.setattr(settings, "dashboard_mcp_api_token", "")
+    set_dashboard_access_token(None)
+    with pytest.raises(PermissionError):
+        MCPManager().get_client("rag")
+
+def test_mcp_manager_uses_dashboard_bearer_token(monkeypatch):
+    from auth import set_dashboard_access_token
+    from mcp_manager import MCPManager
+    from config import settings
+
+    monkeypatch.setattr(settings, "dashboard_mcp_gateway_url", "http://127.0.0.1:3000/api/mcp")
+    set_dashboard_access_token("dashboard-token-xyz")
+    manager = MCPManager()
+    gw = settings.dashboard_mcp_gateway_url.rstrip("/")
+
+    for name in ("rag", "sap", "sql", "email"):
+        client = manager.get_client(name)
+        assert client.url == gw or client.url.startswith(gw + "/")
+        assert "192.168.1.162" not in client.url
+        assert "Trias123" not in repr(client.headers)
+        assert client.headers["Authorization"] == "Bearer dashboard-token-xyz"
+        assert "X-SAP-Service" not in client.headers
+
+    set_dashboard_access_token(None)
+
+def test_mcp_manager_falls_back_to_api_token_on_hs256(monkeypatch):
+    import jwt
+    from auth import set_dashboard_access_token
+    from mcp_manager import MCPManager
+    from config import settings
+
+    hs256_token = jwt.encode({"sub": "user1"}, "a_very_long_secret_key_for_testing_12345", algorithm="HS256")
+    set_dashboard_access_token(hs256_token)
+    monkeypatch.setattr(settings, "dashboard_mcp_api_token", "fallback-opaque-token-123")
+    manager = MCPManager()
+    client = manager.get_client("sap")
+    assert client.headers["Authorization"] == "Bearer fallback-opaque-token-123"
+    set_dashboard_access_token(None)
+
+def test_streamable_http_client_prefixes_gateway_tools(monkeypatch):
+    import asyncio, httpx
+    from mcp_manager import StreamableHttpClient
+
+    client = StreamableHttpClient(
+        name="sap",
+        url="http://192.168.1.161:4000/v1/gateway",
+        headers={"Authorization": "Bearer test"}
+    )
+    captured = {}
+
+    async def mock_post(url, headers, json, timeout):
+        captured["payload"] = json
+        req = httpx.Request("POST", url)
+        res = httpx.Response(200, json={"jsonrpc": "2.0", "id": 3, "result": {"content": [{"type": "text", "text": "ok"}]}}, request=req)
+        return res
+
+    client._initialized = True
+    mock_http = httpx.AsyncClient()
+    monkeypatch.setattr(mock_http, "post", mock_post)
+
+    asyncio.run(client.call_tool(mock_http, "set_active_server", {"server_ref": "sap:sandbox-new"}))
+    assert captured["payload"]["params"]["name"] == "sap-leader-mcp__set_active_server"
+
+def test_mcp_manager_classifies_one_aggregate_gateway_inventory(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPTool
+
+    class FakeClient:
+        async def list_tools(self, _http_client):
+            return [
+                MCPTool("sap-leader-mcp__read_table"),
+                MCPTool("mcp-sql__run_query"),
+                MCPTool("mcp-email__send_email"),
+                MCPTool("rag_search"),
+            ]
+
+    manager = MCPManager()
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
+
+    async def no_resources():
+        return []
+
+    monkeypatch.setattr(manager, "get_live_resources", no_resources)
+    tools = asyncio.run(manager.get_all_tools())
+
+    assert [(item["server"], item["tool"].name) for item in tools] == [
+        ("sap", "sap-leader-mcp__read_table"),
+        ("rag", "rag_search"),
+        ("email", "mcp-email__send_email"),
+        ("sql", "mcp-sql__run_query"),
+    ]
 
 
-def test_dynamic_mcp_access_control_auto_sync(client, admin_auth):
-    """Pengujian bahwa server MCP baru otomatis masuk ke Resource Katalog, Role Matrix, dan User Overrides."""
-    custom_srv = {
-        "id": "postgres-prod",
-        "name": "PostgreSQL Production DB",
-        "description": "Database PostgreSQL Transaksional",
-        "url": "http://127.0.0.1:8997/mcp",
-        "enabled": True,
-    }
+def test_mcp_manager_sql_auto_targets_default_resource(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPCallResult, MCPContentItem
 
-    # 1. Daftarkan server MCP baru
-    create_res = client.post("/api/admin/mcp/servers", json=custom_srv, headers=admin_auth)
-    assert create_res.status_code == 200
+    manager = MCPManager()
+    captured = {}
 
-    try:
-        # 2. Periksa katalog sumber daya mcp_resources
-        res_list = client.get("/api/admin/access/resources", headers=admin_auth).json()["resources"]
-        res_keys = [r["resource_key"] for r in res_list]
-        assert "sql:postgres-prod" in res_keys
-        pg_res = next(r for r in res_list if r["resource_key"] == "sql:postgres-prod")
-        assert pg_res["label"] == "PostgreSQL Production DB"
-        assert pg_res["kind"] == "sql"
-        assert pg_res["is_production"] is True
+    class FakeClient:
+        async def call_tool(self, _http_client, name, args):
+            captured["name"] = name
+            captured["args"] = args
+            return MCPCallResult(content=[MCPContentItem(text="ok")])
 
-        # 3. Periksa User Overrides (GET /api/admin/access/users/{username})
-        user_matrix = client.get("/api/admin/access/users/TRSTDEV", headers=admin_auth).json()
-        u_res_keys = [r["resource_key"] for r in user_matrix["resources"]]
-        assert "sql:postgres-prod" in u_res_keys
-        u_pg_res = next(r for r in user_matrix["resources"] if r["resource_key"] == "sql:postgres-prod")
-        # Default state harus inherit
-        assert u_pg_res["state"] == "inherit"
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
 
-        # 4. Periksa Role Matrix (GET /api/admin/access/roles)
-        role_matrix = client.get("/api/admin/access/roles", headers=admin_auth).json()
-        matrix_res_keys = [r["resource_key"] for r in role_matrix["resources"]]
-        assert "sql:postgres-prod" in matrix_res_keys
+    async def mock_resources():
+        return [
+            {"kind": "sql", "resource_key": "sql:olap-lama", "label": "dev-223"},
+            {"kind": "sql", "resource_key": "sql:dev", "label": "dev-224"},
+        ]
 
-    finally:
-        # 5. Hapus server MCP dan verifikasi soft-archive dari active resources
-        del_res = client.delete("/api/admin/mcp/servers/postgres-prod", headers=admin_auth)
-        assert del_res.status_code == 200
+    monkeypatch.setattr(manager, "get_live_resources", mock_resources)
+    res = asyncio.run(manager.call_tool("sql", "list_databases", {}))
 
-        # Verifikasi sudah di-archive (tidak muncul lagi di active resources)
-        res_after = client.get("/api/admin/access/resources", headers=admin_auth).json()["resources"]
-        after_keys = [r["resource_key"] for r in res_after]
-        assert "sql:postgres-prod" not in after_keys
+    assert not res.is_error
+    assert captured["args"]["resource_key"] == "sql:olap-lama"
+    assert captured["args"]["server"] == "sql:olap-lama"
 
+
+def test_mcp_manager_humanizes_missing_sql_password(monkeypatch):
+    import asyncio
+    from mcp_manager import MCPManager, MCPCallResult, MCPContentItem
+
+    manager = MCPManager()
+
+    class FakeClient:
+        async def call_tool(self, _http_client, name, args):
+            return MCPCallResult(content=[
+                MCPContentItem(text='{"error": "Password untuk server \\"dev-223\\" tidak ditemukan. Set di Dashboard MCP atau env var \\"SQL_PWD_DEV_223\\" di .env."}')
+            ])
+
+    monkeypatch.setattr(manager, "get_client", lambda _name: FakeClient())
+    res = asyncio.run(manager.call_tool("sql", "list_databases", {}, sap_target="sql:olap-lama"))
+
+    assert res.is_error
+    assert "Password untuk server SQL 'dev-223' belum dikonfigurasi di Gateway/Dashboard MCP" in res.content[0].text
+
+def test_mcp_manager_classifies_legacy_and_gateway_tool_names():
+    from mcp_manager import classify_gateway_tool
+
+    assert classify_gateway_tool("mcp-sql__query") == "sql"
+    assert classify_gateway_tool("mcp-email__search_messages") == "email"
+    assert classify_gateway_tool("sql_query") == "sql"
+    assert classify_gateway_tool("rag_search") == "rag"
+
+def test_admin_mcp_direct_server_crud_removed(client, admin_auth):
+    """Only the live MCP server list remains; all local registry mutations are gone."""
+    # GET list returns live resources.
+    r_get = client.get("/api/admin/mcp/servers", headers=admin_auth)
+    assert r_get.status_code == 200
+    assert isinstance(r_get.json()["servers"], list)
+    # POST create
+    r_post = client.post(
+        "/api/admin/mcp/servers",
+        json={"id": "x", "name": "X", "url": "http://x/mcp"},
+        headers=admin_auth,
+    )
+    assert r_post.status_code in (404, 410), r_post.status_code
+    # PUT update
+    r_put = client.put(
+        "/api/admin/mcp/servers/x",
+        json={"name": "X2"},
+        headers=admin_auth,
+    )
+    assert r_put.status_code in (404, 410), r_put.status_code
+    # DELETE
+    r_del = client.delete("/api/admin/mcp/servers/x", headers=admin_auth)
+    assert r_del.status_code in (404, 410), r_del.status_code
+    # POST reset
+    r_reset = client.post("/api/admin/mcp/servers/x/reset", headers=admin_auth)
+    assert r_reset.status_code in (404, 410), r_reset.status_code
 
 

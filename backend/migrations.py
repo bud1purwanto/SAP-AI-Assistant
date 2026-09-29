@@ -346,7 +346,7 @@ def _m0007_akses_mcp_per_user(conn):
     # Seed Master Switch: default 'false' (OFF) agar transisi aman
     conn.execute(text("""
         INSERT INTO ai_assistant_dev.system_config (key, value)
-        VALUES ('mcp_access_control_enabled', 'false')
+        VALUES ('mcp_access_control_enabled', 'false')  -- vestigial
         ON CONFLICT (key) DO NOTHING
     """))
 
@@ -769,10 +769,10 @@ def _m0017_dynamic_mcp_servers(conn):
             except Exception:
                 return def_url, def_token
 
-        sap_url, sap_token = _extract_url_token(cfg_map.get("mcp_sap_config_json"), "http://192.168.1.162:8091/mcp", "Trias123")
-        rag_url, rag_token = _extract_url_token(cfg_map.get("mcp_rag_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
-        sql_url, sql_token = _extract_url_token(cfg_map.get("mcp_sql_config_json") or cfg_map.get("mcp_email_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
-        email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://192.168.1.162:8090/mcp", "Trias123")
+        sap_url, sap_token = _extract_url_token(cfg_map.get("mcp_sap_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        rag_url, rag_token = _extract_url_token(cfg_map.get("mcp_rag_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        sql_url, sql_token = _extract_url_token(cfg_map.get("mcp_sql_config_json") or cfg_map.get("mcp_email_config_json"), "http://127.0.0.1:3000/api/mcp", "")
+        email_url, email_token = _extract_url_token(cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"), "http://127.0.0.1:3000/api/mcp", "")
 
         conn.execute(text("""
             INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, icon, is_system, enabled, display_order)
@@ -819,8 +819,8 @@ def _m0018_seed_mcp_email_server(conn):
 
     email_url, email_token = _extract_url_token(
         cfg_map.get("mcp_email_config_json") or cfg_map.get("mcp_sql_config_json"),
-        "http://192.168.1.162:8090/mcp",
-        "Trias123"
+        "http://127.0.0.1:3000/api/mcp",
+        ""
     )
 
     conn.execute(text("""
@@ -975,122 +975,28 @@ def _m0022_user_job_levels(conn):
     """))
 
 
-def _m0023_analysis_depth_mode(conn):
-    """Tambahkan kolom analysis_depth & require_evidence pada chat_modes."""
+def _m0023_scheduled_task_leases(conn):
+    """Lease lintas worker untuk mencegah eksekusi tugas terjadwal ganda."""
     conn.execute(text("""
-        ALTER TABLE ai_assistant.chat_modes
-        ADD COLUMN IF NOT EXISTS analysis_depth VARCHAR(16) DEFAULT 'auto';
-    """))
-    conn.execute(text("""
-        ALTER TABLE ai_assistant.chat_modes
-        ADD COLUMN IF NOT EXISTS require_evidence BOOLEAN NOT NULL DEFAULT TRUE;
-    """))
-    conn.execute(text("""
-        ALTER TABLE ai_assistant.chat_modes
-        ADD COLUMN IF NOT EXISTS max_review_cycles INTEGER NOT NULL DEFAULT 0;
-    """))
-    conn.execute(text("""
-        ALTER TABLE ai_assistant.chat_modes
-        ADD COLUMN IF NOT EXISTS rag_call_budget INTEGER DEFAULT NULL;
-    """))
-    # Set defaults per mode: fast=standard(0 review), medium=auto(0), expert=auto(1 review)
-    conn.execute(text("""
-        UPDATE ai_assistant.chat_modes SET analysis_depth='standard', max_review_cycles=0
-        WHERE code='fast' AND analysis_depth='auto';
-    """))
-    conn.execute(text("""
-        UPDATE ai_assistant.chat_modes SET analysis_depth='auto', max_review_cycles=1
-        WHERE code='expert' AND max_review_cycles=0;
+        ALTER TABLE ai_assistant_dev.scheduled_tasks
+        ADD COLUMN IF NOT EXISTS lease_owner VARCHAR(64),
+        ADD COLUMN IF NOT EXISTS lease_until TIMESTAMPTZ;
     """))
 
 
-def _m0024_chat_message_usage(conn):
-    """Simpan statistik token per jawaban agar tetap tersedia setelah reload."""
+def _m0024_user_sap_tokens(conn):
+    """Per-user SAP bound-token storage (token from dashboard-mcp)."""
     conn.execute(text("""
-        ALTER TABLE ai_assistant.chat_messages
-        ADD COLUMN IF NOT EXISTS usage TEXT;
-    """))
-
-
-def _m0025_user_sessions_and_security_logs(conn):
-    """Tabel sesi aktif pengguna untuk single-session enforcement dan monitoring perangkat real-time,
-    serta tabel log audit autentikasi/keamanan."""
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
-            id VARCHAR(64) PRIMARY KEY,
-            username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
-            device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
-            device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
-            terminal_info VARCHAR(150),
-            os VARCHAR(60),
-            browser VARCHAR(60),
-            ip_address VARCHAR(60),
-            user_agent TEXT,
-            is_active BOOLEAN NOT NULL DEFAULT TRUE,
-            is_idle BOOLEAN NOT NULL DEFAULT FALSE,
-            status VARCHAR(40) NOT NULL DEFAULT 'active',
-            kick_reason TEXT,
-            current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
-            current_path VARCHAR(100) DEFAULT '/',
-            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMPTZ NOT NULL,
-            kicked_at TIMESTAMPTZ
+        CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_sap_tokens (
+            username VARCHAR(50) NOT NULL,
+            target VARCHAR(50) NOT NULL,
+            encrypted_token TEXT NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, target)
         );
     """))
-    conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
-        ON ai_assistant.user_sessions (LOWER(username), is_active);
-    """))
-    conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
-        ON ai_assistant.user_sessions (last_active_at DESC);
-    """))
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
-            id SERIAL PRIMARY KEY,
-            timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            event_type VARCHAR(50) NOT NULL,
-            username VARCHAR(100) NOT NULL,
-            ip_address VARCHAR(60),
-            device_name VARCHAR(120),
-            device_type VARCHAR(30),
-            browser VARCHAR(60),
-            os VARCHAR(60),
-            user_agent TEXT,
-            status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
-            details TEXT
-        );
-    """))
-    conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
-        ON ai_assistant.auth_audit_logs (timestamp DESC);
-    """))
-    conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_auth_logs_username
-        ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
-    """))
 
-
-def _m0026_user_chat_modes(conn):
-    """Tabel override mode chat per user (user_modes).
-
-    Memungkinkan admin memberikan override izin (tri-state: inherit, allow, deny)
-    untuk mode chat tertentu kepada user individual, melampaui izin berbasis peran (role_modes).
-    """
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS ai_assistant.user_modes (
-            username VARCHAR(100) NOT NULL,
-            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
-            enabled BOOLEAN NOT NULL DEFAULT TRUE,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (username, mode_code)
-        );
-    """))
-    conn.execute(text("""
-        CREATE INDEX IF NOT EXISTS idx_user_modes_username
-        ON ai_assistant.user_modes (LOWER(username));
-    """))
 
 
 MIGRATIONS = [
@@ -1116,10 +1022,8 @@ MIGRATIONS = [
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
-    ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
-    ("0024_chat_message_usage", _m0024_chat_message_usage),
-    ("0025_user_sessions_and_security_logs", _m0025_user_sessions_and_security_logs),
-    ("0026_user_chat_modes", _m0026_user_chat_modes),
+    ("0023_scheduled_task_leases", _m0023_scheduled_task_leases),
+    ("0024_user_sap_tokens", _m0024_user_sap_tokens),
 ]
 
 
@@ -1147,3 +1051,121 @@ def run_migrations(conn) -> list:
     if diterapkan:
         logger.info(f"Migrasi selesai: {', '.join(diterapkan)}")
     return diterapkan
+
+
+def _execute_identity_migration(conn, username_to_sub_map: dict):
+    """Eksekusi pemetaan identitas lama (username) ke Dashboard OIDC `sub`."""
+    # 1. Kumpulkan semua username unik yang memiliki data di schema ai_assistant_dev.
+    tables_and_columns = [
+        ("users", "username"),
+        ("chat_sessions", "username"),
+        ("chat_uploads", "owner"),
+        ("generated_artifacts", "owner"),
+        ("user_resource_access", "username"),
+        ("user_roles", "username"),
+        ("user_sap_credentials", "username"),
+        ("user_sap_tokens", "username"),
+        ("scheduled_tasks", "user_id"),
+        ("token_usage", "username"),
+        ("request_log", "username"),
+    ]
+
+    found_users = set()
+    for table, col in tables_and_columns:
+        try:
+            rows = conn.execute(text(f"SELECT DISTINCT {col} FROM ai_assistant_dev.{table} WHERE {col} IS NOT NULL")).fetchall()
+            for r in rows:
+                val = (r[0] or "").strip()
+                if val and val.lower() != "guest":
+                    found_users.add(val)
+        except Exception:
+            pass
+
+    # 2. Periksa apakah ada user aktif dengan data yang belum dipetakan.
+    norm_map = {k.strip().lower(): v for k, v in username_to_sub_map.items()}
+    unmapped = [u for u in found_users if u.strip().lower() not in norm_map and u.strip() not in username_to_sub_map]
+    if unmapped:
+        raise RuntimeError(f"unmapped user: {sorted(unmapped)}")
+
+    # 3. Perlebar kolom agar muat sub Dashboard OIDC (misal UUID panjang / teks hingga 255 karakter).
+    widen_targets = [
+        ("users", "username"),
+        ("chat_sessions", "username"),
+        ("chat_uploads", "owner"),
+        ("generated_artifacts", "owner"),
+        ("user_resource_access", "username"),
+        ("user_roles", "username"),
+        ("user_sap_credentials", "username"),
+        ("user_sap_tokens", "username"),
+        ("scheduled_tasks", "user_id"),
+        ("token_usage", "username"),
+        ("request_log", "username"),
+    ]
+    for table, col in widen_targets:
+        try:
+            conn.execute(text(f"ALTER TABLE ai_assistant_dev.{table} ALTER COLUMN {col} TYPE VARCHAR(255)"))
+        except Exception:
+            pass
+
+    # 4. Tulis ulang baris kepemilikan dari legacy username ke Dashboard `sub`.
+    for old_u, new_sub in username_to_sub_map.items():
+        old_u_clean = old_u.strip()
+        new_sub_clean = str(new_sub).strip()
+
+        # Update ai_assistant_dev.users terlebih dahulu (user_roles memiliki ON UPDATE CASCADE)
+        conn.execute(
+            text("UPDATE ai_assistant_dev.users SET username = :new WHERE LOWER(username) = LOWER(:old)"),
+            {"new": new_sub_clean, "old": old_u_clean},
+        )
+
+        # Update tabel-tabel domain — biarkan exception propagasi agar
+        # transaksi di-rollback secara atomik.
+        update_queries = [
+            ("chat_sessions", "username"),
+            ("chat_uploads", "owner"),
+            ("generated_artifacts", "owner"),
+            ("user_resource_access", "username"),
+            ("user_roles", "username"),
+            ("user_sap_credentials", "username"),
+            ("user_sap_tokens", "username"),
+            ("scheduled_tasks", "user_id"),
+            ("token_usage", "username"),
+            ("request_log", "username"),
+        ]
+        for table, col in update_queries:
+            conn.execute(
+                text(f"UPDATE ai_assistant_dev.{table} SET {col} = :new WHERE LOWER({col}) = LOWER(:old)"),
+                {"new": new_sub_clean, "old": old_u_clean},
+            )
+
+    # 5. Hapus kolom-kolom password lokal yang tidak lagi dipakai.
+    for col in ("password", "password_hash", "force_change_password"):
+        try:
+            conn.execute(text(f"ALTER TABLE ai_assistant_dev.users DROP COLUMN IF EXISTS {col}"))
+        except Exception:
+            pass
+
+    # 6. Hapus tabel login_attempts lokal bila ada.
+    try:
+        conn.execute(text("DROP TABLE IF EXISTS ai_assistant_dev.login_attempts"))
+    except Exception:
+        pass
+
+
+def run_identity_migration(conn_or_db, username_to_sub_map: dict):
+    """Jalankan migrasi identitas subjek (legacy username -> Dashboard OIDC sub).
+
+    Dapat menerima modul database, SQLAlchemy Engine, atau Connection aktif.
+    """
+    if hasattr(conn_or_db, "get_engine"):
+        engine = conn_or_db.get_engine()
+        with engine.begin() as conn:
+            _execute_identity_migration(conn, username_to_sub_map)
+    elif hasattr(conn_or_db, "begin"):
+        with conn_or_db.begin() as conn:
+            _execute_identity_migration(conn, username_to_sub_map)
+    else:
+        _execute_identity_migration(conn_or_db, username_to_sub_map)
+        if hasattr(conn_or_db, "commit"):
+            conn_or_db.commit()
+

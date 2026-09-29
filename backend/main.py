@@ -6,32 +6,33 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, Response, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from agent import process_chat
 from artifacts import get_artifact
 from uploads import MAX_ATTACHMENTS_PER_MESSAGE, UploadRejected, store_upload
 from auth import (
-    create_access_token,
+    create_session_cookie,
+    get_current_principal,
     get_current_user,
     get_current_user_optional,
+    get_dashboard_access_token,
+    set_dashboard_access_token,
 )
 from auth import require_superadmin as require_superadmin_token
-from config import settings, _EPHEMERAL_JWT_SECRET
+from config import settings, _EPHEMERAL_SESSION_SECRET
 import database
 from database import (
     add_chat_message,
-    attach_uploads_to_session,
-    check_login_block,
-    clear_login_failures,
-    authenticate_user,
-    change_user_password,
     consume_guest_quota,
+    attach_uploads_to_session,
     create_chat_session,
+    ensure_user_exists,
     create_new_user,
     create_user_session,
     invalidate_existing_user_sessions,
@@ -68,6 +69,7 @@ from database import (
     ringkasan_pemakaian_harian,
     set_role_limit,
     tanggal_kuota,
+    truncate_chat_messages_from,
     get_system_config,
     get_user_by_username,
     init_db,
@@ -76,15 +78,12 @@ from database import (
     load_uploads,
     purge_expired_artifacts,
     purge_expired_uploads,
-    register_login_failure,
     rename_chat_session,
     search_chat_history,
     session_belongs_to,
-    truncate_chat_messages_from,
     update_message_feedback,
     update_role,
     update_system_config,
-    reset_user_password_by_admin,
     update_user_by_admin,
     update_user_full_name,
     update_user_persona,
@@ -103,16 +102,6 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
-    get_modes_for_user,
-    get_user_modes_matrix,
-    set_user_mode_override,
-    get_all_user_mode_overrides,
-    list_mcp_servers,
-    get_mcp_server,
-    create_mcp_server,
-    update_mcp_server,
-    delete_mcp_server,
-    reset_mcp_server_to_default,
     list_divisions,
     get_division,
     create_division,
@@ -121,7 +110,6 @@ from database import (
     get_division_impact,
 )
 from mcp_manager import mcp_manager
-import access_control
 from models import ChatRequest, ChatResponse, UsageStats, ScheduledTaskCreate, ScheduledTaskUpdate
 
 logger = logging.getLogger(__name__)
@@ -143,12 +131,12 @@ async def _artifact_cleanup_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inisialisasi database schema & user bootstrap saat server dinyalakan."""
-    if _EPHEMERAL_JWT_SECRET:
+    """Inisialisasi database schema saat server dinyalakan."""
+    if _EPHEMERAL_SESSION_SECRET:
         logger.warning(
-            "JWT_SECRET tidak diset — memakai secret acak sementara. Semua sesi login "
+            "SESSION_SECRET tidak diset — memakai secret acak sementara. Semua sesi login "
             "akan gugur setiap restart dan tidak konsisten antar worker. "
-            "Set JWT_SECRET di .env untuk produksi."
+            "Set SESSION_SECRET di .env untuk produksi."
         )
     # Kegagalan database selalu fatal: tanpa PostgreSQL aplikasi tidak punya
     # tempat menyimpan user, percakapan, maupun berkas hasil generate.
@@ -162,17 +150,12 @@ async def lifespan(app: FastAPI):
     # Server produksi bisa berjalan berminggu-minggu tanpa restart, sehingga
     # pembersihan saat startup saja tidak cukup.
     cleanup = asyncio.create_task(_artifact_cleanup_loop())
-    # Server produksi berjalan dengan >1 worker (deploy/deploy.sh --workers 2);
-    # listener ini membuat perubahan role dari satu worker langsung terlihat di
-    # worker lain, alih-alih menunggu TTL cache 30 detik.
-    role_listener = access_control.start_role_change_listener()
     from scheduler import run_scheduler_loop
     scheduler_task = asyncio.create_task(run_scheduler_loop())
     try:
         yield
     finally:
         cleanup.cancel()
-        role_listener.cancel()
         scheduler_task.cancel()
 
 
@@ -191,15 +174,8 @@ app.add_middleware(
 
 
 def require_superadmin(user: dict = Depends(require_superadmin_token)) -> dict:
-    """Verifikasi ulang role terhadap database.
-
-    Token menyimpan role saat login; pemeriksaan ulang ini memastikan
-    pencabutan hak akses langsung berlaku tanpa menunggu token kedaluwarsa.
-    """
-    fresh = get_user_by_username(user["username"])
-    if not fresh or fresh.get("role") != "superadmin":
-        raise HTTPException(status_code=403, detail="Akses ditolak. Fitur ini hanya untuk Super Admin.")
-    return fresh
+    """Superadmin diotorisasi oleh Dashboard OIDC BFF."""
+    return user
 
 
 def _mask_secret(value: str) -> str:
@@ -240,68 +216,130 @@ async def healthz():
     return {"status": "ok", "database": info["engine"]}
 
 
-# --- AUTENTIKASI & MANAJEMEN SESI ---
+# --- AUTENTIKASI OIDC BFF ---
 
-def _detect_client_device(
-    ua_str: str,
-    req_name: Optional[str] = None,
-    req_type: Optional[str] = None,
-    req_os: Optional[str] = None,
-    req_browser: Optional[str] = None,
-):
-    ua = ua_str or ""
-    ua_lower = ua.lower()
+import httpx
+import json as _json
+import jwt
 
-    os_name = req_os
-    if not os_name:
-        if "iphone" in ua_lower or "ipad" in ua_lower or "ipod" in ua_lower:
-            os_name = "iOS"
-        elif "android" in ua_lower:
-            os_name = "Android"
-        elif "windows" in ua_lower:
-            os_name = "Windows"
-        elif "macintosh" in ua_lower or "mac os" in ua_lower:
-            os_name = "macOS"
-        elif "linux" in ua_lower:
-            os_name = "Linux"
-        else:
-            os_name = "OS Web"
 
-    device_type = req_type
-    if not device_type:
-        if "ipad" in ua_lower or "tablet" in ua_lower:
-            device_type = "tablet"
-        elif "mobi" in ua_lower or "iphone" in ua_lower or "android" in ua_lower:
-            device_type = "mobile"
-        else:
-            device_type = "desktop"
+_jwks_clients: dict[str, jwt.PyJWKClient] = {}
 
-    browser_name = req_browser
-    if not browser_name:
-        if "edg" in ua_lower:
-            browser_name = "Edge"
-        elif "chrome" in ua_lower and "chromium" not in ua_lower:
-            browser_name = "Chrome"
-        elif "safari" in ua_lower and "chrome" not in ua_lower:
-            browser_name = "Safari"
-        elif "firefox" in ua_lower:
-            browser_name = "Firefox"
-        elif "opera" in ua_lower or "opr" in ua_lower:
-            browser_name = "Opera"
-        else:
-            browser_name = "Web Browser"
 
-    device_name = req_name
-    if not device_name:
-        if device_type == "mobile":
-            device_name = f"HP ({browser_name} - {os_name})"
-        elif device_type == "tablet":
-            device_name = f"Tablet ({browser_name} - {os_name})"
-        else:
-            device_name = f"PC ({browser_name} - {os_name})"
+def _get_jwks_client(jwks_url: str) -> jwt.PyJWKClient:
+    if jwks_url not in _jwks_clients:
+        _jwks_clients[jwks_url] = jwt.PyJWKClient(jwks_url, cache_jwk_set=True, lifespan=3600)
+    return _jwks_clients[jwks_url]
 
-    terminal_info = f"{browser_name} / {os_name}"
-    return device_name, device_type, os_name, browser_name, terminal_info
+
+def _dashboard_jwks_url() -> str:
+    configured = getattr(settings, "dashboard_jwks_url", "")
+    return configured.strip() or f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/jwks"
+
+
+def _allowed_redirect_hosts() -> set[str]:
+    hosts = {urlparse(settings.dashboard_oidc_redirect_uri).netloc}
+    hosts.update(
+        host.strip()
+        for host in getattr(settings, "dashboard_oidc_allowed_redirect_hosts", "").split(",")
+        if host.strip()
+    )
+    hosts.update({"testserver", "backend:8000", "localhost:8000"})
+    return {host for host in hosts if host}
+
+
+def _redirect_uri_for_request(request: Request) -> str:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if host and host in _allowed_redirect_hosts() and host not in ("testserver", "backend:8000", "localhost:8000"):
+        proto = request.headers.get("x-forwarded-proto") or request.url.scheme or "http"
+        return f"{proto}://{host}/api/auth/callback"
+    return settings.dashboard_oidc_redirect_uri
+
+
+def _verify_oidc_id_token(id_token: str, expected_nonce: str | None) -> dict[str, Any]:
+    if not id_token or not str(id_token).strip():
+        raise HTTPException(status_code=400, detail="Dashboard tidak mengembalikan ID token.")
+
+    try:
+        header = jwt.get_unverified_header(id_token)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Header ID token tidak valid: {exc}") from exc
+
+    if header.get("alg") != "RS256":
+        raise HTTPException(status_code=400, detail="Algoritma ID token tidak didukung; harus RS256.")
+
+    try:
+        signing_key = _get_jwks_client(_dashboard_jwks_url()).get_signing_key_from_jwt(id_token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"Gagal mengambil signing key OIDC: {exc}") from exc
+
+    try:
+        claims = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            issuer=settings.dashboard_oidc_issuer,
+            audience=settings.dashboard_oidc_client_id,
+            options={
+                "verify_signature": True,
+                "verify_iss": True,
+                "verify_aud": True,
+                "verify_exp": True,
+                "require": ["exp", "iss", "aud", "sub"],
+            },
+        )
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="ID token OIDC kedaluwarsa.") from exc
+    except jwt.InvalidIssuerError as exc:
+        raise HTTPException(status_code=401, detail="Issuer ID token OIDC tidak valid.") from exc
+    except jwt.InvalidAudienceError as exc:
+        raise HTTPException(status_code=401, detail="Audience ID token OIDC tidak valid.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail=f"ID token OIDC tidak valid: {exc}") from exc
+
+    if expected_nonce:
+        token_nonce = claims.get("nonce")
+        if not token_nonce or token_nonce != expected_nonce:
+            raise HTTPException(status_code=400, detail="Nonce OIDC tidak cocok.")
+    return claims
+
+def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
+    """Map dashboard-mcp PublicUser to ai-assistant principal dict.
+
+    ponytail: single-department/single-division assumption matches current
+    consumers of `org_units`/`division_code`. Upgrade path: pluralize keys
+    when multi-org scoping lands.
+    """
+    depts = dash_user.get("departments") or []
+    divs = dash_user.get("divisions") or []
+    poss = dash_user.get("positions") or []
+    raw_role = dash_user.get("rawRole") or dash_user.get("role") or "user"
+    roles = [str(r).strip().lower() for r in ([raw_role] if isinstance(raw_role, str) else (raw_role or ["user"])) if str(r).strip()] or ["user"]
+    primary = roles[0] if roles else "user"
+    first_div = divs[0] if divs else {}
+    first_pos = poss[0] if poss else {}
+    return {
+        "sub": dash_user["id"],
+        "username": dash_user["username"],
+        "full_name": dash_user.get("displayName") or dash_user.get("display_name") or dash_user["username"],
+        "role": primary,
+        "roles": roles,
+        "assistant_persona": "",  # populated lazily by ensure_user_exists
+        "force_change_password": False,
+        "division_code": first_div.get("code"),
+        "division_name": first_div.get("name"),
+        "job_level": str(first_pos.get("jobLevel", "staff")).lower(),
+        "org_units": [d["name"] for d in depts if d.get("name")],
+        "access_token": access_token,
+        "is_guest": False,
+    }
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 class LoginRequest(BaseModel):
@@ -313,246 +351,115 @@ class LoginRequest(BaseModel):
     browser: Optional[str] = None
 
 
+
+
+@app.post("/api/auth/login")
 @app.post("/api/login")
-async def login(req: LoginRequest, request: Request):
-    """Endpoint autentikasi user. Mengembalikan access token JWT dengan single-session control.
+async def auth_login(req: LoginRequest, response: Response):
+    username = (req.username or "").strip()
+    password = (req.password or "").strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
 
-    Percobaan gagal dibatasi per (IP, username) agar tebak-password tidak dapat
-    dijalankan tanpa batas; bcrypt memperlambat, tetapi tidak menghentikannya.
-    """
-    attempt_key = f"{_client_ip(request)}|{(req.username or '').strip().lower()}"[:120]
-    client_ip = _client_ip(request)
-    ua_str = request.headers.get("user-agent", "")
-    dev_name, dev_type, dev_os, dev_browser, term_info = _detect_client_device(
-        ua_str, req.device_name, req.device_type, req.os, req.browser
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    try:
+        login_payload = {"username": username, "password": password}
+        if settings.dashboard_oidc_client_id:
+            login_payload["clientCode"] = settings.dashboard_oidc_client_id
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(f"{base}/v1/auth/login", json=login_payload)
+            # Bila clientCode tidak terdaftar di dashboard-mcp, retry 1x tanpa clientCode.
+            if r.status_code == 400 and "client code" in r.text.lower() and "clientCode" in login_payload:
+                logger.warning(f"clientCode '{settings.dashboard_oidc_client_id}' tidak dikenal dashboard-mcp; retry tanpa clientCode.")
+                r = await client.post(f"{base}/v1/auth/login", json={"username": username, "password": password})
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable during login: {e}")
+        raise HTTPException(status_code=502, detail="Layanan autentikasi tidak tersedia.")
+
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Username atau password salah.")
+
+    session = r.json()
+    principal = _map_dashboard_user(session["user"], session["accessToken"])
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=create_session_cookie(principal),
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        max_age=int(session.get("expiresIn") or settings.session_expire_hours * 3600),
+        path="/",
     )
-
-    blocked_for = check_login_block(attempt_key)
-    if blocked_for > 0:
-        record_auth_audit_log(
-            event_type="LOGIN_BLOCKED",
-            username=req.username,
-            ip_address=client_ip,
-            device_name=dev_name,
-            device_type=dev_type,
-            browser=dev_browser,
-            os=dev_os,
-            user_agent=ua_str,
-            status="BLOCKED",
-            details=f"Login diblokir sementara karena terlalu banyak percobaan gagal ({blocked_for // 60 + 1} menit).",
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=f"Terlalu banyak percobaan login yang gagal. Coba lagi dalam {blocked_for // 60 + 1} menit.",
-        )
-
-    user = authenticate_user(req.username, req.password)
-    if not user:
-        register_login_failure(
-            attempt_key, settings.login_max_failures, settings.login_lock_seconds
-        )
-        record_auth_audit_log(
-            event_type="LOGIN_FAILED",
-            username=req.username,
-            ip_address=client_ip,
-            device_name=dev_name,
-            device_type=dev_type,
-            browser=dev_browser,
-            os=dev_os,
-            user_agent=ua_str,
-            status="FAILED",
-            details="Percobaan login gagal: password salah atau username tidak terdaftar.",
-        )
-        raise HTTPException(status_code=401, detail="Username atau password salah")
-
-    clear_login_failures(attempt_key)
-
-    # --- SINGLE-SESSION ENFORCEMENT ---
-    # Putuskan sesi lama yang masih aktif milik pengguna ini
-    session_id = str(uuid.uuid4())
-    kicked = invalidate_existing_user_sessions(
-        username=user["username"],
-        reason=f"Akun Anda telah login di perangkat lain ({dev_name} - {client_ip}). Sesi di perangkat ini dinonaktifkan.",
-    )
-    for old_s in kicked:
-        record_auth_audit_log(
-            event_type="SESSION_KICKED_NEW_LOGIN",
-            username=user["username"],
-            ip_address=client_ip,
-            device_name=dev_name,
-            device_type=dev_type,
-            browser=dev_browser,
-            os=dev_os,
-            status="WARNING",
-            details=f"Sesi lama ({old_s.get('device_name')} - {old_s.get('ip_address')}) diputuskan otomatis karena login baru dari {dev_name} ({client_ip}).",
-        )
-
-    # Daftarkan sesi aktif baru
-    create_user_session(
-        session_id=session_id,
-        username=user["username"],
-        device_name=dev_name,
-        device_type=dev_type,
-        terminal_info=term_info,
-        os=dev_os,
-        browser=dev_browser,
-        ip_address=client_ip,
-        user_agent=ua_str,
-    )
-
-    record_auth_audit_log(
-        event_type="LOGIN_SUCCESS",
-        username=user["username"],
-        ip_address=client_ip,
-        device_name=dev_name,
-        device_type=dev_type,
-        browser=dev_browser,
-        os=dev_os,
-        user_agent=ua_str,
-        status="SUCCESS",
-        details="Login berhasil.",
-    )
-
-    user_roles = user.get("roles") or [user["role"]]
-    token = create_access_token(user["username"], user["role"], roles=user_roles, session_id=session_id)
     return {
         "status": "success",
-        "access_token": token,
+        "access_token": session["accessToken"],
         "token_type": "bearer",
-        "session_id": session_id,
-        "device_name": dev_name,
-        "expires_in": settings.jwt_expire_minutes * 60,
+        "user": {**principal, "authenticated": True},
+    }
+
+@app.post("/api/auth/logout")
+async def auth_logout(response: Response):
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"{base}/v1/auth/logout")
+    except Exception as e:
+        logger.warning(f"upstream logout failed (ignored): {e}")
+    response.delete_cookie(settings.session_cookie_name, path="/")
+    return {"status": "ok"}
+
+
+@app.get("/api/auth/session")
+async def auth_session(user: dict = Depends(get_current_user_optional)):
+    """Kembalikan profil user dari sesi BFF (tanpa bearer/refresh token).
+    Jika tidak ada sesi login valid, kembalikan profil guest (200 OK).
+    """
+    if user.get("is_guest"):
+        return {
+            "sub": "guest",
+            "username": "guest",
+            "role": "guest",
+            "roles": ["guest"],
+            "org_units": [],
+            "is_guest": True,
+            "authenticated": False,
+        }
+    profile = {
+        "sub": user["sub"],
         "username": user["username"],
-        "full_name": user.get("full_name", ""),
-        "role": user["role"],
-        "roles": user_roles,
-        "assistant_persona": user["assistant_persona"],
-        "force_change_password": user.get("force_change_password", False),
-        "division_code": user.get("division_code"),
-        "division_name": user.get("division_name"),
-        "job_level": user.get("job_level", "staff"),
+        "role": user.get("role", "user"),
+        "roles": user.get("roles", ["user"]),
+        "org_units": user.get("org_units", []),
+        "is_guest": False,
+        "authenticated": True,
     }
+    # Sertakan preferensi lokal bila ada.
+    local = get_user_by_username(user["username"])
+    if not local:
+        local = get_user_by_username(user["sub"])
+    if not local and not user.get("is_guest"):
+        try:
+            local = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
+    if local:
+        profile["full_name"] = local.get("full_name", "")
+        profile["assistant_persona"] = local.get("assistant_persona", "")
+        profile["division_code"] = local.get("division_code")
+        profile["division_name"] = local.get("division_name")
+        profile["job_level"] = local.get("job_level", "staff")
+    return profile
 
 
-class HeartbeatRequest(BaseModel):
-    current_action: Optional[str] = None
-    current_path: Optional[str] = None
-    is_idle: bool = False
-
-
-@app.post("/api/auth/heartbeat")
-async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
-    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & mengecek status keaktifan sesi."""
-    session_id = user.get("session_id")
-    if not session_id:
-        return {"status": "ok", "is_active": True}
-    is_active, reason = update_session_heartbeat(
-        session_id=session_id,
-        current_action=req.current_action,
-        current_path=req.current_path,
-        is_idle=req.is_idle,
-    )
-    if not is_active:
-        raise HTTPException(
-            status_code=401,
-            detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
-        )
-    return {"status": "ok", "is_active": True}
-
-
-@app.post("/api/logout")
-async def logout_endpoint(user: dict = Depends(get_current_user)):
-    """Logout formal dari pengguna, mematikan sesi aktif di database."""
-    session_id = user.get("session_id")
-    if session_id:
-        terminate_session_logout(session_id)
-    return {"status": "success", "message": "Berhasil logout."}
-
-
-# --- ADMIN SESSION MONITOR & SECURITY LOGS ---
-
-@app.get("/api/admin/user-sessions")
-async def get_admin_user_sessions_endpoint(
-    status: str = "active",
-    q: Optional[str] = None,
-    admin: dict = Depends(require_superadmin_token),
-):
-    """Mengambil daftar sesi aktif dan metrik telemetri pengguna."""
-    return list_active_sessions(status_filter=status, search=q)
-
-
-class AdminKickSessionRequest(BaseModel):
-    reason: Optional[str] = None
-
-
-@app.post("/api/admin/user-sessions/{session_id}/kick")
-async def admin_kick_session_endpoint(
-    session_id: str,
-    req: Optional[AdminKickSessionRequest] = None,
-    admin: dict = Depends(require_superadmin_token),
-):
-    """Admin memutuskan sesi pengguna tertentu secara paksa."""
-    reason = req.reason if req else None
-    success = kick_user_session(session_id, admin["username"], reason=reason)
-    if not success:
-        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau sudah tidak aktif.")
-    return {"status": "success", "message": "Sesi berhasil diputuskan."}
-
-
-@app.post("/api/admin/users/{username}/kick-sessions")
-async def admin_kick_user_sessions_endpoint(
-    username: str,
-    req: Optional[AdminKickSessionRequest] = None,
-    admin: dict = Depends(require_superadmin_token),
-):
-    """Admin memutuskan semua sesi aktif pengguna tertentu."""
-    reason = req.reason if req else None
-    kicked_count = kick_all_user_sessions(username, admin["username"], reason=reason)
-    return {
-        "status": "success",
-        "kicked_count": kicked_count,
-        "message": f"{kicked_count} sesi aktif berhasil diputuskan.",
-    }
-
-
-@app.get("/api/admin/security-logs")
-async def get_admin_security_logs_endpoint(
-    username: Optional[str] = None,
-    event_type: Optional[str] = None,
-    limit: int = 100,
-    offset: int = 0,
-    admin: dict = Depends(require_superadmin_token),
-):
-    """Mengambil riwayat log audit autentikasi sistem."""
-    return list_auth_audit_logs(
-        username=username, event_type=event_type, limit=limit, offset=offset
-    )
-
-
+@app.get("/api/auth/me")
 @app.get("/api/me")
-async def me(user: dict = Depends(get_current_user)):
-    """Kembalikan profil user dari token — dipakai frontend untuk validasi sesi."""
-    fresh = get_user_by_username(user["username"])
-    if not fresh:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-    return fresh
-
-
-class ChangePasswordRequest(BaseModel):
-    old_password: Optional[str] = None
-    new_password: str
-
-
-@app.post("/api/change-password")
-async def change_password_endpoint(
-    req: ChangePasswordRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Endpoint untuk mengubah password user yang sedang login."""
-    res = change_user_password(user["username"], req.old_password, req.new_password)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    return res
+async def get_me(user: dict = Depends(get_current_user)):
+    """Kembalikan profil user terautentikasi (401 bila belum login)."""
+    return await auth_session(user)
 
 # --- PER-USER SAP CREDENTIALS ---
 
@@ -563,6 +470,10 @@ class UserSapCredentialRequest(BaseModel):
     sap_client: str = "100"
     is_update: bool = False
 
+
+
+class BindSapTokenRequest(BaseModel):
+    target: str
 
 @app.get("/api/me/sap-credentials")
 async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
@@ -575,19 +486,13 @@ async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
 async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
     """Mengambil daftar server SAP terdaftar dengan status otorisasi dan konfigurasi kredensial pengguna."""
     username = user["username"]
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    if not user_roles:
-        user_roles = ["user"]
-    
+    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
     # 1. Ambil status live dan sub_servers dari MCP SAP
     raw_status = await mcp_manager.check_servers_status()
     sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
-    
-    # 2. Ambil resolusi akses RBAC pengguna
-    user_access = access_control.resolve_access(username, user_roles)
-    is_superadmin = "superadmin" in access_control.normalize_roles(user_roles)
-    
-    # 3. Ambil target kredensial yang sudah pernah disimpan pengguna
+    # 2. Ambil target kredensial yang sudah pernah disimpan pengguna
     user_creds = database.list_user_sap_credentials(username)
     saved_targets = {c.get("target", "").lower().strip() for c in user_creds if c.get("target")}
 
@@ -598,23 +503,13 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
         client = str(srv.get("client") or "100")
         env = srv.get("environment", "development")
         prod_warn = bool(srv.get("production_warning", False))
-        
-        # Cari alias kanonikal
         aliases = srv.get("aliases") or []
         primary_alias = aliases[0] if aliases else name.lower().replace(" ", "-")
-        
-        # Pengecekan otorisasi RBAC
-        can_key = access_control.canonical_resource_key(f"sap:{primary_alias}")
-        perm = user_access.get(can_key)
-        is_allowed = is_superadmin or bool(perm and perm.get("allowed"))
-        
-        # Cek apakah sudah tersimpan di database pengguna
         has_credential = (
             primary_alias.lower() in saved_targets or
             name.lower() in saved_targets or
             any(a.lower() in saved_targets for a in aliases)
         )
-        
         servers.append({
             "name": name,
             "alias": primary_alias,
@@ -623,7 +518,7 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
             "client": client,
             "environment": env,
             "production_warning": prod_warn,
-            "is_allowed": is_allowed,
+            "is_allowed": True,
             "has_credential": has_credential,
         })
         
@@ -639,20 +534,13 @@ async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
     target = (req.target or "").strip()
     if not target:
         raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
-    
+
     username = user["username"]
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    
-    # 1. Pastikan pengguna berhak mengakses target SAP ini (RBAC check)
-    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
-        try:
-            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
-        except HTTPException:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengakses server SAP '{target}'."
-            )
-            
+    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
+
+
     # 2. Siapkan username dan password: jika kosong saat pengujian, coba gunakan yang tersimpan
     user_to_test = (req.sap_user or "").strip()
     pass_to_test = (req.sap_password or "").strip()
@@ -884,15 +772,6 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
         
     # Pastikan hak otorisasi server
-    user_roles = database.get_user_roles(username) if hasattr(database, "get_user_roles") else ["user"]
-    if "superadmin" not in access_control.normalize_roles(user_roles) and access_control.is_access_control_enabled():
-        try:
-            access_control.assert_can_use(username, user_roles, active_server=f"sap:{target}")
-        except HTTPException:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Akses ditolak: Anda tidak memiliki izin otorisasi untuk mengonfigurasi kredensial server SAP '{target}'."
-            )
 
     # Cek apakah target sudah ada jika bukan is_update
     existing = get_user_sap_credential(username, target)
@@ -922,13 +801,125 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
 @app.delete("/api/me/sap-credentials/{target}")
 async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
     """Hapus kredensial SAP pribadi untuk target tertentu."""
-    from database import delete_user_sap_credential
+    from database import delete_user_sap_credential, delete_user_sap_token
     target_clean = (target or "").strip()
     if not target_clean:
         raise HTTPException(status_code=400, detail="Target tidak valid.")
     ok = delete_user_sap_credential(user["username"], target_clean)
+    delete_user_sap_token(user["username"], target_clean)
     return {"success": ok, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
 
+
+@app.post("/api/me/sap-credentials/bind-token")
+async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_current_user)):
+    """Generate a bound SAP token via dashboard-mcp and store it locally."""
+    from database import get_user_sap_credential, save_user_sap_token
+    from auth import get_dashboard_access_token
+    username = user["username"]
+    target = (req.target or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Target SAP wajib diisi.")
+    cred = get_user_sap_credential(username, target)
+    if not cred:
+        raise HTTPException(status_code=404, detail=f"Kredensial SAP untuk '{target}' tidak ditemukan. Simpan kredensial terlebih dahulu.")
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{base}/v1/integration/sap-tokens",
+                json={"target": target, "sap_user": cred["sap_user"],
+                      "sap_password": cred["sap_password"], "sap_client": cred.get("sap_client", "100")},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for sap-token bind: {e}")
+        raise HTTPException(status_code=502, detail="Layanan token SAP tidak tersedia.")
+    if r.status_code in (404, 501):
+        # ponytail: dashboard-mcp endpoint not yet implemented; credential saved, token not bound
+        logger.warning(f"dashboard-mcp /v1/integration/sap-tokens returned {r.status_code}; fallback to legacy X-SAP headers")
+        return {"success": True, "token_bound": False, "message": "Kredensial disimpan. Token binding belum tersedia di dashboard."}
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    data = r.json()
+    from datetime import datetime, timezone, timedelta
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expiresIn", 86400))
+    save_user_sap_token(username, target, data["token"], expires_at)
+    return {"success": True, "token_bound": True, "expires_at": expires_at.isoformat()}
+
+
+class RequestMcpAccessPayload(BaseModel):
+    connectionId: str
+    reason: Optional[str] = None
+
+
+@app.get("/api/mcp/access-requests/available")
+async def get_available_mcp_access_requests(user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp /v1/access-requests/available."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{base}/v1/access-requests/available",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for access requests available: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
+
+@app.post("/api/mcp/access-requests")
+async def submit_mcp_access_request(req: RequestMcpAccessPayload, user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp POST /v1/access-requests."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{base}/v1/access-requests",
+                json={"connectionId": req.connectionId, "reason": req.reason},
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for submitting access request: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 201 and r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
+
+
+@app.get("/api/mcp/access-requests/me")
+async def get_my_mcp_access_requests(user: dict = Depends(get_current_user)):
+    """Proxy to dashboard-mcp GET /v1/access-requests/me."""
+    from auth import get_dashboard_access_token
+    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if not access_token:
+        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{base}/v1/access-requests/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"dashboard-mcp unreachable for access requests history: {e}")
+        raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
+    if r.status_code != 200:
+        raise HTTPException(status_code=r.status_code, detail=r.text)
+    return r.json()
 
 # --- KONFIGURASI ---
 
@@ -987,10 +978,30 @@ class TestMcpConnectionRequest(BaseModel):
 async def get_config(user: dict = Depends(get_current_user)):
     profile = get_user_by_username(user["username"])
     if not profile:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
+        profile = get_user_by_username(user.get("sub", ""))
+    if not profile:
+        try:
+            profile = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
+    if not profile:
+        user_role = user.get("role", "user")
+        user_roles = user.get("roles") or [user_role]
+        profile = {
+            "username": user["username"],
+            "full_name": user.get("full_name", user["username"]),
+            "role": user_role,
+            "roles": user_roles,
+            "assistant_persona": "",
+            "force_change_password": False,
+        }
 
     sys_cfg = get_system_config()
-    is_admin = profile["role"] == "superadmin"
+    is_admin = profile.get("role") == "superadmin" or "superadmin" in [r.lower() for r in profile.get("roles", [])]
 
     payload = {
         "assistant_persona": profile["assistant_persona"],
@@ -1031,6 +1042,17 @@ async def get_config(user: dict = Depends(get_current_user)):
 @app.post("/api/config")
 async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_user)):
     profile = get_user_by_username(user["username"])
+    if not profile:
+        profile = get_user_by_username(user.get("sub", ""))
+    if not profile:
+        try:
+            profile = ensure_user_exists(
+                username=user["username"],
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
     if not profile:
         raise HTTPException(status_code=404, detail="User tidak ditemukan")
 
@@ -1169,15 +1191,7 @@ async def get_mcp_servers(user: dict = Depends(get_current_user_optional)):
     Bila kontrol akses aktif, sub-servers disaring khusus untuk server yang diizinkan bagi pengguna saat ini.
     """
     raw = await mcp_manager.check_servers_status()
-    try:
-        access_control.sync_resources_from_mcp(raw)
-    except Exception as e:
-        logger.warning(f"Auto-sync resources gagal: {e}")
-    username = user.get("username", "guest") if user else "guest"
-    is_guest = not user or bool(user.get("is_guest", True))
-    token_roles = user.get("roles", [user.get("role", "guest")]) if user else ["guest"]
-    user_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
-    return access_control.filter_servers_for_user(raw, username=username, role=user_roles)
+    return raw
 
 
 # --- SUPER ADMIN ENDPOINTS ---
@@ -1191,27 +1205,8 @@ async def get_admin_stats_endpoint(
     """Mengambil metrik statistik sistem & status live MCP servers."""
     stats = get_admin_system_stats(period=period, top_users_limit=limit)
     mcp_st = await mcp_manager.check_servers_status()
-    try:
-        access_control.sync_resources_from_mcp(mcp_st)
-    except Exception as e:
-        logger.warning(f"Auto-sync resources gagal: {e}")
     stats["mcp_status"] = mcp_st
-    try:
-        servers = list_mcp_servers(enabled_only=False)
-        for s in servers:
-            sid = s["id"]
-            st = mcp_st.get(sid, {})
-            s["online"] = st.get("online", False)
-            s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
-            s["tool_count"] = st.get("tool_count", 0)
-            s["tools_count"] = st.get("tools_count", s["tool_count"])
-            s["active_server"] = st.get("active_server", "-")
-            if "error" in st:
-                s["error"] = st["error"]
-        stats["mcp_servers"] = servers
-    except Exception as ex:
-        logger.warning(f"Gagal memuat list mcp_servers untuk stats: {ex}")
-        stats["mcp_servers"] = []
+    stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
     return stats
 
 
@@ -1268,11 +1263,21 @@ class SaklarLimitRequest(BaseModel):
 @app.get("/api/quota")
 async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
     """Sisa kuota pengguna yang sedang login."""
-    profil = get_user_by_username(user["username"])
+    username = user.get("username") or user.get("sub", "")
+    profil = get_user_by_username(username)
     if not profil:
-        raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-    user_roles = profil.get("roles") or [profil["role"]]
-    return status_kuota(profil["username"], user_roles)
+        profil = get_user_by_username(user.get("sub", ""))
+    if not profil:
+        try:
+            profil = ensure_user_exists(
+                username=username,
+                role=user.get("role", "user"),
+                roles=user.get("roles") or [user.get("role", "user")],
+            )
+        except Exception:
+            pass
+    user_roles = (profil.get("roles") if profil else None) or user.get("roles") or [user.get("role", "user")]
+    return status_kuota(username, user_roles)
 
 
 @app.get("/api/admin/quota")
@@ -1376,7 +1381,7 @@ async def get_admin_users_endpoint(admin: dict = Depends(require_superadmin)):
 
 class AdminCreateUserRequest(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     full_name: str = ""
     role: str = "user"
     roles: Optional[List[str]] = None
@@ -1391,11 +1396,9 @@ async def create_user_endpoint(
     req: AdminCreateUserRequest,
     admin: dict = Depends(require_superadmin),
 ):
-    """Membuat user baru (oleh Super Admin)."""
-    if not req.username or not req.password:
-        raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
-    if len(req.password) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
+    """Membuat profil user baru (oleh Super Admin)."""
+    if not req.username:
+        raise HTTPException(status_code=400, detail="Username wajib diisi.")
 
     clean_roles = req.roles if req.roles else ([req.role] if req.role else ["user"])
     available_roles = get_available_roles(enabled_only=True)
@@ -1420,45 +1423,13 @@ async def create_user_endpoint(
     return res
 
 
-class AdminResetPasswordRequest(BaseModel):
-    password: Optional[str] = None
-    new_password: Optional[str] = None
-    force_change_password: bool = True
-
-    @property
-    def effective_password(self) -> str:
-        return self.password or self.new_password or ""
-
-
-@app.post("/api/admin/users/{username}/reset-password")
-async def admin_reset_password_endpoint(
-    username: str,
-    req: AdminResetPasswordRequest,
-    admin: dict = Depends(require_superadmin),
-):
-    """Reset password user oleh Super Admin dan tandai force_change_password."""
-    target_pwd = req.effective_password
-    if not target_pwd or len(target_pwd) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
-
-    res = reset_user_password_by_admin(
-        username=username,
-        new_password=target_pwd,
-        force_change=req.force_change_password,
-    )
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
-    return res
 
 
 class AdminUpdateUserRequest(BaseModel):
     role: Optional[str] = None
     roles: Optional[List[str]] = None
     assistant_persona: Optional[str] = None
-    password: Optional[str] = None
     full_name: Optional[str] = None
-    force_change_password: Optional[bool] = None
     division_code: Optional[str] = None
     job_level: Optional[str] = None
 
@@ -1491,17 +1462,13 @@ async def update_user_endpoint(
                 detail="Anda tidak dapat menurunkan role akun superadmin yang sedang Anda gunakan.",
             )
 
-    if req.password and len(req.password) < 8:
-        raise HTTPException(status_code=400, detail="Password minimal 8 karakter.")
 
     res = update_user_by_admin(
         username=username,
-        password=req.password if req.password else None,
         role=req.role,
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
-        force_change_password=req.force_change_password,
         division_code=req.division_code,
         update_division=(req.division_code is not None),
         job_level=req.job_level,
@@ -1509,8 +1476,8 @@ async def update_user_endpoint(
     )
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
     return res
+
 
 
 @app.delete("/api/admin/users/{username}")
@@ -1522,7 +1489,6 @@ async def delete_user_endpoint(username: str, admin: dict = Depends(require_supe
     res = delete_user_by_admin(username)
     if not res["success"]:
         raise HTTPException(status_code=400, detail=res["message"])
-    access_control.invalidate_effective_roles_cache(username)
     return res
 
 
@@ -1704,14 +1670,6 @@ async def create_admin_role_endpoint(
             daily_token_limit=int(req.daily_token_limit if req.daily_token_limit is not None else 100000),
             per_minute_limit=int(pml),
         )
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="CREATE_ROLE",
-            detail=f"Peran '{c_clean}' dibuat (label='{req.label.strip()}', can_modify_program={bool(req.can_modify_program)}, enabled={bool(req.enabled)})",
-        )
         return {"status": "success", "role": new_role}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1750,14 +1708,6 @@ async def clone_admin_role_endpoint(
             label=req.label.strip(),
             description=(req.description or "").strip(),
         )
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="CLONE_ROLE",
-            detail=f"Peran '{c_clean}' dibuat dengan mengkloning izin dari '{src_clean}'",
-        )
         return {"status": "success", "role": new_role}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1790,17 +1740,6 @@ async def update_admin_role_endpoint(
             suspended=req.suspended,
             sort_order=req.sort_order,
         )
-        access_control.broadcast_access_change()
-        changed = {
-            k: v for k, v in req.model_dump(exclude_none=True).items()
-        }
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="UPDATE_ROLE",
-            detail=f"Peran '{c_clean}' diperbarui: {changed}",
-        )
         return {"status": "success", "role": updated}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -1818,14 +1757,6 @@ async def delete_admin_role_endpoint(
     c_clean = code.strip().lower()
     try:
         delete_role(c_clean)
-        access_control.broadcast_access_change()
-        access_control.log_audit(
-            actor=admin.get("username", "admin"),
-            target_type="role",
-            target_id=c_clean,
-            action="DELETE_ROLE",
-            detail=f"Peran '{c_clean}' dihapus.",
-        )
         return {"status": "success", "message": f"Peran '{c_clean}' berhasil dihapus."}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -2019,9 +1950,17 @@ async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_use
     username = user.get("username", "guest") if user else "guest"
     is_guest = not user or bool(user.get("is_guest", True))
     token_roles = (user.get("roles") or [user.get("role", "user")]) if user else ["guest"]
-    # Role diambil ulang dari database (bukan token) agar pencabutan/penonaktifan
-    # role langsung berlaku tanpa menunggu token kedaluwarsa.
-    active_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
+    if is_guest or not username or username == "guest":
+        active_roles = token_roles if isinstance(token_roles, list) else [token_roles]
+    else:
+        try:
+            active_roles = database.get_user_roles(username, active_only=True)
+        except Exception:
+            active_roles = token_roles if isinstance(token_roles, list) else [token_roles]
+    if isinstance(active_roles, str):
+        active_roles = [active_roles]
+    elif not active_roles:
+        active_roles = ["user"]
 
     modes = get_modes_for_user(username, active_roles)
     modes.sort(key=lambda x: x.get("sort_order", 0))
@@ -2220,315 +2159,57 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
 
 
-@app.get("/api/admin/modes/users")
-async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mendapatkan daftar pengguna beserta ringkasan status override mode chat."""
-    users = list_all_users()
-    all_ovrs = get_all_user_mode_overrides()
-    ovrs_by_user = {}
-    for o in all_ovrs:
-        u = o["username"].lower()
-        if u not in ovrs_by_user:
-            ovrs_by_user[u] = []
-        ovrs_by_user[u].append(o)
-
-    result = []
-    for u in users:
-        u_name = u.get("username", "")
-        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
-        result.append({
-            "username": u_name,
-            "full_name": u.get("full_name", ""),
-            "role": u.get("role", "user"),
-            "roles": u.get("roles", [u.get("role", "user")]),
-            "division_name": u.get("division_name"),
-            "override_count": len(u_ovrs),
-            "overrides": u_ovrs,
-        })
-    return result
-
-
-@app.get("/api/admin/modes/users/{username}")
-async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
-    """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
-    res = get_user_modes_matrix(username)
-    if "error" in res and res.get("error") == "User not found":
-        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
-    return res
-
-
-@app.put("/api/admin/modes/users/{username}")
-async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
-    """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
-    user_row = get_user_by_username(username)
-    if not user_row:
-        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
-
-    items_to_process = []
-    if req.items is not None:
-        items_to_process = req.items
-    elif req.mode_code:
-        items_to_process = [AdminUserModeOverrideItem(
-            mode_code=req.mode_code,
-            state=req.state,
-            enabled=req.enabled,
-        )]
-
-    if not items_to_process:
-        raise HTTPException(status_code=400, detail="Tidak ada data mode yang diperbarui.")
-
-    success_count = 0
-    for item in items_to_process:
-        m_code = (item.mode_code or "").strip().lower()
-        if not m_code:
-            continue
-        st = item.state
-        if st is None and item.enabled is not None:
-            st = "allow" if item.enabled else "deny"
-        elif st is None:
-            st = "inherit"
-
-        ok = set_user_mode_override(username, m_code, st)
-        if ok:
-            success_count += 1
-
-    return {
-        "status": "success",
-        "username": username,
-        "updated": success_count,
-        "matrix": get_user_modes_matrix(username),
-    }
-
-
-# --- MCP ACCESS CONTROL ADMIN ENDPOINTS ---
-
-class AdminUpdateRoleAccessRequest(BaseModel):
-    role: str
-    items: List[dict]
-
-
-class AdminUpdateUserAccessRequest(BaseModel):
-    items: List[dict]
-
-
-class AdminBulkUserAccessRequest(BaseModel):
-    usernames: List[str]
-    resource_key: str
-    state: str = "inherit"  # "inherit", "allow", "deny"
-    can_write: bool = False
-    valid_until: Optional[str] = None
-
-
-class AdminToggleAccessMasterRequest(BaseModel):
-    enabled: bool
-
-
-@app.get("/api/admin/access/resources")
-async def get_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil katalog lengkap sumber daya MCP."""
-    return {"resources": access_control.get_all_resources(include_archived=False)}
-
-
-@app.post("/api/admin/access/resources/sync")
-async def sync_admin_access_resources_endpoint(admin: dict = Depends(require_superadmin)):
-    """Sinkronisasi live penemuan resource dari MCP gateway."""
-    st = await mcp_manager.check_servers_status()
-    synced = access_control.sync_resources_from_mcp(st)
-    return {
-        "status": "success",
-        "synced_count": len(synced),
-        "synced_keys": synced,
-        "resources": access_control.get_all_resources(include_archived=False),
-    }
-
-
-@app.get("/api/admin/access/roles")
-async def get_admin_access_roles_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil matriks izin Role x Resource."""
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-    except Exception as e:
-        logger.warning(f"Auto-sync on get_admin_access_roles gagal: {e}")
-    return access_control.get_all_roles_matrix()
-
-
-@app.put("/api/admin/access/roles")
-async def update_admin_access_role_endpoint(req: AdminUpdateRoleAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui set izin resource untuk role tertentu."""
-    role_clean = (req.role or "").strip().lower()
-    if role_clean != "superadmin" and not get_role_by_code(role_clean):
-        raise HTTPException(status_code=404, detail=f"Peran '{req.role}' tidak ditemukan.")
-
-    actor = admin.get("username", "admin")
-    ok = access_control.update_role_access(role_clean, req.items, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal memperbarui izin role.")
-    access_control.broadcast_access_change()
-    return {"status": "success", "role": role_clean}
-
-
-@app.get("/api/admin/access/users/{username}")
-async def get_admin_access_user_endpoint(username: str, admin: dict = Depends(require_superadmin)):
-    """Mengambil izin spesifik pengguna beserta resolusi warisan rolenya."""
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-    except Exception as e:
-        logger.warning(f"Auto-sync on get_admin_access_user gagal: {e}")
-    return access_control.get_user_matrix(username)
-
-
-@app.put("/api/admin/access/users/{username}")
-async def update_admin_access_user_endpoint(username: str, req: AdminUpdateUserAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Menyimpan override izin resource untuk pengguna tertentu."""
-    actor = admin.get("username", "admin")
-    ok = access_control.update_user_access(username, req.items, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal memperbarui izin pengguna.")
-    access_control.broadcast_access_change()
-    return {"status": "success", "username": username}
-
-
-@app.post("/api/admin/access/bulk")
-async def bulk_update_admin_access_user_endpoint(req: AdminBulkUserAccessRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui izin satu resource secara massal (bulk) untuk banyak pengguna."""
-    actor = admin.get("username", "admin")
-    count = access_control.bulk_update_user_access(
-        usernames=req.usernames,
-        resource_key=req.resource_key,
-        state=req.state,
-        can_write=req.can_write,
-        valid_until=req.valid_until,
-        actor=actor,
-    )
-    access_control.broadcast_access_change()
-    return {"status": "success", "updated_count": count}
-
-
-@app.get("/api/admin/access/audit")
-async def get_admin_access_audit_endpoint(limit: int = 100, offset: int = 0, admin: dict = Depends(require_superadmin)):
-    """Mengambil log audit perubahan hak akses MCP."""
-    return {"logs": access_control.get_audit_logs(limit=limit, offset=offset)}
-
-
-@app.post("/api/admin/access/enabled")
-async def toggle_admin_access_master_endpoint(req: AdminToggleAccessMasterRequest, admin: dict = Depends(require_superadmin)):
-    """Mengaktifkan atau menonaktifkan master switch kontrol akses MCP."""
-    actor = admin.get("username", "admin")
-    ok = access_control.set_access_control_master(req.enabled, actor=actor)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal mengubah status master switch akses MCP.")
-    return {"status": "success", "mcp_access_control_enabled": req.enabled}
-
 
 # --- DYNAMIC MCP SERVERS ADMIN ENDPOINTS ---
 
 @app.get("/api/admin/mcp/servers")
 async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mengambil daftar seluruh server MCP yang terdaftar beserta status live terkini."""
-    servers = list_mcp_servers(enabled_only=False)
-    status_map = await mcp_manager.check_servers_status()
-    for s in servers:
-        sid = s["id"]
-        st = status_map.get(sid, {})
-        s["online"] = st.get("online", False)
-        s["status"] = st.get("status", "offline" if s.get("enabled") else "disabled")
-        s["tool_count"] = st.get("tool_count", 0)
-        s["active_server"] = st.get("active_server", "-")
-        if "error" in st:
-            s["error"] = st["error"]
-    return {"servers": servers}
+    """Mengambil status live seluruh server MCP upstream terdaftar."""
+    st = await mcp_manager.check_servers_status()
+    return {"servers": list(st.values()) if isinstance(st, dict) else []}
 
 
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    """Menambahkan gateway server MCP baru ke database."""
-    res = create_mcp_server(req.dict())
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(req.id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah create server MCP gagal: {ex}")
-    return res
+    result = database.save_mcp_server(sid=req.name.lower().replace(" ", "-"), name=req.name, url=req.url, enabled=getattr(req, "enabled", True))
+    if not result:
+        raise HTTPException(status_code=500, detail="Gagal menyimpan server MCP.")
+    return {"success": True, "server": result}
 
 
 @app.put("/api/admin/mcp/servers/{server_id}")
 async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    """Memperbarui metadata, deskripsi, URL, atau token server MCP."""
-    update_data = {k: v for k, v in req.dict().items() if v is not None}
-    res = update_mcp_server(server_id, update_data)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah update server MCP gagal: {ex}")
-    return res
+    result = database.update_mcp_server(server_id, name=getattr(req, "name", None), url=getattr(req, "url", None), enabled=getattr(req, "enabled", None))
+    if not result:
+        raise HTTPException(status_code=404, detail="Server MCP tidak ditemukan.")
+    return {"success": True, "server": result}
 
 
 @app.delete("/api/admin/mcp/servers/{server_id}")
 async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    """Menghapus server MCP kustom dari sistem (server sistem bawaan dilindungi)."""
-    res = delete_mcp_server(server_id)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah delete server MCP gagal: {ex}")
-    return res
-
-
-@app.post("/api/admin/mcp/servers/{server_id}/reset")
-async def reset_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends(require_superadmin)):
-    """Mengembalikan server MCP sistem ke konfigurasi default bawaan pabrik."""
-    res = reset_mcp_server_to_default(server_id)
-    if not res["success"]:
-        raise HTTPException(status_code=400, detail=res["message"])
-    mcp_manager.remove_client(server_id)
-    try:
-        st = await mcp_manager.check_servers_status()
-        access_control.sync_resources_from_mcp(st)
-        access_control.clear_access_cache()
-    except Exception as ex:
-        logger.warning(f"Auto-sync access resources setelah reset server MCP gagal: {ex}")
-    return res
-
-
+    ok = database.delete_mcp_server(server_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Server MCP tidak ditemukan.")
+    return {"success": True}
 @app.post("/api/admin/mcp/test")
 async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admin: dict = Depends(require_superadmin)):
     """Uji konektivitas real-time ke gateway MCP (latensi ms, status online, dan pendeteksian tools)."""
     url = req.url
-    auth_token = req.auth_token or ""
     headers = req.headers or {}
     transport = req.transport_type or "http"
     if req.server_id:
-        srv = get_mcp_server(req.server_id)
-        if srv:
-            url = srv.get("url") or url
-            if not req.auth_token:
-                auth_token = srv.get("auth_token") or ""
-            if not req.headers:
-                headers = srv.get("headers") or {}
-            transport = srv.get("transport_type") or transport
-
+        client = mcp_manager.get_client(req.server_id)
+        if client and getattr(client, "url", None):
+            url = client.url
+            if not req.headers and getattr(client, "headers", None):
+                headers = dict(client.headers)
+            transport = getattr(client, "transport_type", "http")
     if not url:
         raise HTTPException(status_code=400, detail="URL endpoint MCP wajib diisi untuk pengetesan koneksi.")
 
     result = await mcp_manager.test_connection(
         url=url,
-        auth_token=auth_token,
+        auth_token="",
         headers=headers,
         transport_type=transport
     )
@@ -2538,8 +2219,7 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
 # --- CHAT ---
 
 def _batas_peran(role: Union[str, list, None]) -> dict:
-    """Batas yang berlaku untuk peran pengguna (mendukung multi-role). 0 = tanpa batas."""
-    roles = access_control.normalize_roles(role)
+    roles = [role] if isinstance(role, str) else (role or ["user"])
     if "superadmin" in roles:
         return {"daily_token_limit": 0, "per_minute_limit": 0}
 
@@ -2604,7 +2284,7 @@ def status_kuota(username: str, role: Union[str, list, None]) -> dict:
         "estimated": pakai["estimated"],
         "usage_date": pakai["usage_date"],
         "role": primary_role,
-        "roles": access_control.normalize_roles(role),
+        "roles": [role] if isinstance(role, str) else (role or ["user"]),
     }
 
 
@@ -2664,15 +2344,10 @@ async def chat_stream_endpoint(
     apa yang sedang dikerjakan.
     """
     is_guest = not user or bool(user.get("is_guest", True))
-    sys_cfg = get_system_config()
-    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
-    if is_guest and require_login:
-        raise HTTPException(
-            status_code=401,
-            detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
-        )
+    dashboard_token = (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
     queue: asyncio.Queue = asyncio.Queue()
-
     async def on_progress(*args, **event):
         if args:
             keys = ["stage", "label", "step", "max_steps"]
@@ -2690,6 +2365,8 @@ async def chat_stream_endpoint(
             await queue.put({"type": "token", "text": text})
 
     async def run():
+        if dashboard_token:
+            set_dashboard_access_token(dashboard_token)
         try:
             response = await _run_chat(
                 request, chat_req, user, on_progress=on_progress, on_token=on_token
@@ -2807,10 +2484,11 @@ async def _run_chat(
     on_progress=None,
     on_token=None,
 ) -> ChatResponse:
-    is_guest = not user or bool(user.get("is_guest", True))
-    sys_cfg = get_system_config()
-    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
-
+    """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
+    dashboard_token = (user or {}).get("dashboard_token") or get_dashboard_access_token()
+    if dashboard_token:
+        set_dashboard_access_token(dashboard_token)
+    is_guest = user.get("is_guest", True)
     if is_guest:
         if require_login:
             raise HTTPException(
@@ -2835,13 +2513,26 @@ async def _run_chat(
     else:
         profile = get_user_by_username(user["username"])
         if not profile:
-            raise HTTPException(status_code=401, detail="User tidak ditemukan.")
-        user_roles = profile.get("roles") or [profile["role"]]
-        user_role = profile["role"]
-        user_persona = profile["assistant_persona"]
+            profile = get_user_by_username(user.get("sub", ""))
+        if not profile:
+            # Identitas dikelola oleh Dashboard OIDC; bila belum ada profil lokal,
+            # gunakan atribut dari principal sesi.
+            user_role = user.get("role", "user")
+            user_roles = user.get("roles") or [user_role]
+            profile = {
+                "username": user["username"],
+                "role": user_role,
+                "roles": user_roles,
+                "assistant_persona": "",
+                "division_code": None,
+                "job_level": "staff",
+            }
+        else:
+            user_roles = profile.get("roles") or [profile["role"]]
+            user_role = profile["role"]
+        user_persona = profile.get("assistant_persona", "")
         user_division = profile.get("division_code")
         user_job_level = profile.get("job_level", "staff")
-
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
         _tegakkan_kuota(profile["username"], user_roles)
@@ -3140,8 +2831,18 @@ async def run_scheduled_task_endpoint(task_id: str, user: dict = Depends(get_cur
     if task["user_id"] != username and "admin" not in roles:
         raise HTTPException(status_code=403, detail="Akses ditolak")
 
+    import uuid
     from scheduler import execute_task
-    asyncio.create_task(execute_task(task))
+
+    lease_owner = f"manual_{uuid.uuid4().hex[:12]}"
+    claimed_task = database.claim_scheduled_task(task_id, lease_owner, allow_inactive=True)
+    if not claimed_task:
+        raise HTTPException(
+            status_code=409,
+            detail="Tugas terjadwal sedang berjalan atau terkunci oleh worker lain"
+        )
+
+    asyncio.create_task(execute_task(claimed_task, lease_owner))
     return {"message": "Pemantauan sedang dijalankan di latar belakang"}
 
 

@@ -1,129 +1,37 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock,
-  Eye,
-  EyeOff,
-  KeyRound,
-  Loader2,
-  Lock,
-  LogIn,
-  ShieldCheck,
-  User,
-  UserCheck,
-  X,
-} from 'lucide-react';
-import { api } from '../lib/api';
+import React, { useState, useEffect } from 'react';
+import { LogIn, X, Lock, User, Loader2, Trash2 } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
+import { api, saveSession } from '../lib/api';
 
-const SAVED_USERS_KEY = 'sap_assistant_saved_usernames';
+const RECENT_ACCOUNTS_KEY = 'sap_recent_accounts';
 
-function getSavedUsers() {
-  try {
-    const raw = localStorage.getItem(SAVED_USERS_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw);
-    return Array.isArray(list) ? list.filter((x) => typeof x === 'string' && x.trim()) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRecentUser(username) {
-  if (!username || typeof username !== 'string') return;
-  const clean = username.trim();
-  if (!clean) return;
-  try {
-    const existing = getSavedUsers();
-    const updated = [clean, ...existing.filter((u) => u.toLowerCase() !== clean.toLowerCase())].slice(0, 5);
-    localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(updated));
-  } catch (e) {
-    console.error('Failed to save recent user:', e);
-  }
-}
-
-function removeSavedUserFromStorage(usernameToRemove) {
-  try {
-    const existing = getSavedUsers();
-    const updated = existing.filter((u) => u.toLowerCase() !== usernameToRemove.toLowerCase());
-    localStorage.setItem(SAVED_USERS_KEY, JSON.stringify(updated));
-    return updated;
-  } catch {
-    return [];
-  }
-}
-
-const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, onClose }) => {
+const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
   const { t } = useLanguage();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [capsLockOn, setCapsLockOn] = useState(false);
-  const [shake, setShake] = useState(false);
-  const [isClosing, setIsClosing] = useState(false);
-  const [savedUsers, setSavedUsers] = useState([]);
+  const [error, setError] = useState('');
+  const [recentAccounts, setRecentAccounts] = useState([]);
 
-  const usernameRef = useRef(null);
-  const passwordRef = useRef(null);
-  const formRef = useRef(null);
-  const containerRef = useRef(null);
-  const pointerDownTargetRef = useRef(null);
-
-  // Inisialisasi saat modal dibuka
   useEffect(() => {
-    if (!isOpen) {
-      setIsClosing(false);
-      return undefined;
-    }
-
-    // Lock body scroll to prevent iOS Safari from shifting background
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    // Pastikan tidak ada elemen luar (seperti chat input) yang masih memegang fokus
-    if (document.activeElement && typeof document.activeElement.blur === 'function') {
-      const isInside = containerRef.current && containerRef.current.contains(document.activeElement);
-      if (!isInside) {
-        document.activeElement.blur();
+    if (isOpen) {
+      setError('');
+      setPassword('');
+      try {
+        const stored = localStorage.getItem(RECENT_ACCOUNTS_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            setRecentAccounts(parsed);
+            if (parsed.length > 0 && !username) {
+              setUsername(parsed[0]);
+            }
+          }
+        }
+      } catch {
+        /* ignore localStorage error */
       }
     }
-
-    setUsername('');
-    setPassword('');
-    setError('');
-    setIsSuccess(false);
-    setShowPassword(false);
-    setCapsLockOn(false);
-    setShake(false);
-    setIsClosing(false);
-    setSavedUsers(getSavedUsers());
-
-    // Fokus halus hanya pada layar non-touch / desktop agar tidak memicu pop keyboard tiba-tiba di mobile
-    const isMobile = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
-    let focusTimer = null;
-    if (!isMobile) {
-      focusTimer = setTimeout(() => {
-        usernameRef.current?.focus();
-      }, 120);
-    }
-
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape' && onClose && !isLoading) {
-        triggerClose();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      if (focusTimer) clearTimeout(focusTimer);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   if (!isOpen && !isClosing) return null;
@@ -137,296 +45,174 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
     }, 180);
   };
 
-  const handleSelectRecent = (u) => {
-    setUsername(u);
-    setTimeout(() => {
-      passwordRef.current?.focus();
-    }, 60);
+  const handleSelectRecent = (account) => {
+    setUsername(account);
+    setError('');
   };
 
-  const handleRemoveRecent = (e, u) => {
+  const handleRemoveRecent = (e, accountToRemove) => {
     e.stopPropagation();
-    const updated = removeSavedUserFromStorage(u);
-    setSavedUsers(updated);
+    const updated = recentAccounts.filter((acc) => acc !== accountToRemove);
+    setRecentAccounts(updated);
+    try {
+      localStorage.setItem(RECENT_ACCOUNTS_KEY, JSON.stringify(updated));
+    } catch {
+      /* ignore */
+    }
+    if (username === accountToRemove) {
+      setUsername(updated[0] || '');
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isLoading || isSuccess) return;
+    const cleanUser = username.trim();
+    if (!cleanUser || !password) {
+      setError(t('login.required'));
+      return;
+    }
 
-    setError('');
     setIsLoading(true);
+    setError('');
 
     try {
-      const data = await api.login(username, password);
-      saveRecentUser(username);
-      setIsSuccess(true);
+      const res = await api.login(cleanUser, password);
+      if (res && res.status === 'success' && res.user) {
+        saveSession(res.access_token, res.user);
 
-      setTimeout(() => {
-        onLoginSuccess({
-          access_token: data.access_token,
-          username: data.username,
-          full_name: data.full_name || '',
-          role: data.role,
-          roles: data.roles || [data.role],
-          assistant_persona: data.assistant_persona,
-          force_change_password: Boolean(data.force_change_password),
-        });
-      }, 350);
+        // Update recent accounts
+        try {
+          const nextRecent = [cleanUser, ...recentAccounts.filter((acc) => acc.toLowerCase() !== cleanUser.toLowerCase())].slice(0, 5);
+          localStorage.setItem(RECENT_ACCOUNTS_KEY, JSON.stringify(nextRecent));
+        } catch {
+          /* ignore */
+        }
+
+        if (typeof onSuccess === 'function') {
+          onSuccess(res.user);
+        } else {
+          window.location.reload();
+        }
+      } else {
+        setError(t('login.failed'));
+      }
     } catch (err) {
-      setError(err.message || t('login.failed'));
-      setShake(true);
-      setTimeout(() => setShake(false), 450);
-      setTimeout(() => {
-        passwordRef.current?.focus();
-        passwordRef.current?.select();
-      }, 50);
+      const status = err?.response?.status ?? err?.status;
+      let msgKey = 'login.failed';
+      if (status === 400) msgKey = 'login.required';
+      else if (status === 502) msgKey = 'login.dashboard_unreachable';
+      setError(t(msgKey));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handlePasswordKeyDown = (e) => {
-    if (e.getModifierState) {
-      setCapsLockOn(e.getModifierState('CapsLock'));
-    }
-    if (e.key === 'Tab' && e.shiftKey) {
-      e.preventDefault();
-      usernameRef.current?.focus();
-    }
-  };
-
-  const handlePasswordKeyUp = (e) => {
-    if (e.getModifierState) {
-      setCapsLockOn(e.getModifierState('CapsLock'));
-    }
-  };
-
   return (
     <div
-      ref={containerRef}
-      onPointerDown={(e) => {
-        pointerDownTargetRef.current = e.target;
-      }}
-      onClick={(e) => {
-        if (
-          (e.target === e.currentTarget || e.target === containerRef.current?.firstElementChild) &&
-          (pointerDownTargetRef.current === e.currentTarget || pointerDownTargetRef.current === containerRef.current?.firstElementChild) &&
-          onClose &&
-          !isLoading &&
-          !isSuccess
-        ) {
-          triggerClose();
-        }
-      }}
-      className={`fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/70 backdrop-blur-md transition-opacity duration-200 ${
-        isClosing ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
-      }`}
+      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div
-        className="min-h-full flex items-center justify-center p-3 sm:p-4 text-center"
-        style={{
-          paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
-          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
-        }}
-      >
-        <div
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-          className={`bg-surface-raised/98 dark:bg-[#1a1a24] backdrop-blur-2xl rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-[340px] xs:max-w-sm sm:max-w-md border border-white/20 dark:border-white/15 ring-1 ring-black/5 dark:ring-white/10 relative my-auto flex flex-col text-left overflow-hidden transition-opacity duration-200 ${
-            isClosing ? 'animate-modal-content-out' : 'animate-modal-content'
-          } ${shake ? 'animate-shake' : ''}`}
-          style={{
-            maxHeight: 'min(92vh, calc(100% - 1.5rem))',
-          }}
-        >
-          {/* Top glowing hairline accent */}
-          <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-90" />
-
-          {/* Tombol Tutup (jika didukung) */}
-          {onClose && !isLoading && !isSuccess && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                triggerClose();
-              }}
-              className="absolute top-2.5 right-2.5 sm:top-4 sm:right-4 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover rounded-full border border-line/50 transition-all duration-200 z-20 cursor-pointer hover:rotate-90"
-              aria-label={t('login.closeAria')}
-            >
-              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" aria-hidden="true" />
-            </button>
-          )}
-
-          {/* Header Visual Modern, Rapi & Proporsional */}
-          <div className="relative pt-3.5 sm:pt-6 pb-1 sm:pb-1.5 px-4 sm:px-6 text-center shrink-0">
-            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-2xl bg-accent-soft text-accent border border-accent/20 flex items-center justify-center mx-auto mb-1.5 sm:mb-2 shadow-xs">
-              <Lock className="w-4 h-4 sm:w-6 sm:h-6" aria-hidden="true" />
-            </div>
-
-            <h2 id="login-title" className="text-sm sm:text-lg font-bold font-display text-content tracking-tight">
-              {t('login.title')}
-            </h2>
-
-            {!customMessage && (
-              <p className="text-xs text-content-muted mt-0.5 max-w-xs mx-auto leading-relaxed">
-                {t('login.subtitle')}
-              </p>
-            )}
-          </div>
-
-          {/* Body Form */}
-          <form
-            ref={formRef}
-            onSubmit={handleSubmit}
-            className="p-3.5 sm:p-6 pt-1.5 sm:pt-2 space-y-2.5 sm:space-y-3.5 overflow-y-auto custom-scrollbar flex-1 min-h-0 relative z-10"
+      <div className="bg-surface-raised rounded-2xl shadow-2xl w-full max-w-md border border-line relative p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 text-content-muted hover:text-content p-1.5 rounded-full transition-colors"
+            aria-label={t('login.closeAria')}
           >
-            {/* Custom Informational Message (misal saat wajib login atau timeout) */}
-            {customMessage && (
-              <div className="flex items-start gap-2 p-2 sm:p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-medium leading-relaxed transition-all">
-                <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                <span>{customMessage}</span>
-              </div>
-            )}
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
+        )}
 
-          {/* Pesan Kesalahan dengan Transisi Mulus */}
-          {error && (
-            <div
-              role="alert"
-              className="flex items-start gap-2.5 p-2.5 sm:p-3 bg-danger-soft border border-danger/40 rounded-xl text-danger text-xs font-medium leading-relaxed transition-all"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-              <span>{error}</span>
+        <div className="text-center mb-6">
+          <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+            <LogIn className="w-6 h-6" aria-hidden="true" />
+          </div>
+          <h2 id="login-title" className="text-xl font-bold text-content">
+            {t('login.title') || 'Masuk Enterprise AI Assistant'}
+          </h2>
+          <p className="text-xs text-content-muted mt-1.5 leading-relaxed">
+            {customMessage || t('login.subtitle') || 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen.'}
+          </p>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
+            <span>⚠️</span>
+            <span className="flex-1">{error}</span>
+          </div>
+        )}
+
+        {recentAccounts.length > 0 && (
+          <div className="mb-4">
+            <div className="text-xs font-semibold text-content-muted mb-1.5">
+              {t('login.recentAccounts') || 'Akun Pernah Login:'}
             </div>
-          )}
-
-          {/* Input Username */}
-          <div>
-            <label
-              htmlFor="login-username"
-              className="block text-[11px] sm:text-xs font-semibold text-content-secondary mb-1 uppercase tracking-wider"
-            >
-              {t('login.usernameLabel')}
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-content-subtle peer-focus:text-accent transition-colors duration-200">
-                <User className="w-4 h-4" aria-hidden="true" />
-              </div>
-              <input
-                id="login-username"
-                ref={usernameRef}
-                type="text"
-                required
-                disabled={isLoading || isSuccess}
-                autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab' && !e.shiftKey) {
-                    e.preventDefault();
-                    passwordRef.current?.focus();
-                  }
-                }}
-                className="peer w-full bg-surface-sunken hover:bg-surface-sunken focus:bg-surface-raised border border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-9 py-2 sm:py-2.5 text-base sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
-                placeholder={t('login.usernamePlaceholder')}
-              />
-              {username && !isLoading && !isSuccess && (
-                <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center">
+            <div className="flex flex-wrap gap-1.5">
+              {recentAccounts.map((acc) => (
+                <div
+                  key={acc}
+                  onClick={() => handleSelectRecent(acc)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors border ${
+                    username.toLowerCase() === acc.toLowerCase()
+                      ? 'bg-accent/15 border-accent text-accent'
+                      : 'bg-surface border-line text-content-muted hover:text-content hover:bg-surface-raised'
+                  }`}
+                >
+                  <span>{acc}</span>
                   <button
                     type="button"
-                    tabIndex="-1"
-                    onClick={() => {
-                      setUsername('');
-                      usernameRef.current?.focus();
-                    }}
-                    className="p-1 rounded-full text-content-subtle hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
-                    title={t('login.clearUsername')}
-                    aria-label={t('login.clearUsername')}
+                    onClick={(e) => handleRemoveRecent(e, acc)}
+                    className="text-content-muted hover:text-red-400 p-0.5"
+                    title={t('login.removeRecent')}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
-              )}
+              ))}
             </div>
+          </div>
+        )}
 
-            {/* Rekomendasi Akun Pernah Login (Recent Accounts) */}
-            {savedUsers.length > 0 && (
-              <div className="mt-1.5 space-y-1">
-                <div className="flex items-center justify-between text-[11px] text-content-subtle font-medium">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3 h-3" />
-                    <span>{t('login.recentAccounts')}</span>
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {savedUsers.map((u) => {
-                    const isSelected = username.toLowerCase() === u.toLowerCase();
-                    return (
-                      <div
-                        key={u}
-                        onClick={() => handleSelectRecent(u)}
-                        className={`group inline-flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-md text-[11px] font-mono border transition-all duration-150 cursor-pointer ${
-                          isSelected
-                            ? 'bg-accent/15 border-accent text-accent font-semibold shadow-xs'
-                            : 'bg-surface-sunken/80 hover:bg-surface-hover border-line/60 text-content-secondary hover:text-content hover:border-line'
-                        }`}
-                        title={u}
-                      >
-                        <span className="truncate max-w-[130px]">{u}</span>
-                        <button
-                          type="button"
-                          tabIndex="-1"
-                          onClick={(e) => handleRemoveRecent(e, u)}
-                          className="text-content-subtle hover:text-danger hover:bg-danger/10 p-0.5 rounded transition-all cursor-pointer"
-                          title={t('login.removeRecent')}
-                          aria-label={t('login.removeRecent')}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-content-muted mb-1">
+              {t('login.usernameLabel') || 'Username'}
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-content-muted">
+                <User className="w-4 h-4" />
               </div>
-            )}
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder={t('login.usernamePlaceholder') || 'Masukkan username'}
+                autoComplete="username"
+                required
+                className="w-full pl-9 pr-3 py-2.5 bg-surface border border-line rounded-xl text-content text-sm focus:outline-none focus:border-accent transition-colors"
+              />
+            </div>
           </div>
 
           {/* Input Password */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label
-                htmlFor="login-password"
-                className="block text-[11px] sm:text-xs font-semibold text-content-secondary uppercase tracking-wider"
-              >
-                {t('login.passwordLabel')}
-              </label>
-              {capsLockOn && (
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-500 animate-pulse">
-                  <AlertCircle className="w-3 h-3" />
-                  <span>{t('login.capsLock')}</span>
-                </span>
-              )}
-            </div>
+            <label className="block text-xs font-semibold text-content-muted mb-1">
+              {t('login.passwordLabel') || 'Password'}
+            </label>
             <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-content-subtle peer-focus:text-accent transition-colors duration-200">
-                <KeyRound className="w-4 h-4" aria-hidden="true" />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-content-muted">
+                <Lock className="w-4 h-4" />
               </div>
               <input
-                id="login-password"
-                ref={passwordRef}
-                type={showPassword ? 'text' : 'password'}
-                required
-                disabled={isLoading || isSuccess}
-                autoComplete="current-password"
+                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handlePasswordKeyDown}
-                onKeyUp={handlePasswordKeyUp}
-                className="peer w-full bg-surface-sunken hover:bg-surface-sunken focus:bg-surface-raised border border-line-strong focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl pl-10 pr-10 py-2 sm:py-2.5 text-base sm:text-sm text-content placeholder:text-content-subtle font-mono transition-all duration-200 outline-none disabled:opacity-50"
-                placeholder={t('login.passwordPlaceholder')}
+                placeholder={t('login.passwordPlaceholder') || '••••••••'}
+                autoComplete="current-password"
+                required
+                className="w-full pl-9 pr-3 py-2.5 bg-surface border border-line rounded-xl text-content text-sm focus:outline-none focus:border-accent transition-colors"
               />
               <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center">
                 <button
@@ -443,49 +229,23 @@ const LoginModal = ({ isOpen, onLoginSuccess, onGuestContinue, customMessage, on
             </div>
           </div>
 
-          {/* Tombol Submit Interaktif dengan Feedback Visual Mulus */}
-          <div className="pt-1">
-            <button
-              type="submit"
-              disabled={isLoading || isSuccess}
-              className={`w-full relative overflow-hidden flex items-center justify-center gap-2 py-2.5 sm:py-3 px-4 rounded-xl font-bold text-sm transition-all duration-200 shadow-md ${
-                isSuccess
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-accent hover:bg-accent-hover text-white shadow-accent/25 hover:shadow-accent/40 active:scale-[0.98] cursor-pointer'
-              } disabled:opacity-80`}
-            >
-              {isSuccess ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-200 animate-bounce" aria-hidden="true" />
-                  <span>{t('login.success')}</span>
-                </>
-              ) : isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" aria-hidden="true" />
-                  <span>{t('login.verifying')}</span>
-                </>
-              ) : (
-                <>
-                  <LogIn className="w-4 h-4" aria-hidden="true" />
-                  <span>{t('login.submit')}</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Opsi Lanjutkan Sebagai Tamu (jika diizinkan oleh parent) */}
-          {onGuestContinue && (
-            <div className="pt-1 text-center border-t border-line/60 mt-2">
-              <button
-                type="button"
-                onClick={onGuestContinue}
-                className="inline-flex items-center gap-1.5 text-xs text-content-muted hover:text-content font-medium py-1 px-3 rounded-xl hover:bg-surface-hover transition-all cursor-pointer"
-              >
-                <UserCheck className="w-3.5 h-3.5" aria-hidden="true" />
-                <span>{t('login.guestContinue')}</span>
-              </button>
-            </div>
-          )}
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full mt-2 rounded-xl bg-accent text-accent-contrast font-semibold px-4 py-2.5 hover:bg-accent/90 transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>{t('login.verifying') || 'Memverifikasi…'}</span>
+              </>
+            ) : (
+              <>
+                <LogIn className="w-4 h-4" />
+                <span>{t('login.submit') || 'Masuk Aplikasi'}</span>
+              </>
+            )}
+          </button>
         </form>
       </div>
     </div>

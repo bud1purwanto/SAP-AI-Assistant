@@ -10,7 +10,6 @@ from cryptography.fernet import Fernet
 
 from sqlalchemy import create_engine, text
 
-from auth import hash_password, is_bcrypt_hash, verify_password
 from config import settings
 from migrations import run_migrations
 
@@ -57,10 +56,22 @@ def get_engine():
             "Dukungan SQLite telah dihapus."
         )
 
-    candidates = [db_url]
-    if "@127.0.0.1" in db_url or "@localhost" in db_url:
-        candidates.append(db_url.replace("@127.0.0.1", "@host.docker.internal").replace("@localhost", "@host.docker.internal"))
-        candidates.append(db_url.replace("@127.0.0.1", "@enterprise-ai-postgres").replace("@localhost", "@enterprise-ai-postgres"))
+    try:
+        connect_args = {"options": "-c search_path=ai_assistant_dev,public"}
+        engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5, connect_args=connect_args)
+        with engine.connect():
+            pass
+    except Exception as e:
+        logger.error(f"Koneksi PostgreSQL gagal: {e}")
+        # Pesan ini sering menjadi satu-satunya petunjuk saat pengembang baru
+        # menjalankan proyek, jadi sebutkan langkah perbaikannya secara konkret.
+        target = db_url.split("@")[-1] if "@" in db_url else db_url
+        raise RuntimeError(
+            f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
+            "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
+            "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
+            "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
+        ) from e
 
     last_error = None
     for candidate_url in candidates:
@@ -122,7 +133,10 @@ def init_db():
                     password_hash VARCHAR(255),
                     full_name VARCHAR(120),
                     role VARCHAR(40) NOT NULL,
-                    assistant_persona TEXT
+                    assistant_persona TEXT,
+                    force_change_password BOOLEAN DEFAULT FALSE,
+                    division_code VARCHAR(40),
+                    job_level VARCHAR(20) DEFAULT 'staff'
                 );
             """))
             
@@ -178,6 +192,18 @@ def init_db():
                     target VARCHAR(50) NOT NULL,
                     encrypted_data TEXT NOT NULL,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (username, target)
+                );
+            """))
+
+            # 3c. Buat Tabel ai_assistant_dev.user_sap_tokens untuk Multi-User MCP SAP Bound Tokens
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant_dev.user_sap_tokens (
+                    username VARCHAR(50) NOT NULL,
+                    target VARCHAR(50) NOT NULL,
+                    encrypted_token TEXT NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (username, target)
                 );
             """))
@@ -318,76 +344,6 @@ def init_db():
                 );
             """))
 
-            # 5f. Sesi aktif pengguna (Single-session concurrency & Device monitor)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
-                    id VARCHAR(64) PRIMARY KEY,
-                    username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
-                    device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
-                    device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
-                    terminal_info VARCHAR(150),
-                    os VARCHAR(60),
-                    browser VARCHAR(60),
-                    ip_address VARCHAR(60),
-                    user_agent TEXT,
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    is_idle BOOLEAN NOT NULL DEFAULT FALSE,
-                    status VARCHAR(40) NOT NULL DEFAULT 'active',
-                    kick_reason TEXT,
-                    current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
-                    current_path VARCHAR(100) DEFAULT '/',
-                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMPTZ NOT NULL,
-                    kicked_at TIMESTAMPTZ
-                );
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
-                ON ai_assistant.user_sessions (LOWER(username), is_active);
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
-                ON ai_assistant.user_sessions (last_active_at DESC);
-            """))
-
-            # 5g. Catatan Log Audit Autentikasi & Keamanan (Login, Logout, Kick, Blocked)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
-                    id SERIAL PRIMARY KEY,
-                    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    event_type VARCHAR(50) NOT NULL,
-                    username VARCHAR(100) NOT NULL,
-                    ip_address VARCHAR(60),
-                    device_name VARCHAR(120),
-                    device_type VARCHAR(30),
-                    browser VARCHAR(60),
-                    os VARCHAR(60),
-                    user_agent TEXT,
-                    status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
-                    details TEXT
-                );
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
-                ON ai_assistant.auth_audit_logs (timestamp DESC);
-            """))
-            conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_auth_logs_username
-                ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
-            """))
-
-            # 6. Seed User TRSTDEV (superadmin) jika belum ada
-            res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
-            if not res_dev:
-                conn.execute(text("""
-                    INSERT INTO ai_assistant_dev.users (username, password_hash, role, assistant_persona)
-                    VALUES ('TRSTDEV', :pwd, 'superadmin', :persona)
-                """), {"pwd": hash_password(settings.bootstrap_admin_password), "persona": settings.assistant_persona or ""})
-                logger.warning(
-                    "User bootstrap 'TRSTDEV' dibuat. Segera ganti passwordnya lewat menu Settings."
-                )
-
             # 8. Seed system configs (MCP SAP, MCP RAG, AI Model configs) jika belum ada
             res_sap = conn.execute(text("SELECT key, value FROM ai_assistant_dev.system_config WHERE key = 'mcp_sap_config_json'")).fetchone()
             if not res_sap or not res_sap.value:
@@ -508,146 +464,7 @@ def init_db():
             logger.info("Database PostgreSQL schema 'ai_assistant_dev' berhasil diinisialisasi.")
     except Exception as e:
         logger.error(f"Gagal inisialisasi database: {e}")
-        # Di produksi kegagalan ini tidak boleh ditelan: tanpa ini server tetap
-        # menyala dan melayani permintaan di atas database yang belum siap.
         raise
-
-def authenticate_user(username: str, password: str):
-    """Verifikasi login user (username case-insensitive).
-
-    Password diverifikasi terhadap hash bcrypt. Instalasi lama yang masih
-    menyimpan plaintext akan otomatis di-upgrade ke hash pada login pertama
-    yang berhasil. Tidak ada kredensial fallback hardcoded: bila database
-    tidak dapat dihubungi, login gagal (fail closed).
-    """
-    uname_clean = (username or "").strip()
-    pwd_clean = (password or "").strip()
-    if not uname_clean or not pwd_clean:
-        return None
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT u.username, u.password, u.password_hash, u.full_name, u.role, u.assistant_persona, u.force_change_password,
-                       u.division_code, d.name AS division_name, u.job_level
-                FROM ai_assistant_dev.users u
-                LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
-                WHERE LOWER(u.username) = LOWER(:u)
-            """), {"u": uname_clean}).fetchone()
-
-            if not row:
-                return None
-
-            stored_hash = row.password_hash
-            authenticated = False
-
-            if is_bcrypt_hash(stored_hash):
-                authenticated = verify_password(pwd_clean, stored_hash)
-            elif row.password:
-                # Kredensial warisan berformat plaintext.
-                authenticated = row.password == pwd_clean
-                if authenticated:
-                    conn.execute(text("""
-                        UPDATE ai_assistant_dev.users
-                        SET password_hash = :h, password = NULL
-                        WHERE LOWER(username) = LOWER(:u)
-                    """), {"h": hash_password(pwd_clean), "u": uname_clean})
-                    conn.commit()
-                    logger.info(f"Password user '{row.username}' dimigrasikan ke hash bcrypt.")
-
-            if authenticated:
-                role_rows = conn.execute(text("""
-                    SELECT ur.role 
-                    FROM ai_assistant_dev.user_roles ur
-                    JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(ur.role)
-                    WHERE LOWER(ur.username) = LOWER(:u) AND r.suspended = FALSE
-                    ORDER BY ur.created_at ASC
-                """), {"u": uname_clean}).fetchall()
-                roles = [r.role for r in role_rows if r.role]
-                if not roles:
-                    single = conn.execute(text("""
-                        SELECT u.role 
-                        FROM ai_assistant_dev.users u
-                        JOIN ai_assistant_dev.roles r ON LOWER(r.code) = LOWER(u.role)
-                        WHERE LOWER(u.username) = LOWER(:u) AND r.suspended = FALSE
-                    """), {"u": uname_clean}).scalar()
-                    roles = [single] if single else ["user"]
-
-                # Pastikan role primer dari tabel users (atau superadmin jika ada) menjadi peran utama dan urutan pertama
-                if row.role and any(r.lower() == row.role.lower() for r in roles):
-                    roles = [row.role] + [r for r in roles if r.lower() != row.role.lower()]
-                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else row.role
-                else:
-                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
-
-                return {
-                    "username": row.username,
-                    "full_name": row.full_name or "",
-                    "role": primary_role,
-                    "roles": roles,
-                    "assistant_persona": row.assistant_persona or "",
-                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
-                    "division_code": row.division_code or None,
-                    "division_name": getattr(row, "division_name", None) or None,
-                    "job_level": getattr(row, "job_level", None) or "staff",
-                }
-    except Exception as e:
-        logger.error(f"Error authenticate_user: {e}")
-
-    return None
-
-
-def change_user_password(username: str, old_password: Optional[str], new_password: str):
-    """Ubah password user yang sedang login.
-    Bila user dalam status force_change_password (setelah reset/pertama kali login),
-    old_password tidak wajib diisi karena user sudah berhasil login dengan kredensialnya.
-    """
-    if not new_password or len(new_password) < 8:
-        return {"success": False, "message": "Password baru minimal 8 karakter."}
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT password, password_hash, force_change_password FROM ai_assistant_dev.users
-                WHERE LOWER(username) = LOWER(:u)
-            """), {"u": username.strip()}).fetchone()
-
-            if not row:
-                return {"success": False, "message": "User tidak ditemukan."}
-
-            is_forced = bool(getattr(row, "force_change_password", False))
-
-            if not is_forced:
-                if not old_password:
-                    return {"success": False, "message": "Password lama wajib diisi."}
-                if is_bcrypt_hash(row.password_hash):
-                    valid_old = verify_password(old_password, row.password_hash)
-                else:
-                    valid_old = bool(row.password) and row.password == old_password
-
-                if not valid_old:
-                    return {"success": False, "message": "Password lama salah."}
-            else:
-                if old_password:
-                    if is_bcrypt_hash(row.password_hash):
-                        valid_old = verify_password(old_password, row.password_hash)
-                    else:
-                        valid_old = bool(row.password) and row.password == old_password
-                    if not valid_old:
-                        return {"success": False, "message": "Password saat ini salah."}
-
-            conn.execute(text("""
-                UPDATE ai_assistant_dev.users
-                SET password_hash = :new_h, password = NULL, force_change_password = FALSE
-                WHERE LOWER(username) = LOWER(:u)
-            """), {"new_h": hash_password(new_password), "u": username.strip()})
-            conn.commit()
-            return {"success": True, "message": "Password berhasil diperbarui."}
-    except Exception as e:
-        logger.error(f"Error change_user_password: {e}")
-        return {"success": False, "message": f"Gagal mengubah password: {str(e)}"}
 
 
 def get_user_roles(username: str, active_only: bool = True) -> list:
@@ -750,7 +567,7 @@ def get_user_by_username(username: str):
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
-                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                SELECT u.username, u.full_name, u.role, u.assistant_persona,
                        u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant_dev.users u
                 LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
@@ -787,7 +604,6 @@ def get_user_by_username(username: str):
                     "role": primary_role,
                     "roles": roles,
                     "assistant_persona": row.assistant_persona or "",
-                    "force_change_password": bool(row.force_change_password) if getattr(row, "force_change_password", None) is not None else False,
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
                     "job_level": getattr(row, "job_level", None) or "staff",
@@ -830,43 +646,10 @@ def update_user_persona(username: str, persona: str):
         logger.error(f"Error update_user_persona: {e}")
         return False
 
-DEFAULT_MCP_SAP_JSON = '''{
-  "mcpServers": {
-    "sap-leader-remote": {
-      "type": "http",
-      "url": "http://192.168.1.162:8091/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_RAG_JSON = '''{
-  "mcpServers": {
-    "manufacturing-rag": {
-      "type": "http",
-      "url": "http://192.168.1.162:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_SQL_JSON = '''{
-  "mcpServers": {
-    "sql-mcp": {
-      "type": "http",
-      "url": "http://192.168.1.162:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer Trias123"
-      }
-    }
-  }
-}'''
-
-DEFAULT_MCP_EMAIL_JSON = DEFAULT_MCP_SQL_JSON
+DEFAULT_MCP_SAP_JSON = json.dumps({"mcpServers": {"sap": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_RAG_JSON = json.dumps({"mcpServers": {"rag": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_SQL_JSON = json.dumps({"mcpServers": {"sql": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
+DEFAULT_MCP_EMAIL_JSON = json.dumps({"mcpServers": {"email": {"type": "http", "url": settings.dashboard_mcp_gateway_url}}})
 
 def get_system_config():
     """Ambil konfigurasi MCP SAP, MCP RAG, MCP SQL, 9Router, dan OpenRouter dari database."""
@@ -889,8 +672,7 @@ def get_system_config():
     token_limit_enabled = bool(settings.token_limit_enabled)
     chat_modes_enabled = True
     ai_suggestions_enabled = True
-    mcp_access_control_enabled = False
-    require_login = getattr(settings, "require_login", True)
+    mcp_access_control_enabled = False  # vestigial
 
     try:
         engine = get_engine()
@@ -909,10 +691,8 @@ def get_system_config():
                     chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'ai_suggestions_enabled' and r.value is not None:
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
-                elif r.key == 'mcp_access_control_enabled' and r.value is not None:
-                    mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')
-                elif r.key == 'require_login' and r.value is not None:
-                    require_login = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'mcp_access_control_enabled' and r.value is not None:  # vestigial
+                    mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')  # vestigial
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -954,8 +734,7 @@ def get_system_config():
         "token_limit_enabled": token_limit_enabled,
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
-        "mcp_access_control_enabled": mcp_access_control_enabled,
-        "require_login": require_login,
+        "mcp_access_control_enabled": mcp_access_control_enabled,  # vestigial
     }
 
 def update_system_config(
@@ -975,8 +754,7 @@ def update_system_config(
     token_limit_enabled: bool = None,
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
-    mcp_access_control_enabled: bool = None,
-    require_login: bool = None,
+    mcp_access_control_enabled: bool = None,  # vestigial
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
@@ -1010,12 +788,12 @@ def update_system_config(
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": "true" if ai_suggestions_enabled else "false"})
 
-            if mcp_access_control_enabled is not None:
+            if mcp_access_control_enabled is not None:  # vestigial
                 conn.execute(text("""
                     INSERT INTO ai_assistant_dev.system_config (key, value)
-                    VALUES ('mcp_access_control_enabled', :val)
+                    VALUES ('mcp_access_control_enabled', :val)  -- vestigial
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-                """), {"val": "true" if mcp_access_control_enabled else "false"})
+                """), {"val": "true" if mcp_access_control_enabled else "false"})  # vestigial
 
             if mcp_sap_json is not None:
                 conn.execute(text("""
@@ -1121,8 +899,7 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             query = """
-                SELECT id, name, description, url, transport_type, auth_token, headers, 
-                       icon, is_system, enabled, display_order, created_at, updated_at
+                SELECT id, name, url, enabled, display_order
                 FROM ai_assistant_dev.mcp_servers
             """
             params = {}
@@ -1136,17 +913,9 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
                 servers.append({
                     "id": r.id,
                     "name": r.name,
-                    "description": r.description or "",
                     "url": r.url,
-                    "transport_type": r.transport_type or "http",
-                    "auth_token": r.auth_token or "",
-                    "headers": r.headers if isinstance(r.headers, dict) else {},
-                    "icon": r.icon or "Server",
-                    "is_system": bool(r.is_system),
                     "enabled": bool(r.enabled),
                     "display_order": r.display_order or 0,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
-                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 })
             return servers
     except Exception as e:
@@ -1163,8 +932,7 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                SELECT id, name, description, url, transport_type, auth_token, headers,
-                       icon, is_system, enabled, display_order, created_at, updated_at
+                SELECT id, name, url, enabled, display_order
                 FROM ai_assistant_dev.mcp_servers
                 WHERE LOWER(id) = LOWER(:id)
             """), {"id": sid}).fetchone()
@@ -1173,20 +941,44 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
             return {
                 "id": r.id,
                 "name": r.name,
-                "description": r.description or "",
                 "url": r.url,
-                "transport_type": r.transport_type or "http",
-                "auth_token": r.auth_token or "",
-                "headers": r.headers if isinstance(r.headers, dict) else {},
-                "icon": r.icon or "Server",
-                "is_system": bool(r.is_system),
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
     except Exception as e:
         logger.error(f"Error get_mcp_server: {e}")
+        return None
+
+
+def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True) -> Optional[dict]:
+    """Menyimpan atau memperbarui server MCP (name, url, enabled)."""
+    sid = (sid or "").strip().lower()
+    name = (name or "").strip()
+    url = (url or "").strip()
+    if not sid or not name or not url:
+        return None
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT id, display_order FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            if existing:
+                conn.execute(text("""
+                    UPDATE ai_assistant_dev.mcp_servers
+                    SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                    WHERE LOWER(id) = LOWER(:id)
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled)})
+                order = existing.display_order or 0
+            else:
+                max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant_dev.mcp_servers")).scalar() or 0
+                order = max_order + 1
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.mcp_servers (id, name, url, enabled, display_order)
+                    VALUES (:id, :name, :url, :enabled, :order)
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "order": order})
+            conn.commit()
+            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order}
+    except Exception as e:
+        logger.error(f"Error save_mcp_server: {e}")
         return None
 
 
@@ -1195,157 +987,68 @@ def create_mcp_server(data: dict) -> dict:
     sid = (data.get("id") or "").strip().lower()
     name = (data.get("name") or "").strip()
     url = (data.get("url") or "").strip()
+    enabled = bool(data.get("enabled", True))
     if not sid:
         return {"success": False, "message": "ID/Key server MCP wajib diisi."}
     if not name:
         return {"success": False, "message": "Nama server MCP wajib diisi."}
     if not url:
         return {"success": False, "message": "URL endpoint MCP wajib diisi."}
+    res = save_mcp_server(sid=sid, name=name, url=url, enabled=enabled)
+    if res:
+        return {"success": True, "message": f"Server MCP '{name}' berhasil ditambahkan.", "id": sid, "server": res}
+    return {"success": False, "message": "Gagal menambahkan server MCP."}
 
-    desc = data.get("description", "").strip()
-    transport = (data.get("transport_type") or "http").strip().lower()
-    token = data.get("auth_token", "").strip() if data.get("auth_token") else ""
-    headers = data.get("headers", {})
-    if not isinstance(headers, dict):
-        headers = {}
-    icon = data.get("icon", "Server")
-    enabled = bool(data.get("enabled", True))
 
+def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[str] = None, enabled: Optional[bool] = None, **kwargs) -> Optional[dict]:
+    """Memperbarui informasi server MCP (name, url, enabled). Mendukung pemanggilan argumen atau dict (backward-compat)."""
+    sid = (server_id or "").strip().lower()
+    if not sid:
+        return None
+    # Handle dictionary passed as name (backward-compat: update_mcp_server(sid, {...}))
+    if isinstance(name, dict):
+        data = name
+        name = data.get("name")
+        url = data.get("url")
+        enabled = data.get("enabled")
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            existing = conn.execute(text("SELECT id, name, url, enabled, display_order FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            if not existing:
+                return None
+            new_name = name.strip() if name is not None else existing.name
+            new_url = url.strip() if url is not None else existing.url
+            new_enabled = bool(enabled) if enabled is not None else bool(existing.enabled)
+            conn.execute(text("""
+                UPDATE ai_assistant_dev.mcp_servers
+                SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                WHERE LOWER(id) = LOWER(:id)
+            """), {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled})
+            conn.commit()
+            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0}
+    except Exception as e:
+        logger.error(f"Error update_mcp_server: {e}")
+        return None
+
+
+def delete_mcp_server(server_id: str) -> bool:
+    """Menghapus server MCP."""
+    sid = (server_id or "").strip().lower()
+    if not sid:
+        return False
     try:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(text("SELECT id FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
-            if existing:
-                return {"success": False, "message": f"Server MCP dengan ID '{sid}' sudah ada."}
-
-            max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM ai_assistant_dev.mcp_servers")).scalar() or 0
-
-            conn.execute(text("""
-                INSERT INTO ai_assistant_dev.mcp_servers (id, name, description, url, transport_type, auth_token, headers, icon, is_system, enabled, display_order)
-                VALUES (:id, :name, :desc, :url, :transport, :token, :headers, :icon, FALSE, :enabled, :order)
-            """), {
-                "id": sid, "name": name, "desc": desc, "url": url, "transport": transport,
-                "token": token, "headers": json.dumps(headers), "icon": icon, "enabled": enabled,
-                "order": max_order + 1
-            })
-            conn.commit()
-            return {"success": True, "message": f"Server MCP '{name}' berhasil ditambahkan.", "id": sid}
-    except Exception as e:
-        logger.error(f"Error create_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal menambahkan server MCP: {str(e)}"}
-
-
-def update_mcp_server(server_id: str, data: dict) -> dict:
-    """Memperbarui informasi server MCP (nama, deskripsi, url, token, status)."""
-    sid = (server_id or "").strip().lower()
-    if not sid:
-        return {"success": False, "message": "ID server tidak valid."}
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if not existing:
-                return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
-
-            fields = []
-            params = {"id": sid}
-
-            if "name" in data and data["name"] is not None:
-                fields.append("name = :name")
-                params["name"] = data["name"].strip()
-
-            if "description" in data and data["description"] is not None:
-                fields.append("description = :description")
-                params["description"] = data["description"].strip()
-
-            if "url" in data and data["url"] is not None:
-                fields.append("url = :url")
-                params["url"] = data["url"].strip()
-
-            if "transport_type" in data and data["transport_type"] is not None:
-                fields.append("transport_type = :transport_type")
-                params["transport_type"] = data["transport_type"].strip().lower()
-
-            if "auth_token" in data and data["auth_token"] is not None:
-                fields.append("auth_token = :auth_token")
-                params["auth_token"] = data["auth_token"].strip()
-
-            if "headers" in data and data["headers"] is not None:
-                fields.append("headers = :headers")
-                h = data["headers"] if isinstance(data["headers"], dict) else {}
-                params["headers"] = json.dumps(h)
-
-            if "icon" in data and data["icon"] is not None:
-                fields.append("icon = :icon")
-                params["icon"] = data["icon"]
-
-            if "enabled" in data and data["enabled"] is not None:
-                fields.append("enabled = :enabled")
-                params["enabled"] = bool(data["enabled"])
-
-            if "display_order" in data and data["display_order"] is not None:
-                fields.append("display_order = :display_order")
-                params["display_order"] = int(data["display_order"])
-
-            if not fields:
-                return {"success": True, "message": "Tidak ada perubahan."}
-
-            fields.append("updated_at = CURRENT_TIMESTAMP")
-            set_clause = ", ".join(fields)
-            conn.execute(text(f"UPDATE ai_assistant_dev.mcp_servers SET {set_clause} WHERE LOWER(id) = LOWER(:id)"), params)
-            conn.commit()
-
-            return {"success": True, "message": f"Server MCP '{sid}' berhasil diperbarui."}
-    except Exception as e:
-        logger.error(f"Error update_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal memperbarui server MCP: {str(e)}"}
-
-
-def delete_mcp_server(server_id: str) -> dict:
-    """Menghapus server MCP kustom."""
-    sid = (server_id or "").strip().lower()
-    if not sid:
-        return {"success": False, "message": "ID server tidak valid."}
-
-    try:
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, name, is_system FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
-            if not existing:
-                return {"success": False, "message": f"Server MCP '{sid}' tidak ditemukan."}
-
-            if existing.is_system:
-                return {"success": False, "message": f"Server sistem bawaan '{existing.name}' tidak dapat dihapus. Anda dapat menonaktifkannya melalui toggle status."}
-
+                return False
             conn.execute(text("DELETE FROM ai_assistant_dev.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid})
             conn.commit()
-            return {"success": True, "message": f"Server MCP '{existing.name}' berhasil dihapus."}
+            return True
     except Exception as e:
         logger.error(f"Error delete_mcp_server: {e}")
-        return {"success": False, "message": f"Gagal menghapus server MCP: {str(e)}"}
-
-
-def reset_mcp_server_to_default(server_id: str) -> dict:
-    """Mengembalikan server MCP sistem ke URL dan token bawaan."""
-    sid = (server_id or "").strip().lower()
-    defaults = {
-        "sap": {"url": "http://192.168.1.162:8091/mcp", "token": "Trias123", "name": "SAP ERP Gateway", "desc": "Live Data, Tabel & ABAP Code SAP"},
-        "rag": {"url": "http://192.168.1.162:8090/mcp", "token": "Trias123", "name": "RAG Knowledge Gateway", "desc": "Vector DB, SOP & Tech Docs"},
-        "sql": {"url": "http://192.168.1.162:8090/mcp", "token": "Trias123", "name": "SQL & Database Gateway", "desc": "Relational SQL & Query Tools"},
-    }
-    if sid not in defaults:
-        return {"success": False, "message": f"Server '{sid}' bukan server sistem bawaan."}
-
-    d = defaults[sid]
-    return update_mcp_server(sid, {
-        "url": d["url"],
-        "auth_token": d["token"],
-        "name": d["name"],
-        "description": d["desc"],
-        "enabled": True,
-        "transport_type": "http"
-    })
+        return False
 
 # --- CHAT SESSION & HISTORY FUNCTIONS ---
 
@@ -2010,7 +1713,7 @@ def list_all_users():
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT u.username, u.full_name, u.role, u.assistant_persona, u.force_change_password,
+                SELECT u.username, u.full_name, u.role, u.assistant_persona,
                        u.division_code, d.name AS division_name, u.job_level
                 FROM ai_assistant_dev.users u
                 LEFT JOIN ai_assistant_dev.divisions d ON LOWER(u.division_code) = LOWER(d.code)
@@ -2044,7 +1747,6 @@ def list_all_users():
                     "role": p_role,
                     "roles": u_roles,
                     "assistant_persona": r.assistant_persona or "",
-                    "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                     "division_code": r.division_code or None,
                     "division_name": getattr(r, "division_name", None) or None,
                     "job_level": getattr(r, "job_level", None) or "staff",
@@ -2054,14 +1756,19 @@ def list_all_users():
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = True, division_code: str = None, job_level: str = "staff"):
-    """Buat user baru di database dengan dukungan banyak peran, divisi, dan level jabatan."""
+def create_new_user(username: str, password: str = None, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
+    # deprecated: password & force_change_password ignored post-dashboard-mcp cutover
+    """Buat user baru di database ai_assistant_dev.users."""
+    uname_clean = (username or "").strip()
+    if not uname_clean:
+        return {"success": False, "message": "Username tidak boleh kosong."}
+
     try:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"), {"u": username.strip()}).fetchone()
             if existing:
-                return {"success": False, "message": f"User '{username}' sudah ada."}
+                return {"success": False, "message": f"User '{uname_clean}' sudah ada."}
 
             clean_roles = []
             for r in (roles or ([role] if role else ["user"])):
@@ -2078,58 +1785,87 @@ def create_new_user(username: str, password: str, role: str = "user", persona: s
                 jl_clean = "staff"
 
             conn.execute(text("""
-                INSERT INTO ai_assistant_dev.users (username, password_hash, full_name, role, assistant_persona, force_change_password, division_code, job_level)
-                VALUES (:u, :p, :fn, :r, :persona, :fcp, :dc, :jl)
-            """), {"u": username.strip(), "p": hash_password(password), "fn": (full_name or "").strip(),
-                   "r": primary_role, "persona": persona, "fcp": force_change_password, "dc": div_clean, "jl": jl_clean})
-
+                INSERT INTO ai_assistant_dev.users (username, full_name, role, assistant_persona, division_code, job_level)
+                VALUES (:u, :fn, :r, :persona, :dc, :jl)
+            """), {"u": uname_clean, "fn": (full_name or "").strip(),
+                   "r": primary_role, "persona": persona or "",
+                   "dc": div_clean, "jl": jl_clean})
             for r in clean_roles:
                 conn.execute(text("""
                     INSERT INTO ai_assistant_dev.user_roles (username, role)
                     VALUES (:u, :r)
                     ON CONFLICT (username, role) DO NOTHING
-                """), {"u": username.strip(), "r": r})
+                """), {"u": uname_clean, "r": r})
 
             conn.commit()
-            return {"success": True, "message": f"User '{username}' berhasil dibuat."}
+            return {"success": True, "message": f"User '{uname_clean}' berhasil dibuat."}
     except Exception as e:
         logger.error(f"Error create_new_user: {e}")
         return {"success": False, "message": str(e)}
 
-def reset_user_password_by_admin(username: str, new_password: str, force_change: bool = True) -> dict:
-    """Admin mereset password pengguna dan mengaktifkan status force_change_password (pending reset)."""
-    if not new_password or len(new_password) < 8:
-        return {"success": False, "message": "Password baru minimal 8 karakter."}
+
+
+def ensure_user_exists(username: str, role: str = "user", roles: list = None, full_name: str = ""):
+    """Pastikan user dari Dashboard OIDC ada di database lokal ai_assistant_dev.users.
+    
+    Bila belum ada, buat record user baru dan sinkronkan perannya.
+    Bila sudah ada, sinkronkan role bila berbeda.
+    Mengembalikan data profil user.
+    """
+    uname_clean = (username or "").strip()
+    if not uname_clean or uname_clean.lower() == "guest":
+        return None
     try:
         engine = get_engine()
         with engine.connect() as conn:
             existing = conn.execute(
-                text("SELECT username FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
-                {"u": username.strip()},
+                text("SELECT username, full_name, role, assistant_persona, division_code, job_level FROM ai_assistant_dev.users WHERE LOWER(username) = LOWER(:u)"),
+                {"u": uname_clean}
             ).fetchone()
-            if not existing:
-                return {"success": False, "message": "User tidak ditemukan."}
+            
+            clean_roles = []
+            for r in (roles or ([role] if role else ["user"])):
+                r_str = (r or "").strip().lower()
+                if r_str and r_str not in clean_roles:
+                    clean_roles.append(r_str)
+            if not clean_roles:
+                clean_roles = ["user"]
+            primary_role = "superadmin" if "superadmin" in clean_roles else clean_roles[0]
 
-            conn.execute(text("""
-                UPDATE ai_assistant_dev.users
-                SET password_hash = :p, password = NULL, force_change_password = :fcp
-                WHERE LOWER(username) = LOWER(:u)
-            """), {
-                "u": username.strip(),
-                "p": hash_password(new_password),
-                "fcp": force_change,
-            })
-            conn.commit()
-            return {"success": True, "message": f"Password user '{username}' berhasil direset."}
+            if not existing:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant_dev.users (username, full_name, role, assistant_persona, division_code, job_level)
+                    VALUES (:u, :fn, :r, '', NULL, 'staff')
+                    ON CONFLICT (username) DO NOTHING
+                """), {"u": uname_clean, "fn": (full_name or "").strip(), "r": primary_role})
+                for r in clean_roles:
+                    conn.execute(text("""
+                        INSERT INTO ai_assistant_dev.user_roles (username, role)
+                        VALUES (:u, :r)
+                        ON CONFLICT (username, role) DO NOTHING
+                    """), {"u": uname_clean, "r": r})
+                conn.commit()
+            else:
+                for r in clean_roles:
+                    conn.execute(text("""
+                        INSERT INTO ai_assistant_dev.user_roles (username, role)
+                        VALUES (:u, :r)
+                        ON CONFLICT (username, role) DO NOTHING
+                    """), {"u": uname_clean, "r": r})
+                if existing.role != primary_role:
+                    conn.execute(text("UPDATE ai_assistant_dev.users SET role = :r WHERE LOWER(username) = LOWER(:u)"),
+                                 {"r": primary_role, "u": uname_clean})
+                conn.commit()
     except Exception as e:
-        logger.error(f"Error reset_user_password_by_admin: {e}")
-        return {"success": False, "message": str(e)}
+        logger.error(f"Error ensure_user_exists: {e}")
+    return get_user_by_username(uname_clean)
 
 def update_user_by_admin(username: str, password: str = None, role: str = None, persona: str = None,
                          full_name: str = None, roles: list = None, force_change_password: bool = None,
                          division_code: str = None, update_division: bool = False,
                          job_level: str = None, update_job_level: bool = False):
-    """Admin mengupdate data user (role, roles, persona, division, job_level, dan optional reset password)."""
+    # deprecated: password & force_change_password ignored post-dashboard-mcp cutover
+    """Admin mengupdate data user (role, roles, persona, division, job_level)."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -2188,18 +1924,6 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                     jl_clean = "staff"
                 updates.append("job_level = :jl")
                 params["jl"] = jl_clean
-            if password:
-                updates.append("password_hash = :pass")
-                updates.append("password = NULL")
-                params["pass"] = hash_password(password)
-                if force_change_password is None:
-                    # Bila admin mengganti password lewat edit user, defaultkan juga ke pending reset
-                    updates.append("force_change_password = TRUE")
-
-            if force_change_password is not None:
-                updates.append("force_change_password = :fcp")
-                params["fcp"] = force_change_password
-
             if updates:
                 sql = f"UPDATE ai_assistant_dev.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
@@ -2466,7 +2190,10 @@ def compute_user_rag_tags(
     return sorted(list(effective))
 
 def delete_user_by_admin(username: str):
-    """Hapus user beserta sesi chat-nya (kecuali akun superadmin itu sendiri)."""
+    """Hapus user beserta data terkait (kecuali akun superadmin itu sendiri)."""
+    uname_clean = (username or "").strip()
+    if uname_clean.upper() == "TRSTDEV":
+        return {"success": False, "message": "Akun bootstrap superadmin 'TRSTDEV' tidak boleh dihapus."}
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -2476,7 +2203,7 @@ def delete_user_by_admin(username: str):
             conn.commit()
             if res.rowcount == 0:
                 return {"success": False, "message": "User tidak ditemukan."}
-            return {"success": True, "message": f"User '{username}' berhasil dihapus."}
+            return {"success": True, "message": f"User '{uname_clean}' berhasil dihapus."}
     except Exception as e:
         logger.error(f"Error delete_user_by_admin: {e}")
         return {"success": False, "message": str(e)}
@@ -4253,14 +3980,16 @@ def delete_role(code: str) -> bool:
         invalidate_role_codes_cache()
         return True
 
-def _get_fernet_key() -> bytes:
-    """Derive a deterministic 32-byte Fernet key from settings.jwt_secret."""
-    secret = (getattr(settings, "jwt_secret", "") or "default_secret_key_change_in_prod").encode("utf-8")
-    return base64.urlsafe_b64encode(hashlib.sha256(secret).digest())
+def _get_fernet_key(secret_str: Optional[str] = None) -> bytes:
+    """Derive a deterministic 32-byte Fernet key from session_secret (or fallback secret)."""
+    raw = secret_str or getattr(settings, "session_secret", None)
+    if not raw:
+        raise RuntimeError("SESSION_SECRET tidak dikonfigurasi. Enkripsi kredensial SAP tidak dapat dilakukan.")
+    return base64.urlsafe_b64encode(hashlib.sha256(raw.encode("utf-8")).digest())
 
 
 def encrypt_fernet(data: str) -> str:
-    """Encrypt a plaintext string using Fernet."""
+    """Encrypt a plaintext string using Fernet with session_secret."""
     if not data:
         return ""
     f = Fernet(_get_fernet_key())
@@ -4268,16 +3997,15 @@ def encrypt_fernet(data: str) -> str:
 
 
 def decrypt_fernet(encrypted_data: str) -> Optional[str]:
-    """Decrypt a ciphertext string using Fernet."""
+    """Decrypt a ciphertext string using Fernet with session_secret."""
     if not encrypted_data:
         return None
     try:
         f = Fernet(_get_fernet_key())
         return f.decrypt(encrypted_data.encode("utf-8")).decode("utf-8")
-    except Exception as ex:
-        logger.warning(f"Failed to decrypt data: {ex}")
+    except Exception:
+        logger.warning("Gagal mendekripsi data kredensial SAP dengan session_secret.")
         return None
-
 
 def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
     """Save encrypted SAP credentials for a specific user and SAP target.
@@ -4328,19 +4056,6 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
             WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:t)
         """), {"u": clean_user, "t": clean_target}).fetchone()
 
-        # Fallback pencarian bila target disimpan dengan alias kanonikal lain
-        if not row:
-            try:
-                import access_control
-                can_key = access_control.canonical_resource_key(f"sap:{clean_target}")
-                sub = can_key.split(":", 1)[1] if ":" in can_key else can_key
-                if sub.lower() != clean_target.lower():
-                    row = conn.execute(text("""
-                        SELECT encrypted_data FROM ai_assistant_dev.user_sap_credentials
-                        WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:sub)
-                    """), {"u": clean_user, "sub": sub}).fetchone()
-            except Exception:
-                pass
     
     if not row or not row[0]:
         return None
@@ -4408,7 +4123,49 @@ def delete_user_sap_credential(username: str, target: str) -> bool:
             WHERE username = :u AND target = :t
         """), {"u": clean_user, "t": clean_target})
         conn.commit()
+    delete_user_sap_token(clean_user, clean_target)
     return True
+
+
+def save_user_sap_token(username: str, target: str, token: str, expires_at=None) -> bool:
+    enc = encrypt_fernet(token)
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant_dev.user_sap_tokens (username, target, encrypted_token, expires_at, updated_at)
+            VALUES (:u, :t, :e, :exp, CURRENT_TIMESTAMP)
+            ON CONFLICT (username, target)
+            DO UPDATE SET encrypted_token = :e, expires_at = :exp, updated_at = CURRENT_TIMESTAMP
+        """), {"u": username, "t": target, "e": enc, "exp": expires_at})
+        conn.commit()
+    return True
+
+
+def get_user_sap_token(username: str, target: str) -> Optional[Dict[str, Any]]:
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT encrypted_token, expires_at FROM ai_assistant_dev.user_sap_tokens
+            WHERE username = :u AND target = :t
+        """), {"u": username, "t": target}).fetchone()
+    if not row:
+        return None
+    enc_token = getattr(row, "encrypted_token", row[0])
+    exp_at = getattr(row, "expires_at", row[1])
+    token = decrypt_fernet(enc_token)
+    if not token:
+        return None
+    return {"token": token, "expires_at": exp_at}
+
+
+def delete_user_sap_token(username: str, target: str) -> bool:
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            DELETE FROM ai_assistant_dev.user_sap_tokens WHERE username = :u AND target = :t
+        """), {"u": username, "t": target})
+        conn.commit()
+    return result.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -4433,22 +4190,14 @@ def list_scheduled_tasks(user_id: str = None, only_active: bool = False) -> list
         if only_active:
             query += " AND is_active = TRUE"
         query += " ORDER BY created_at DESC"
-        
         rows = conn.execute(text(query), params).fetchall()
         return [
             {
-                "id": r[0],
-                "user_id": r[1],
-                "title": r[2],
-                "prompt": r[3],
-                "cron_expression": r[4],
-                "email_to": r[5],
-                "is_active": bool(r[6]),
-                "last_run_at": _iso(r[7]),
-                "last_status": r[8],
-                "last_result": r[9],
-                "created_at": _iso(r[10]),
-                "updated_at": _iso(r[11]),
+                "id": r[0], "user_id": r[1], "title": r[2], "prompt": r[3],
+                "cron_expression": r[4], "email_to": r[5], "is_active": bool(r[6]),
+                "last_run_at": _iso(r[7]), "last_status": r[8], "last_result": r[9],
+                "created_at": _iso(r[10]), "updated_at": _iso(r[11]),
+                "lease_owner": r[12], "lease_until": _iso(r[13]),
             }
             for r in rows
         ]
@@ -4470,20 +4219,12 @@ def get_scheduled_task(task_id: str) -> dict | None:
         if not r:
             return None
         return {
-            "id": r[0],
-            "user_id": r[1],
-            "title": r[2],
-            "prompt": r[3],
-            "cron_expression": r[4],
-            "email_to": r[5],
-            "is_active": bool(r[6]),
-            "last_run_at": _iso(r[7]),
-            "last_status": r[8],
-            "last_result": r[9],
-            "created_at": _iso(r[10]),
-            "updated_at": _iso(r[11]),
+            "id": r[0], "user_id": r[1], "title": r[2], "prompt": r[3],
+            "cron_expression": r[4], "email_to": r[5], "is_active": bool(r[6]),
+            "last_run_at": _iso(r[7]), "last_status": r[8], "last_result": r[9],
+            "created_at": _iso(r[10]), "updated_at": _iso(r[11]),
+            "lease_owner": r[12], "lease_until": _iso(r[13]),
         }
-
 
 def create_scheduled_task(
     user_id: str,
@@ -4543,8 +4284,13 @@ def update_scheduled_task(task_id: str, **kwargs) -> dict | None:
     return get_scheduled_task(task_id)
 
 
-def record_task_run(task_id: str, status: str, result: str = None):
-    """Mencatat riwayat eksekusi terakhir pemantauan."""
+def claim_scheduled_task(
+    task_id: str,
+    lease_owner: str,
+    lease_seconds: int = 300,
+    allow_inactive: bool = False,
+) -> dict | None:
+    """Klaim atomik satu eksekusi; lease kedaluwarsa dapat diambil worker lain."""
     engine = get_engine()
     with engine.connect() as conn:
         conn.execute(text("""

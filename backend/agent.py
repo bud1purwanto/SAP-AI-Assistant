@@ -7,26 +7,13 @@ from datetime import datetime
 from typing import Optional, Union, List, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
-import access_control
-from analysis_policy import (
-    AnalysisState,
-    classify_request,
-    build_investigation_plan,
-    build_final_answer_contract,
-    evaluate_evidence_sufficiency,
-    build_retry_instruction,
-    record_tool_evidence,
-    get_rag_budget,
-)
-from evidence_validators import validate_evidence
-from analysis_strategies import build_strategy_guidance
-from answer_quality import review_answer
 from mcp_manager import mcp_manager
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import estimate_tokens, trim_history
 from models import ChatRequest, ChatResponse, SourceReference, UsageStats
 from config import settings
 
+from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 # Penanda yang membuat teks perlu dibersihkan sebelum ditampilkan. Selama
@@ -540,8 +527,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         from database import get_system_config, get_token_usage
         sys_cfg = get_system_config()
         limit_enabled = bool(sys_cfg.get("token_limit_enabled"))
-        roles_list = access_control.normalize_roles(user_role)
-        is_unlimited = any(r in ("superadmin", "admin", "developer") for r in roles_list)
+        roles_list = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
+        roles_disp = ", ".join(roles_list) if roles_list else "user"
 
         token_today = 0
         limit_hari = int(sys_cfg.get("token_limit_per_day", 100000))
@@ -573,10 +560,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 pass
         return ChatResponse(reply=reply_md, sources=[])
 
-    if raw_lower in ("/modes", "/mode", "/reasoning"):
-        from database import get_modes_for_user
-        roles_list = [user_role] if isinstance(user_role, str) else list(user_role or ["user"])
-        modes = get_modes_for_user(username=user_id, roles=roles_list)
+    if raw_lower in ("/modes", "/mode"):
+        from database import get_modes_for_role
+        roles_list = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
+        modes = get_modes_for_role(roles_list)
         rows_md = []
         for m in modes:
             default_badge = (" *(Default)*" if is_en else " *(Bawaan)*") if m.get("is_default") else ""
@@ -791,10 +778,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if chat_modes_enabled and chat_req.mode:
         target = get_chat_mode_by_code(chat_req.mode)
         if target and target.get("enabled"):
-            # Periksa izin mode chat untuk user ini (User Override -> Role Union)
-            roles_for_mode = access_control.normalize_roles(user_role)
-            user_modes = get_modes_for_user(username=username, roles=roles_for_mode)
-            mode_available = any(m["code"] == target["code"] and m.get("available") for m in user_modes)
+            # Union seluruh role yang dimiliki user: mode tersedia bila SALAH SATU
+            # role mengizinkannya (sama seperti resolusi yang dipakai endpoint /api/modes).
+            roles_for_mode = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
+            mode_available = False
+            for r in roles_for_mode:
+                r_modes = get_modes_for_role(r)
+                if any(m["code"] == target["code"] and m.get("available") for m in r_modes):
+                    mode_available = True
+                    break
             if mode_available:
                 active_mode = target
             else:
@@ -1034,43 +1026,94 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     await report("connecting", "Connecting to assistant…" if is_en else "Menyiapkan permintaan…")
 
     # 1. Ambil tools dari MCP (berdasarkan server yang dipilih dan otorisasi pengguna)
-    target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or "sap"
+    target_srv = chat_req.active_server or chat_req.server or chat_req.selected_server or ""
+    # Multi-MCP: bila user mengirim target eksplisit per-sistem (sap_target / sql_target),
+    # turunkan ke format prefix agar kompatibel dengan seluruh pipeline lama.
+    if not target_srv or target_srv == "all":
+        if chat_req.sap_target:
+            target_srv = f"sap:{chat_req.sap_target}"
+        elif chat_req.sql_target:
+            target_srv = f"sql:{chat_req.sql_target}"
+        else:
+            target_srv = "sap"
+    # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
+    # gunakan perilaku lama (fallback server_filter-based exclusivity).
+    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors else None
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
     target_system = "sql" if target_srv.startswith("sql:") else "sap"
     sap_target = (
         target_srv.split(":", 1)[1]
-        if ":" in target_srv
-        else (target_srv if target_srv not in ("sap", "sql", "all", "*") else None)
+        if ":" in target_srv and target_srv.startswith("sap:")
+        else (chat_req.sap_target if chat_req.sap_target else None)
     )
-    if sap_target:
-        logger.info(f"Target {target_system.upper()} server untuk request ini: {sap_target}")
-
+    sql_target = (
+        target_srv.split(":", 1)[1]
+        if ":" in target_srv and target_srv.startswith("sql:")
+        else (chat_req.sql_target if chat_req.sql_target else None)
+    )
     # Ambil kredensial SAP khusus pengguna ini jika ada untuk target SAP ini
     user_sap_credentials = None
-    if sap_target:
-        try:
-            from database import get_user_sap_credential
-            user_sap_credentials = get_user_sap_credential(username, sap_target)
+    try:
+        from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+        from datetime import datetime, timezone
+        target_to_lookup = sap_target or "default"
+        tok = get_user_sap_token(username, target_to_lookup)
+        if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+            user_sap_credentials = {"sap_token": tok["token"], "username": username}
+        else:
+            user_sap_credentials = get_user_sap_credential(username, target_to_lookup)
             if user_sap_credentials:
-                logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target}' (user: {user_sap_credentials.get('sap_user')})")
-        except Exception as ex:
-            logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
-
-    # Normalisasi user_role ke list roles untuk access control
-    roles_list = access_control.normalize_roles(user_role)
+                user_sap_credentials["username"] = username
+        if not user_sap_credentials and not sap_target:
+            configured_targets = list_user_sap_credentials(username)
+            if configured_targets:
+                first_target = configured_targets[0].get("target") or "default"
+                tok = get_user_sap_token(username, first_target)
+                if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                    user_sap_credentials = {"sap_token": tok["token"], "username": username}
+                else:
+                    user_sap_credentials = get_user_sap_credential(username, first_target)
+                    if user_sap_credentials:
+                        user_sap_credentials["username"] = username
+                sap_target = first_target
+        if user_sap_credentials:
+            logger.info(f"Menggunakan kredensial SAP user khusus '{username}' untuk target '{sap_target or 'default'}'")
+    except Exception as ex:
+        logger.warning(f"Gagal memeriksa kredensial SAP user '{username}': {ex}")
+    # Normalisasi user_role ke list roles
+    roles_list = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
     roles_str_primary = roles_list[0] if roles_list else "user"
 
-    # Validasi otorisasi target_srv terhadap pengguna (bila master switch aktif)
-    access_control.assert_can_use(username=username, role=roles_list, active_server=target_srv)
+    # Pre-tool SAP onboarding check
+    if target_srv.startswith("sap") or (sap_target and target_system == "sap"):
+        from database import get_user_sap_credential, get_user_sap_token
+        from datetime import datetime, timezone
+        cred = get_user_sap_credential(username, target_srv)
+        tok = get_user_sap_token(username, target_srv)
+        if not cred and sap_target:
+            cred = get_user_sap_credential(username, sap_target)
+        if not tok and sap_target:
+            tok = get_user_sap_token(username, sap_target)
+        if tok and tok.get("expires_at") and tok["expires_at"] <= datetime.now(timezone.utc):
+            tok = None
+        if not cred and not tok and user_sap_credentials:
+            cred = user_sap_credentials
+        if not cred and not tok:
+            # User has neither credential nor token for this SAP target
+            raise HTTPException(
+                status_code=428,  # Precondition Required
+                detail=json.dumps({"code": "NEED_SAP_CREDENTIAL", "target": target_srv,
+                                   "message": "Kredensial SAP diperlukan untuk target ini. Silakan hubungkan kredensial SAP Anda di menu Pengaturan."})
+            )
 
-    allowed_conn = access_control.allowed_connectors(username=username, role=roles_list)
     try:
-        all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv, allowed_connectors=allowed_conn)
+        all_mcp_tools = await mcp_manager.get_all_tools(
+            server_filter=target_srv, allowed_connectors=allowed_connectors
+        )
     except TypeError:
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
-    
     if not all_mcp_tools:
         # Ketiadaan gateway tidak boleh mematikan percakapan umum. Model tetap
         # menjawab tanpa tool; prompt di bawah memberitahukan bahwa tidak ada
@@ -1090,56 +1133,26 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     openai_tools = []
     tool_map = {} # map dari openai_tool_name ke (server_name, mcp_tool_name)
     
-    can_write_res = True
-    can_write_email = True
-    can_write_rag = True
-    u_perms = {}
-    if access_control.is_access_control_enabled():
-        can_key = access_control.canonical_resource_key(target_srv)
-        u_perms = access_control.resolve_access(username, roles_list)
-        can_write_res = bool(u_perms.get(can_key, {}).get("can_write"))
-        can_write_email = bool(u_perms.get("service:email", {}).get("can_write"))
-        can_write_rag = bool(u_perms.get("service:rag", {}).get("can_write"))
-
     try:
         from database import get_roles_can_modify_program
         allowed_modify_roles = get_roles_can_modify_program()
     except Exception:
         allowed_modify_roles = set(PERAN_BOLEH_UBAH_PROGRAM)
-
     has_modify_role = any(r.lower() in allowed_modify_roles for r in roles_list)
-    boleh_ubah = has_modify_role and can_write_res
+    boleh_ubah = has_modify_role
     tool_ditolak = []
 
     for item in all_mcp_tools:
         server = item["server"]
         t = item["tool"]
-        tool_name = f"{server}__{t.name}".replace("-", "_")
-
+        # Jika nama tool dari gateway sudah memiliki prefix (misal 'mcp-sql__run_query' atau 'sap-leader-mcp__read_table'),
+        # cukup bersihkan format identifier tanpa menumpuk prefix ganda.
+        clean_tool_name = t.name.replace("-", "_")
+        if clean_tool_name.startswith(f"{server}__") or clean_tool_name.startswith(f"mcp_{server}__") or clean_tool_name.startswith("sap_leader_mcp__"):
+            tool_name = clean_tool_name
+        else:
+            tool_name = f"{server}__{clean_tool_name}"
         # Cek otorisasi konektor & hak tulis
-        if access_control.is_access_control_enabled():
-            if server == "email" and "email" not in allowed_conn:
-                tool_ditolak.append(t.name)
-                continue
-            if server in ("sql", "database") and "sql" not in allowed_conn:
-                tool_ditolak.append(t.name)
-                continue
-            if server == "rag" and "rag" not in allowed_conn:
-                tool_ditolak.append(t.name)
-                continue
-            if server == "sap" and "sap" not in allowed_conn:
-                tool_ditolak.append(t.name)
-                continue
-
-            # Tool mutasi/tulis email
-            if server == "email" and not can_write_email and t.name in ("send_email", "restore_email_to_inbox"):
-                tool_ditolak.append(t.name)
-                continue
-            # Tool mutasi RAG
-            if server == "rag" and not can_write_rag and t.name in ("draft_action", "confirm_action"):
-                tool_ditolak.append(t.name)
-                continue
-
         # Tool pengubah program tidak sekadar disembunyikan dari prompt: ia
         # tidak dibuatkan definisinya sama sekali, sehingga model tidak punya
         # cara memanggilnya walau diminta pengguna. Berlaku juga untuk SQL —
@@ -1164,6 +1177,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             }
         })
         tool_map[tool_name] = {"server": server, "mcp_name": t.name}
+        # Daftarkan juga variasi prefix standar agar pemanggilan teks fleksibel
+        base_name = clean_tool_name.split("__", 1)[-1]
+        tool_map[f"{server}__{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[f"{server}__sql_{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[f"{server}__sap_{base_name}"] = {"server": server, "mcp_name": t.name}
+        tool_map[clean_tool_name] = {"server": server, "mcp_name": t.name}
 
     # 3. Setup LLM (Berdasarkan konfigurasi mode chat & fallback provider)
     llm_primary = _buat_llm(primary_provider, primary_model_name, sys_cfg)
@@ -1315,27 +1334,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"tampilkan baris tersebut.\n"
         )
 
-    forbidden_services = []
-    if access_control.is_access_control_enabled():
-        if "email" not in allowed_conn:
-            forbidden_services.append("Layanan Email & Mail Archive")
-        if "sql" not in allowed_conn:
-            forbidden_services.append("Layanan SQL Database")
-        if "rag" not in allowed_conn:
-            forbidden_services.append("Layanan Dokumen RAG")
-        if "sap" not in allowed_conn:
-            forbidden_services.append("Layanan SAP ERP")
-
     forbidden_instruction = ""
-    if forbidden_services:
-        forbidden_instruction = (
-            f"## KEBIJAKAN AKSES PERAN PENGGUNA (SANGAT KETAT / WAJIB DIPATUHI):\n"
-            f"Peran pengguna saat ini ({username}, peran: {', '.join(roles_list)}) **TIDAK MEMILIKI HAK AKSES** ke: **{', '.join(forbidden_services)}**.\n"
-            f"- Jika pengguna meminta informasi, membaca, mencari, atau melakukan tindakan apa pun terkait layanan yang dilarang di atas "
-            f"(misalnya: meminta membaca/mencari email ketika Layanan Email dilarang, atau meminta data SQL/SAP ketika layanan tersebut dilarang), Anda **WAJIB MENOLAK SECARA TEGAS DAN SOPAN**.\n"
-            f"- Sampaikan dengan jelas bahwa peran akun pengguna saat ini ({', '.join(roles_list)}) tidak memiliki izin akses ke layanan tersebut sesuai kebijakan kontrol akses sistem perusahaan.\n"
-            f"- DILARANG KERAS berhalusinasi, mengarang isi pesan/email/data palsu, atau berpura-pura mengeceknya dari sumber lain.\n\n"
-        )
 
     system_prompt = (
         f"Anda adalah AI Assistant: asisten kerja serbaguna untuk kebutuhan Enterprise, Database, dan ekosistem SAP.\n\n"
@@ -1862,41 +1861,63 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 t_name = text_tool_match.group(1)
                 t_args_str = text_tool_match.group(2)
                 try:
-                    import json
                     t_args = json.loads(t_args_str)
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
-                    if access_control.is_access_control_enabled():
-                        if server_name == "email" and "email" not in allowed_conn:
-                            access_control.log_audit(username, "service", "service:email", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (email dilarang)")
-                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP Email / Mail Archive. Jangan memanggil tool ini lagi."))
+                    if server_name == "rag":
+                        if rag_call_count >= 2:
+                            messages.append(HumanMessage(content="SISTEM: Batas siklus penelusuran RAG tercapai. Dokumen yang terkumpul sudah memadai. Segera tuliskan jawaban akhir lengkap untuk pengguna sekarang."))
                             continue
-                        if server_name in ("sql", "database") and "sql" not in allowed_conn:
-                            access_control.log_audit(username, "sql", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SQL dilarang)")
-                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP SQL Database. Jangan memanggil tool ini lagi."))
-                            continue
-                        if server_name == "rag":
-                            if "rag" not in allowed_conn:
-                                access_control.log_audit(username, "service", "service:rag", "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (RAG dilarang)")
-                                messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG. Jangan memanggil tool ini lagi."))
-                                continue
-                            _rag_budget = _current_rag_budget()
-                            if _rag_budget <= 0 or rag_call_count >= _rag_budget:
-                                messages.append(HumanMessage(content="SISTEM: Budget penelusuran RAG tercapai. Susun jawaban dari evidence yang tersedia dan nyatakan keterbatasan jika coverage belum lengkap."))
-                                continue
-                            rag_call_count += 1
-                        if server_name == "sap" and "sap" not in allowed_conn:
-                            access_control.log_audit(username, "sap", target_srv, "DENY_TEXT_TOOL", f"Blokir teks tool {actual_tool_name} (SAP dilarang)")
-                            messages.append(HumanMessage(content="SISTEM: Akses Ditolak. Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP. Jangan memanggil tool ini lagi."))
-                            continue
+                        rag_call_count += 1
+                    if server_name == "sap":
+                        from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+                        from datetime import datetime, timezone
+                        active_target = sap_target or "default"
+                        active_creds = user_sap_credentials
+                        if not active_creds:
+                            tok = get_user_sap_token(username, active_target)
+                            if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                                active_creds = {"sap_token": tok["token"], "username": username}
+                            else:
+                                active_creds = get_user_sap_credential(username, active_target)
+                        if not active_creds and not sap_target:
+                            conf_targets = list_user_sap_credentials(username)
+                            if conf_targets:
+                                first_tgt = conf_targets[0].get("target") or "default"
+                                tok = get_user_sap_token(username, first_tgt)
+                                if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                                    active_creds = {"sap_token": tok["token"], "username": username}
+                                else:
+                                    active_creds = get_user_sap_credential(username, first_tgt)
+                                active_target = first_tgt
+                                user_sap_credentials = active_creds
+                                sap_target = active_target
 
+                        has_auth = bool(active_creds and (active_creds.get("sap_token") or (active_creds.get("sap_user") and active_creds.get("sap_password"))))
+                        if not has_auth:
+                            logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
+                            messages.append(HumanMessage(
+                                content=(
+                                    f"SISTEM: Eksekusi tool SAP dibatalkan karena pengguna '{username}' belum mengonfigurasi "
+                                    f"kredensial SAP pribadi untuk target '{active_target}'. "
+                                    "Kepatuhan keamanan mewajibkan setiap operasi SAP dijalankan menggunakan akun SAP pengguna masing-masing. "
+                                    "Sampaikan kepada pengguna untuk membuka menu Pengaturan Akun (Settings -> Akun SAP) "
+                                    "dan memasukkan username serta password SAP mereka."
+                                )
+                            ))
+                            continue
                     # Yang mengalir tadi adalah panggilan tool berbentuk teks,
                     # bukan jawaban untuk pengguna.
                     await reset_stream()
                     await report("tool", _describe_tool(server_name, actual_tool_name, t_args, is_en=is_en), iteration, server=server_name)
                     tool_result = await mcp_manager.call_tool(
-                        server_name, actual_tool_name, t_args, sap_target=sap_target, sap_credentials=user_sap_credentials
+                        server_name,
+                        actual_tool_name,
+                        t_args,
+                        sap_target=sap_target,
+                        sap_credentials=user_sap_credentials,
+                        sql_target=sql_target,
                     )
                     
                     res_str = ""
@@ -2069,109 +2090,19 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         ))
                         continue
 
-            # Runtime Access Control Enforcement
-            if access_control.is_access_control_enabled():
-                if server_name == "email" and "email" not in allowed_conn:
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="service",
-                        target_id="service:email",
-                        action="DENY_TOOL_CALL",
-                        detail=f"Percobaan memanggil tool {mcp_name} tanpa izin email",
-                    )
-                    messages.append(ToolMessage(
-                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP Email / Mail Archive.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
-
-                if server_name in ("sql", "database") and "sql" not in allowed_conn:
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="sql",
-                        target_id=target_srv,
-                        action="DENY_TOOL_CALL",
-                        detail=f"Percobaan memanggil tool SQL {mcp_name} tanpa izin SQL",
-                    )
-                    messages.append(ToolMessage(
-                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk menggunakan layanan MCP SQL Database.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
-
-                if server_name == "rag" and "rag" not in allowed_conn:
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="service",
-                        target_id="service:rag",
-                        action="DENY_TOOL_CALL",
-                        detail=f"Percobaan memanggil tool RAG {mcp_name} tanpa izin RAG",
-                    )
-                    messages.append(ToolMessage(
-                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk mengakses basis pengetahuan dokumen RAG.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
-
-                # Pembatasan siklus RAG berdasarkan budget adaptif
-                if server_name == "rag":
-                    _rag_budget_native = _current_rag_budget()
-                    if _rag_budget_native <= 0 or rag_call_count >= _rag_budget_native:
-                        logger.info(f"RAG budget reached ({rag_call_count}/{_rag_budget_native}). Meminta model merangkum.")
-                        messages.append(ToolMessage(
-                            content="SISTEM: Budget penelusuran RAG tercapai. Susun jawaban dari evidence yang tersedia dan nyatakan keterbatasan jika coverage belum lengkap.",
-                            tool_call_id=tool_id
-                        ))
-                        continue
-
-                if server_name == "sap" and "sap" not in allowed_conn:
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="sap",
-                        target_id=target_srv,
-                        action="DENY_TOOL_CALL",
-                        detail=f"Percobaan memanggil tool SAP {mcp_name} tanpa izin SAP",
-                    )
-                    messages.append(ToolMessage(
-                        content="Akses Ditolak: Peran akun Anda tidak memiliki izin untuk mengakses sistem SAP ERP.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
-
-                # Pemeriksaan Write Izin
-                if server_name == "email" and not can_write_email and mcp_name in ("send_email", "restore_email_to_inbox"):
-                    access_control.log_audit(
-                        actor=username,
-                        target_type="service",
-                        target_id="service:email",
-                        action="DENY_WRITE_TOOL",
-                        detail=f"Percobaan memanggil tool tulis email {mcp_name} pada mode read-only",
-                    )
-                    messages.append(ToolMessage(
-                        content="Akses Ditolak: Anda hanya memiliki izin baca (read-only) untuk layanan Email. Mengirim atau memodifikasi email tidak diizinkan.",
-                        tool_call_id=tool_id
-                    ))
-                    continue
-
-            # Penjagaan hak tulis SAP/SQL sengaja BERADA DI LUAR blok
-            # access_control di atas. Sebelumnya bersarang di dalamnya,
-            # sehingga ketika master switch access control mati (nilai
-            # bawaannya) can_write_res tetap True dan tidak ada satu pun
-            # pemeriksaan yang berjalan — peran read-only pun bisa
-            # menjalankan BAPI transaksi. Hak ubah program melekat pada
-            # PERAN, jadi penjagaannya tidak boleh ikut mati bersama
-            # master switch.
+            # Pembatasan siklus RAG berulang (maksimal 2 pemanggilan RAG per respons)
+            if server_name == "rag" and rag_call_count >= 2:
+                logger.info(f"Membatasi siklus RAG berulang (sudah {rag_call_count} kali panggilan RAG). Meminta model langsung merangkum jawaban akhir.")
+                messages.append(ToolMessage(
+                    content="Batas siklus penelusuran RAG tercapai. Dokumen dan konteks yang diperoleh sudah memadai. Segera tuliskan rangkuman dan jawaban akhir yang lengkap untuk pengguna dalam Bahasa Indonesia sekarang.",
+                    tool_call_id=tool_id
+                ))
+                continue
+            # Penjagaan hak tulis SAP/SQL: hak ubah program melekat pada PERAN.
             if server_name == "sap" and not boleh_ubah and (
                 tool_mengubah_program(mcp_name)
                 or rfc_mengubah_data(tool_args.get("function_name", ""))
             ):
-                access_control.log_audit(
-                    actor=username,
-                    target_type="sap",
-                    target_id=target_srv,
-                    action="DENY_WRITE_TOOL",
-                    detail=f"Percobaan memanggil tool modifikasi SAP {mcp_name} pada mode read-only",
-                )
                 messages.append(ToolMessage(
                     content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
                     tool_call_id=tool_id
@@ -2195,23 +2126,57 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     )
                 )
             ):
-                access_control.log_audit(
-                    actor=username,
-                    target_type="sql",
-                    target_id=target_srv,
-                    action="DENY_WRITE_TOOL",
-                    detail=f"Percobaan memanggil tool modifikasi SQL {mcp_name} pada mode read-only",
-                )
                 messages.append(ToolMessage(
                     content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada koneksi SQL '{target_srv}'. Pernyataan yang mengubah data atau skema tidak diizinkan.",
                     tool_call_id=tool_id
                 ))
                 continue
+            if server_name == "sap":
+                from database import get_user_sap_credential, get_user_sap_token, list_user_sap_credentials
+                from datetime import datetime, timezone
+                active_target = sap_target or "default"
+                active_creds = user_sap_credentials
+                if not active_creds:
+                    tok = get_user_sap_token(username, active_target)
+                    if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                        active_creds = {"sap_token": tok["token"], "username": username}
+                    else:
+                        active_creds = get_user_sap_credential(username, active_target)
+                if not active_creds and not sap_target:
+                    conf_targets = list_user_sap_credentials(username)
+                    if conf_targets:
+                        first_tgt = conf_targets[0].get("target") or "default"
+                        tok = get_user_sap_token(username, first_tgt)
+                        if tok and tok.get("token") and (not tok.get("expires_at") or tok["expires_at"] > datetime.now(timezone.utc)):
+                            active_creds = {"sap_token": tok["token"], "username": username}
+                        else:
+                            active_creds = get_user_sap_credential(username, first_tgt)
+                        active_target = first_tgt
+                        user_sap_credentials = active_creds
+                        sap_target = active_target
+
+                has_auth = bool(active_creds and (active_creds.get("sap_token") or (active_creds.get("sap_user") and active_creds.get("sap_password"))))
+                if not has_auth:
+                    logger.warning(f"Akses SAP diblokir untuk user '{username}': belum mengonfigurasi kredensial pribadi untuk '{active_target}'.")
+                    messages.append(ToolMessage(
+                        content=(
+                            f"Akses SAP Ditolak: Kredensial SAP pribadi belum dikonfigurasi untuk akun '{username}' pada server target '{active_target}'. "
+                            "Setiap pemanggilan data atau transaksi SAP wajib dijalankan menggunakan kredensial SAP masing-masing pengguna. "
+                            "Silakan buka menu Pengaturan Akun (Settings -> Akun SAP) untuk memasukkan username dan password SAP Anda."
+                        ),
+                        tool_call_id=tool_id
+                    ))
+                    continue
             
             try:
                 await report("tool", _describe_tool(server_name, mcp_name, tool_args, is_en=is_en), iteration, server=server_name)
                 result = await mcp_manager.call_tool(
-                    server_name, mcp_name, tool_args, sap_target=sap_target, sap_credentials=user_sap_credentials
+                    server_name,
+                    mcp_name,
+                    tool_args,
+                    sap_target=sap_target,
+                    sap_credentials=user_sap_credentials,
+                    sql_target=sql_target,
                 )
                 texts = []
                 if result.content:

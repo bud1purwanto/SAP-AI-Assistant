@@ -1,26 +1,27 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, KeyRound, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
 import ChatInput from './ChatInput';
 import ChatMessage from './ChatMessage';
 import ConfirmModal from './ConfirmModal';
-import ForceChangePasswordModal from './ForceChangePasswordModal';
 import LoginModal from './LoginModal';
 import SettingsModal from './SettingsModal';
 import ScheduledTasksModal from './ScheduledTasksModal';
 import QuotaBanner, { QuotaChip } from './QuotaBanner';
 import SidePanel from './SidePanel';
+import RequestAccessModal from './RequestAccessModal';
 import ThinkingIndicator from './ThinkingIndicator';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
+import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 import { useTypewriterStream } from '../hooks/useTypewriterStream';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import {
-  api, ApiError, chatWithProgress, clearSession, getStoredUser, getToken, saveSession, setUnauthorizedHandler,
+  api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
 import { formatRoleLabel, getRoleBadgeStyle, getRoleLabel, getUserInitials } from '../lib/roles';
 
@@ -94,6 +95,7 @@ const hidePendingArtifact = (text) => {
 
 const aliasOf = (srv) => srv?.alias || srv?.aliases?.[0] || srv?.name?.toLowerCase()?.replace(/\s+/g, '-') || srv?.sid?.toLowerCase() || 'default';
 const SAP_SERVER_STORAGE_KEY = 'sap_ai_active_server';
+const CONNECTOR_CONFIG_STORAGE_KEY = 'mcp_user_connectors_config_v1';
 const DRAFT_SESSION_KEY = '__draft_new_session__';
 
 const ChatLayout = () => {
@@ -131,7 +133,6 @@ const ChatLayout = () => {
   const [error, setError] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
-
   const [activeServer, setActiveServer] = useState(() => {
     try {
       return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || 'sap:sandbox-new';
@@ -139,7 +140,28 @@ const ChatLayout = () => {
       return 'sap:sandbox-new';
     }
   });
+  // Konfigurasi multi-konektor milik pengguna (self-service): konektor SAP / SQL /
+  // RAG / Email mana yang diaktifkan per sesi + target instance masing-masing.
+  const [connectorConfig, setConnectorConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(CONNECTOR_CONFIG_STORAGE_KEY) || '{}');
+      return {
+        enabled: Array.isArray(saved.enabled) ? saved.enabled : ['sap', 'rag'],
+        sapTarget: saved.sapTarget || null,
+        sqlTarget: saved.sqlTarget || null,
+      };
+    } catch {
+      return { enabled: ['sap', 'rag'], sapTarget: null, sqlTarget: null };
+    }
+  });
   const [mcpStatus, setMcpStatus] = useState(null);
+  const {
+    targets: mcpAccessTargets,
+    refresh: refreshMcpAccessTargets,
+    lookupTarget: lookupMcpAccessTarget,
+    submitRequest: submitMcpAccessRequest,
+  } = useMcpAccessRequests(!isGuest);
+  const [accessRequestModal, setAccessRequestModal] = useState({ isOpen: false, target: null });
   const [sapSubServers, setSapSubServers] = useState([]);
   const [sqlSubServers, setSqlSubServers] = useState([]);
   const [modesList, setModesList] = useState([]);
@@ -159,6 +181,29 @@ const ChatLayout = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('persona');
+  const [toast, setToast] = useState(null);
+
+  const openSettings = useCallback((tab = 'persona') => {
+    setSettingsTab(tab === 'sap' ? 'sapCreds' : tab);
+    setIsSettingsOpen(true);
+  }, []);
+
+  const showToast = useCallback((message, type = 'info', options = {}) => {
+    setToast({
+      message,
+      type,
+      action: options?.action,
+      id: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [toast]);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
@@ -382,6 +427,36 @@ const ChatLayout = () => {
     } catch (e) {
       console.error('Gagal menyimpan target server ke localStorage:', e);
     }
+    const [system, target] = newServer.split(':', 2);
+    if ((system === 'sap' || system === 'sql') && target) {
+      setConnectorConfig((prev) => {
+        const next = {
+          ...prev,
+          [system === 'sap' ? 'sapTarget' : 'sqlTarget']: target,
+          enabled: prev.enabled.includes(system) ? prev.enabled : [...prev.enabled, system],
+        };
+        localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  };
+
+  const handleConnectorToggle = (connectorId) => {
+    setConnectorConfig((prev) => {
+      const isCurrentlyEnabled = prev.enabled.includes(connectorId);
+      const nextEnabled = isCurrentlyEnabled
+        ? prev.enabled.filter((id) => id !== connectorId)
+        : [...prev.enabled, connectorId];
+      // Minimal 1 konektor harus aktif agar model tidak kosong
+      const finalEnabled = nextEnabled.length > 0 ? nextEnabled : [connectorId];
+      const nextConfig = { ...prev, enabled: finalEnabled };
+      try {
+        localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(nextConfig));
+      } catch (e) {
+        console.error('Gagal menyimpan konfigurasi konektor MCP:', e);
+      }
+      return nextConfig;
+    });
   };
 
   // --- Fungsi sentral reset tampilan & sesi ke Beranda (Home) secara bersih ---
@@ -472,27 +547,34 @@ const ChatLayout = () => {
     fetchModes();
   }, [fetchServers, fetchModes]);
 
-  // Validasi token tersimpan saat aplikasi dibuka: profil bisa saja sudah
-  // diubah atau dihapus admin sejak login terakhir.
+  // Sinkronkan sesi aktif dengan backend saat aplikasi dibuka
+  useEffect(() => {
+    let active = true;
+    api.authSession()
+      .then((profile) => {
+        if (!active) return;
+        if (profile && !profile.is_guest && profile.authenticated !== false) {
+          saveSession(profile);
+          setUser(profile);
+          api.quotaSaya().then(setKuota).catch(() => setKuota(null));
+        } else if (!isGuest) {
+          clearSession();
+          setUser(GUEST_USER);
+        }
+      })
+      .catch(() => {
+        /* abaikan bila offline atau backend belum siap */
+      });
+    return () => { active = false; };
+  }, []);
+
+  // Perbarui kuota dan mode saat profil pengguna berubah
   useEffect(() => {
     fetchModes();
     fetchServers();
     if (isGuest) return;
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
-    api.me()
-      .then((profile) => setUser(profile))
-      .catch(() => { /* 401 sudah ditangani handler di atas */ });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.username, fetchServers, fetchModes]);
-
-  // Wajib login: buka modal login otomatis saat pengguna belum login
-  useEffect(() => {
-    if (isGuest) {
-      setCustomLoginMsg(t('login.requiredPrompt'));
-      setIsLoginModalOpen(true);
-    }
-  }, [isGuest, t]);
-
+  }, [user?.username, isGuest, fetchServers, fetchModes]);
   useEffect(() => {
     scrollToBottom(true);
   }, [currentMessages, isCurrentLoading, scrollToBottom]);
@@ -748,7 +830,7 @@ const ChatLayout = () => {
   // Sinkronisasi multi-tab: jika akun berubah di tab browser lain, update tab ini
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === 'sap_assistant_token' || e.key === 'sap_assistant_user') {
+      if (e.key === 'sap_assistant_user') {
         const currentUser = getStoredUser() || GUEST_USER;
         resetToHome();
         setUser(currentUser);
@@ -775,7 +857,6 @@ const ChatLayout = () => {
                   role: data.role,
                   roles: data.roles || [data.role],
                   assistant_persona: data.assistant_persona,
-                  force_change_password: Boolean(data.force_change_password),
                 };
                 saveSession(data.access_token, userData);
 
@@ -1033,12 +1114,50 @@ const ChatLayout = () => {
         .filter((m) => !m.isWelcome)
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
+      const [activeSystemForPayload, activeTargetForPayload] = activeServer.split(':', 2);
+      const initialConnectors = Array.isArray(connectorConfig.enabled) && connectorConfig.enabled.length > 0
+        ? connectorConfig.enabled
+        : ['sap', 'rag'];
+      let sapTarget = connectorConfig.sapTarget || (activeSystemForPayload === 'sap' ? activeTargetForPayload : undefined);
+      let sqlTarget = connectorConfig.sqlTarget || (activeSystemForPayload === 'sql' ? activeTargetForPayload : undefined);
+
+      const sapAccess = sapTarget ? lookupMcpAccessTarget({ name: sapTarget, resource_key: `sap:${sapTarget}` }) : null;
+      const sqlAccess = sqlTarget ? lookupMcpAccessTarget({ name: sqlTarget, resource_key: `sql:${sqlTarget}` }) : null;
+      const isSapLocked = Boolean(sapTarget) && (!sapAccess || sapAccess.accessState !== 'approved');
+      const isSqlLocked = Boolean(sqlTarget) && (!sqlAccess || sqlAccess.accessState !== 'approved');
+
+      let safeActiveServer = activeServer;
+      if (isSapLocked) {
+        sapTarget = undefined;
+        if (activeSystemForPayload === 'sap') safeActiveServer = 'general';
+      }
+      if (isSqlLocked) {
+        sqlTarget = undefined;
+        if (activeSystemForPayload === 'sql') safeActiveServer = 'general';
+      }
+
+      const isConnectorLocked = (connectorId) => {
+        const connectorTargets = mcpAccessTargets.filter((entry) => {
+          const serverType = String(entry.serverType || '').toLowerCase();
+          const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+          return serverType === connectorId || resourceKey.startsWith(`${connectorId}:`);
+        });
+        return !connectorTargets.some((entry) => entry.accessState === 'approved');
+      };
+      const enabledConnectors = initialConnectors.filter((c) => {
+        if (c === 'sap' && isSapLocked) return false;
+        if (c === 'sql' && isSqlLocked) return false;
+        return !isConnectorLocked(c);
+      });
       const data = await chatWithProgress(
         {
           message: text,
           history,
           session_id: targetSessionId,
-          active_server: activeServer,
+          active_server: safeActiveServer,
+          enabled_connectors: enabledConnectors,
+          sap_target: sapTarget,
+          sql_target: sqlTarget,
           attachment_ids: attachments.map((a) => a.upload_id),
           mode: selectedMode || undefined,
           language: language || 'id',
@@ -1135,6 +1254,21 @@ const ChatLayout = () => {
         }));
         return;
       }
+      if (err?.code === 'NEED_SAP_CREDENTIAL' || err?.detail?.includes?.('NEED_SAP_CREDENTIAL') || err?.message?.includes?.('NEED_SAP_CREDENTIAL')) {
+        setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
+        let parsed = err;
+        try {
+          parsed = typeof err.detail === 'string' ? JSON.parse(err.detail) : (typeof err.message === 'string' && err.message.includes('NEED_SAP_CREDENTIAL') ? JSON.parse(err.message) : err);
+        } catch {
+          parsed = err;
+        }
+        const toastMsg = language === 'en' ? t('sap.bindRequired') : (parsed?.message || t('sap.bindRequired'));
+        showToast(toastMsg, 'warning', {
+          action: { label: t('settings.title'), onClick: () => openSettings('sap') }
+        });
+        return; // Don't show generic error
+      }
+
       // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
       // Pengguna yang sudah masuk tidak dibantu modal login — kuotanya yang
       // habis, bukan sesinya. Angka pada banner disegarkan supaya cocok.
@@ -1255,38 +1389,17 @@ const ChatLayout = () => {
     await handleSendMessage(cleaned, message.attachments || [], base);
   };
 
-  const handleCloseLoginModal = useCallback(() => {
-    setIsLoginModalOpen(false);
-    setCustomLoginMsg('');
-    resetToHome();
-  }, [resetToHome]);
-
-  const handleLoginSuccess = ({ access_token: token, ...userData }) => {
-    saveSession(token, userData);
-    resetToHome(false);
-    setUser(userData);
-    api.quotaSaya().then(setKuota).catch(() => setKuota(null));
-    fetchServers();
-    fetchModes();
-    setIsLoginModalOpen(false);
-    setCustomLoginMsg('');
-    setError(null);
-  };
-
-  const handleForcePasswordChanged = () => {
-    setUser((prev) => {
-      const updated = { ...prev, force_change_password: false };
-      const token = getToken();
-      if (token) {
-        saveSession(token, updated);
-      }
-      return updated;
-    });
-  };
 
   const handleLogout = () => {
     api.logout().catch(() => {});
-    resetToHome();
+    clearSession();
+    setUser(GUEST_USER);
+    setSessions([]);
+    setCurrentSessionId(null);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
     fetchServers();
     fetchModes();
   };
@@ -1736,8 +1849,7 @@ const ChatLayout = () => {
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
-                        setSettingsTab('persona');
-                        setIsSettingsOpen(true);
+                        openSettings('persona');
                       }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
@@ -1746,28 +1858,12 @@ const ChatLayout = () => {
                       <span className="truncate">{t('settings.tabPersona')}</span>
                     </button>
 
-                    {/* Keamanan & Sandi */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsUserMenuOpen(false);
-                        setSettingsTab('security');
-                        setIsSettingsOpen(true);
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
-                      role="menuitem"
-                    >
-                      <KeyRound className="w-3.5 h-3.5 text-content-muted shrink-0" aria-hidden="true" />
-                      <span className="truncate">{t('settings.tabSecurity')}</span>
-                    </button>
-
                     {/* SAP Login */}
                     <button
                       type="button"
                       onClick={() => {
                         setIsUserMenuOpen(false);
-                        setSettingsTab('sapCreds');
-                        setIsSettingsOpen(true);
+                        openSettings('sapCreds');
                       }}
                       className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-content hover:bg-surface-hover transition-colors cursor-pointer text-left"
                       role="menuitem"
@@ -1869,61 +1965,35 @@ const ChatLayout = () => {
               </label>
               {sapSubServers.length > 0 || sqlSubServers.length > 0 ? (
                 <div className="relative min-w-0 max-w-[13rem] xs:max-w-[15.5rem] sm:max-w-[18.5rem]" ref={serverDropdownRef}>
-                  {hasMultipleTargets ? (
-                    <button
-                      id="sap-target"
-                      type="button"
-                      onClick={() => setIsServerDropdownOpen((prev) => !prev)}
-                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
-                        isProductionTarget
-                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
-                          : 'border-line text-content hover:border-line/80'
-                      }`}
-                      aria-label={t('nav.serverSelectAria')}
-                      aria-expanded={isServerDropdownOpen}
-                      aria-haspopup="listbox"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0 truncate">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                          activeSystem === 'sql'
-                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                        }`}>
-                          {activeSystem.toUpperCase()}
-                        </span>
-                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {isProductionTarget && (
-                          <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
-                            PRD
-                          </span>
-                        )}
-                        <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
-                      </div>
-                    </button>
-                  ) : (
-                    <div
-                      id="sap-target"
-                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium bg-surface-sunken select-none ${
-                        isProductionTarget
-                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
-                          : 'border-line text-content'
-                      }`}
-                      title={language === 'en' ? 'Active Target Environment' : 'Lingkungan Target Aktif'}
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0 truncate">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
-                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                          activeSystem === 'sql'
-                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                        }`}>
-                          {activeSystem.toUpperCase()}
-                        </span>
-                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
-                      </div>
+                  <button
+                    id="sap-target"
+                    type="button"
+                    onClick={() => {
+                      const opening = !isServerDropdownOpen;
+                      setIsServerDropdownOpen(opening);
+                      if (opening && !isGuest) refreshMcpAccessTargets();
+                    }}
+                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
+                      isProductionTarget
+                        ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                        : 'border-line text-content hover:border-line/80'
+                    }`}
+                    aria-label={t('nav.serverSelectAria')}
+                    aria-expanded={isServerDropdownOpen}
+                    aria-haspopup="listbox"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0 truncate">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                        activeSystem === 'sql'
+                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                          : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                      }`}>
+                        {activeSystem.toUpperCase()}
+                      </span>
+                      <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
                       {isProductionTarget && (
                         <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight shrink-0">
                           PRD
@@ -2025,22 +2095,45 @@ const ChatLayout = () => {
                                   srv.name?.toLowerCase()?.includes('prod') ||
                                   srv.name?.toLowerCase()?.includes('prd')
                                 );
+                                const accessEntry = lookupMcpAccessTarget(srv);
+                                const isLocked = !accessEntry || accessEntry.accessState !== 'approved';
+                                const isPending = accessEntry?.accessState === 'pending';
+                                const isRejected = accessEntry?.accessState === 'rejected';
                                 const isOffline = srv.state === 'offline' || srv.online === false;
                                 return (
                                   <button
                                     key={srv.number ?? srvKey}
                                     type="button"
                                     onClick={() => {
+                                      if (isLocked) {
+                                        if (isPending) {
+                                          showToast(t('mcp.statusPending'), 'info');
+                                        } else if (accessEntry) {
+                                          setAccessRequestModal({
+                                            isOpen: true,
+                                            target: {
+                                              connectionId: accessEntry.connectionId,
+                                              name: srv.name,
+                                              serverType: 'sql',
+                                            },
+                                          });
+                                        } else {
+                                          showToast(t('mcp.requestFailed'), 'error');
+                                        }
+                                        return;
+                                      }
                                       handleServerChange(`sql:${srvKey}`);
                                       setIsServerDropdownOpen(false);
                                     }}
-                                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
-                                      isSelected
-                                        ? isPrd
-                                          ? 'bg-danger/15 text-danger font-bold border border-danger/30'
-                                          : 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
-                                        : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
-                                    }`}
+                                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left ${
+                                      isLocked
+                                        ? 'bg-surface-sunken/40 text-content-muted border border-transparent hover:border-amber-500/30'
+                                        : isSelected
+                                          ? isPrd
+                                            ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                            : 'bg-blue-500/15 text-blue-400 font-bold border border-blue-500/30'
+                                          : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                                    } cursor-pointer`}
                                   >
                                     <div className="flex items-center gap-2 min-w-0 truncate">
                                       <span className={`w-2 h-2 rounded-full shrink-0 ${isOffline ? 'bg-zinc-500' : isPrd ? 'bg-danger' : 'bg-emerald-500'}`} />
@@ -2055,13 +2148,28 @@ const ChatLayout = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
-                                      {isPrd && (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                          PRD
+                                      {isLocked ? (
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1 leading-none ${
+                                          isPending
+                                            ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                            : isRejected
+                                            ? 'bg-danger/15 text-danger border border-danger/30'
+                                            : 'bg-surface-sunken text-content-subtle border border-line'
+                                        }`}>
+                                          <Lock className="w-2.5 h-2.5" />
+                                          {isPending ? t('mcp.statusPending') : isRejected ? t('mcp.statusRejected') : t('mcp.statusLocked')}
                                         </span>
-                                      )}
-                                      {isSelected && (
-                                        <Check className={`w-3.5 h-3.5 shrink-0 ${isPrd ? 'text-danger' : 'text-blue-400'}`} />
+                                      ) : (
+                                        <>
+                                          {isPrd && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                              PRD
+                                            </span>
+                                          )}
+                                          {isSelected && (
+                                            <Check className={`w-3.5 h-3.5 shrink-0 ${isPrd ? 'text-danger' : 'text-blue-400'}`} />
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   </button>
@@ -2084,20 +2192,43 @@ const ChatLayout = () => {
                                   srv.sid?.toLowerCase()?.includes('prt') ||
                                   srv.sid?.toLowerCase()?.includes('trp')
                                 );
+                                const accessEntry = lookupMcpAccessTarget(srv);
+                                const isLocked = !accessEntry || accessEntry.accessState !== 'approved';
+                                const isPending = accessEntry?.accessState === 'pending';
+                                const isRejected = accessEntry?.accessState === 'rejected';
                                 return (
                                   <button
                                     key={srv.number ?? srvAlias}
                                     type="button"
                                     onClick={() => {
+                                      if (isLocked) {
+                                        if (isPending) {
+                                          showToast(t('mcp.statusPending'), 'info');
+                                        } else if (accessEntry) {
+                                          setAccessRequestModal({
+                                            isOpen: true,
+                                            target: {
+                                              connectionId: accessEntry.connectionId,
+                                              name: srv.name,
+                                              serverType: 'sap',
+                                            },
+                                          });
+                                        } else {
+                                          showToast(t('mcp.requestFailed'), 'error');
+                                        }
+                                        return;
+                                      }
                                       handleServerChange(`${activeSystem}:${srvAlias}`);
                                       setIsServerDropdownOpen(false);
                                     }}
                                     className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${
-                                      isSelected
-                                        ? isPrd
-                                          ? 'bg-danger/15 text-danger font-bold border border-danger/30'
-                                          : 'bg-accent/15 text-accent font-bold border border-accent/30'
-                                        : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
+                                      isLocked
+                                        ? 'bg-surface-sunken/40 text-content-muted border border-transparent hover:border-amber-500/30'
+                                        : isSelected
+                                          ? isPrd
+                                            ? 'bg-danger/15 text-danger font-bold border border-danger/30'
+                                            : 'bg-accent/15 text-accent font-bold border border-accent/30'
+                                          : 'text-content hover:bg-surface-hover active:bg-surface-sunken border border-transparent'
                                     }`}
                                   >
                                     <div className="flex items-center gap-2 min-w-0 truncate">
@@ -2110,15 +2241,30 @@ const ChatLayout = () => {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
-                                      {isPrd && (
-                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
-                                          {t('nav.productionWarning')}
+                                      {isLocked ? (
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-1 leading-none ${
+                                          isPending
+                                            ? 'bg-amber-500/15 text-amber-500 border border-amber-500/30'
+                                            : isRejected
+                                            ? 'bg-danger/15 text-danger border border-danger/30'
+                                            : 'bg-surface-sunken text-content-subtle border border-line'
+                                        }`}>
+                                          <Lock className="w-2.5 h-2.5" />
+                                          {isPending ? t('mcp.statusPending') : isRejected ? t('mcp.statusRejected') : t('mcp.statusLocked')}
                                         </span>
-                                      )}
-                                      {isSelected && (
-                                        <Check className={`w-3.5 h-3.5 shrink-0 ${
-                                          isPrd ? 'text-danger' : 'text-accent'
-                                        }`} />
+                                      ) : (
+                                        <>
+                                          {isPrd && (
+                                            <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-none">
+                                              {t('nav.productionWarning')}
+                                            </span>
+                                          )}
+                                          {isSelected && (
+                                            <Check className={`w-3.5 h-3.5 shrink-0 ${
+                                              isPrd ? 'text-danger' : 'text-accent'
+                                            }`} />
+                                          )}
+                                        </>
                                       )}
                                     </div>
                                   </button>
@@ -2134,53 +2280,73 @@ const ChatLayout = () => {
                         </div>
                       </div>
 
-                      {/* COMPANION KNOWLEDGE & SERVICES (RAG & Email) */}
+                      {/* MULTI-MCP CONNECTOR SELECTOR */}
                       <div className="pt-2 border-t border-line/60">
                         <p className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-content-subtle mb-1">
-                          {language === 'en' ? 'Companion Integrations' : 'Integrasi Pendukung'}
+                          {t('mcp.multiHub')}
                         </p>
                         <div className="grid grid-cols-2 gap-1.5">
-                          {/* RAG Knowledge Base */}
-                          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-opacity ${
-                            mcpStatus?.rag?.allowed !== false
-                              ? 'bg-surface-sunken/60 border-line/60'
-                              : 'bg-surface-sunken/30 border-line/30 opacity-50'
-                          }`}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                              <span className="font-semibold text-[11px] text-content truncate">RAG Knowledge</span>
-                            </div>
-                            {mcpStatus?.rag?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Active' : 'Aktif'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-content-subtle">
-                                <Lock className="w-2.5 h-2.5" /> {language === 'en' ? 'Locked' : 'Terkunci'}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Email Service */}
-                          <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-opacity ${
-                            mcpStatus?.email?.allowed !== false
-                              ? 'bg-surface-sunken/60 border-line/60'
-                              : 'bg-surface-sunken/30 border-line/30 opacity-50'
-                          }`}>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                              <span className="font-semibold text-[11px] text-content truncate">Email</span>
-                            </div>
-                            {mcpStatus?.email?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Ready' : 'Siap'}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-content-subtle">
-                                <Lock className="w-2.5 h-2.5" /> {language === 'en' ? 'Locked' : 'Terkunci'}
-                              </span>
-                            )}
-                          </div>
+                          {[
+                            { id: 'sap', label: t('mcp.enableSap'), icon: Server, color: 'text-indigo-400', allowed: sapSubServers.length > 0 },
+                            { id: 'sql', label: t('mcp.enableSql'), icon: Database, color: 'text-blue-400', allowed: sqlSubServers.length > 0 },
+                            { id: 'rag', label: t('mcp.enableRag'), icon: BookOpen, color: 'text-amber-400', allowed: mcpStatus?.rag?.allowed !== false },
+                            { id: 'email', label: t('mcp.enableEmail'), icon: Mail, color: 'text-purple-400', allowed: mcpStatus?.email?.allowed !== false },
+                          ].map(({ id, label, icon: Icon, color, allowed }) => {
+                            const accessTargets = mcpAccessTargets.filter((entry) => {
+                              const serverType = String(entry.serverType || '').toLowerCase();
+                              const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+                              return serverType === id || resourceKey.startsWith(`${id}:`);
+                            });
+                            const approvedTarget = accessTargets.find((entry) => entry.accessState === 'approved');
+                            const requestableTarget = accessTargets.find((entry) => entry.canRequest) || accessTargets[0];
+                            const isAccessLocked = !approvedTarget;
+                            const isAccessPending = requestableTarget?.accessState === 'pending';
+                            const connectorAllowed = allowed && !isAccessLocked;
+                            const enabled = connectorAllowed && connectorConfig.enabled.includes(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                disabled={!allowed}
+                                aria-pressed={enabled}
+                                aria-label={`${label}: ${enabled ? t('mcp.selected') : t('mcp.notSelected')}`}
+                                onClick={() => {
+                                  if (isAccessLocked) {
+                                    if (isAccessPending) {
+                                      showToast(t('mcp.statusPending'), 'info');
+                                    } else if (requestableTarget) {
+                                      setAccessRequestModal({ isOpen: true, target: requestableTarget });
+                                    } else {
+                                      showToast(t('mcp.requestFailed'), 'error');
+                                    }
+                                    return;
+                                  }
+                                  handleConnectorToggle(id);
+                                }}
+                                className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl border text-xs transition-all ${
+                                  !allowed
+                                    ? 'bg-surface-sunken/30 border-line/30 opacity-50 cursor-not-allowed'
+                                    : isAccessLocked
+                                      ? 'bg-surface-sunken/40 border-amber-500/20 text-content-muted cursor-pointer'
+                                      : enabled
+                                        ? 'bg-accent/10 border-accent/40 text-content cursor-pointer'
+                                        : 'bg-surface-sunken/60 border-line/60 text-content-muted hover:border-accent/30 cursor-pointer'
+                                }`}
+                              >
+                                <span className="flex items-center gap-1.5 min-w-0">
+                                  <Icon className={`w-3.5 h-3.5 shrink-0 ${color}`} />
+                                  <span className="font-semibold text-[11px] truncate">{label}</span>
+                                </span>
+                                {!allowed || isAccessLocked ? (
+                                  <Lock className="w-3 h-3 text-content-subtle shrink-0" />
+                                ) : enabled ? (
+                                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                ) : (
+                                  <span className="w-3 h-3 rounded-full border border-content-subtle shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -2475,10 +2641,14 @@ const ChatLayout = () => {
       {/* Modals */}
       <LoginModal
         isOpen={isLoginModalOpen}
-        onLoginSuccess={handleLoginSuccess}
-        onGuestContinue={handleCloseLoginModal}
         customMessage={customLoginMsg}
-        onClose={handleCloseLoginModal}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={(loggedInUser) => {
+          setUser(loggedInUser);
+          setIsLoginModalOpen(false);
+          setCustomLoginMsg('');
+          window.location.reload();
+        }}
       />
 
       <SettingsModal
@@ -2486,6 +2656,7 @@ const ChatLayout = () => {
         onClose={() => setIsSettingsOpen(false)}
         user={user}
         initialTab={settingsTab}
+        showToast={showToast}
       />
 
       <ScheduledTasksModal
@@ -2501,12 +2672,16 @@ const ChatLayout = () => {
         onRefreshModes={fetchModes}
       />
 
-      <ForceChangePasswordModal
-        key={user?.username || 'force-change-pwd'}
-        isOpen={Boolean(user && user.role !== 'guest' && user.force_change_password)}
-        user={user}
-        onSuccess={handleForcePasswordChanged}
-        onLogout={handleLogout}
+
+      <RequestAccessModal
+        isOpen={accessRequestModal.isOpen}
+        target={accessRequestModal.target}
+        onClose={() => setAccessRequestModal({ isOpen: false, target: null })}
+        onSubmit={async (connectionId, reason) => {
+          await submitMcpAccessRequest(connectionId, reason);
+          showToast(t('mcp.requestSent'), 'success');
+          await refreshMcpAccessTargets();
+        }}
       />
 
       {/* Confirmation Modal - Logout */}
@@ -2541,54 +2716,44 @@ const ChatLayout = () => {
         cancelText={t('common.cancel')}
       />
 
-      {/* Modal Peringatan Sesi Terputus (Kicked by other device / admin) */}
-      {kickedModalInfo.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-md animate-modal-backdrop"
-            onClick={() => {
-              setKickedModalInfo({ isOpen: false, reason: '' });
-              resetToHome();
-            }}
-          />
-          <div className="relative w-full max-w-md rounded-2xl bg-surface border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/20 text-center animate-modal-content overflow-hidden">
-            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-rose-500 to-transparent pointer-events-none" />
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/30">
-              <ShieldAlert className="h-7 w-7 animate-pulse" />
-            </div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[11px] font-bold uppercase tracking-wider mb-2">
-              {t('kicked.modalBadge')}
-            </div>
-            <h3 className="text-lg font-bold text-content font-display tracking-tight">
-              {t('kicked.modalTitle')}
-            </h3>
-            <p className="mt-2 text-xs sm:text-sm text-content-secondary leading-relaxed bg-surface-sunken/60 p-3.5 rounded-xl border border-line">
-              {kickedModalInfo.reason || t('kicked.modalDesc')}
-            </p>
-            <div className="mt-6 flex flex-col-reverse sm:flex-row items-center justify-center gap-3">
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          role="alert"
+          className={`fixed bottom-5 right-5 z-50 max-w-md p-4 rounded-2xl shadow-xl border flex items-start gap-3 transition-all animate-fadeIn ${
+            toast.type === 'warning'
+              ? 'bg-amber-50 dark:bg-amber-950/90 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+              : toast.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+              : toast.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/90 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+              : 'bg-surface border-line text-content shadow-lg'
+          }`}
+        >
+          <div className="flex-1 text-xs font-medium space-y-2">
+            <p className="leading-relaxed">{toast.message}</p>
+            {toast.action && (
               <button
                 type="button"
                 onClick={() => {
-                  setKickedModalInfo({ isOpen: false, reason: '' });
-                  resetToHome();
+                  const cb = toast.action.onClick;
+                  setToast(null);
+                  cb?.();
                 }}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-line hover:bg-surface-hover text-content-secondary hover:text-content text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+                className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-colors cursor-pointer"
               >
-                {t('kicked.returnHome')}
+                {toast.action.label}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setKickedModalInfo({ isOpen: false, reason: '' });
-                  resetToHome();
-                  setIsLoginModalOpen(true);
-                }}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer active:scale-95"
-              >
-                {t('kicked.relogin')}
-              </button>
-            </div>
+            )}
           </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="p-1 text-content-muted hover:text-content cursor-pointer shrink-0"
+            aria-label={t('common.close')}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

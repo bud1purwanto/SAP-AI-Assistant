@@ -47,7 +47,7 @@ trap cleanup EXIT
 # ditolak 429 dan gejalanya menyerupai fitur yang rusak, padahal bukan.
 echo "▶ Menjalankan backend (agen tiruan) di :${BACKEND_PORT}…"
 DATABASE_URL="$E2E_DATABASE_URL" \
-JWT_SECRET="${JWT_SECRET:-e2e-secret-e2e-secret-e2e-secret-123}" \
+SESSION_SECRET="${SESSION_SECRET:-e2e-session-secret-e2e-session-secret-123}" \
 BOOTSTRAP_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-AdminPass123}" \
 GUEST_DAILY_LIMIT="${E2E_GUEST_LIMIT:-500}" \
     "$PYTHON" -m uvicorn tests.e2e.stub_backend:app \
