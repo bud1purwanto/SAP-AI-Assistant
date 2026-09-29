@@ -5,7 +5,7 @@ from database import get_engine, text, list_all_users, get_user_by_username
 def test_admin_reset_password_flow(client, admin_auth, make_user):
     """Pengujian alur reset password oleh admin dan kewajiban ganti password pengguna."""
     username = "test_reset_user"
-    initial_auth = make_user(username, password="OldPassword123")
+    initial_auth = make_user(username, password="OldPassword123", force_change_password=False)
 
     # 1. Pastikan status awal force_change_password adalah False
     user_info = get_user_by_username(username)
@@ -109,5 +109,90 @@ def test_admin_reset_password_validations(client, admin_auth, make_user):
         headers=admin_auth,
     )
     assert res_not_found.status_code == 400
+
+
+def test_create_user_default_force_change_password(client, admin_auth):
+    """Membuat user baru secara default harus memiliki force_change_password == True (Pending Reset)."""
+    username = "test_new_pending_user"
+    temp_pass = "InitialSecurePass123"
+
+    from database import delete_user_by_admin, get_user_by_username
+    delete_user_by_admin(username)
+
+    # 1. Buat user via API admin tanpa menentukan force_change_password (default True)
+    res_create = client.post(
+        "/api/admin/users",
+        json={
+            "username": username,
+            "password": temp_pass,
+            "full_name": "New Pending User",
+            "role": "user",
+        },
+        headers=admin_auth,
+    )
+    assert res_create.status_code == 200, res_create.text
+    assert res_create.json()["success"] is True
+
+    # 2. Periksa di database statusnya harus True
+    user_info = get_user_by_username(username)
+    assert user_info is not None
+    assert user_info.get("force_change_password") is True
+
+    # 3. List users untuk admin harus memuat force_change_password == True
+    res_list = client.get("/api/admin/users", headers=admin_auth)
+    assert res_list.status_code == 200
+    target_user = next((u for u in res_list.json() if u["username"].lower() == username.lower()), None)
+    assert target_user is not None
+    assert target_user.get("force_change_password") is True
+
+    # 4. User login pertama kali -> mengembalikan force_change_password == True
+    login_res = client.post("/api/login", json={"username": username, "password": temp_pass})
+    assert login_res.status_code == 200
+    login_data = login_res.json()
+    assert login_data.get("force_change_password") is True
+    user_token = login_data["access_token"]
+    user_auth = {"Authorization": f"Bearer {user_token}"}
+
+    # 5. User mengganti password
+    change_res = client.post(
+        "/api/change-password",
+        json={"new_password": "MyPersonalPassword789"},
+        headers=user_auth,
+    )
+    assert change_res.status_code == 200
+
+    # 6. Status berubah menjadi False
+    user_info_after = get_user_by_username(username)
+    assert user_info_after.get("force_change_password") is False
+
+    # Cleanup
+    delete_user_by_admin(username)
+
+
+def test_create_user_explicit_force_change_password_false(client, admin_auth):
+    """Bila admin secara eksplisit uncheck force_change_password, status harus False."""
+    username = "test_no_force_user"
+    temp_pass = "StaticPassword123"
+
+    from database import delete_user_by_admin, get_user_by_username
+    delete_user_by_admin(username)
+
+    res_create = client.post(
+        "/api/admin/users",
+        json={
+            "username": username,
+            "password": temp_pass,
+            "full_name": "No Force User",
+            "role": "user",
+            "force_change_password": False,
+        },
+        headers=admin_auth,
+    )
+    assert res_create.status_code == 200
+    user_info = get_user_by_username(username)
+    assert user_info.get("force_change_password") is False
+
+    delete_user_by_admin(username)
+
 
 

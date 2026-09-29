@@ -26,6 +26,7 @@ class ChatRequest(BaseModel):
     active_server: Optional[str] = Field(default=None, description="Alias untuk kompatibilitas frontend")
     attachment_ids: List[str] = Field(default_factory=list, description="ID lampiran sebagai konteks")
     mode: Optional[str] = Field(default=None, description="Kode mode chat yang dipilih (misal: 'fast', 'medium', 'expert')")
+    language: Optional[str] = Field(default="id", description="Bahasa antarmuka pengguna ('id' atau 'en')")
 
 class GeneratedArtifact(BaseModel):
     """Berkas (Excel/CSV) yang dihasilkan asisten dan siap diunduh."""
@@ -52,6 +53,7 @@ class UsageStats(BaseModel):
     latency_ms: Optional[int] = Field(default=None, description="Waktu proses di server, milidetik")
     model: Optional[str] = Field(default=None, description="Model yang menjawab")
     tool_calls: int = Field(default=0, description="Jumlah pemanggilan tool SAP/RAG")
+    model_calls: int = Field(default=0, description="Jumlah pemanggilan model dalam satu permintaan")
     estimated: bool = Field(
         default=False,
         description="True bila jumlah token diperkirakan sendiri karena provider tidak melaporkannya",

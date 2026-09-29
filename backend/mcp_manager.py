@@ -8,6 +8,11 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+# Definisi tool berubah jauh lebih jarang daripada percakapan masuk. Cache yang
+# lebih panjang menghindari handshake/list-tools berulang pada chat ringan;
+# perubahan konfigurasi tetap dapat memanggil clear_tools_cache().
+MCP_TOOLS_CACHE_TTL_SECONDS = 600.0
+
 class MCPTool:
     def __init__(self, name: str, description: str = "", input_schema: dict = None):
         self.name = name
@@ -76,7 +81,11 @@ class StreamableHttpClient:
 
     async def list_tools(self, client: httpx.AsyncClient, force_refresh: bool = False) -> list[MCPTool]:
         now = time.time()
-        if not force_refresh and self._tools_cache is not None and (now - self._tools_cache_time < 60.0):
+        if (
+            not force_refresh
+            and self._tools_cache is not None
+            and now - self._tools_cache_time < MCP_TOOLS_CACHE_TTL_SECONDS
+        ):
             return self._tools_cache
 
         await self.initialize(client)
@@ -867,54 +876,59 @@ class MCPManager:
                 is_email = False
 
         async with httpx.AsyncClient() as http_client:
-            # SAP Tools
+            # Katalog gateway independen. Ambil secara paralel agar sebuah
+            # gateway yang lambat tidak menahan gateway lainnya secara berantai
+            # sebelum LLM dapat memutuskan apakah perlu memakai tool.
+            async def fetch(server_name: str):
+                try:
+                    return await self.get_client(server_name).list_tools(http_client)
+                except Exception as exc:
+                    level = logger.warning if server_name == "sql" else logger.error
+                    level(f"Error fetching {server_name.upper()} tools: {exc}")
+                    return []
+
+            requested = []
+            requested_names = []
             if is_sap:
-                try:
-                    sap_client = self.get_client("sap")
-                    sap_tools = await sap_client.list_tools(http_client)
-                    for t in sap_tools:
-                        tools.append({"server": "sap", "tool": t})
-                except Exception as e:
-                    logger.error(f"Error fetching SAP tools: {e}")
-
-            # RAG & Email Tools
+                requested_names.append("sap")
+                requested.append(fetch("sap"))
             if is_rag or is_email:
-                try:
-                    rag_client = self.get_client("rag")
-                    rag_tools = await rag_client.list_tools(http_client)
-                    for t in rag_tools:
-                        if t.name.startswith("sql_"):
-                            continue
-                        tool_is_email = is_email_tool(t.name)
-                        if tool_is_email:
-                            if not is_email:
-                                continue  # Email connector dilarang untuk peran ini
-                            tools.append({"server": "email", "tool": t})
-                        else:
-                            if not is_rag:
-                                continue  # RAG connector dilarang untuk peran ini
-                            # Pangkas tool pseudo-SAP di server RAG (seluruh fungsi SAP ditangani dedicated server SAP)
-                            if t.name.startswith("sap_"):
-                                continue
-                            # Pangkas tool internal administratif dan duplikat
-                            if t.name in RAG_INTERNAL_EXCLUDED_TOOLS:
-                                continue
-                            tools.append({"server": "rag", "tool": t})
-                except Exception as e:
-                    logger.error(f"Error fetching RAG/Email tools: {e}")
-
-            # SQL Tools
+                requested_names.append("rag")
+                requested.append(fetch("rag"))
             if is_sql:
-                try:
-                    sql_client = self.get_client("sql")
-                    sql_tools = await sql_client.list_tools(http_client)
-                    for t in sql_tools:
-                        if t.name.startswith("sql_"):
-                            if t.name == "sql_reload_config":
-                                continue
-                            tools.append({"server": "sql", "tool": t})
-                except Exception as e:
-                    logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
+                requested_names.append("sql")
+                requested.append(fetch("sql"))
+
+            fetched = await asyncio.gather(*requested) if requested else []
+            catalog = dict(zip(requested_names, fetched))
+
+            for t in catalog.get("sap", []):
+                tools.append({"server": "sap", "tool": t})
+
+            for t in catalog.get("rag", []):
+                if t.name.startswith("sql_"):
+                    continue
+                tool_is_email = is_email_tool(t.name)
+                if tool_is_email:
+                    if not is_email:
+                        continue  # Email connector dilarang untuk peran ini
+                    tools.append({"server": "email", "tool": t})
+                else:
+                    if not is_rag:
+                        continue  # RAG connector dilarang untuk peran ini
+                    # Pangkas tool pseudo-SAP di server RAG (seluruh fungsi SAP ditangani dedicated server SAP)
+                    if t.name.startswith("sap_"):
+                        continue
+                    # Pangkas tool internal administratif dan duplikat
+                    if t.name in RAG_INTERNAL_EXCLUDED_TOOLS:
+                        continue
+                    tools.append({"server": "rag", "tool": t})
+
+            for t in catalog.get("sql", []):
+                if t.name.startswith("sql_"):
+                    if t.name == "sql_reload_config":
+                        continue
+                    tools.append({"server": "sql", "tool": t})
 
             # Custom Dynamic MCP Servers Tools
             try:

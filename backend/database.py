@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import time
@@ -56,25 +57,35 @@ def get_engine():
             "Dukungan SQLite telah dihapus."
         )
 
-    try:
-        engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5)
-        with engine.connect():
-            pass
-    except Exception as e:
-        logger.error(f"Koneksi PostgreSQL gagal: {e}")
-        # Pesan ini sering menjadi satu-satunya petunjuk saat pengembang baru
-        # menjalankan proyek, jadi sebutkan langkah perbaikannya secara konkret.
-        target = db_url.split("@")[-1] if "@" in db_url else db_url
-        raise RuntimeError(
-            f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
-            "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
-            "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
-            "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
-        ) from e
+    candidates = [db_url]
+    if "@127.0.0.1" in db_url or "@localhost" in db_url:
+        candidates.append(db_url.replace("@127.0.0.1", "@host.docker.internal").replace("@localhost", "@host.docker.internal"))
+        candidates.append(db_url.replace("@127.0.0.1", "@enterprise-ai-postgres").replace("@localhost", "@enterprise-ai-postgres"))
 
-    _engine = engine
-    logger.info("Database PostgreSQL berhasil terhubung.")
-    return _engine
+    last_error = None
+    for candidate_url in candidates:
+        try:
+            engine = create_engine(candidate_url, pool_pre_ping=True, pool_timeout=3)
+            with engine.connect():
+                pass
+            _engine = engine
+            if candidate_url != db_url:
+                logger.info(f"Database PostgreSQL berhasil terhubung via fallback: {candidate_url.split('@')[-1]}")
+            else:
+                logger.info("Database PostgreSQL berhasil terhubung.")
+            return _engine
+        except Exception as e:
+            last_error = e
+            continue
+
+    logger.error(f"Koneksi PostgreSQL gagal: {last_error}")
+    target = db_url.split("@")[-1] if "@" in db_url else db_url
+    raise RuntimeError(
+        f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
+        "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
+        "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
+        "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
+    ) from last_error
 
 
 def init_db():
@@ -307,6 +318,65 @@ def init_db():
                 );
             """))
 
+            # 5f. Sesi aktif pengguna (Single-session concurrency & Device monitor)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
+                    id VARCHAR(64) PRIMARY KEY,
+                    username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
+                    device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
+                    device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
+                    terminal_info VARCHAR(150),
+                    os VARCHAR(60),
+                    browser VARCHAR(60),
+                    ip_address VARCHAR(60),
+                    user_agent TEXT,
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_idle BOOLEAN NOT NULL DEFAULT FALSE,
+                    status VARCHAR(40) NOT NULL DEFAULT 'active',
+                    kick_reason TEXT,
+                    current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
+                    current_path VARCHAR(100) DEFAULT '/',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMPTZ NOT NULL,
+                    kicked_at TIMESTAMPTZ
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
+                ON ai_assistant.user_sessions (LOWER(username), is_active);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
+                ON ai_assistant.user_sessions (last_active_at DESC);
+            """))
+
+            # 5g. Catatan Log Audit Autentikasi & Keamanan (Login, Logout, Kick, Blocked)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    event_type VARCHAR(50) NOT NULL,
+                    username VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(60),
+                    device_name VARCHAR(120),
+                    device_type VARCHAR(30),
+                    browser VARCHAR(60),
+                    os VARCHAR(60),
+                    user_agent TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+                    details TEXT
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
+                ON ai_assistant.auth_audit_logs (timestamp DESC);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_auth_logs_username
+                ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
+            """))
+
             # 6. Seed User TRSTDEV (superadmin) jika belum ada
             res_dev = conn.execute(text("SELECT username FROM ai_assistant_dev.users WHERE UPPER(username) = 'TRSTDEV'")).fetchone()
             if not res_dev:
@@ -425,6 +495,15 @@ def init_db():
             # bukan sebagai DDL idempoten di atas — lihat backend/migrations.py.
             run_migrations(conn)
 
+            # Sinkronisasi sequence primary key serial agar selalu >= MAX(id)
+            # Mencegah error duplicate key jika ada riwayat data manual/dump restore.
+            conn.execute(text("""
+                SELECT setval(
+                    'ai_assistant.chat_messages_id_seq',
+                    GREATEST((SELECT COALESCE(MAX(id), 1) FROM ai_assistant.chat_messages), 1)
+                );
+            """))
+
             conn.commit()
             logger.info("Database PostgreSQL schema 'ai_assistant_dev' berhasil diinisialisasi.")
     except Exception as e:
@@ -495,7 +574,13 @@ def authenticate_user(username: str, password: str):
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
-                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+                # Pastikan role primer dari tabel users (atau superadmin jika ada) menjadi peran utama dan urutan pertama
+                if row.role and any(r.lower() == row.role.lower() for r in roles):
+                    roles = [row.role] + [r for r in roles if r.lower() != row.role.lower()]
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else row.role
+                else:
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
@@ -689,7 +774,13 @@ def get_user_by_username(username: str):
                     """), {"u": uname_clean}).scalar()
                     roles = [single] if single else ["user"]
 
-                primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+                # Pastikan role primer dari tabel users (atau superadmin jika ada) menjadi peran utama dan urutan pertama
+                if row.role and any(r.lower() == row.role.lower() for r in roles):
+                    roles = [row.role] + [r for r in roles if r.lower() != row.role.lower()]
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else row.role
+                else:
+                    primary_role = "superadmin" if "superadmin" in [r.lower() for r in roles] else roles[0]
+
                 return {
                     "username": row.username,
                     "full_name": row.full_name or "",
@@ -799,6 +890,7 @@ def get_system_config():
     chat_modes_enabled = True
     ai_suggestions_enabled = True
     mcp_access_control_enabled = False
+    require_login = getattr(settings, "require_login", True)
 
     try:
         engine = get_engine()
@@ -819,6 +911,8 @@ def get_system_config():
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'mcp_access_control_enabled' and r.value is not None:
                     mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'require_login' and r.value is not None:
+                    require_login = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_enabled' and r.value is not None:
                     nine_router_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'nine_router_base_url' and r.value is not None:
@@ -861,6 +955,7 @@ def get_system_config():
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
         "mcp_access_control_enabled": mcp_access_control_enabled,
+        "require_login": require_login,
     }
 
 def update_system_config(
@@ -881,11 +976,19 @@ def update_system_config(
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
     mcp_access_control_enabled: bool = None,
+    require_login: bool = None,
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            if require_login is not None:
+                conn.execute(text("""
+                    INSERT INTO ai_assistant.system_config (key, value)
+                    VALUES ('require_login', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if require_login else "false"})
+
             if token_limit_enabled is not None:
                 conn.execute(text("""
                     INSERT INTO ai_assistant_dev.system_config (key, value)
@@ -1334,19 +1437,21 @@ def rename_chat_session(session_id: str, username: str, new_title: str):
         logger.error(f"Error rename_chat_session: {e}")
         return False
 
-def add_chat_message(session_id: str, role: str, content: str, sources: str = None,
-                     artifacts: str = None, attachments: str = None) -> Optional[int]:
+def add_chat_message(session_id: str, role: str, content: str,
+                     sources: Optional[str] = None, artifacts: Optional[str] = None,
+                     attachments: Optional[str] = None,
+                     usage: Optional[str] = None) -> Optional[int]:
     """Tambah pesan (user / ai) ke dalam sesi percakapan. Mengembalikan ID pesan yang dibuat."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
                 INSERT INTO ai_assistant_dev.chat_messages
-                    (session_id, role, content, sources, artifacts, attachments)
-                VALUES (:sid, :r, :c, :s, :a, :att)
+                    (session_id, role, content, sources, artifacts, attachments, usage)
+                VALUES (:sid, :r, :c, :s, :a, :att, :usage)
                 RETURNING id
             """), {"sid": session_id, "r": role, "c": content, "s": sources or "",
-                   "a": artifacts or "", "att": attachments or ""})
+                   "a": artifacts or "", "att": attachments or "", "usage": usage or ""})
             row = res.fetchone()
             msg_id = row[0] if row else None
             
@@ -1830,7 +1935,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             if username is not None:
                 params["u"] = username.strip()
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.usage, m.feedback, m.created_at
                     FROM ai_assistant_dev.chat_messages m
                     JOIN ai_assistant_dev.chat_sessions s ON s.session_id = m.session_id
                     WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
@@ -1839,7 +1944,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                 """
             else:
                 sql = f"""
-                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.feedback, m.created_at
+                    SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.usage, m.feedback, m.created_at
                     FROM ai_assistant_dev.chat_messages m
                     WHERE m.session_id = :sid {page_filter}
                     ORDER BY m.id DESC
@@ -1855,6 +1960,7 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
                     "sources": r.sources if r.sources else None,
                     "artifacts": r.artifacts if r.artifacts else None,
                     "attachments": r.attachments if r.attachments else None,
+                    "usage": r.usage if r.usage else None,
                     "feedback": r.feedback if (hasattr(r, 'feedback') and r.feedback) else None,
                     "created_at": _iso(r.created_at),
                 }
@@ -1924,25 +2030,31 @@ def list_all_users():
                     roles_by_user[u_key] = []
                 roles_by_user[u_key].append(rr.role)
 
-            return [
-                {
+            result = []
+            for r in rows:
+                u_roles = list(roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]))
+                if r.role and any(x.lower() == r.role.lower() for x in u_roles):
+                    u_roles = [r.role] + [x for x in u_roles if x.lower() != r.role.lower()]
+                    p_role = "superadmin" if "superadmin" in [x.lower() for x in u_roles] else r.role
+                else:
+                    p_role = "superadmin" if "superadmin" in [x.lower() for x in u_roles] else u_roles[0]
+                result.append({
                     "username": r.username,
                     "full_name": r.full_name or "",
-                    "role": r.role,
-                    "roles": roles_by_user.get(r.username.lower()) or ([r.role] if r.role else ["user"]),
+                    "role": p_role,
+                    "roles": u_roles,
                     "assistant_persona": r.assistant_persona or "",
                     "force_change_password": bool(r.force_change_password) if getattr(r, "force_change_password", None) is not None else False,
                     "division_code": r.division_code or None,
                     "division_name": getattr(r, "division_name", None) or None,
                     "job_level": getattr(r, "job_level", None) or "staff",
-                }
-                for r in rows
-            ]
+                })
+            return result
     except Exception as e:
         logger.error(f"Error list_all_users: {e}")
         return []
 
-def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = False, division_code: str = None, job_level: str = "staff"):
+def create_new_user(username: str, password: str, role: str = "user", persona: str = "", full_name: str = "", roles: list = None, force_change_password: bool = True, division_code: str = None, job_level: str = "staff"):
     """Buat user baru di database dengan dukungan banyak peran, divisi, dan level jabatan."""
     try:
         engine = get_engine()
@@ -3218,6 +3330,10 @@ def update_chat_mode(
     enabled: bool = None,
     is_default: bool = None,
     sort_order: int = None,
+    analysis_depth: str = None,
+    require_evidence: bool = None,
+    max_review_cycles: int = None,
+    rag_call_budget: int = None,
 ) -> dict | None:
     """Memperbarui mode chat yang sudah ada."""
     try:
@@ -3264,6 +3380,18 @@ def update_chat_mode(
             if sort_order is not None:
                 fields.append("sort_order = :sort_order")
                 params["sort_order"] = sort_order
+            if analysis_depth is not None:
+                fields.append("analysis_depth = :analysis_depth")
+                params["analysis_depth"] = analysis_depth
+            if require_evidence is not None:
+                fields.append("require_evidence = :require_evidence")
+                params["require_evidence"] = require_evidence
+            if max_review_cycles is not None:
+                fields.append("max_review_cycles = :max_review_cycles")
+                params["max_review_cycles"] = max_review_cycles
+            if rag_call_budget is not None:
+                fields.append("rag_call_budget = :rag_call_budget")
+                params["rag_call_budget"] = rag_call_budget
 
             if not fields:
                 return get_chat_mode_by_id(mode_id)
@@ -3367,8 +3495,20 @@ def set_role_mode(role: str, mode_code: str, enabled: bool) -> bool:
         return False
 
 
-def get_modes_for_role(role: str) -> list[dict]:
+def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
     """Mengambil seluruh mode chat yang ada, beserta status `available` untuk role yang bersangkutan."""
+    if isinstance(role, (list, tuple, set)):
+        modes_by_code = {}
+        for r in role:
+            for m in get_modes_for_role(str(r)):
+                if m["code"] not in modes_by_code:
+                    modes_by_code[m["code"]] = dict(m)
+                elif m.get("available"):
+                    modes_by_code[m["code"]]["available"] = True
+        res = list(modes_by_code.values())
+        res.sort(key=lambda x: x.get("sort_order", 0))
+        return res
+
     try:
         cfg = get_system_config()
         master_enabled = cfg.get("chat_modes_enabled", True)
@@ -3379,17 +3519,17 @@ def get_modes_for_role(role: str) -> list[dict]:
             # berbeda dari 'enabled' yang hanya soal boleh-tidaknya ditetapkan ke user baru)
             role_meta = conn.execute(
                 text("SELECT suspended FROM ai_assistant_dev.roles WHERE LOWER(code) = LOWER(:r)"),
-                {"r": role}
+                {"r": str(role)}
             ).fetchone()
             role_is_enabled = not role_meta.suspended if role_meta is not None else True
 
             modes = conn.execute(
-                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order FROM ai_assistant_dev.chat_modes ORDER BY sort_order ASC, id ASC")
+                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order, max_iterations FROM ai_assistant_dev.chat_modes ORDER BY sort_order ASC, id ASC")
             ).fetchall()
 
             role_rows = conn.execute(
                 text("SELECT mode_code, enabled FROM ai_assistant_dev.role_modes WHERE role = :r"),
-                {"r": role}
+                {"r": str(role)}
             ).fetchall()
             role_map = {r.mode_code: bool(r.enabled) for r in role_rows}
 
@@ -3398,7 +3538,7 @@ def get_modes_for_role(role: str) -> list[dict]:
                 mode_dict = dict(m._mapping)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
-                is_role_allowed = (role_map.get(mode_dict["code"], True if role == "superadmin" else False)) if role_is_enabled else False
+                is_role_allowed = (role_map.get(mode_dict["code"], True if str(role).lower() == "superadmin" else False)) if role_is_enabled else False
 
                 # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
                 # dan mode diaktifkan di level sistem, serta role memiliki izin.
@@ -3414,6 +3554,210 @@ def get_modes_for_role(role: str) -> list[dict]:
     except Exception as e:
         logger.error(f"Error get_modes_for_role: {e}")
         return []
+
+
+def get_user_mode_overrides(username: str) -> dict[str, bool]:
+    """Mengambil kamus override izin mode chat untuk pengguna tertentu (mode_code -> enabled)."""
+    clean_u = (username or "").strip()
+    if not clean_u:
+        return {}
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT mode_code, enabled FROM ai_assistant.user_modes WHERE LOWER(username) = LOWER(:u)"),
+                {"u": clean_u}
+            ).fetchall()
+            return {r.mode_code: bool(r.enabled) for r in rows}
+    except Exception as e:
+        logger.error(f"Error get_user_mode_overrides for '{clean_u}': {e}")
+        return {}
+
+
+def get_all_user_mode_overrides() -> list[dict]:
+    """Mengambil seluruh catatan override mode chat pengguna untuk kebutuhan monitoring/admin."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT username, mode_code, enabled, updated_at FROM ai_assistant.user_modes ORDER BY username, mode_code")
+            ).fetchall()
+            return [
+                {
+                    "username": r.username,
+                    "mode_code": r.mode_code,
+                    "enabled": bool(r.enabled),
+                    "updated_at": _iso(r.updated_at),
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        logger.error(f"Error get_all_user_mode_overrides: {e}")
+        return []
+
+
+def set_user_mode_override(username: str, mode_code: str, state: Any) -> bool:
+    """Mengatur override mode chat per user (tri-state: 'inherit' / 'allow' / 'deny')."""
+    clean_u = (username or "").strip()
+    clean_m = (mode_code or "").strip()
+    if not clean_u or not clean_m:
+        return False
+
+    # Normalisasi state
+    s_val = str(state).lower().strip() if state is not None else "inherit"
+    if s_val in ("inherit", "none", "null", ""):
+        # Hapus baris override agar mewarisi peran (role)
+        try:
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(
+                    text("DELETE FROM ai_assistant.user_modes WHERE LOWER(username) = LOWER(:u) AND mode_code = :m"),
+                    {"u": clean_u, "m": clean_m}
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error delete user_mode override: {e}")
+            return False
+
+    is_enabled = s_val in ("allow", "true", "1")
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.user_modes (username, mode_code, enabled, updated_at)
+                VALUES (:u, :m, :en, CURRENT_TIMESTAMP)
+                ON CONFLICT (username, mode_code) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"u": clean_u, "m": clean_m, "en": is_enabled})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error set_user_mode_override: {e}")
+        return False
+
+
+def get_user_modes_matrix(username: str) -> dict:
+    """Mengambil matriks lengkap perizinan mode chat untuk pengguna tertentu,
+    menampilkan status bawaan peran (role_allowed), override (tri-state), dan hasil efektif (effective_allowed).
+    """
+    clean_u = (username or "").strip()
+    if not clean_u:
+        return {"username": "", "modes": []}
+
+    try:
+        user_row = get_user_by_username(clean_u)
+        if not user_row:
+            return {"username": clean_u, "error": "User not found", "modes": []}
+
+        roles_list = user_row.get("roles") or ([user_row.get("role")] if user_row.get("role") else ["user"])
+
+        engine = get_engine()
+        with engine.connect() as conn:
+            all_modes = conn.execute(
+                text("SELECT id, code, name, description, icon, provider, model, is_default, enabled, sort_order, max_iterations FROM ai_assistant.chat_modes ORDER BY sort_order ASC, id ASC")
+            ).fetchall()
+
+            role_modes = get_modes_for_role(roles_list)
+            role_map = {m["code"]: bool(m.get("available", False)) for m in role_modes}
+
+            user_overrides = get_user_mode_overrides(clean_u)
+
+            modes_res = []
+            for m in all_modes:
+                code = m.code
+                is_role_allowed = role_map.get(code, False)
+                has_override = code in user_overrides
+                ovr_val = user_overrides.get(code)
+
+                if has_override:
+                    if ovr_val is True:
+                        state = "allow"
+                        effective_allowed = True
+                        source = "user_override"
+                    else:
+                        state = "deny"
+                        effective_allowed = False
+                        source = "user_override"
+                else:
+                    state = "inherit"
+                    effective_allowed = is_role_allowed
+                    source = "role"
+
+                modes_res.append({
+                    "id": m.id,
+                    "code": code,
+                    "name": m.name,
+                    "description": m.description,
+                    "icon": m.icon,
+                    "provider": m.provider,
+                    "model": m.model,
+                    "is_default": bool(m.is_default),
+                    "system_enabled": bool(m.enabled),
+                    "role_allowed": bool(is_role_allowed),
+                    "override_state": state,  # "inherit" | "allow" | "deny"
+                    "override": ovr_val if has_override else None,
+                    "effective_allowed": bool(effective_allowed) and bool(m.enabled),
+                    "source": source,
+                })
+
+            return {
+                "username": user_row.get("username", clean_u),
+                "full_name": user_row.get("full_name") or "",
+                "roles": roles_list,
+                "modes": modes_res,
+            }
+    except Exception as e:
+        logger.error(f"Error get_user_modes_matrix for '{clean_u}': {e}")
+        return {"username": clean_u, "modes": [], "error": str(e)}
+
+
+def get_modes_for_user(username: Optional[str], roles: Union[str, list, tuple, set]) -> list[dict]:
+    """Mengambil daftar seluruh mode chat beserta status `available` untuk user tertentu.
+    Prioritas ketersediaan:
+    1. Sistem & Master switch (chat_modes_enabled).
+    2. User Override jika ada (allow/deny).
+    3. Template Peran (UNION seluruh peran aktif pengguna).
+    """
+    base_modes = get_modes_for_role(roles)
+    clean_u = (username or "").strip()
+    if not clean_u or clean_u.lower() == "guest":
+        return base_modes
+
+    try:
+        user_overrides = get_user_mode_overrides(clean_u)
+        if not user_overrides:
+            return base_modes
+
+        cfg = get_system_config()
+        master_enabled = cfg.get("chat_modes_enabled", True)
+
+        result = []
+        for m in base_modes:
+            mode_dict = dict(m)
+            code = mode_dict.get("code")
+            if code in user_overrides:
+                ovr_enabled = user_overrides[code]
+                is_mode_enabled = mode_dict.get("enabled", True)
+                is_def = mode_dict.get("is_default", False)
+
+                if not master_enabled:
+                    available = is_def and is_mode_enabled
+                else:
+                    available = is_mode_enabled and ovr_enabled
+
+                mode_dict["available"] = bool(available)
+                mode_dict["source"] = "user_override"
+            else:
+                mode_dict["source"] = "role"
+
+            result.append(mode_dict)
+
+        return result
+    except Exception as e:
+        logger.error(f"Error get_modes_for_user for '{clean_u}': {e}")
+        return base_modes
 
 
 # ---------------------------------------------------------------------------
@@ -4230,6 +4574,391 @@ def delete_scheduled_task(task_id: str) -> bool:
         """), {"tid": task_id})
         conn.commit()
     return True
+
+
+# --- SESI PENGGUNA, ANTI-MULTIPLE LOGON, & LOG AUDIT AUTENTIKASI ---
+
+def record_auth_audit_log(
+    event_type: str,
+    username: str,
+    ip_address: Optional[str] = None,
+    device_name: Optional[str] = None,
+    device_type: Optional[str] = None,
+    browser: Optional[str] = None,
+    os: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    status: str = "SUCCESS",
+    details: Optional[str] = None,
+) -> bool:
+    """Mencatat aktivitas autentikasi dan keamanan ke tabel auth_audit_logs."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ai_assistant.auth_audit_logs (
+                    event_type, username, ip_address, device_name, device_type,
+                    browser, os, user_agent, status, details
+                ) VALUES (
+                    :event_type, :username, :ip_address, :device_name, :device_type,
+                    :browser, :os, :user_agent, :status, :details
+                )
+            """), {
+                "event_type": event_type[:50],
+                "username": username[:100],
+                "ip_address": (ip_address or "")[:60] or None,
+                "device_name": (device_name or "")[:120] or None,
+                "device_type": (device_type or "desktop")[:30],
+                "browser": (browser or "")[:60] or None,
+                "os": (os or "")[:60] or None,
+                "user_agent": user_agent[:1000] if user_agent else None,
+                "status": status[:20],
+                "details": details,
+            })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Gagal mencatat auth_audit_log: {e}")
+        return False
+
+
+def create_user_session(
+    session_id: str,
+    username: str,
+    device_name: str = "Unknown Device",
+    device_type: str = "desktop",
+    terminal_info: Optional[str] = None,
+    os: Optional[str] = None,
+    browser: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
+) -> Optional[dict]:
+    """Mendaftarkan sesi aktif pengguna baru ke database."""
+    if not expires_at:
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+    engine = get_engine()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO ai_assistant.user_sessions (
+                id, username, device_name, device_type, terminal_info,
+                os, browser, ip_address, user_agent, is_active, is_idle,
+                status, current_action, current_path, expires_at
+            ) VALUES (
+                :id, :username, :device_name, :device_type, :terminal_info,
+                :os, :browser, :ip_address, :user_agent, TRUE, FALSE,
+                'active', 'Membuka Chat Utama', '/', :expires_at
+            )
+        """), {
+            "id": session_id,
+            "username": username,
+            "device_name": device_name[:120],
+            "device_type": device_type[:30],
+            "terminal_info": (terminal_info or f"{browser or ''} / {os or ''}".strip(" /"))[:150],
+            "os": (os or "")[:60] or None,
+            "browser": (browser or "")[:60] or None,
+            "ip_address": (ip_address or "")[:60] or None,
+            "user_agent": user_agent[:1000] if user_agent else None,
+            "expires_at": expires_at,
+        })
+        conn.commit()
+    return get_user_session(session_id)
+
+
+def invalidate_existing_user_sessions(
+    username: str,
+    except_session_id: Optional[str] = None,
+    reason: str = "Akun Anda telah login di perangkat lain.",
+    status: str = "kicked_by_new_login",
+) -> list:
+    """Nonaktifkan semua sesi aktif milik user untuk menegakkan single-session policy."""
+    engine = get_engine()
+    kicked_list = []
+    with engine.connect() as conn:
+        query = "SELECT id, device_name, ip_address, browser, os, created_at FROM ai_assistant.user_sessions WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE"
+        params = {"u": username.strip()}
+        if except_session_id:
+            query += " AND id != :except_id"
+            params["except_id"] = except_session_id
+        rows = conn.execute(text(query), params).fetchall()
+        for r in rows:
+            kicked_list.append({
+                "id": r.id,
+                "device_name": r.device_name,
+                "ip_address": r.ip_address,
+                "browser": r.browser,
+                "os": r.os,
+            })
+
+        if kicked_list:
+            upd_query = """
+                UPDATE ai_assistant.user_sessions
+                SET is_active = FALSE,
+                    status = :st,
+                    kick_reason = :rs,
+                    kicked_at = CURRENT_TIMESTAMP
+                WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+            """
+            upd_params = {"u": username.strip(), "st": status, "rs": reason}
+            if except_session_id:
+                upd_query += " AND id != :except_id"
+                upd_params["except_id"] = except_session_id
+            conn.execute(text(upd_query), upd_params)
+            conn.commit()
+
+    return kicked_list
+
+
+def get_user_session(session_id: str) -> Optional[dict]:
+    """Mengambil detail satu sesi berdasarkan ID."""
+    if not session_id:
+        return None
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT s.*, u.full_name, u.role, u.division_code
+            FROM ai_assistant.user_sessions s
+            LEFT JOIN ai_assistant.users u ON LOWER(s.username) = LOWER(u.username)
+            WHERE s.id = :id
+        """), {"id": session_id}).fetchone()
+        if not row:
+            return None
+        return dict(row._mapping)
+
+
+def update_session_heartbeat(
+    session_id: str,
+    current_action: Optional[str] = None,
+    current_path: Optional[str] = None,
+    is_idle: bool = False,
+) -> tuple[bool, Optional[str]]:
+    """Perbarui waktu aktif sesi. Kembalikan (is_active, kick_reason)."""
+    if not session_id:
+        return False, "Sesi tidak ditemukan"
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT is_active, status, kick_reason
+            FROM ai_assistant.user_sessions
+            WHERE id = :id
+        """), {"id": session_id}).fetchone()
+        if not row:
+            return False, "Sesi tidak ditemukan"
+        if not row.is_active:
+            return False, row.kick_reason or "Sesi telah dihentikan"
+
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET last_active_at = CURRENT_TIMESTAMP,
+                current_action = COALESCE(:action, current_action),
+                current_path = COALESCE(:path, current_path),
+                is_idle = :idle
+            WHERE id = :id
+        """), {
+            "id": session_id,
+            "action": (current_action or "")[:150] or None,
+            "path": (current_path or "")[:100] or None,
+            "idle": is_idle,
+        })
+        conn.commit()
+    return True, None
+
+
+def kick_user_session(session_id: str, admin_username: str, reason: Optional[str] = None) -> bool:
+    """Admin memutuskan paksa satu sesi pengguna."""
+    engine = get_engine()
+    effective_reason = reason or f"Sesi diputuskan oleh Administrator ({admin_username})"
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT username, device_name, ip_address FROM ai_assistant.user_sessions WHERE id = :id"), {"id": session_id}).fetchone()
+        if not row:
+            return False
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'kicked_by_admin',
+                kick_reason = :r,
+                kicked_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {"id": session_id, "r": effective_reason})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="SESSION_KICKED_BY_ADMIN",
+            username=row.username,
+            ip_address=row.ip_address,
+            device_name=row.device_name,
+            status="WARNING",
+            details=f"Admin {admin_username} memutuskan sesi {session_id}. Alasan: {effective_reason}",
+        )
+    return True
+
+
+def kick_all_user_sessions(username: str, admin_username: str, reason: Optional[str] = None) -> int:
+    """Admin memutuskan semua sesi aktif pengguna tertentu."""
+    engine = get_engine()
+    effective_reason = reason or f"Semua sesi diputuskan oleh Administrator ({admin_username})"
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT id, device_name, ip_address
+            FROM ai_assistant.user_sessions
+            WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+        """), {"u": username.strip()}).fetchall()
+        if not rows:
+            return 0
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'kicked_by_admin',
+                kick_reason = :r,
+                kicked_at = CURRENT_TIMESTAMP
+            WHERE LOWER(username) = LOWER(:u) AND is_active = TRUE
+        """), {"u": username.strip(), "r": effective_reason})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="FORCE_LOGOUT_ALL",
+            username=username,
+            status="WARNING",
+            details=f"Admin {admin_username} memutuskan {len(rows)} sesi aktif milik {username}. Alasan: {effective_reason}",
+        )
+    return len(rows)
+
+
+def terminate_session_logout(session_id: str) -> bool:
+    """Pengguna melakukan logout normal."""
+    if not session_id:
+        return False
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT username, device_name, ip_address FROM ai_assistant.user_sessions WHERE id = :id"), {"id": session_id}).fetchone()
+        if not row:
+            return False
+        conn.execute(text("""
+            UPDATE ai_assistant.user_sessions
+            SET is_active = FALSE,
+                status = 'logged_out',
+                kick_reason = 'Logout oleh pengguna'
+            WHERE id = :id
+        """), {"id": session_id})
+        conn.commit()
+
+        record_auth_audit_log(
+            event_type="LOGOUT",
+            username=row.username,
+            ip_address=row.ip_address,
+            device_name=row.device_name,
+            status="SUCCESS",
+            details="Pengguna keluar secara normal (logout).",
+        )
+    return True
+
+
+def list_active_sessions(status_filter: str = "active", search: Optional[str] = None) -> dict:
+    """Mengambil daftar sesi aktif beserta metrik ringkasan telemetri."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        now = datetime.now(timezone.utc)
+        where_clauses = []
+        params = {}
+
+        if status_filter == "active":
+            where_clauses.append("s.is_active = TRUE")
+        elif status_filter == "kicked":
+            where_clauses.append("s.status LIKE 'kicked%'")
+        elif status_filter == "all":
+            pass
+
+        if search:
+            where_clauses.append("(LOWER(s.username) LIKE :s OR LOWER(s.device_name) LIKE :s OR LOWER(s.ip_address) LIKE :s OR LOWER(COALESCE(u.full_name, '')) LIKE :s)")
+            params["s"] = f"%{search.strip().lower()}%"
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        rows = conn.execute(text(f"""
+            SELECT s.*, u.full_name, u.role, u.division_code, d.name AS division_name
+            FROM ai_assistant.user_sessions s
+            LEFT JOIN ai_assistant.users u ON LOWER(s.username) = LOWER(u.username)
+            LEFT JOIN ai_assistant.divisions d ON LOWER(u.division_code) = LOWER(d.code)
+            {where_sql}
+            ORDER BY s.is_active DESC, s.last_active_at DESC
+            LIMIT 150
+        """), params).fetchall()
+
+        sessions = []
+        for r in rows:
+            m = dict(r._mapping)
+            is_online = False
+            if m.get("is_active") and m.get("last_active_at"):
+                dt = m["last_active_at"]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                is_online = (now - dt).total_seconds() < 90
+
+            m["is_online"] = is_online
+            for dt_field in ("created_at", "last_active_at", "expires_at", "kicked_at"):
+                if m.get(dt_field):
+                    m[dt_field] = m[dt_field].isoformat()
+            sessions.append(m)
+
+        stats_row = conn.execute(text("""
+            SELECT 
+                COUNT(*) FILTER (WHERE is_active = TRUE) AS total_active,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND last_active_at >= NOW() - INTERVAL '90 seconds') AS online_now,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND device_type = 'desktop') AS desktop_count,
+                COUNT(*) FILTER (WHERE is_active = TRUE AND device_type = 'mobile') AS mobile_count,
+                COUNT(*) FILTER (WHERE status LIKE 'kicked%' AND (kicked_at >= CURRENT_DATE OR last_active_at >= CURRENT_DATE)) AS kicked_today
+            FROM ai_assistant.user_sessions
+        """)).fetchone()
+
+        summary = {
+            "total_active": stats_row.total_active or 0,
+            "online_now": stats_row.online_now or 0,
+            "desktop_count": stats_row.desktop_count or 0,
+            "mobile_count": stats_row.mobile_count or 0,
+            "kicked_today": stats_row.kicked_today or 0,
+        }
+
+        return {"sessions": sessions, "summary": summary}
+
+
+def list_auth_audit_logs(
+    username: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    """Mengambil log audit autentikasi dan keamanan sistem."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        where_clauses = []
+        params = {"lim": max(1, min(limit, 300)), "off": max(0, offset)}
+
+        if username:
+            where_clauses.append("LOWER(username) = LOWER(:u)")
+            params["u"] = username.strip()
+        if event_type:
+            where_clauses.append("event_type = :evt")
+            params["evt"] = event_type.strip()
+
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+        total = conn.execute(text(f"SELECT COUNT(*) FROM ai_assistant.auth_audit_logs {where_sql}"), params).scalar() or 0
+
+        rows = conn.execute(text(f"""
+            SELECT *
+            FROM ai_assistant.auth_audit_logs
+            {where_sql}
+            ORDER BY timestamp DESC
+            LIMIT :lim OFFSET :off
+        """), params).fetchall()
+
+        logs = []
+        for r in rows:
+            m = dict(r._mapping)
+            if m.get("timestamp"):
+                m["timestamp"] = m["timestamp"].isoformat()
+            logs.append(m)
+
+        return {"logs": logs, "total": total}
 
 
 

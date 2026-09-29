@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import uuid
 from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any, Dict, List, Optional, Union
@@ -32,6 +33,16 @@ from database import (
     consume_guest_quota,
     create_chat_session,
     create_new_user,
+    create_user_session,
+    invalidate_existing_user_sessions,
+    get_user_session,
+    update_session_heartbeat,
+    kick_user_session,
+    kick_all_user_sessions,
+    terminate_session_logout,
+    list_active_sessions,
+    record_auth_audit_log,
+    list_auth_audit_logs,
     clone_role,
     create_role,
     get_role_impact,
@@ -92,6 +103,10 @@ from database import (
     get_role_modes,
     set_role_mode,
     get_modes_for_role,
+    get_modes_for_user,
+    get_user_modes_matrix,
+    set_user_mode_override,
+    get_all_user_mode_overrides,
     list_mcp_servers,
     get_mcp_server,
     create_mcp_server,
@@ -225,24 +240,107 @@ async def healthz():
     return {"status": "ok", "database": info["engine"]}
 
 
-# --- AUTENTIKASI ---
+# --- AUTENTIKASI & MANAJEMEN SESI ---
+
+def _detect_client_device(
+    ua_str: str,
+    req_name: Optional[str] = None,
+    req_type: Optional[str] = None,
+    req_os: Optional[str] = None,
+    req_browser: Optional[str] = None,
+):
+    ua = ua_str or ""
+    ua_lower = ua.lower()
+
+    os_name = req_os
+    if not os_name:
+        if "iphone" in ua_lower or "ipad" in ua_lower or "ipod" in ua_lower:
+            os_name = "iOS"
+        elif "android" in ua_lower:
+            os_name = "Android"
+        elif "windows" in ua_lower:
+            os_name = "Windows"
+        elif "macintosh" in ua_lower or "mac os" in ua_lower:
+            os_name = "macOS"
+        elif "linux" in ua_lower:
+            os_name = "Linux"
+        else:
+            os_name = "OS Web"
+
+    device_type = req_type
+    if not device_type:
+        if "ipad" in ua_lower or "tablet" in ua_lower:
+            device_type = "tablet"
+        elif "mobi" in ua_lower or "iphone" in ua_lower or "android" in ua_lower:
+            device_type = "mobile"
+        else:
+            device_type = "desktop"
+
+    browser_name = req_browser
+    if not browser_name:
+        if "edg" in ua_lower:
+            browser_name = "Edge"
+        elif "chrome" in ua_lower and "chromium" not in ua_lower:
+            browser_name = "Chrome"
+        elif "safari" in ua_lower and "chrome" not in ua_lower:
+            browser_name = "Safari"
+        elif "firefox" in ua_lower:
+            browser_name = "Firefox"
+        elif "opera" in ua_lower or "opr" in ua_lower:
+            browser_name = "Opera"
+        else:
+            browser_name = "Web Browser"
+
+    device_name = req_name
+    if not device_name:
+        if device_type == "mobile":
+            device_name = f"HP ({browser_name} - {os_name})"
+        elif device_type == "tablet":
+            device_name = f"Tablet ({browser_name} - {os_name})"
+        else:
+            device_name = f"PC ({browser_name} - {os_name})"
+
+    terminal_info = f"{browser_name} / {os_name}"
+    return device_name, device_type, os_name, browser_name, terminal_info
+
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+    device_name: Optional[str] = None
+    device_type: Optional[str] = None
+    os: Optional[str] = None
+    browser: Optional[str] = None
 
 
 @app.post("/api/login")
 async def login(req: LoginRequest, request: Request):
-    """Endpoint autentikasi user. Mengembalikan access token JWT.
+    """Endpoint autentikasi user. Mengembalikan access token JWT dengan single-session control.
 
     Percobaan gagal dibatasi per (IP, username) agar tebak-password tidak dapat
     dijalankan tanpa batas; bcrypt memperlambat, tetapi tidak menghentikannya.
     """
     attempt_key = f"{_client_ip(request)}|{(req.username or '').strip().lower()}"[:120]
+    client_ip = _client_ip(request)
+    ua_str = request.headers.get("user-agent", "")
+    dev_name, dev_type, dev_os, dev_browser, term_info = _detect_client_device(
+        ua_str, req.device_name, req.device_type, req.os, req.browser
+    )
 
     blocked_for = check_login_block(attempt_key)
     if blocked_for > 0:
+        record_auth_audit_log(
+            event_type="LOGIN_BLOCKED",
+            username=req.username,
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            user_agent=ua_str,
+            status="BLOCKED",
+            details=f"Login diblokir sementara karena terlalu banyak percobaan gagal ({blocked_for // 60 + 1} menit).",
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Terlalu banyak percobaan login yang gagal. Coba lagi dalam {blocked_for // 60 + 1} menit.",
@@ -253,15 +351,76 @@ async def login(req: LoginRequest, request: Request):
         register_login_failure(
             attempt_key, settings.login_max_failures, settings.login_lock_seconds
         )
+        record_auth_audit_log(
+            event_type="LOGIN_FAILED",
+            username=req.username,
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            user_agent=ua_str,
+            status="FAILED",
+            details="Percobaan login gagal: password salah atau username tidak terdaftar.",
+        )
         raise HTTPException(status_code=401, detail="Username atau password salah")
 
     clear_login_failures(attempt_key)
+
+    # --- SINGLE-SESSION ENFORCEMENT ---
+    # Putuskan sesi lama yang masih aktif milik pengguna ini
+    session_id = str(uuid.uuid4())
+    kicked = invalidate_existing_user_sessions(
+        username=user["username"],
+        reason=f"Akun Anda telah login di perangkat lain ({dev_name} - {client_ip}). Sesi di perangkat ini dinonaktifkan.",
+    )
+    for old_s in kicked:
+        record_auth_audit_log(
+            event_type="SESSION_KICKED_NEW_LOGIN",
+            username=user["username"],
+            ip_address=client_ip,
+            device_name=dev_name,
+            device_type=dev_type,
+            browser=dev_browser,
+            os=dev_os,
+            status="WARNING",
+            details=f"Sesi lama ({old_s.get('device_name')} - {old_s.get('ip_address')}) diputuskan otomatis karena login baru dari {dev_name} ({client_ip}).",
+        )
+
+    # Daftarkan sesi aktif baru
+    create_user_session(
+        session_id=session_id,
+        username=user["username"],
+        device_name=dev_name,
+        device_type=dev_type,
+        terminal_info=term_info,
+        os=dev_os,
+        browser=dev_browser,
+        ip_address=client_ip,
+        user_agent=ua_str,
+    )
+
+    record_auth_audit_log(
+        event_type="LOGIN_SUCCESS",
+        username=user["username"],
+        ip_address=client_ip,
+        device_name=dev_name,
+        device_type=dev_type,
+        browser=dev_browser,
+        os=dev_os,
+        user_agent=ua_str,
+        status="SUCCESS",
+        details="Login berhasil.",
+    )
+
     user_roles = user.get("roles") or [user["role"]]
-    token = create_access_token(user["username"], user["role"], roles=user_roles)
+    token = create_access_token(user["username"], user["role"], roles=user_roles, session_id=session_id)
     return {
         "status": "success",
         "access_token": token,
         "token_type": "bearer",
+        "session_id": session_id,
+        "device_name": dev_name,
         "expires_in": settings.jwt_expire_minutes * 60,
         "username": user["username"],
         "full_name": user.get("full_name", ""),
@@ -273,6 +432,101 @@ async def login(req: LoginRequest, request: Request):
         "division_name": user.get("division_name"),
         "job_level": user.get("job_level", "staff"),
     }
+
+
+class HeartbeatRequest(BaseModel):
+    current_action: Optional[str] = None
+    current_path: Optional[str] = None
+    is_idle: bool = False
+
+
+@app.post("/api/auth/heartbeat")
+async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
+    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & mengecek status keaktifan sesi."""
+    session_id = user.get("session_id")
+    if not session_id:
+        return {"status": "ok", "is_active": True}
+    is_active, reason = update_session_heartbeat(
+        session_id=session_id,
+        current_action=req.current_action,
+        current_path=req.current_path,
+        is_idle=req.is_idle,
+    )
+    if not is_active:
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
+        )
+    return {"status": "ok", "is_active": True}
+
+
+@app.post("/api/logout")
+async def logout_endpoint(user: dict = Depends(get_current_user)):
+    """Logout formal dari pengguna, mematikan sesi aktif di database."""
+    session_id = user.get("session_id")
+    if session_id:
+        terminate_session_logout(session_id)
+    return {"status": "success", "message": "Berhasil logout."}
+
+
+# --- ADMIN SESSION MONITOR & SECURITY LOGS ---
+
+@app.get("/api/admin/user-sessions")
+async def get_admin_user_sessions_endpoint(
+    status: str = "active",
+    q: Optional[str] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Mengambil daftar sesi aktif dan metrik telemetri pengguna."""
+    return list_active_sessions(status_filter=status, search=q)
+
+
+class AdminKickSessionRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+@app.post("/api/admin/user-sessions/{session_id}/kick")
+async def admin_kick_session_endpoint(
+    session_id: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Admin memutuskan sesi pengguna tertentu secara paksa."""
+    reason = req.reason if req else None
+    success = kick_user_session(session_id, admin["username"], reason=reason)
+    if not success:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau sudah tidak aktif.")
+    return {"status": "success", "message": "Sesi berhasil diputuskan."}
+
+
+@app.post("/api/admin/users/{username}/kick-sessions")
+async def admin_kick_user_sessions_endpoint(
+    username: str,
+    req: Optional[AdminKickSessionRequest] = None,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Admin memutuskan semua sesi aktif pengguna tertentu."""
+    reason = req.reason if req else None
+    kicked_count = kick_all_user_sessions(username, admin["username"], reason=reason)
+    return {
+        "status": "success",
+        "kicked_count": kicked_count,
+        "message": f"{kicked_count} sesi aktif berhasil diputuskan.",
+    }
+
+
+@app.get("/api/admin/security-logs")
+async def get_admin_security_logs_endpoint(
+    username: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    admin: dict = Depends(require_superadmin_token),
+):
+    """Mengambil riwayat log audit autentikasi sistem."""
+    return list_auth_audit_logs(
+        username=username, event_type=event_type, limit=limit, offset=offset
+    )
 
 
 @app.get("/api/me")
@@ -695,6 +949,7 @@ class ConfigUpdate(BaseModel):
     full_name: str = None
     global_assistant_persona: str = None
     ai_suggestions_enabled: bool = None
+    require_login: Optional[bool] = None
 
 
 class CreateMcpServerRequest(BaseModel):
@@ -767,6 +1022,7 @@ async def get_config(user: dict = Depends(get_current_user)):
             "openrouter_api_key": _mask_secret(sys_cfg.get("openrouter_api_key", "")),
             "openrouter_api_key_set": bool(sys_cfg.get("openrouter_api_key")),
             "ai_suggestions_enabled": sys_cfg.get("ai_suggestions_enabled", True),
+            "require_login": sys_cfg.get("require_login", True),
         })
 
     return payload
@@ -808,6 +1064,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             openrouter_api_key=open_key,
             global_assistant_persona=config.global_assistant_persona,
             ai_suggestions_enabled=config.ai_suggestions_enabled,
+            require_login=config.require_login,
         )
 
     return {"status": "success"}
@@ -1126,6 +1383,7 @@ class AdminCreateUserRequest(BaseModel):
     assistant_persona: str = ""
     division_code: Optional[str] = None
     job_level: Optional[str] = "staff"
+    force_change_password: bool = True
 
 
 @app.post("/api/admin/users")
@@ -1153,6 +1411,7 @@ async def create_user_endpoint(
         persona=req.assistant_persona,
         full_name=req.full_name,
         roles=clean_roles,
+        force_change_password=req.force_change_password,
         division_code=req.division_code,
         job_level=req.job_level or "staff",
     )
@@ -1720,6 +1979,10 @@ class AdminUpdateModeRequest(BaseModel):
     enabled: Optional[bool] = None
     is_default: Optional[bool] = None
     sort_order: Optional[int] = None
+    analysis_depth: Optional[str] = None
+    require_evidence: Optional[bool] = None
+    max_review_cycles: Optional[int] = None
+    rag_call_budget: Optional[int] = None
 
 
 class AdminReorderModesRequest(BaseModel):
@@ -1737,9 +2000,22 @@ class AdminUpdateRoleModeRequest(BaseModel):
     allowed: Optional[bool] = None
 
 
+class AdminUserModeOverrideItem(BaseModel):
+    mode_code: str
+    state: Optional[str] = None  # "inherit" | "allow" | "deny"
+    enabled: Optional[bool] = None
+
+
+class AdminUpdateUserModeRequest(BaseModel):
+    mode_code: Optional[str] = None
+    state: Optional[str] = None
+    enabled: Optional[bool] = None
+    items: Optional[list[AdminUserModeOverrideItem]] = None
+
+
 @app.get("/api/modes")
 async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_user_optional)):
-    """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role)."""
+    """Mengambil daftar mode chat yang tersedia untuk role user saat ini (mendukung multi-role dan user overrides)."""
     username = user.get("username", "guest") if user else "guest"
     is_guest = not user or bool(user.get("is_guest", True))
     token_roles = (user.get("roles") or [user.get("role", "user")]) if user else ["guest"]
@@ -1747,17 +2023,7 @@ async def get_user_modes_endpoint(user: Optional[dict] = Depends(get_current_use
     # role langsung berlaku tanpa menunggu token kedaluwarsa.
     active_roles = access_control.effective_roles(username, is_guest=is_guest, token_roles=token_roles)
 
-    # Union seluruh mode yang diizinkan untuk setiap peran aktif pengguna
-    modes_by_code = {}
-    for r in active_roles:
-        r_modes = get_modes_for_role(r)
-        for m in r_modes:
-            if m["code"] not in modes_by_code:
-                modes_by_code[m["code"]] = dict(m)
-            elif m.get("available"):
-                modes_by_code[m["code"]]["available"] = True
-
-    modes = list(modes_by_code.values())
+    modes = get_modes_for_user(username, active_roles)
     modes.sort(key=lambda x: x.get("sort_order", 0))
 
     cfg = get_system_config()
@@ -1893,6 +2159,10 @@ async def update_mode_endpoint(mode_id: int, req: AdminUpdateModeRequest, admin:
             enabled=req.enabled,
             is_default=req.is_default,
             sort_order=req.sort_order,
+            analysis_depth=req.analysis_depth.strip() if req.analysis_depth is not None else None,
+            require_evidence=req.require_evidence,
+            max_review_cycles=req.max_review_cycles,
+            rag_call_budget=req.rag_call_budget,
         )
         return updated
     except Exception as e:
@@ -1948,6 +2218,86 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     if not ok:
         raise HTTPException(status_code=500, detail="Gagal menyimpan urutan mode.")
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
+
+
+@app.get("/api/admin/modes/users")
+async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmin)):
+    """Mendapatkan daftar pengguna beserta ringkasan status override mode chat."""
+    users = list_all_users()
+    all_ovrs = get_all_user_mode_overrides()
+    ovrs_by_user = {}
+    for o in all_ovrs:
+        u = o["username"].lower()
+        if u not in ovrs_by_user:
+            ovrs_by_user[u] = []
+        ovrs_by_user[u].append(o)
+
+    result = []
+    for u in users:
+        u_name = u.get("username", "")
+        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
+        result.append({
+            "username": u_name,
+            "full_name": u.get("full_name", ""),
+            "role": u.get("role", "user"),
+            "roles": u.get("roles", [u.get("role", "user")]),
+            "division_name": u.get("division_name"),
+            "override_count": len(u_ovrs),
+            "overrides": u_ovrs,
+        })
+    return result
+
+
+@app.get("/api/admin/modes/users/{username}")
+async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
+    """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
+    res = get_user_modes_matrix(username)
+    if "error" in res and res.get("error") == "User not found":
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+    return res
+
+
+@app.put("/api/admin/modes/users/{username}")
+async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
+    """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
+    user_row = get_user_by_username(username)
+    if not user_row:
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+
+    items_to_process = []
+    if req.items is not None:
+        items_to_process = req.items
+    elif req.mode_code:
+        items_to_process = [AdminUserModeOverrideItem(
+            mode_code=req.mode_code,
+            state=req.state,
+            enabled=req.enabled,
+        )]
+
+    if not items_to_process:
+        raise HTTPException(status_code=400, detail="Tidak ada data mode yang diperbarui.")
+
+    success_count = 0
+    for item in items_to_process:
+        m_code = (item.mode_code or "").strip().lower()
+        if not m_code:
+            continue
+        st = item.state
+        if st is None and item.enabled is not None:
+            st = "allow" if item.enabled else "deny"
+        elif st is None:
+            st = "inherit"
+
+        ok = set_user_mode_override(username, m_code, st)
+        if ok:
+            success_count += 1
+
+    return {
+        "status": "success",
+        "username": username,
+        "updated": success_count,
+        "matrix": get_user_modes_matrix(username),
+    }
 
 
 # --- MCP ACCESS CONTROL ADMIN ENDPOINTS ---
@@ -2314,6 +2664,13 @@ async def chat_stream_endpoint(
     apa yang sedang dikerjakan.
     """
     is_guest = not user or bool(user.get("is_guest", True))
+    sys_cfg = get_system_config()
+    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
+    if is_guest and require_login:
+        raise HTTPException(
+            status_code=401,
+            detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
+        )
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_progress(*args, **event):
@@ -2380,35 +2737,51 @@ async def get_chat_suggestions_endpoint(
     refresh: bool = False,
     user: dict = Depends(get_current_user_optional),
 ):
-    """Kembalikan 3 saran pertanyaan personal berbasis role & riwayat chat user."""
-    import random
-    from agent import generate_chat_suggestions
-    from database import get_user_by_username, get_recent_user_queries
+    """Kembalikan 3 saran pertanyaan personal berbasis divisi, role, dan profil user."""
+    from agent import generate_chat_suggestions, get_static_suggestions
+    from database import get_user_by_username, get_recent_user_queries, get_division
 
     is_guest = user.get("is_guest", True)
     role = "guest"
     persona = ""
     recent_queries = []
+    username = ""
+    full_name = ""
+    division_code = ""
+    division_name = ""
+    division_persona = ""
+    job_level = "staff"
 
     if not is_guest and user.get("username"):
-        profile = get_user_by_username(user["username"])
+        username = user["username"]
+        profile = get_user_by_username(username)
         if profile:
             role = profile.get("role", "user")
             persona = profile.get("assistant_persona", "")
-        recent_queries = get_recent_user_queries(user["username"], limit=6)
+            full_name = profile.get("full_name", "")
+            division_code = profile.get("division_code") or ""
+            division_name = profile.get("division_name") or ""
+            job_level = profile.get("job_level") or "staff"
+            if division_code:
+                try:
+                    div_info = get_division(division_code)
+                    if div_info:
+                        division_persona = div_info.get("persona") or ""
+                        if not division_name:
+                            division_name = div_info.get("name") or ""
+                except Exception as e:
+                    logger.warning(f"Gagal mengambil persona divisi '{division_code}': {e}")
+        recent_queries = get_recent_user_queries(username, limit=6)
 
     sys_cfg = get_system_config()
     if not sys_cfg.get("ai_suggestions_enabled", True):
-        from agent import DEFAULT_SUGGESTIONS
-        lang_key = "en" if str(lang).lower().startswith("en") else "id"
-        role_key = (role or "").lower()
-        pool = (
-            DEFAULT_SUGGESTIONS.get(lang_key, {}).get(role_key)
-            or DEFAULT_SUGGESTIONS.get(lang_key, {}).get("default")
-            or DEFAULT_SUGGESTIONS["id"]["default"]
+        fallback = get_static_suggestions(
+            division_code=division_code,
+            role=role,
+            lang=lang,
+            job_level=job_level,
         )
-        fallback = random.sample(pool, min(len(pool), 3)) if len(pool) >= 3 else pool
-        return {"suggestions": fallback, "dynamic": False}
+        return {"suggestions": list(fallback), "dynamic": False}
 
     suggestions = await generate_chat_suggestions(
         role=role,
@@ -2416,8 +2789,15 @@ async def get_chat_suggestions_endpoint(
         recent_queries=recent_queries,
         lang=lang,
         refresh=refresh,
+        username=username,
+        full_name=full_name,
+        division_code=division_code,
+        division_name=division_name,
+        division_persona=division_persona,
+        job_level=job_level,
     )
-    return {"suggestions": suggestions, "dynamic": True}
+    is_dynamic = getattr(suggestions, "is_dynamic", True)
+    return {"suggestions": list(suggestions), "dynamic": is_dynamic}
 
 
 async def _run_chat(
@@ -2427,10 +2807,16 @@ async def _run_chat(
     on_progress=None,
     on_token=None,
 ) -> ChatResponse:
-    """Alur chat yang dipakai bersama endpoint biasa dan endpoint streaming."""
-    is_guest = user.get("is_guest", True)
+    is_guest = not user or bool(user.get("is_guest", True))
+    sys_cfg = get_system_config()
+    require_login = sys_cfg.get("require_login", getattr(settings, "require_login", True))
 
     if is_guest:
+        if require_login:
+            raise HTTPException(
+                status_code=401,
+                detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
+            )
         # Kuota harian ditegakkan di server; penghitung di browser tidak dipercaya.
         quota = consume_guest_quota(
             _guest_client_key(request), date.today().isoformat(), settings.guest_daily_limit
@@ -2547,14 +2933,6 @@ async def _run_chat(
         **call_kwargs,
     )
 
-    if not is_guest and active_session_id:
-        sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
-        # Metadata berkas ikut disimpan; tanpa ini tombol unduh hilang setelah
-        # halaman dimuat ulang meski berkasnya masih tersimpan di database.
-        artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
-        msg_id = add_chat_message(active_session_id, "ai", response.reply, sources_str, artifacts_str)
-        response.message_id = msg_id
-
     # Pencatatan pemakaian.
     #
     # Bila provider melaporkan jumlah token, angka itu yang dipakai. Bila tidak,
@@ -2566,7 +2944,7 @@ async def _run_chat(
         if pakai and pakai.total_tokens:
             record_token_usage(
                 user["username"], pakai.prompt_tokens or 0, pakai.completion_tokens or 0,
-                estimated=False,
+                estimated=pakai.estimated,
             )
         else:
             from conversation import estimate_tokens
@@ -2583,6 +2961,22 @@ async def _run_chat(
             response.usage.estimated = True
 
         response.quota = status_kuota(user["username"], user_roles)
+
+    if not is_guest and active_session_id:
+        sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
+        # Metadata berkas dan usage ikut disimpan agar tombol unduh serta rincian
+        # token tetap tersedia setelah halaman dimuat ulang.
+        artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
+        usage_str = json.dumps(response.usage.model_dump()) if response.usage else ""
+        msg_id = add_chat_message(
+            active_session_id,
+            "ai",
+            response.reply,
+            sources_str,
+            artifacts_str,
+            usage=usage_str,
+        )
+        response.message_id = msg_id
 
     response.session_id = active_session_id
     response.user_message_id = user_message_id

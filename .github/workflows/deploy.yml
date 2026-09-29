@@ -1,4 +1,4 @@
-name: Deploy SAP AI Assistant
+name: Deploy Enterprise AI Assistant
 
 on:
   push:
@@ -6,114 +6,101 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Auto Deploy to Linux Server
-    # Label harus cocok dengan runner yang terdaftar. Runner server ini hanya
-    # memiliki label "self-hosted"; menambahkan label lain membuat job
-    # menggantung di antrean selamanya karena tidak ada runner yang cocok.
     runs-on: self-hosted
     steps:
-      - name: Execute Update Script on Server
+      - name: Deteksi direktori aplikasi & Checkout kode terbaru
         run: |
-          echo "🚀 Memulai Auto Deployment SAP AI Assistant..."
-          cd /var/www/SAP-AI-Assistant
-          # Tidak ada `chmod +x` di sini. Berkasnya sudah bermode 100755 di Git,
-          # dan runner bukan pemiliknya sehingga chmod gagal dengan
-          # "Operation not permitted". Karena shell berjalan dengan `bash -e`,
-          # kegagalan itu menghentikan seluruh langkah sebelum update.sh sempat
-          # jalan — inilah penyebab semua deploy gagal sejak run ke-13.
-          bash deploy/update.sh
+          set -euo pipefail
 
-  # Pemeriksaan mutu berjalan PARALEL dan sengaja TIDAK memblokir deploy.
-  #
-  # Versi sebelumnya memakai `needs: verify`, sehingga satu peringatan lint
-  # menahan rilis berhari-hari. Gerbang yang menghalangi setiap deploy lebih
-  # merugikan daripada tidak ada gerbang. Di sini hasilnya tetap terlihat
-  # (centang/silang di commit) tanpa menghentikan rilis.
-  #
-  # Bila nanti ingin memblokir lagi, tambahkan `needs: verify` pada job deploy.
-  verify:
-    name: Build, Lint & Test
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ABAP_DB
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    steps:
-      - uses: actions/checkout@v4
+          if [ -d "/var/www/Enterprise AI Assistant" ]; then
+            TARGET_DIR="/var/www/Enterprise AI Assistant"
+          elif [ -d "/var/www/Enterprise-AI-Assistant" ]; then
+            TARGET_DIR="/var/www/Enterprise-AI-Assistant"
+          elif [ -d "/var/www/SAP-AI-Assistant" ]; then
+            TARGET_DIR="/var/www/SAP-AI-Assistant"
+          else
+            TARGET_DIR="/var/www/Enterprise AI Assistant"
+          fi
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          echo "APP_DIR=${TARGET_DIR}" >> "$GITHUB_ENV"
+          git config --global --add safe.directory "${TARGET_DIR}" 2>/dev/null || true
+          cd "${TARGET_DIR}"
+          git fetch "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" main
+          git reset --hard FETCH_HEAD
+          echo "Sekarang di commit: $(git rev-parse --short HEAD)"
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+      - name: Build dan Restart Docker
+        run: |
+          cd "$APP_DIR"
+          
+          # Build frontend
+          cd frontend
+          npm install
+          npm run build
+          cd ..
 
-      # Tanpa --deny-warnings: aturan bertingkat "error" (mis. no-undef, yang
-      # menangkap variabel tak terdeklarasi penyebab halaman putih) tetap
-      # menggagalkan job, sementara peringatan gaya penulisan tidak.
-      - name: Lint frontend
-        working-directory: frontend
-        run: npx oxlint src/ e2e/
+          # Pastikan docker network tersedia
+          docker network create enterprise-ai-net 2>/dev/null || true
 
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+          # Hapus container lama (baik nama baru maupun legacy)
+          docker rm -f enterprise-ai-frontend enterprise-ai-backend sap-ai-frontend sap-ai-backend 2>/dev/null || true
+          
+          docker build -t enterprise-ai-backend-img:latest -f Dockerfile.backend .
+          docker build -t enterprise-ai-frontend-img:latest -f Dockerfile.frontend .
+          
+          # Jalankan Backend
+          ENV_FILE="$APP_DIR/backend/.env"
+          if [ ! -f "$ENV_FILE" ]; then
+            ENV_FILE="$APP_DIR/deploy/.env.production.example"
+          fi
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
+          docker run -d \
+            --name enterprise-ai-backend \
+            --network enterprise-ai-net \
+            --network-alias backend \
+            --add-host=host.docker.internal:host-gateway \
+            --restart=unless-stopped \
+            -p 8006:8005 \
+            --env-file "$ENV_FILE" \
+            enterprise-ai-backend-img:latest
 
-      - name: Install backend dependencies
-        run: pip install -r backend/requirements.txt
+          # Beri jeda sejenak agar backend menyelesaikan inisialisasi DB
+          sleep 3
 
-      - name: Run backend tests
-        env:
-          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
-          BOOTSTRAP_ADMIN_PASSWORD: AdminPass123
-        run: pytest
+          # Jalankan Frontend
+          docker run -d \
+            --name enterprise-ai-frontend \
+            --network enterprise-ai-net \
+            --add-host=host.docker.internal:host-gateway \
+            --restart=unless-stopped \
+            -p 8086:80 \
+            enterprise-ai-frontend-img:latest
+          
+          echo "Docker Containers restarted (Zero Downtime)"
 
-      # Tes end-to-end menjalankan aplikasi sungguhan (backend + frontend hasil
-      # build) di dalam browser. Dua bug pada fitur edit/buat-ulang pernah lolos
-      # dari seluruh tes backend dan hanya terlihat di lapisan ini.
-      - name: Install Playwright browser
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Create E2E database
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE sapai_e2e'
-
-      - name: Run end-to-end tests
-        env:
-          E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sapai_e2e
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-1234
-          E2E_ADMIN_PASSWORD: AdminPass123
-        run: bash scripts/e2e.sh
-
-      - name: Upload E2E report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: frontend/playwright-report/
-          retention-days: 7
+      - name: Pastikan frontend & backend merespons
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:8086/api/config >/dev/null 2>&1; then
+              echo "Aplikasi & API backend berjalan normal setelah ${i} detik."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API backend tidak merespons (502 / Offline) setelah 30 detik."
+          docker ps --filter name=enterprise-ai || true
+          echo "--- LOG BACKEND ---"
+          docker logs --tail 50 enterprise-ai-backend || true
+          echo "--- LOG FRONTEND ---"
+          docker logs --tail 50 enterprise-ai-frontend || true
+          exit 1

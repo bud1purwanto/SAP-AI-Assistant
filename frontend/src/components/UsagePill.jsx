@@ -65,7 +65,7 @@ const UsagePill = ({ usage }) => {
         {adaToken && (
           <span className={`flex items-center gap-1 ${tokenTextColor}`}>
             <Zap className={`h-3 w-3 ${zapColor}`} aria-hidden="true" />
-            {ringkasAngka(usage.total_tokens)} token
+            {usage.estimated ? '~' : ''}{ringkasAngka(usage.total_tokens)} token
           </span>
         )}
         {persenCache !== null && (
@@ -124,6 +124,18 @@ const UsagePill = ({ usage }) => {
                 <Wrench className="h-3 w-3" aria-hidden="true" /> {t('usage.dataCalls')}
               </dt>
               <dd className="text-right font-semibold text-content tabular-nums">{usage.tool_calls}</dd>
+            </>
+          )}
+          {usage.model_calls > 0 && (
+            <>
+              <dt className="text-content-subtle">{t('usage.modelCalls')}</dt>
+              <dd className="text-right font-semibold text-content tabular-nums">{usage.model_calls}</dd>
+            </>
+          )}
+          {usage.estimated && (
+            <>
+              <dt className="text-content-subtle">{t('usage.estimated')}</dt>
+              <dd className="text-right font-semibold text-amber-500">~</dd>
             </>
           )}
           {usage.model && (

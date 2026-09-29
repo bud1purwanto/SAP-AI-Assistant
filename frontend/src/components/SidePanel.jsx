@@ -47,11 +47,14 @@ const SidePanel = ({ isi, onTutup }) => {
 
   return (
     <aside
-      className="app-side-panel fixed inset-0 z-40 flex flex-col border-l border-line bg-surface-raised
+      className="app-side-panel relative overflow-hidden fixed inset-0 z-40 flex flex-col border-l border-line bg-surface-raised
                  lg:static lg:inset-auto lg:w-[26rem] xl:w-[32rem] lg:shrink-0"
       style={{ height: 'var(--app-height, 100dvh)' }}
       aria-label={isi.judul}
     >
+      {/* Glowing top hairline accent */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-accent/50 to-transparent pointer-events-none" />
+
       <div
         className="flex items-center justify-between gap-2 border-b border-line px-4 pb-3"
         style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.875rem)' }}
@@ -87,7 +90,7 @@ const SidePanel = ({ isi, onTutup }) => {
           <button
             type="button"
             onClick={onTutup}
-            className="rounded-xl p-2.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
+            className="rounded-xl p-2.5 text-content-muted transition-all duration-200 hover:bg-surface-hover hover:text-content hover:rotate-90 cursor-pointer"
             title={t('sidepanel.close')}
             aria-label={t('sidepanel.close')}
           >

@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useVirtualKeyboard } from '../hooks/useVirtualKeyboard';
 
 const SAP_TEMPLATES = [
   {
@@ -44,7 +45,7 @@ const SAP_TEMPLATES = [
   {
     id: 'idoc_rfc_error',
     label: '⚙️ IDoc & RFC Error',
-    title: 'Monitoring IDoc & RFC Gagal',
+    title: 'Pemeriksaan IDoc & RFC Gagal',
     prompt: 'Periksa status IDoc yang berstatus error (status 51 / 68) dan background RFC job yang failed dalam 24 jam terakhir. Jelaskan indikasi penyebab kegagalan.',
     type: 'interval',
     time: '08:00',
@@ -71,7 +72,7 @@ const INTERVAL_OPTIONS = [
 ];
 
 export default function ScheduledTasksModal({ isOpen, onClose }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -103,7 +104,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
       const res = await api.getScheduledTasks();
       setTasks(res.tasks || []);
     } catch (err) {
-      setError(err.message || 'Gagal memuat daftar pemantauan');
+      setError(err.message || (language === 'en' ? 'Failed to load scheduled tasks' : 'Gagal memuat daftar tugas terjadwal'));
     } finally {
       setLoading(false);
     }
@@ -208,28 +209,28 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
 
       if (editingTaskId) {
         await api.updateScheduledTask(editingTaskId, payload);
-        setSuccessMsg('Pemantauan berhasil diperbarui.');
+        setSuccessMsg(language === 'en' ? 'Scheduled task updated successfully.' : 'Tugas terjadwal berhasil diperbarui.');
       } else {
         await api.createScheduledTask(payload);
-        setSuccessMsg('Pemantauan baru berhasil ditambahkan.');
+        setSuccessMsg(language === 'en' ? 'New scheduled task added successfully.' : 'Tugas terjadwal baru berhasil ditambahkan.');
       }
       resetForm();
       await fetchTasks();
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err) {
-      setError(err.message || 'Gagal menyimpan pemantauan');
+      setError(err.message || (language === 'en' ? 'Failed to save scheduled task' : 'Gagal menyimpan tugas terjadwal'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (taskId) => {
-    if (!window.confirm('Hapus pemantauan terjadwal ini?')) return;
+    if (!window.confirm(language === 'en' ? 'Delete this scheduled task?' : 'Hapus tugas terjadwal ini?')) return;
     try {
       await api.deleteScheduledTask(taskId);
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
     } catch (err) {
-      setError(err.message || 'Gagal menghapus pemantauan');
+      setError(err.message || (language === 'en' ? 'Failed to delete scheduled task' : 'Gagal menghapus tugas terjadwal'));
     }
   };
 
@@ -241,7 +242,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
         prev.map((t) => (t.id === task.id ? { ...t, is_active: nextActive } : t))
       );
     } catch (err) {
-      setError(err.message || 'Gagal mengubah status');
+      setError(err.message || (language === 'en' ? 'Failed to change status' : 'Gagal mengubah status'));
     }
   };
 
@@ -249,13 +250,13 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
     setRunningTaskId(taskId);
     try {
       await api.runScheduledTask(taskId);
-      setSuccessMsg('Tugas berhasil dipicu dan sedang berjalan di latar belakang.');
+      setSuccessMsg(language === 'en' ? 'Task triggered and running in background.' : 'Tugas berhasil dipicu dan sedang berjalan di latar belakang.');
       setTimeout(() => {
         setSuccessMsg('');
         fetchTasks();
       }, 4000);
     } catch (err) {
-      setError(err.message || 'Gagal menjalankan tugas');
+      setError(err.message || (language === 'en' ? 'Failed to run task' : 'Gagal menjalankan tugas'));
     } finally {
       setRunningTaskId(null);
     }
@@ -344,19 +345,33 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border border-line bg-surface shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-md transition-opacity duration-200 animate-modal-backdrop">
+      <div
+        className="min-h-full flex items-center justify-center p-3 sm:p-6 text-center"
+        style={{
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top, 0px))',
+          paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <div className="relative w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl sm:rounded-3xl border border-line/80 bg-surface-raised/95 backdrop-blur-xl shadow-2xl overflow-hidden my-auto text-left transition-opacity duration-200 animate-modal-content">
+        {/* Ambient Top Glow Blobs */}
+        <div className="absolute -top-24 -left-24 w-56 h-56 bg-accent/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-24 -right-24 w-56 h-56 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Top glowing hairline accent */}
+        <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line bg-surface-raised">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-accent-soft text-accent-soft-fg">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 sm:py-4 border-b border-line/80 bg-surface/40 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 border border-white/20 flex items-center justify-center text-white shadow-lg shrink-0">
               <Calendar className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-content font-display">
                 {t('scheduled.title')}
               </h2>
-              <p className="text-xs text-content-muted">
+              <p className="text-[11px] sm:text-xs text-content-muted">
                 {language === 'en' ? 'Automated SAP query execution & scheduled reports via Email (Multi-Recipient)' : 'Otomasi eksekusi query SAP & laporan terjadwal via Email (Multi-Penerima)'}
               </p>
             </div>
@@ -365,10 +380,10 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
             aria-label="Tutup"
           >
-            <X className="w-5 h-5" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -393,7 +408,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
           {!isFormOpen && (
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-content-muted">
-                {tasks.length} tugas pemantauan aktif
+                {tasks.length} {language === 'en' ? 'active scheduled tasks' : 'tugas terjadwal aktif'}
               </span>
               <button
                 type="button"
@@ -415,14 +430,14 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
               <div className="flex items-center justify-between pb-2 border-b border-line">
                 <span className="text-xs font-bold text-content flex items-center gap-1.5">
                   <Clock className="w-4 h-4 text-accent" />
-                  {editingTaskId ? 'Edit Pemantauan' : 'Tambah Pemantauan Baru'}
+                  {editingTaskId ? (language === 'en' ? 'Edit Scheduled Task' : 'Edit Tugas Terjadwal') : (language === 'en' ? 'New Scheduled Task' : 'Tambah Tugas Terjadwal')}
                 </span>
                 <button
                   type="button"
                   onClick={resetForm}
                   className="text-xs text-content-muted hover:text-content cursor-pointer"
                 >
-                  Batal
+                  {language === 'en' ? 'Cancel' : 'Batal'}
                 </button>
               </div>
 
@@ -554,16 +569,16 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
 
                 <div className="text-[11px] text-content-subtle pt-1 border-t border-line/40">
                   {scheduleType === 'daily' && (
-                    <span>💡 Pemantauan dijalankan sekali setiap hari pada pukul {scheduleTime} WIB.</span>
+                    <span>{language === 'en' ? `💡 Task runs once daily at ${scheduleTime} WIB.` : `💡 Tugas dijalankan sekali setiap hari pada pukul ${scheduleTime} WIB.`}</span>
                   )}
                   {scheduleType === 'workdays' && (
-                    <span>💡 Pemantauan dijalankan setiap hari kerja (Senin - Jumat) pukul {scheduleTime} WIB.</span>
+                    <span>{language === 'en' ? `💡 Task runs on workdays (Mon - Fri) at ${scheduleTime} WIB.` : `💡 Tugas dijalankan setiap hari kerja (Senin - Jumat) pukul ${scheduleTime} WIB.`}</span>
                   )}
                   {scheduleType === 'interval' && (
-                    <span>💡 Pemantauan diulang secara otomatis setiap interval yang dipilih.</span>
+                    <span>{language === 'en' ? '💡 Task repeats automatically at selected interval.' : '💡 Tugas diulang secara otomatis setiap interval yang dipilih.'}</span>
                   )}
                   {scheduleType === 'custom' && (
-                    <span>💡 Menggunakan format ekspresi cron kustom standar Linux/Unix.</span>
+                    <span>{language === 'en' ? '💡 Uses standard Linux/Unix cron expression format.' : '💡 Menggunakan format ekspresi cron kustom standar Linux/Unix.'}</span>
                   )}
                 </div>
               </div>
@@ -594,7 +609,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                   className="rounded border-line text-accent focus:ring-accent cursor-pointer"
                 />
                 <label htmlFor="formActive" className="text-xs text-content select-none cursor-pointer">
-                  Aktifkan pemantauan ini secara otomatis
+                  {language === 'en' ? 'Enable this schedule automatically' : 'Aktifkan jadwal ini secara otomatis'}
                 </label>
               </div>
 
@@ -604,7 +619,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                   onClick={resetForm}
                   className="px-3.5 py-1.5 rounded-xl border border-line text-xs font-medium text-content-muted hover:text-content bg-surface hover:bg-surface-hover transition-colors cursor-pointer"
                 >
-                  Batal
+                  {language === 'en' ? 'Cancel' : 'Batal'}
                 </button>
                 <button
                   type="submit"
@@ -612,7 +627,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                   className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-accent text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all shadow-xs cursor-pointer"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Simpan Pemantauan</span>
+                  <span>{language === 'en' ? 'Save Schedule' : 'Simpan Jadwal'}</span>
                 </button>
               </div>
             </form>
@@ -622,14 +637,14 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
           {loading && tasks.length === 0 ? (
             <div className="py-12 flex flex-col items-center justify-center text-content-muted space-y-2">
               <Loader2 className="w-6 h-6 animate-spin text-accent" />
-              <span className="text-xs">Memuat daftar tugas...</span>
+              <span className="text-xs">{language === 'en' ? 'Loading tasks...' : 'Memuat daftar tugas...'}</span>
             </div>
           ) : tasks.length === 0 ? (
             <div className="py-12 text-center text-content-muted border border-dashed border-line rounded-2xl p-6">
               <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p className="text-xs font-medium">{t('scheduled.noTasks')}</p>
               <p className="text-[11px] mt-1 text-content-subtle">
-                Klik tombol "Tambah Pemantauan" untuk membuat pemantauan otomatis pertama Anda.
+                {language === 'en' ? 'Click "Add Scheduled Task" to configure your first automated schedule.' : 'Klik tombol "Tambah Tugas Terjadwal" untuk membuat jadwal otomatis pertama Anda.'}
               </p>
             </div>
           ) : (
@@ -796,6 +811,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
         </div>
       </div>
     </div>
+  </div>
   );
 }
 

@@ -4,7 +4,6 @@ import {
   Check,
   CheckCircle2,
   Mail,
-  Send,
   Server,
   ShieldAlert,
   X,
@@ -21,10 +20,7 @@ const TYPE_ICONS = {
 
 export default function ActionCard({ action, onAction, messageId }) {
   const { t } = useLanguage();
-
-  if (!action || typeof action !== 'object') {
-    return null;
-  }
+  const isValidAction = action && typeof action === 'object';
 
   const {
     action_id,
@@ -34,7 +30,7 @@ export default function ActionCard({ action, onAction, messageId }) {
     details = {},
     confirm_prompt,
     cancel_prompt,
-  } = action;
+  } = isValidAction ? action : {};
 
   const storageKey = `sap_action_card_${action_id || (messageId ? `msg_${messageId}` : `${title}_${confirm_prompt}`.replace(/\s+/g, '_'))}`;
 
@@ -49,6 +45,10 @@ export default function ActionCard({ action, onAction, messageId }) {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (!isValidAction) {
+    return null;
+  }
 
   const IconComponent = TYPE_ICONS[action_type] || AlertTriangle;
 

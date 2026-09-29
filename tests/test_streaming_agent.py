@@ -13,7 +13,19 @@ import asyncio
 from langchain_core.messages import AIMessageChunk
 
 import agent as agent_module
+from analysis_policy import QualityGateResult
 from models import ChatRequest
+
+
+def _jawaban_deep(teks_temuan: str) -> str:
+    return (
+        "## Ruang Lingkup\nSAP\n"
+        f"## Temuan\n{teks_temuan}\n"
+        "## Interpretasi\nSesuai bukti.\n"
+        "## Keterbatasan\nTerbatas pada data tersedia.\n"
+        "## Rekomendasi\nValidasi berkala.\n"
+        "## Sumber\nSAP"
+    )
 
 
 class FakeStreamingModel:
@@ -43,7 +55,7 @@ class FakeStreamingModel:
         return self
 
 
-async def _jalankan(monkeypatch, model, kumpulkan_token=True):
+async def _jalankan(monkeypatch, model, kumpulkan_token=True, message="Jelaskan istilah material SRRPAI"):
     """Jalankan process_chat dengan MCP dan LLM dipalsukan."""
     async def fake_tools(server_filter=None):
         return [{"server": "sap", "tool": type("T", (), {"name": "read_table", "description": "baca", "inputSchema": {}})()}]
@@ -65,7 +77,7 @@ async def _jalankan(monkeypatch, model, kumpulkan_token=True):
         token.append(None if reset else text)
 
     hasil = await agent_module.process_chat(
-        ChatRequest(message="stok material SRRPAI"),
+        ChatRequest(message=message),
         "user",
         "",
         username="penguji",
@@ -179,12 +191,145 @@ def test_waktu_proses_selalu_terisi(monkeypatch):
     assert hasil.usage.latency_ms >= 0
 
 
-def test_token_dibiarkan_kosong_bila_provider_tidak_melaporkan(monkeypatch):
-    """Perkiraan lokal akan meleset karena tokenizer tiap model berbeda;
-    angka yang salah lebih menyesatkan daripada tidak ada angka."""
+def test_token_diperkirakan_bila_provider_tidak_melaporkan(monkeypatch):
+    """Setiap model-call tetap dihitung dan ditandai sebagai estimasi."""
     model = FakeStreamingModel(["Jawaban tanpa metadata."])
     hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
 
-    assert hasil.usage.prompt_tokens is None
-    assert hasil.usage.total_tokens is None
+    assert hasil.usage.prompt_tokens > 0
+    assert hasil.usage.completion_tokens > 0
+    assert hasil.usage.total_tokens == hasil.usage.prompt_tokens + hasil.usage.completion_tokens
     assert hasil.usage.cached_tokens is None
+    assert hasil.usage.estimated is True
+    assert hasil.usage.model_calls == 1
+
+
+class FakeModelMultiCall(FakeStreamingModel):
+    def __init__(self, responses):
+        super().__init__([])
+        self.responses = responses
+        self.index = 0
+
+    async def astream(self, msgs):
+        self.astream_dipanggil += 1
+        response = self.responses[self.index]
+        self.index += 1
+        for text in response.get("prefix_chunks", []):
+            yield AIMessageChunk(content=text)
+        chunk = AIMessageChunk(content=response["text"], tool_calls=response.get("tool_calls", []))
+        if response.get("usage"):
+            chunk.usage_metadata = response["usage"]
+        yield chunk
+
+
+def test_draft_yang_ditolak_tidak_pernah_dikirim_ke_klien(monkeypatch):
+    """Draft tanpa bukti tidak boleh muncul lalu di-reset sebelum jawaban final."""
+    model = FakeModelMultiCall([
+        {"text": "Stok material SRRPAI adalah 999 PC."},
+        {"text": "Stok material SRRPAI adalah 888 PC."},
+        {"text": "Stok material SRRPAI adalah 777 PC."},
+        {"text": "Data SAP belum berhasil diperoleh untuk material SRRPAI."},
+    ])
+
+    hasil, token = asyncio.run(_jalankan(
+        monkeypatch, model, message="Cek stok material SRRPAI di SAP",
+    ))
+
+    assert token == ["Data SAP belum berhasil diperoleh untuk material SRRPAI."]
+    assert hasil.reply == "Data SAP belum berhasil diperoleh untuk material SRRPAI."
+
+
+def test_narasi_sebelum_native_tool_call_grounded_tidak_bocor(monkeypatch):
+    model = FakeModelMultiCall([
+        {
+            "prefix_chunks": ["Saya akan membaca ", "data SAP dahulu."],
+            "text": "",
+            "tool_calls": [{"name": "sap__read_table", "args": {"table": "MARD"}, "id": "call-1"}],
+        },
+        {"text": "Stok material SRRPAI adalah 250 PC."},
+    ])
+
+    async def fake_call_tool(*args, **kwargs):
+        item = type("Content", (), {"text": '[{"material": "SRRPAI", "stock": 250}]'})()
+        return type("ToolResult", (), {"content": [item], "is_error": False})()
+
+    monkeypatch.setattr(agent_module.mcp_manager, "call_tool", fake_call_tool)
+    hasil, token = asyncio.run(_jalankan(
+        monkeypatch, model, message="Cek stok material SRRPAI di SAP",
+    ))
+    assert token == [hasil.reply] == ["Stok material SRRPAI adalah 250 PC."]
+    assert hasil.usage.tool_calls == 1
+    assert hasil.usage.model_calls == 2
+
+
+def test_text_tool_call_grounded_tidak_pernah_dikirim_ke_klien(monkeypatch):
+    """Panggilan tool berbentuk teks adalah provisional, bukan jawaban pengguna."""
+    model = FakeModelMultiCall([
+        {"text": 'sap__read_table({"table": "MARD"})'},
+        {"text": "Stok material SRRPAI adalah 250 PC."},
+    ])
+
+    async def fake_call_tool(*args, **kwargs):
+        item = type("Content", (), {"text": '[{"material": "SRRPAI", "stock": 250}]'})()
+        return type("ToolResult", (), {"content": [item], "is_error": False})()
+
+    monkeypatch.setattr(agent_module.mcp_manager, "call_tool", fake_call_tool)
+
+    hasil, token = asyncio.run(_jalankan(
+        monkeypatch, model, message="Cek stok material SRRPAI di SAP",
+    ))
+
+    assert token == ["Stok material SRRPAI adalah 250 PC."]
+    assert hasil.reply == "Stok material SRRPAI adalah 250 PC."
+
+
+def test_draft_yang_gagal_quality_gate_tidak_dikirim_ke_klien(monkeypatch):
+    """Deep analysis baru diterbitkan setelah quality review menerima revisinya."""
+    draft_ditolak = _jawaban_deep("Stok material SRRPAI adalah 999 PC.")
+    draft_final = _jawaban_deep("Stok material SRRPAI sesuai bukti SAP.")
+    model = FakeModelMultiCall([
+        {"text": draft_ditolak},
+        {"text": draft_final},
+    ])
+    monkeypatch.setattr(
+        agent_module,
+        "evaluate_evidence_sufficiency",
+        lambda state: QualityGateResult(passed=True),
+    )
+
+    hasil, token = asyncio.run(_jalankan(
+        monkeypatch, model, message="Analisa stok material SRRPAI di SAP",
+    ))
+
+    assert token == [draft_final]
+    assert hasil.reply == draft_final
+
+
+def test_pemakaian_menjumlahkan_semua_model_call(monkeypatch):
+    model = FakeModelMultiCall([
+        {"text": "thinking process", "usage": {"input_tokens": 100, "output_tokens": 10}},
+        {"text": "Jawaban final.", "usage": {"input_tokens": 200, "output_tokens": 20}},
+    ])
+
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.prompt_tokens == 300
+    assert hasil.usage.completion_tokens == 30
+    assert hasil.usage.total_tokens == 330
+    assert hasil.usage.model_calls == 2
+    assert hasil.usage.estimated is False
+
+
+def test_metadata_parsial_ditandai_dan_call_tanpa_metadata_tetap_dihitung(monkeypatch):
+    model = FakeModelMultiCall([
+        {"text": "thinking process", "usage": {"input_tokens": 100, "output_tokens": 10}},
+        {"text": "Jawaban final."},
+    ])
+
+    hasil, _ = asyncio.run(_jalankan(monkeypatch, model))
+
+    assert hasil.usage.prompt_tokens > 100
+    assert hasil.usage.completion_tokens > 10
+    assert hasil.usage.total_tokens == hasil.usage.prompt_tokens + hasil.usage.completion_tokens
+    assert hasil.usage.model_calls == 2
+    assert hasil.usage.estimated is True

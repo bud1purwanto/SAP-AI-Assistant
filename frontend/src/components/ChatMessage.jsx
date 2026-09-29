@@ -653,7 +653,7 @@ const ChatMessage = ({
                   type="button"
                   onClick={submitEdit}
                   disabled={!draft.trim() || draft.trim() === message.content}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg shadow-xs transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                 >
                   {t('chat.resend')}
                 </button>

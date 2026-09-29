@@ -975,6 +975,124 @@ def _m0022_user_job_levels(conn):
     """))
 
 
+def _m0023_analysis_depth_mode(conn):
+    """Tambahkan kolom analysis_depth & require_evidence pada chat_modes."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS analysis_depth VARCHAR(16) DEFAULT 'auto';
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS require_evidence BOOLEAN NOT NULL DEFAULT TRUE;
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS max_review_cycles INTEGER NOT NULL DEFAULT 0;
+    """))
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_modes
+        ADD COLUMN IF NOT EXISTS rag_call_budget INTEGER DEFAULT NULL;
+    """))
+    # Set defaults per mode: fast=standard(0 review), medium=auto(0), expert=auto(1 review)
+    conn.execute(text("""
+        UPDATE ai_assistant.chat_modes SET analysis_depth='standard', max_review_cycles=0
+        WHERE code='fast' AND analysis_depth='auto';
+    """))
+    conn.execute(text("""
+        UPDATE ai_assistant.chat_modes SET analysis_depth='auto', max_review_cycles=1
+        WHERE code='expert' AND max_review_cycles=0;
+    """))
+
+
+def _m0024_chat_message_usage(conn):
+    """Simpan statistik token per jawaban agar tetap tersedia setelah reload."""
+    conn.execute(text("""
+        ALTER TABLE ai_assistant.chat_messages
+        ADD COLUMN IF NOT EXISTS usage TEXT;
+    """))
+
+
+def _m0025_user_sessions_and_security_logs(conn):
+    """Tabel sesi aktif pengguna untuk single-session enforcement dan monitoring perangkat real-time,
+    serta tabel log audit autentikasi/keamanan."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_sessions (
+            id VARCHAR(64) PRIMARY KEY,
+            username VARCHAR(100) NOT NULL REFERENCES ai_assistant.users(username) ON DELETE CASCADE,
+            device_name VARCHAR(120) NOT NULL DEFAULT 'Unknown Device',
+            device_type VARCHAR(30) NOT NULL DEFAULT 'desktop',
+            terminal_info VARCHAR(150),
+            os VARCHAR(60),
+            browser VARCHAR(60),
+            ip_address VARCHAR(60),
+            user_agent TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_idle BOOLEAN NOT NULL DEFAULT FALSE,
+            status VARCHAR(40) NOT NULL DEFAULT 'active',
+            kick_reason TEXT,
+            current_action VARCHAR(150) DEFAULT 'Membuka Chat Utama',
+            current_path VARCHAR(100) DEFAULT '/',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_active_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMPTZ NOT NULL,
+            kicked_at TIMESTAMPTZ
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_username_active
+        ON ai_assistant.user_sessions (LOWER(username), is_active);
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_sessions_last_active
+        ON ai_assistant.user_sessions (last_active_at DESC);
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.auth_audit_logs (
+            id SERIAL PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            event_type VARCHAR(50) NOT NULL,
+            username VARCHAR(100) NOT NULL,
+            ip_address VARCHAR(60),
+            device_name VARCHAR(120),
+            device_type VARCHAR(30),
+            browser VARCHAR(60),
+            os VARCHAR(60),
+            user_agent TEXT,
+            status VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+            details TEXT
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_auth_logs_timestamp
+        ON ai_assistant.auth_audit_logs (timestamp DESC);
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_auth_logs_username
+        ON ai_assistant.auth_audit_logs (LOWER(username), timestamp DESC);
+    """))
+
+
+def _m0026_user_chat_modes(conn):
+    """Tabel override mode chat per user (user_modes).
+
+    Memungkinkan admin memberikan override izin (tri-state: inherit, allow, deny)
+    untuk mode chat tertentu kepada user individual, melampaui izin berbasis peran (role_modes).
+    """
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ai_assistant.user_modes (
+            username VARCHAR(100) NOT NULL,
+            mode_code VARCHAR(40) NOT NULL REFERENCES ai_assistant.chat_modes(code) ON UPDATE CASCADE ON DELETE CASCADE,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (username, mode_code)
+        );
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_user_modes_username
+        ON ai_assistant.user_modes (LOWER(username));
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -998,6 +1116,10 @@ MIGRATIONS = [
     ("0020_scheduled_tasks_email_text", _m0020_scheduled_tasks_email_text),
     ("0021_master_data_divisions", _m0021_master_data_divisions),
     ("0022_user_job_levels", _m0022_user_job_levels),
+    ("0023_analysis_depth_mode", _m0023_analysis_depth_mode),
+    ("0024_chat_message_usage", _m0024_chat_message_usage),
+    ("0025_user_sessions_and_security_logs", _m0025_user_sessions_and_security_logs),
+    ("0026_user_chat_modes", _m0026_user_chat_modes),
 ]
 
 

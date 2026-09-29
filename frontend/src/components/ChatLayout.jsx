@@ -153,6 +153,7 @@ const ChatLayout = () => {
   });
 
   const [dynamicSuggestions, setDynamicSuggestions] = useState(null);
+  const [isDynamicSuggestions, setIsDynamicSuggestions] = useState(false);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -161,6 +162,7 @@ const ChatLayout = () => {
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [customLoginMsg, setCustomLoginMsg] = useState('');
+  const [kickedModalInfo, setKickedModalInfo] = useState({ isOpen: false, reason: '' });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   // Isi panel samping (kode/dokumen panjang), null bila panel tertutup.
   const [isiPanel, setIsiPanel] = useState(null);
@@ -382,23 +384,88 @@ const ChatLayout = () => {
     }
   };
 
-  // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu ---
+  // --- Fungsi sentral reset tampilan & sesi ke Beranda (Home) secara bersih ---
+  const resetToHome = useCallback((clearAuth = true) => {
+    if (clearAuth) setUser(GUEST_USER);
+    setSessions([]);
+    setCurrentSessionId(null);
+    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
+    setSessionLoadingMap({});
+    setSessionProgressMap({});
+    setSessionErrorMap({});
+    setIsAdminOpen(false);
+    setIsSettingsOpen(false);
+    setIsScheduledTasksOpen(false);
+    setIsiPanel(null);
+    setIsSidebarOpen(false);
+    setIsUserMenuOpen(false);
+    setError(null);
+    if (clearAuth) clearSession();
+    try {
+      window.history.replaceState(null, '', '/');
+    } catch {}
+  }, []);
+
+  // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu & pastikan kembali ke Home ---
   useEffect(() => {
-    setUnauthorizedHandler(() => {
-      setUser(GUEST_USER);
-      setSessions([]);
-      setCurrentSessionId(null);
-      setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-      setSessionLoadingMap({});
-      setSessionProgressMap({});
-      setSessionErrorMap({});
+    setUnauthorizedHandler((reason, code) => {
+      resetToHome();
       fetchServers();
       fetchModes();
-      setCustomLoginMsg(t('login.sessionExpired'));
-      setIsLoginModalOpen(true);
+
+      if (code === 'SESSION_KICKED' || (reason && (reason.includes('perangkat lain') || reason.includes('Administrator') || reason.includes('diputuskan')))) {
+        setKickedModalInfo({
+          isOpen: true,
+          reason: reason || t('kicked.modalDesc'),
+        });
+      } else {
+        setCustomLoginMsg(reason || t('login.sessionExpired'));
+        setIsLoginModalOpen(true);
+      }
     });
     return () => setUnauthorizedHandler(null);
-  }, [t, fetchServers, fetchModes]);
+  }, [t, fetchServers, fetchModes, resetToHome]);
+
+  // --- Heartbeat pemantauan sesi & aktivitas real-time ---
+  useEffect(() => {
+    if (isGuest) return undefined;
+
+    const pingHeartbeat = async () => {
+      let currentAction = 'Membuka Percakapan Chat';
+      if (isCurrentLoading) currentAction = 'Sedang Menulis / Prompting AI';
+      else if (isAdminOpen) currentAction = 'Membuka Dashboard Admin';
+      else if (isSettingsOpen) currentAction = 'Membuka Pengaturan Akun';
+      else if (isScheduledTasksOpen) currentAction = 'Membuka Tugas Terjadwal';
+      else if (isiPanel) currentAction = 'Membaca Panel Dokumen / Kode';
+
+      try {
+        await api.heartbeat({
+          current_action: currentAction,
+          current_path: window.location.pathname || '/',
+          is_idle: document.hidden,
+        });
+      } catch {
+        // Jika 401 SESSION_KICKED, apiFetch sudah otomatis memanggil setUnauthorizedHandler
+      }
+    };
+
+    pingHeartbeat();
+    const interval = setInterval(pingHeartbeat, 10000); // 10 detik agar deteksi kick lebih responsif
+
+    const handleFocus = () => {
+      if (!document.hidden) {
+        pingHeartbeat();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
+  }, [isGuest, isCurrentLoading, isAdminOpen, isSettingsOpen, isScheduledTasksOpen, isiPanel]);
 
   useEffect(() => {
     fetchServers();
@@ -417,6 +484,14 @@ const ChatLayout = () => {
       .catch(() => { /* 401 sudah ditangani handler di atas */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, fetchServers, fetchModes]);
+
+  // Wajib login: buka modal login otomatis saat pengguna belum login
+  useEffect(() => {
+    if (isGuest) {
+      setCustomLoginMsg(t('login.requiredPrompt'));
+      setIsLoginModalOpen(true);
+    }
+  }, [isGuest, t]);
 
   useEffect(() => {
     scrollToBottom(true);
@@ -487,7 +562,17 @@ const ChatLayout = () => {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [sessionQuery, isGuest]);
 
-  /** Kolom sources/artifacts disimpan sebagai JSON string di database. */
+  /** Kolom sources/artifacts/usage disimpan sebagai JSON string di database. */
+  const parseJsonObject = (raw) => {
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
   const parseJsonList = (raw) => {
     if (!raw) return [];
     try {
@@ -516,6 +601,7 @@ const ChatLayout = () => {
             sources: parseJsonList(m.sources),
             artifacts: parseJsonList(m.artifacts),
             attachments: parseJsonList(m.attachments),
+            usage: parseJsonObject(m.usage),
             feedback: m.feedback || null,
             created_at: m.created_at,
           }));
@@ -630,12 +716,15 @@ const ChatLayout = () => {
       const res = await api.getSuggestions(language, force);
       if (res?.suggestions && Array.isArray(res.suggestions) && res.suggestions.length >= 3) {
         setDynamicSuggestions(res.suggestions);
+        setIsDynamicSuggestions(res.dynamic !== false);
       } else {
         setDynamicSuggestions(null);
+        setIsDynamicSuggestions(false);
       }
     } catch (err) {
       console.warn('Gagal memuat saran dinamis LLM, fallback ke default:', err);
       setDynamicSuggestions(null);
+      setIsDynamicSuggestions(false);
     } finally {
       setIsSuggestionsLoading(false);
     }
@@ -643,7 +732,7 @@ const ChatLayout = () => {
 
   useEffect(() => {
     loadSuggestions();
-  }, [user.username, user.role, language, loadSuggestions]);
+  }, [user.username, user.role, user.division_code, language, loadSuggestions]);
 
   useEffect(() => {
     setSessions([]);
@@ -661,17 +750,12 @@ const ChatLayout = () => {
     const handleStorageChange = (e) => {
       if (e.key === 'sap_assistant_token' || e.key === 'sap_assistant_user') {
         const currentUser = getStoredUser() || GUEST_USER;
+        resetToHome();
         setUser(currentUser);
-        setSessions([]);
-        setCurrentSessionId(null);
-        setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-        setSessionLoadingMap({});
-        setSessionProgressMap({});
-        setSessionErrorMap({});
       }
     };
     window.addEventListener('storage', handleStorageChange);
-    
+
     // ZERO-RELOAD AUTO-LOGIN LISTENER
     // Terima instruksi login langsung dari Dashboard PWA tanpa reload
     const handleDashboardMessage = (e) => {
@@ -694,15 +778,10 @@ const ChatLayout = () => {
                   force_change_password: Boolean(data.force_change_password),
                 };
                 saveSession(data.access_token, userData);
-                
+
                 // Update React State tanpa reload!
+                resetToHome(false);
                 setUser(userData);
-                setSessions([]);
-                setCurrentSessionId(null);
-                setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-                setSessionLoadingMap({});
-                setSessionProgressMap({});
-                setSessionErrorMap({});
                 api.quotaSaya().then(setKuota).catch(() => setKuota(null));
                 setIsLoginModalOpen(false);
                 setCustomLoginMsg('');
@@ -719,7 +798,7 @@ const ChatLayout = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('message', handleDashboardMessage);
     };
-  }, []);
+  }, [resetToHome]);
 
   // Sinkronkan kembali percakapan saat aplikasi dibuka kembali dari background/minimize di HP
   useEffect(() => {
@@ -782,7 +861,7 @@ const ChatLayout = () => {
     setDeleteConfirmState({
       isOpen: true,
       sessionId: sid,
-      title: session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'),
+      title: session.title || (language === 'en' ? 'AI Conversation' : 'Percakapan AI'),
       isLoading: false,
     });
   };
@@ -847,7 +926,7 @@ const ChatLayout = () => {
   const startRenameSession = (e, session) => {
     e.stopPropagation();
     setEditingSessionId(session.session_id || session.id);
-    setEditingTitle(session.title || (language === 'en' ? 'SAP Conversation' : 'Percakapan SAP'));
+    setEditingTitle(session.title || (language === 'en' ? 'AI Conversation' : 'Percakapan AI'));
   };
 
   const cancelRenameSession = (e) => {
@@ -898,6 +977,13 @@ const ChatLayout = () => {
    * jawaban lama muncul kembali alih-alih tergantikan.
    */
   const handleSendMessage = async (text, attachments = [], baseMessages = null) => {
+    // Wajib login: cegah pengiriman prompt jika berstatus tamu
+    if (isGuest) {
+      setCustomLoginMsg(t('login.requiredPrompt'));
+      setIsLoginModalOpen(true);
+      return;
+    }
+
     let targetSessionId = currentSessionId;
     // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
     if (!isGuest && !targetSessionId) {
@@ -931,7 +1017,7 @@ const ChatLayout = () => {
     setSessionLoadingMap((prev) => ({ ...prev, [targetKey]: true }));
     setSessionProgressMap((prev) => ({
       ...prev,
-      [targetKey]: { stage: 'connecting', label: 'Menyiapkan permintaan…', step: 0, max_steps: 6 },
+      [targetKey]: { stage: 'connecting', label: t('thinking.connecting'), step: 0, max_steps: 6 },
     }));
     setSessionErrorMap((prev) => ({ ...prev, [targetKey]: null }));
     resetStream(targetKey);
@@ -955,6 +1041,7 @@ const ChatLayout = () => {
           active_server: activeServer,
           attachment_ids: attachments.map((a) => a.upload_id),
           mode: selectedMode || undefined,
+          language: language || 'id',
         },
         {
           signal: controller.signal,
@@ -963,13 +1050,21 @@ const ChatLayout = () => {
             setSessionProgressMap((prev) => ({ ...prev, [targetKey]: event }));
           },
           onToken: (chunk) => {
+            // Tampilkan token segera. Nilai null adalah token_reset dari
+            // backend ketika draft berubah menjadi panggilan tool.
             lastStreamActivityRef.current[targetKey] = Date.now();
             appendToken(targetKey, chunk);
           },
         },
       );
 
-      // Tuntaskan sisa pengetikan adaptif secara mulus sampai karakter terakhir
+      setSessionProgressMap((prev) => ({
+        ...prev,
+        [targetKey]: { ...prev[targetKey], stage: 'done', label: isEn ? 'Completed' : 'Selesai' },
+      }));
+      if (controller.signal.aborted) return;
+      // Sinkronkan potongan terakhir dengan hasil final tanpa menunggu animasi
+      // progress mencapai 100 persen.
       await flushAndFinish(targetKey, data.reply);
 
       const assistantMsg = {
@@ -1160,14 +1255,15 @@ const ChatLayout = () => {
     await handleSendMessage(cleaned, message.attachments || [], base);
   };
 
+  const handleCloseLoginModal = useCallback(() => {
+    setIsLoginModalOpen(false);
+    setCustomLoginMsg('');
+    resetToHome();
+  }, [resetToHome]);
+
   const handleLoginSuccess = ({ access_token: token, ...userData }) => {
     saveSession(token, userData);
-    setSessions([]);
-    setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-    setSessionLoadingMap({});
-    setSessionProgressMap({});
-    setSessionErrorMap({});
+    resetToHome(false);
     setUser(userData);
     api.quotaSaya().then(setKuota).catch(() => setKuota(null));
     fetchServers();
@@ -1189,14 +1285,8 @@ const ChatLayout = () => {
   };
 
   const handleLogout = () => {
-    clearSession();
-    setUser(GUEST_USER);
-    setSessions([]);
-    setCurrentSessionId(null);
-    setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
-    setSessionLoadingMap({});
-    setSessionProgressMap({});
-    setSessionErrorMap({});
+    api.logout().catch(() => {});
+    resetToHome();
     fetchServers();
     fetchModes();
   };
@@ -1217,6 +1307,8 @@ const ChatLayout = () => {
     selectedServer?.sid?.toLowerCase()?.includes('prt') ||
     selectedServer?.sid?.toLowerCase()?.includes('trp')
   );
+
+  const hasMultipleTargets = (sapSubServers.length + sqlSubServers.length) > 1;
 
   const ThemeIcon = THEME_ICON[theme];
 
@@ -1339,7 +1431,7 @@ const ChatLayout = () => {
                   className="w-full rounded-xl border border-transparent px-2.5 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover cursor-pointer"
                 >
                   <span className="block truncate text-xs font-semibold text-content">
-                    {hit.title || 'SAP Chat'}
+                    {hit.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}
                   </span>
                   {hit.snippet && (
                     <span className="mt-0.5 line-clamp-2 block text-[11px] leading-snug text-content-muted">
@@ -1434,7 +1526,7 @@ const ChatLayout = () => {
                           ) : (
                             <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content-muted'}`} aria-hidden="true" />
                           )}
-                          <span className="truncate">{session.title || 'SAP Chat'}</span>
+                          <span className="truncate">{session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}</span>
                         </button>
                         <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           <button
@@ -1467,10 +1559,10 @@ const ChatLayout = () => {
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/35 text-amber-300 hover:from-amber-500/25 hover:border-amber-500/50 hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/40 text-amber-800 dark:text-amber-300 hover:from-amber-500/25 hover:border-amber-500/60 hover:text-amber-950 dark:hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
             >
               <span className="flex items-center gap-2.5">
-                <span className="p-1 rounded-lg bg-amber-500/20 text-amber-400 group-hover:scale-105 transition-transform">
+                <span className="p-1 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 group-hover:scale-105 transition-transform">
                   <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 </span>
                 <span className="font-bold tracking-tight">{t('sidebar.adminPanel')}</span>
@@ -1526,7 +1618,7 @@ const ChatLayout = () => {
                     setCustomLoginMsg('');
                     setIsLoginModalOpen(true);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent text-accent-contrast hover:bg-accent/90 text-xs font-semibold transition-all shadow-xs cursor-pointer active:scale-95"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer active:scale-95 shadow-xs"
                   title={t('sidebar.loginPrompt')}
                 >
                   <LogIn className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
@@ -1558,9 +1650,14 @@ const ChatLayout = () => {
                     {user.full_name || user.username}
                   </div>
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(user.role)}`}>
-                      {getUserRoleLabel(user.role, isEn)}
-                    </span>
+                    {(() => {
+                      const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                      return (
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(displayRole)}`}>
+                          {getUserRoleLabel(displayRole, isEn)}
+                        </span>
+                      );
+                    })()}
                     {user.division_code && (
                       <span
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
@@ -1601,7 +1698,7 @@ const ChatLayout = () => {
                     {/* Header Profil Singkat */}
                     <div className="px-3.5 py-3 border-b border-line/60 mb-1 bg-surface-sunken/40 rounded-t-2xl">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-accent-hover text-accent-contrast font-bold text-xs flex items-center justify-center shadow-xs shrink-0 select-none">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-accent to-accent-hover text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0 select-none">
                           {getUserInitials(user)}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -1612,11 +1709,14 @@ const ChatLayout = () => {
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-content-secondary bg-surface border border-line/70 tracking-wide font-sans leading-none">
                               {user.username}
                             </span>
-                            {user.role && (
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(user.role)}`}>
-                                {getUserRoleLabel(user.role, isEn)}
-                              </span>
-                            )}
+                            {(() => {
+                              const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                              return (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(displayRole)}`}>
+                                  {getUserRoleLabel(displayRole, isEn)}
+                                </span>
+                              );
+                            })()}
                             {user.division_code && (
                               <span
                                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border leading-none bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25 font-mono"
@@ -1769,42 +1869,71 @@ const ChatLayout = () => {
               </label>
               {sapSubServers.length > 0 || sqlSubServers.length > 0 ? (
                 <div className="relative min-w-0 max-w-[13rem] xs:max-w-[15.5rem] sm:max-w-[18.5rem]" ref={serverDropdownRef}>
-                  <button
-                    id="sap-target"
-                    type="button"
-                    onClick={() => setIsServerDropdownOpen((prev) => !prev)}
-                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
-                      isProductionTarget
-                        ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
-                        : 'border-line text-content hover:border-line/80'
-                    }`}
-                    aria-label={t('nav.serverSelectAria')}
-                    aria-expanded={isServerDropdownOpen}
-                    aria-haspopup="listbox"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
-                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                        activeSystem === 'sql'
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                          : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                      }`}>
-                        {activeSystem.toUpperCase()}
-                      </span>
-                      <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
+                  {hasMultipleTargets ? (
+                    <button
+                      id="sap-target"
+                      type="button"
+                      onClick={() => setIsServerDropdownOpen((prev) => !prev)}
+                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
+                        isProductionTarget
+                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                          : 'border-line text-content hover:border-line/80'
+                      }`}
+                      aria-label={t('nav.serverSelectAria')}
+                      aria-expanded={isServerDropdownOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                          activeSystem === 'sql'
+                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                        }`}>
+                          {activeSystem.toUpperCase()}
+                        </span>
+                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isProductionTarget && (
+                          <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
+                            PRD
+                          </span>
+                        )}
+                        <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
+                      </div>
+                    </button>
+                  ) : (
+                    <div
+                      id="sap-target"
+                      className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium bg-surface-sunken select-none ${
+                        isProductionTarget
+                          ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
+                          : 'border-line text-content'
+                      }`}
+                      title={language === 'en' ? 'Active Target Environment' : 'Lingkungan Target Aktif'}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 truncate">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                          activeSystem === 'sql'
+                            ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                            : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                        }`}>
+                          {activeSystem.toUpperCase()}
+                        </span>
+                        <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                      </div>
                       {isProductionTarget && (
-                        <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight">
+                        <span className="px-1 py-0.2 rounded text-[9px] font-extrabold uppercase bg-danger/15 text-danger border border-danger/30 leading-tight shrink-0">
                           PRD
                         </span>
                       )}
-                      <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
                     </div>
-                  </button>
+                  )}
 
                   {/* Custom Connected Systems Hub Dropdown Menu */}
-                  {isServerDropdownOpen && (
+                  {hasMultipleTargets && isServerDropdownOpen && (
                     <div className="absolute left-0 top-[calc(100%+6px)] w-72 sm:w-84 bg-surface-raised/95 border border-line rounded-2xl shadow-2xl p-2.5 z-50 animate-fadeIn backdrop-blur-xl">
                       
                       {/* Header Dropdown */}
@@ -2018,11 +2147,11 @@ const ChatLayout = () => {
                               : 'bg-surface-sunken/30 border-line/30 opacity-50'
                           }`}>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <BookOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                               <span className="font-semibold text-[11px] text-content truncate">RAG Knowledge</span>
                             </div>
                             {mcpStatus?.rag?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Active' : 'Aktif'}
                               </span>
                             ) : (
@@ -2039,11 +2168,11 @@ const ChatLayout = () => {
                               : 'bg-surface-sunken/30 border-line/30 opacity-50'
                           }`}>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <Mail className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                              <Mail className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
                               <span className="font-semibold text-[11px] text-content truncate">Email</span>
                             </div>
                             {mcpStatus?.email?.allowed !== false ? (
-                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400">
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {language === 'en' ? 'Ready' : 'Siap'}
                               </span>
                             ) : (
@@ -2165,8 +2294,14 @@ const ChatLayout = () => {
               />
             ))}
 
-            {/* Jawaban yang sedang ditulis: tampilkan tekstualnya begitu ada,
-                indikator tahapan hanya selama belum ada teks sama sekali. */}
+            {/* Progres dan jawaban streaming tampil bersamaan. */}
+            {isCurrentLoading && (
+              <ThinkingIndicator
+                progress={currentProgress}
+                onStop={() => stopGeneration(activeSessionKey)}
+              />
+            )}
+
             {isCurrentLoading && currentStream.trim() && (
               <ChatMessage
                 message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
@@ -2175,25 +2310,22 @@ const ChatLayout = () => {
               />
             )}
 
-            {isCurrentLoading && !currentStream.trim() && (
-              <ThinkingIndicator progress={currentProgress} onStop={() => stopGeneration(activeSessionKey)} />
-            )}
-
             {currentMessages.length === 0 && !isCurrentLoading && (
-              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4">
+              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4 relative">
                 <div className="text-center mb-4 sm:mb-6">
-                  <div className="inline-flex items-center justify-center p-2.5 sm:p-3 bg-accent-soft rounded-xl sm:rounded-2xl text-accent-soft-fg mb-2 sm:mb-2.5">
-                    <Cpu className="w-5 h-5 sm:w-6 sm:h-6" aria-hidden="true" />
+                  {/* Clean Enterprise Hero Icon Badge */}
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-accent-soft text-accent border border-accent/20 flex items-center justify-center mx-auto mb-2.5 shadow-xs">
+                    <Cpu className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
                   </div>
 
                   {/* Judul 100% Presisi di Tengah Tanpa Beban Elemen Kiri/Kanan */}
-                  <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight text-center">
+                  <h3 className="text-base sm:text-xl font-bold text-content font-display tracking-tight text-center">
                     {t('suggestions.heroTitle')}
                   </h3>
 
                   {/* Badge & Tombol Refresh Terpusat Simetris di Bawah Judul */}
                   <div className="flex items-center justify-center mt-2 mb-1.5">
-                    {dynamicSuggestions ? (
+                    {dynamicSuggestions && isDynamicSuggestions ? (
                       <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20 text-[10px] sm:text-[11px] font-semibold shadow-2xs">
                         <span className="flex items-center gap-1">
                           <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
@@ -2280,8 +2412,10 @@ const ChatLayout = () => {
                         <button
                           key={item.title || idx}
                           onClick={() => handleSendMessage(item.query)}
-                          className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised hover:border-accent border border-line shadow-xs hover:shadow-md transition-all group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
+                          className="relative overflow-hidden flex items-center sm:items-start sm:flex-col text-left p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-surface-raised/90 backdrop-blur-sm hover:border-accent/70 border border-line/80 shadow-xs hover:shadow-lg hover:shadow-accent/5 transition-all duration-200 group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
                         >
+                          {/* Top hairline accent on hover */}
+                          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
                           <div className="flex items-center justify-between w-auto sm:w-full sm:mb-3.5 shrink-0">
                             <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors shrink-0">
                               <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
@@ -2314,6 +2448,12 @@ const ChatLayout = () => {
         </div>
 
         <ChatInput
+          user={user}
+          isGuest={isGuest}
+          onRequireLogin={() => {
+            setCustomLoginMsg(t('login.requiredPrompt'));
+            setIsLoginModalOpen(true);
+          }}
           onSendMessage={handleSendMessage}
           isLoading={isCurrentLoading}
           modes={chatModesEnabled ? modesList : []}
@@ -2336,8 +2476,9 @@ const ChatLayout = () => {
       <LoginModal
         isOpen={isLoginModalOpen}
         onLoginSuccess={handleLoginSuccess}
+        onGuestContinue={handleCloseLoginModal}
         customMessage={customLoginMsg}
-        onClose={() => setIsLoginModalOpen(false)}
+        onClose={handleCloseLoginModal}
       />
 
       <SettingsModal
@@ -2361,6 +2502,7 @@ const ChatLayout = () => {
       />
 
       <ForceChangePasswordModal
+        key={user?.username || 'force-change-pwd'}
         isOpen={Boolean(user && user.role !== 'guest' && user.force_change_password)}
         user={user}
         onSuccess={handleForcePasswordChanged}
@@ -2398,6 +2540,57 @@ const ChatLayout = () => {
         confirmText={t('common.delete')}
         cancelText={t('common.cancel')}
       />
+
+      {/* Modal Peringatan Sesi Terputus (Kicked by other device / admin) */}
+      {kickedModalInfo.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-md animate-modal-backdrop"
+            onClick={() => {
+              setKickedModalInfo({ isOpen: false, reason: '' });
+              resetToHome();
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-2xl bg-surface border border-rose-500/30 p-6 shadow-2xl shadow-rose-950/20 text-center animate-modal-content overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-transparent via-rose-500 to-transparent pointer-events-none" />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-rose-500 to-amber-500 text-white shadow-lg shadow-rose-500/30">
+              <ShieldAlert className="h-7 w-7 animate-pulse" />
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[11px] font-bold uppercase tracking-wider mb-2">
+              {t('kicked.modalBadge')}
+            </div>
+            <h3 className="text-lg font-bold text-content font-display tracking-tight">
+              {t('kicked.modalTitle')}
+            </h3>
+            <p className="mt-2 text-xs sm:text-sm text-content-secondary leading-relaxed bg-surface-sunken/60 p-3.5 rounded-xl border border-line">
+              {kickedModalInfo.reason || t('kicked.modalDesc')}
+            </p>
+            <div className="mt-6 flex flex-col-reverse sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setKickedModalInfo({ isOpen: false, reason: '' });
+                  resetToHome();
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-line hover:bg-surface-hover text-content-secondary hover:text-content text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              >
+                {t('kicked.returnHome')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setKickedModalInfo({ isOpen: false, reason: '' });
+                  resetToHome();
+                  setIsLoginModalOpen(true);
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer active:scale-95"
+              >
+                {t('kicked.relogin')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

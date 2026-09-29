@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # --- CORS & Rate Limiting ---
     cors_allow_origins: str = "*"
     guest_daily_limit: int = 1
+    # Wajib login untuk mengirim prompt dan menggunakan AI Assistant
+    require_login: bool = True
 
     # --- KUOTA TOKEN ---
     # Reset harian mengikuti tengah malam waktu setempat. Dengan UTC, kuota tim

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, KeyRound, MessageSquare, MonitorSmartphone, Plus, PowerOff, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -9,6 +9,8 @@ import AdminRoles from './AdminRoles';
 import AdminDivisions from './AdminDivisions';
 import AdminChatAudit from './AdminChatAudit';
 import AdminMcpConfig from './AdminMcpConfig';
+import AdminSessionMonitor from './AdminSessionMonitor';
+import AdminSecurityLogs from './AdminSecurityLogs';
 import {
   formatRoleLabel as formatRoleLabelFallback,
   getRoleBadgeStyle as getRoleBadgeStyleByColor,
@@ -138,7 +140,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [userSearch, setUserSearch] = useState('');
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff' });
+  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff', force_change_password: true, showPassword: false });
   const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '', division_code: '', job_level: 'staff' });
   const [resetModalUser, setResetModalUser] = useState(null);
   const [resetPasswordForm, setResetPasswordForm] = useState({
@@ -492,11 +494,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         role: selectedRoles[0] || 'user',
         division_code: newUserForm.division_code || null,
         job_level: newUserForm.job_level || 'staff',
+        force_change_password: Boolean(newUserForm.force_change_password),
       };
       await api.adminCreateUser(payload);
       
       setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff' });
+      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff', force_change_password: true, showPassword: false });
       setIsAddUserOpen(false);
       fetchUsers();
       fetchStats();
@@ -529,6 +532,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
+  const handleOpenAddUser = () => {
+    setNewUserForm({
+      username: '',
+      password: '',
+      full_name: '',
+      role: 'user',
+      roles: ['user'],
+      assistant_persona: '',
+      division_code: '',
+      job_level: 'staff',
+      force_change_password: true,
+      showPassword: false,
+    });
+    setActionError('');
+    setIsAddUserOpen(true);
+  };
+
   const handleOpenResetModal = (u) => {
     setResetModalUser(u);
     setResetPasswordForm({
@@ -540,13 +560,23 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     });
   };
 
-  const generateRandomPassword = () => {
+  const makeRandomPasswordString = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
     let res = '';
     for (let i = 0; i < 10; i++) {
       res += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    return res;
+  };
+
+  const generateRandomPassword = () => {
+    const res = makeRandomPasswordString();
     setResetPasswordForm((prev) => ({ ...prev, password: res, showPassword: true, error: '' }));
+  };
+
+  const generateRandomPasswordForNewUser = () => {
+    const res = makeRandomPasswordString();
+    setNewUserForm((prev) => ({ ...prev, password: res, showPassword: true }));
   };
 
   const handleExecuteResetPassword = async (e) => {
@@ -580,6 +610,34 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         error: err.message || (language === 'en' ? 'Failed to reset password.' : 'Gagal mereset password.'),
       }));
     }
+  };
+
+  const handleKickUserSessions = (targetUsername) => {
+    setConfirmModal({
+      isOpen: true,
+      variant: 'danger',
+      title: language === 'en' ? 'Kick User Sessions' : 'Putuskan Sesi Pengguna',
+      message: language === 'en'
+        ? `Are you sure you want to forcibly terminate all active login sessions for @${targetUsername}?`
+        : `Apakah Anda yakin ingin memutuskan paksa semua sesi aktif login untuk @${targetUsername}?`,
+      confirmText: language === 'en' ? 'Terminate All' : 'Putuskan Semua',
+      cancelText: language === 'en' ? 'Cancel' : 'Batal',
+      isLoading: false,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, isLoading: true }));
+        setActionError('');
+        setActionSuccess('');
+        try {
+          const res = await api.adminKickAllUserSessions(targetUsername);
+          setActionSuccess(res?.message || (language === 'en' ? 'Sessions terminated successfully.' : 'Semua sesi berhasil diputuskan.'));
+          setTimeout(() => setActionSuccess(''), 4000);
+          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
+        } catch (err) {
+          setActionError(err.message || 'Gagal memutuskan sesi.');
+          setConfirmModal((m) => ({ ...m, isLoading: false }));
+        }
+      },
+    });
   };
 
   const handleDeleteUser = (username) => {
@@ -741,9 +799,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   const tabCategories = [
     {
-      groupName: language === 'en' ? 'Monitoring & Metrics' : 'Monitoring & Metrik',
+      groupName: language === 'en' ? 'Monitoring & Security' : 'Monitoring & Keamanan',
       tabs: [
         { id: 'overview', icon: Activity, label: t('admin.tabOverview') },
+        { id: 'sessions', icon: MonitorSmartphone, label: t('admin.tabSessions') || (language === 'en' ? 'Sessions & Devices' : 'Sesi & Perangkat') },
+        { id: 'security_logs', icon: ShieldAlert, label: t('admin.tabSecurityLogs') || (language === 'en' ? 'Security Logs' : 'Log Keamanan') },
         { id: 'audit', icon: History, label: t('admin.tabAudit') },
         { id: 'feedback', icon: ThumbsDown, label: t('admin.tabFeedback') },
       ],
@@ -811,13 +871,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
         style={{ height: 'var(--app-height, 100dvh)' }}
       >
+      {/* Top glowing hairline accent */}
+      <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80 z-50 pointer-events-none" />
+
       {/* Header Modal */}
       <div
         className="relative flex items-center justify-between px-3.5 sm:px-6 py-2.5 sm:py-3 border-b border-line/80 bg-surface/95 backdrop-blur-xl shrink-0 z-40"
         style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.5rem)' }}
       >
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 pr-2">
-          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 shadow-2xs">
+          <div className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-accent via-indigo-600 to-indigo-500 text-white border border-white/20 flex items-center justify-center shrink-0 shadow-md shadow-accent/25">
             <ShieldCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
             <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -862,11 +925,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           </kbd>
           <button 
             onClick={onClose}
-            className="-mr-1 p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-content-muted hover:text-content hover:bg-surface-hover active:bg-surface-sunken transition-colors shrink-0 cursor-pointer border border-line/60 hover:border-line"
+            className="-mr-1 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
             aria-label={t('admin.closeAria')}
             title="Tutup (Esc)"
           >
-            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
@@ -1014,7 +1077,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     onClick={fetchStats}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800/60 transition-all cursor-pointer shrink-0"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Refresh'}</span>
+                    <RefreshCw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{language === 'en' ? 'Refresh' : 'Segarkan'}</span>
                   </button>
                 </div>
 
@@ -1288,10 +1351,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       />
                     </div>
                     <button
-                      onClick={() => setIsAddUserOpen(true)}
+                      onClick={handleOpenAddUser}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New User' : 'User Baru'}</span><span className="xs:hidden">Baru</span>
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden sm:inline">{language === 'en' ? 'New User' : 'User Baru'}</span>
+                      <span className="sm:hidden">{language === 'en' ? 'New' : 'Baru'}</span>
                     </button>
                   </div>
                 </div>
@@ -1457,6 +1522,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                   <ShieldCheck className="w-4 h-4" />
                                 </button>
                                 <button
+                                  onClick={() => handleKickUserSessions(u.username)}
+                                  className="p-1.5 text-content-subtle hover:text-rose-500 hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
+                                  title={language === 'en' ? `Kick all active sessions for ${u.username}` : `Putuskan semua sesi aktif ${u.username}`}
+                                  aria-label={`Kick sesi ${u.username}`}
+                                >
+                                  <PowerOff className="w-4 h-4" />
+                                </button>
+                                <button
                                   onClick={() => handleDeleteUser(u.username)}
                                   disabled={u.username === user.username}
                                   className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -1569,16 +1642,64 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </div>
 
                         <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Password *</label>
-                          <input 
-                            type="password"
-                            required
-                            value={newUserForm.password}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                            placeholder={language === 'en' ? 'Minimum 4 characters' : 'Minimal 4 karakter'}
-                            minLength={4}
-                          />
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-xs font-semibold text-content-muted">
+                              {language === 'en' ? 'Temporary Password' : 'Password Sementara'} *
+                            </label>
+                            <button
+                              type="button"
+                              onClick={generateRandomPasswordForNewUser}
+                              className="text-[11px] text-accent hover:underline font-medium cursor-pointer"
+                            >
+                              {language === 'en' ? '🎲 Generate Random' : '🎲 Acak Password'}
+                            </button>
+                          </div>
+                          <div className="relative flex items-center">
+                            <input 
+                              type={newUserForm.showPassword ? 'text' : 'password'}
+                              required
+                              value={newUserForm.password}
+                              onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                              autoComplete="new-password"
+                              className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all font-mono"
+                              placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
+                              minLength={8}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setNewUserForm((p) => ({ ...p, showPassword: !p.showPassword }))}
+                              className="absolute right-2.5 p-1 text-content-subtle hover:text-content text-xs rounded transition-colors"
+                              title={newUserForm.showPassword ? 'Hide' : 'Show'}
+                            >
+                              {newUserForm.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-content-subtle mt-1">
+                            {language === 'en'
+                              ? 'Provide this temporary password to the user to sign in.'
+                              : 'Berikan password sementara ini kepada user untuk proses login.'}
+                          </p>
+                        </div>
+
+                        <div className="p-3 bg-surface-sunken/70 border border-line rounded-xl space-y-1">
+                          <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={newUserForm.force_change_password}
+                              onChange={(e) => setNewUserForm({ ...newUserForm, force_change_password: e.target.checked })}
+                              className="mt-0.5 rounded text-accent focus:ring-accent/30 border-line"
+                            />
+                            <div className="text-xs">
+                              <span className="font-semibold text-content block">
+                                {language === 'en' ? 'Require password change on first login' : 'Wajibkan ganti password saat login pertama kali'}
+                              </span>
+                              <span className="text-[11px] text-content-muted leading-relaxed block mt-0.5">
+                                {language === 'en'
+                                  ? 'Status will show "Pending Reset" until the user sets their personal password.'
+                                  : 'Status akan bertuliskan "Pending Reset" hingga user mengatur password pribadinya.'}
+                              </span>
+                            </div>
+                          </label>
                         </div>
 
                         <div>
@@ -1868,6 +1989,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               type={resetPasswordForm.showPassword ? 'text' : 'password'}
                               value={resetPasswordForm.password}
                               onChange={(e) => setResetPasswordForm({ ...resetPasswordForm, password: e.target.value, error: '' })}
+                              autoComplete="new-password"
                               className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/40 outline-none text-content transition-all font-mono"
                               placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
                               required
@@ -2099,7 +2221,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       onClick={() => setIsAddSkillOpen(true)}
                       className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
                     >
-                      <Plus className="w-4 h-4" /> <span className="hidden xs:inline">{language === 'en' ? 'New Skill' : 'Skill Baru'}</span><span className="xs:hidden">Baru</span>
+                      <Plus className="w-4 h-4" />
+                      <span className="hidden sm:inline">{language === 'en' ? 'New Skill' : 'Skill Baru'}</span>
+                      <span className="sm:hidden">{language === 'en' ? 'New' : 'Baru'}</span>
                     </button>
                   </div>
                 </div>
@@ -2508,7 +2632,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                       title={language === 'en' ? 'Refresh' : 'Muat ulang'}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${kuotaLoading ? 'animate-spin' : ''}`} />
-                      <span className="hidden xs:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
+                      <span className="hidden sm:inline">{language === 'en' ? 'Refresh' : 'Muat ulang'}</span>
                     </button>
                   </div>
                 </div>
@@ -2900,6 +3024,14 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </>
                 )}
               </div>
+            )}
+
+            {activeTab === 'sessions' && (
+              <AdminSessionMonitor masterRoles={masterRoles} />
+            )}
+
+            {activeTab === 'security_logs' && (
+              <AdminSecurityLogs />
             )}
 
             {activeTab === 'audit' && (

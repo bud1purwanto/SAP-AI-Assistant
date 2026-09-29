@@ -690,7 +690,7 @@ export default function AdminAccessControl({
             title={isEn ? 'Sync latest MCP resource discovery' : 'Sinkronkan penemuan resource MCP terbaru'}
           >
             <RefreshCw className={`w-3.5 h-3.5 text-accent ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden xs:inline">{t('access.syncResources')}</span>
+            <span className="hidden sm:inline">{t('access.syncResources')}</span>
           </button>
         </div>
       </div>

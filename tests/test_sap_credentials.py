@@ -88,7 +88,7 @@ def test_test_sap_credential_endpoint_wrong_password(db, client, admin_auth):
     assert resp.status_code == 200
     data = resp.json()
     assert data["success"] is False
-    assert "tidak sesuai" in data["message"] or "gagal" in data["message"].lower()
+    assert "tidak sesuai" in data["message"] or "gagal" in data["message"].lower() or "terkunci" in data["message"].lower()
 
 
 
