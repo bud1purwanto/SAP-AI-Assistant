@@ -34,13 +34,13 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@192.168.1.232:5432/ABAP_DB
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set in .env}
       DASHBOARD_MCP_URL: ${DASHBOARD_MCP_URL:-http://192.168.1.161:4000}
-      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:-d216fa1a7457408f0fc51e7a8876fb352a425c7103c9e9be0c6f1d02e9d8399f}
+      DASHBOARD_MCP_API_TOKEN: ${DASHBOARD_MCP_API_TOKEN:?DASHBOARD_MCP_API_TOKEN must be set in .env}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "8006:8000"
+      - "127.0.0.1:8006:8000"
     networks:
       - default
       - ai-workspace
@@ -50,7 +50,7 @@ services:
     container_name: ai-assistant-frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "127.0.0.1:5173:80"
     depends_on:
       - backend
 

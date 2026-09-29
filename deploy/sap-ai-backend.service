@@ -4,7 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=it
+Group=it
 WorkingDirectory=/var/www/SAP-AI-Assistant/backend
 Environment="PATH=/var/www/SAP-AI-Assistant/backend/venv/bin:/usr/local/bin:/usr/bin"
 EnvironmentFile=-/var/www/SAP-AI-Assistant/backend/.env
