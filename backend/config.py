@@ -15,14 +15,14 @@ class Settings(BaseSettings):
     Catatan Arsitektur:
     - Infrastruktur server (Database URL, JWT Secret, CORS, Limits) dikonfigurasi via file .env / ENV server.
     - AI Provider (9Router, OpenRouter), MCP Servers (SAP, RAG, Email), Persona Organisasi, dan Skills
-      disimpan secara dinamis di database PostgreSQL (tabel `ai_assistant_dev.system_config` & `ai_assistant_dev.skills`)
+      disimpan secara dinamis di database PostgreSQL (tabel `system_config` & `skills` pada skema DATABASE_SCHEMA)
       dan dapat diubah secara live lewat Dashboard Admin (UI).
     """
     # ==============================================================================
     # 1. INFRASTRUKTUR SERVER & DATABASE (Wajib di .env untuk Level Server)
     # ==============================================================================
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
-    database_schema: str = "ai_assistant_dev"
+    database_schema: str
 
     # --- Dashboard OIDC BFF ---
     # Autentikasi dilakukan via Dashboard OIDC; SAP bertindak sebagai BFF
