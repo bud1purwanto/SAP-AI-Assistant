@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # 1. INFRASTRUKTUR SERVER & DATABASE (Wajib di .env untuk Level Server)
     # ==============================================================================
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB"
+    database_schema: str = "ai_assistant_dev"
 
     # --- Dashboard OIDC BFF ---
     # Autentikasi dilakukan via Dashboard OIDC; SAP bertindak sebagai BFF

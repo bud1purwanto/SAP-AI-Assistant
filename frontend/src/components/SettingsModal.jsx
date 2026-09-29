@@ -84,20 +84,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
     });
     return accessEntry?.accessState === 'approved';
   }, [lookupMcpAccessTarget]);
-
-  const { lookupTarget: lookupMcpAccessTarget } = useMcpAccessRequests(
-    isOpen && Boolean(user?.username && user?.role !== 'guest'),
-  );
-  const isSapTargetUnlocked = useCallback((server) => {
-    if (!server || server.is_allowed === false) return false;
-    const serverKey = server.alias || server.name;
-    const accessEntry = lookupMcpAccessTarget({
-      ...server,
-      resource_key: server.resource_key || (serverKey ? `sap:${serverKey}` : undefined),
-      resourceKey: server.resourceKey || (serverKey ? `sap:${serverKey}` : undefined),
-    });
-    return accessEntry?.accessState === 'approved';
-  }, [lookupMcpAccessTarget]);
   const showToast = useCallback((message, type = 'info') => {
     setSapCredMsg({
       type: type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'),

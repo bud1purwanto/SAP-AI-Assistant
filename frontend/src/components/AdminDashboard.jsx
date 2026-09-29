@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Gauge, History, MessageSquare, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, MessageSquare, MonitorSmartphone, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -471,6 +471,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         }
       },
     });
+  };
+
+  const handleOpenAddUser = () => {
+    setNewUserForm({
+      username: '',
+      password: '',
+      full_name: '',
+      role: 'user',
+      roles: ['user'],
+      assistant_persona: '',
+      division_code: '',
+      job_level: 'staff',
+      force_change_password: true,
+      showPassword: false,
+    });
+    setActionError('');
+    setIsAddUserOpen(true);
+  };
+
+  const makeRandomPasswordString = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
+    let res = '';
+    for (let i = 0; i < 10; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return res;
+  };
+
+  const generateRandomPasswordForNewUser = () => {
+    const res = makeRandomPasswordString();
+    setNewUserForm((prev) => ({ ...prev, password: res, showPassword: true }));
   };
 
   const handleCreateUser = async (e) => {

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Union
@@ -8,7 +9,7 @@ import base64
 import hashlib
 from cryptography.fernet import Fernet
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 
 from config import settings
 from migrations import run_migrations
@@ -56,27 +57,28 @@ def get_engine():
             "Dukungan SQLite telah dihapus."
         )
 
-    try:
-        connect_args = {"options": "-c search_path=ai_assistant_dev,public"}
-        engine = create_engine(db_url, pool_pre_ping=True, pool_timeout=5, connect_args=connect_args)
-        with engine.connect():
-            pass
-    except Exception as e:
-        logger.error(f"Koneksi PostgreSQL gagal: {e}")
-        # Pesan ini sering menjadi satu-satunya petunjuk saat pengembang baru
-        # menjalankan proyek, jadi sebutkan langkah perbaikannya secara konkret.
-        target = db_url.split("@")[-1] if "@" in db_url else db_url
-        raise RuntimeError(
-            f"Tidak dapat terhubung ke PostgreSQL di {target}.\n"
-            "  Aplikasi ini memerlukan PostgreSQL (dukungan SQLite sudah dihapus).\n"
-            "  Untuk pengembangan lokal jalankan:  docker compose up -d\n"
-            "  Lalu pastikan DATABASE_URL di backend/.env sudah benar."
-        ) from e
+    candidates = [db_url]
+    if "@127.0.0.1" in db_url or "@localhost" in db_url:
+        candidates.append(db_url.replace("@127.0.0.1", "@host.docker.internal").replace("@localhost", "@host.docker.internal"))
+        candidates.append(db_url.replace("@127.0.0.1", "@enterprise-ai-postgres").replace("@localhost", "@enterprise-ai-postgres"))
+
+    schema_name = settings.database_schema
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", schema_name):
+        raise ValueError("DATABASE_SCHEMA harus berupa identifier PostgreSQL tanpa spasi atau tanda baca.")
+    connect_args = {"options": f"-c search_path={schema_name},public"}
 
     last_error = None
     for candidate_url in candidates:
         try:
-            engine = create_engine(candidate_url, pool_pre_ping=True, pool_timeout=3)
+            engine = create_engine(candidate_url, pool_pre_ping=True, pool_timeout=5, connect_args=connect_args)
+            # SQL lama memakai nama skema development secara eksplisit. Pemetaan
+            # pada batas eksekusi juga mencakup migrasi dan kueri langsung.
+            @event.listens_for(engine, "before_cursor_execute", retval=True)
+            def _use_configured_schema(conn, cursor, statement, parameters, context, executemany):
+                if schema_name != "ai_assistant_dev":
+                    statement = re.sub(r"\bai_assistant_dev\b", schema_name, statement)
+                return statement, parameters
+
             with engine.connect():
                 pass
             _engine = engine
@@ -455,8 +457,8 @@ def init_db():
             # Mencegah error duplicate key jika ada riwayat data manual/dump restore.
             conn.execute(text("""
                 SELECT setval(
-                    'ai_assistant.chat_messages_id_seq',
-                    GREATEST((SELECT COALESCE(MAX(id), 1) FROM ai_assistant.chat_messages), 1)
+                    'ai_assistant_dev.chat_messages_id_seq',
+                    GREATEST((SELECT COALESCE(MAX(id), 1) FROM ai_assistant_dev.chat_messages), 1)
                 );
             """))
 

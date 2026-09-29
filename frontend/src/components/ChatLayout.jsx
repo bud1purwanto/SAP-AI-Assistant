@@ -1999,8 +1999,9 @@ const ChatLayout = () => {
                           PRD
                         </span>
                       )}
+                      <ChevronDown className={`w-3.5 h-3.5 text-content-subtle transition-transform duration-200 ${isServerDropdownOpen ? 'rotate-180 text-accent' : ''}`} />
                     </div>
-                  )}
+                  </button>
 
                   {/* Custom Connected Systems Hub Dropdown Menu */}
                   {hasMultipleTargets && isServerDropdownOpen && (
