@@ -13,7 +13,6 @@ import {
   Globe, 
   Info,
   Loader2,
-  Lock, 
   Save, 
   Server, 
   ShieldCheck, 
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
+import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 
 const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToast: parentShowToast }) => {
   const { language, setLanguage, t, languages } = useLanguage();
@@ -72,6 +72,19 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
   const [sapCredMsg, setSapCredMsg] = useState({ type: '', text: '' });
   const [savingSapCred, setSavingSapCred] = useState(false);
 
+  const { lookupTarget: lookupMcpAccessTarget } = useMcpAccessRequests(
+    isOpen && Boolean(user?.username && user?.role !== 'guest'),
+  );
+  const isSapTargetUnlocked = useCallback((server) => {
+    if (!server || server.is_allowed === false) return false;
+    const serverKey = server.alias || server.name;
+    const accessEntry = lookupMcpAccessTarget({
+      ...server,
+      resource_key: server.resource_key || (serverKey ? `sap:${serverKey}` : undefined),
+      resourceKey: server.resourceKey || (serverKey ? `sap:${serverKey}` : undefined),
+    });
+    return accessEntry?.accessState === 'approved';
+  }, [lookupMcpAccessTarget]);
   const showToast = useCallback((message, type = 'info') => {
     setSapCredMsg({
       type: type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'),
@@ -166,12 +179,11 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
   useEffect(() => {
     if (!isEditMode && availableSapServers.length > 0) {
       const savedList = sapCreds.map(c => (c.target || '').toLowerCase());
-      const currentExists = availableSapServers.some(s => s.alias === sapTarget || s.name === sapTarget);
+      const currentExists = availableSapServers.some(s => isSapTargetUnlocked(s) && (s.alias === sapTarget || s.name === sapTarget));
       const isAlreadySaved = savedList.includes((sapTarget || '').toLowerCase());
       if (!currentExists || isAlreadySaved || !sapTarget) {
-        const firstAvailable = availableSapServers.find(s => s.is_allowed && !savedList.includes((s.alias || '').toLowerCase()))
-          || availableSapServers.find(s => s.is_allowed)
-          || availableSapServers[0];
+        const firstAvailable = availableSapServers.find(s => isSapTargetUnlocked(s) && !savedList.includes((s.alias || '').toLowerCase()))
+          || availableSapServers.find(s => isSapTargetUnlocked(s));
         if (firstAvailable) {
           const tKey = firstAvailable.alias || firstAvailable.name;
           setSapTarget(tKey);
@@ -181,7 +193,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
         }
       }
     }
-  }, [availableSapServers, sapCreds, isEditMode]);
+  }, [availableSapServers, sapCreds, isEditMode, isSapTargetUnlocked, sapTarget]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -215,9 +227,8 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
     setSapCredMsg({ type: '', text: '' });
     setTestResult(null);
     const savedList = sapCreds.map(c => (c.target || '').toLowerCase());
-    const firstAvailable = availableSapServers.find(s => s.is_allowed && !savedList.includes((s.alias || '').toLowerCase()))
-      || availableSapServers.find(s => s.is_allowed)
-      || availableSapServers[0];
+    const firstAvailable = availableSapServers.find(s => isSapTargetUnlocked(s) && !savedList.includes((s.alias || '').toLowerCase()))
+      || availableSapServers.find(s => isSapTargetUnlocked(s));
     if (firstAvailable) {
       setSapTarget(firstAvailable.alias || firstAvailable.name);
       if (firstAvailable.client) setSapClient(firstAvailable.client);
@@ -653,86 +664,51 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
                             <span>{t('settings.sapLoadingServers')}</span>
                           </div>
-                        ) : availableSapServers.length === 0 ? (
+                        ) : availableSapServers.filter(isSapTargetUnlocked).length === 0 ? (
                           <div className="p-3 text-xs text-content-muted italic text-center">
                             {t('settings.sapSelectTarget')}
                           </div>
                         ) : (
-                          <>
-                            {/* 1. Server Tersedia untuk Anda */}
-                            {availableSapServers.some(s => s.is_allowed) && (
-                              <div className="mb-1">
-                                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
-                                  {t('settings.sapAvailableForYou')}
-                                </div>
-                                <div className="space-y-0.5">
-                                  {availableSapServers.filter(s => s.is_allowed).map(s => {
-                                    const srvKey = s.alias || s.name;
-                                    const isSelected = sapTarget === srvKey;
-                                    const isConfigured = s.has_credential;
-                                    const isCurrentEditing = isEditMode && editingTarget === srvKey;
-                                    const isDisabled = isConfigured && !isCurrentEditing;
+                          /* ponytail: only display unlocked/allowed SAP target servers in login/credential settings */
+                          <div className="space-y-0.5">
+                            {availableSapServers.filter(isSapTargetUnlocked).map(s => {
+                              const srvKey = s.alias || s.name;
+                              const isSelected = sapTarget === srvKey;
+                              const isConfigured = s.has_credential;
+                              const isCurrentEditing = isEditMode && editingTarget === srvKey;
+                              const isDisabled = isConfigured && !isCurrentEditing;
 
-                                    return (
-                                      <button
-                                        key={srvKey}
-                                        type="button"
-                                        disabled={isDisabled}
-                                        onClick={() => {
-                                          setSapTarget(srvKey);
-                                          if (s.client) setSapClient(s.client);
-                                          setIsTargetDropdownOpen(false);
-                                        }}
-                                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors text-left ${
-                                          isSelected
-                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
-                                            : isDisabled
-                                            ? 'opacity-40 cursor-not-allowed text-content-muted'
-                                            : 'text-content hover:bg-surface-hover cursor-pointer'
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-emerald-500' : 'bg-transparent'}`} />
-                                          <span className="truncate">{s.name || srvKey}</span>
-                                        </div>
-                                        {isConfigured && (
-                                          <span className="text-[10px] text-content-muted font-normal shrink-0">
-                                            {t('settings.sapAlreadyConfigured')}
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* 2. Server Terbatas (Tidak Ada Izin) */}
-                            {availableSapServers.some(s => !s.is_allowed) && (
-                              <div className="pt-1 border-t border-line/60">
-                                <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-content-subtle">
-                                  {t('settings.sapRestrictedServers')}
-                                </div>
-                                <div className="space-y-0.5">
-                                  {availableSapServers.filter(s => !s.is_allowed).map(s => {
-                                    const srvKey = s.alias || s.name;
-                                    return (
-                                      <div
-                                        key={srvKey}
-                                        className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-content-muted opacity-50 cursor-not-allowed select-none"
-                                        title={t('settings.sapNoAccess')}
-                                      >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <Lock className="w-3 h-3 text-content-subtle shrink-0" />
-                                          <span className="truncate">{s.name || srvKey}</span>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            )}
-                          </>
+                              return (
+                                <button
+                                  key={srvKey}
+                                  type="button"
+                                  disabled={isDisabled}
+                                  onClick={() => {
+                                    setSapTarget(srvKey);
+                                    if (s.client) setSapClient(s.client);
+                                    setIsTargetDropdownOpen(false);
+                                  }}
+                                  className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors text-left ${
+                                    isSelected
+                                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold'
+                                      : isDisabled
+                                      ? 'opacity-40 cursor-not-allowed text-content-muted'
+                                      : 'text-content hover:bg-surface-hover cursor-pointer'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? 'bg-emerald-500' : 'bg-transparent'}`} />
+                                    <span className="truncate">{s.name || srvKey}</span>
+                                  </div>
+                                  {isConfigured && (
+                                    <span className="text-[10px] text-content-muted font-normal shrink-0">
+                                      {t('settings.sapAlreadyConfigured')}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
                     )}
