@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Union
@@ -235,6 +236,10 @@ def init_db():
             # Feedback rating ('like' | 'dislike' | null) untuk audit kepuasan pengguna.
             conn.execute(text(
                 "ALTER TABLE {DB_SCHEMA}.chat_messages ADD COLUMN IF NOT EXISTS feedback VARCHAR(10)"
+            ))
+            # Rincian pemakaian token jawaban disimpan agar konsisten setelah reload.
+            conn.execute(text(
+                "ALTER TABLE {DB_SCHEMA}.chat_messages ADD COLUMN IF NOT EXISTS usage TEXT"
             ))
             # Kolom-kolom ini dibaca pada setiap pembukaan sesi dan render sidebar.
             conn.execute(text("""
@@ -1046,99 +1051,114 @@ def delete_mcp_server(server_id: str) -> bool:
 
 # --- CHAT SESSION & HISTORY FUNCTIONS ---
 
-def create_chat_session(username: str, title: str = "Percakapan Baru"):
-    """Buat sesi chat baru di database PostgreSQL."""
+def create_chat_session(username: str, title: str = "Percakapan Baru", oidc_sub: str = None):
+    """Buat sesi chat dengan sub OIDC sebagai pemilik otoritatif."""
     session_id = f"session_{uuid.uuid4().hex[:12]}"
+    clean_sub = str(oidc_sub or "").strip()
+    if not clean_sub:
+        return None
     try:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(text("""
-                INSERT INTO {DB_SCHEMA}.chat_sessions (session_id, username, title)
-                VALUES (:sid, :u, :t)
-            """), {"sid": session_id, "u": username, "t": title})
+                INSERT INTO {DB_SCHEMA}.chat_sessions (session_id, username, oidc_sub, title)
+                VALUES (:sid, :u, :sub, :t)
+            """), {"sid": session_id, "u": username, "sub": clean_sub, "t": title})
             conn.commit()
-            return {
-                "session_id": session_id,
-                "username": username,
-                "title": title
-            }
+            return {"session_id": session_id, "username": username, "oidc_sub": clean_sub, "title": title}
     except Exception as e:
         logger.error(f"Error create_chat_session: {e}")
         return None
 
-def get_chat_sessions(username: str):
-    """Ambil semua daftar sesi percakapan milik user yang memiliki pesan."""
+
+def _klaim_sesi_legacy(conn, oidc_sub: str, username: str) -> None:
+    """Klaim hanya sesi tanpa sub yang label username-nya persis cocok."""
+    if not oidc_sub or not username:
+        return
+    conn.execute(text("""
+        UPDATE {DB_SCHEMA}.chat_sessions
+        SET oidc_sub = :sub
+        WHERE oidc_sub IS NULL AND LOWER(username) = LOWER(:username)
+    """), {"sub": oidc_sub.strip(), "username": username.strip()})
+
+
+def get_chat_sessions(oidc_sub: str, username: str = None):
+    """Ambil sesi berdasarkan sub OIDC; sesi legacy diklaim aman satu kali."""
+    if not oidc_sub:
+        return []
     try:
         engine = get_engine()
         with engine.connect() as conn:
+            _klaim_sesi_legacy(conn, oidc_sub, username)
             rows = conn.execute(text("""
                 SELECT s.session_id, s.title, s.created_at, s.updated_at
                 FROM {DB_SCHEMA}.chat_sessions s
-                WHERE LOWER(s.username) = LOWER(:u)
-                  AND EXISTS (
-                      SELECT 1 FROM {DB_SCHEMA}.chat_messages m
-                      WHERE m.session_id = s.session_id
-                  )
+                WHERE s.oidc_sub = :sub
+                  AND EXISTS (SELECT 1 FROM {DB_SCHEMA}.chat_messages m WHERE m.session_id = s.session_id)
                 ORDER BY s.updated_at DESC
-            """), {"u": username.strip()}).fetchall()
-            return [
-                {
-                    "session_id": r.session_id,
-                    "title": r.title,
-                    "created_at": _iso(r.created_at),
-                    "updated_at": _iso(r.updated_at)
-                }
-                for r in rows
-            ]
+            """), {"sub": oidc_sub.strip()}).fetchall()
+            conn.commit()
+            return [{"session_id": r.session_id, "title": r.title, "created_at": _iso(r.created_at), "updated_at": _iso(r.updated_at)} for r in rows]
     except Exception as e:
         logger.error(f"Error get_chat_sessions: {e}")
         return []
 
-def delete_chat_session(session_id: str, username: str):
-    """Hapus sesi chat beserta pesannya."""
+
+def delete_chat_session(session_id: str, oidc_sub: str):
+    """Hapus sesi beserta pesannya bila dimiliki sub OIDC yang sama."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            # Pesan dihapus eksplisit agar tidak bergantung pada ON DELETE CASCADE.
             conn.execute(text("""
-                DELETE FROM {DB_SCHEMA}.chat_messages
-                WHERE session_id IN (
-                    SELECT session_id FROM {DB_SCHEMA}.chat_sessions
-                    WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
+                DELETE FROM {DB_SCHEMA}.chat_messages WHERE session_id IN (
+                    SELECT session_id FROM {DB_SCHEMA}.chat_sessions WHERE session_id = :sid AND oidc_sub = :sub
                 )
-            """), {"sid": session_id, "u": username.strip()})
+            """), {"sid": session_id, "sub": oidc_sub.strip()})
             res = conn.execute(text("""
-                DELETE FROM {DB_SCHEMA}.chat_sessions
-                WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
-            """), {"sid": session_id, "u": username.strip()})
+                DELETE FROM {DB_SCHEMA}.chat_sessions WHERE session_id = :sid AND oidc_sub = :sub
+            """), {"sid": session_id, "sub": oidc_sub.strip()})
             conn.commit()
-            # rowcount 0 berarti sesi tidak ada atau bukan milik user ini.
             return res.rowcount > 0
     except Exception as e:
         logger.error(f"Error delete_chat_session: {e}")
         return False
 
-def rename_chat_session(session_id: str, username: str, new_title: str):
-    """Mengubah judul sesi percakapan milik user tertentu."""
+
+def rename_chat_session(session_id: str, oidc_sub: str, new_title: str):
+    """Mengubah judul sesi yang dimiliki sub OIDC tertentu."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
             res = conn.execute(text("""
-                UPDATE {DB_SCHEMA}.chat_sessions
-                SET title = :t, updated_at = CURRENT_TIMESTAMP
-                WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
-            """), {"t": new_title.strip()[:100], "sid": session_id, "u": username.strip()})
+                UPDATE {DB_SCHEMA}.chat_sessions SET title = :t, updated_at = CURRENT_TIMESTAMP
+                WHERE session_id = :sid AND oidc_sub = :sub
+            """), {"t": new_title.strip()[:100], "sid": session_id, "sub": oidc_sub.strip()})
             conn.commit()
             return res.rowcount > 0
     except Exception as e:
         logger.error(f"Error rename_chat_session: {e}")
         return False
 
+def _judul_dari_ringkasan_ai(content: str) -> str:
+    """Ambil judul pendek dari heading atau kalimat pertama respons AI."""
+    for raw_line in (content or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("|", "```", "---", "***")):
+            continue
+        line = re.sub(r"^#{1,6}\s+", "", line)
+        line = re.sub(r"^[*_-]+\s*", "", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"[*_`#]", "", line).strip(" .:-")
+        if line:
+            return line[:100]
+    return "Percakapan Baru"
+
+
 def add_chat_message(session_id: str, role: str, content: str,
                      sources: Optional[str] = None, artifacts: Optional[str] = None,
                      attachments: Optional[str] = None,
                      usage: Optional[str] = None) -> Optional[int]:
-    """Tambah pesan (user / ai) ke dalam sesi percakapan. Mengembalikan ID pesan yang dibuat."""
+    """Tambah pesan dan jadikan ringkasan jawaban AI sebagai judul otomatis."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -1151,42 +1171,39 @@ def add_chat_message(session_id: str, role: str, content: str,
                    "a": artifacts or "", "att": attachments or "", "usage": usage or ""})
             row = res.fetchone()
             msg_id = row[0] if row else None
-            
-            # Update title jika ini pesan pertama dan judul masih "Percakapan Baru".
-            if role == 'user':
+
+            if role in ("ai", "assistant"):
                 conn.execute(text("""
                     UPDATE {DB_SCHEMA}.chat_sessions
                     SET updated_at = CURRENT_TIMESTAMP,
-                        title = CASE
-                            WHEN title = 'Percakapan Baru' THEN :title
-                            ELSE title
-                        END
+                        title = :title
                     WHERE session_id = :sid
-                """), {"title": (content or "").strip()[:40] or "Percakapan Baru", "sid": session_id})
-            
+                      AND title IN ('Percakapan Baru', 'New Conversation')
+                """), {"title": _judul_dari_ringkasan_ai(content), "sid": session_id})
+            else:
+                conn.execute(text("""
+                    UPDATE {DB_SCHEMA}.chat_sessions
+                    SET updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = :sid
+                """), {"sid": session_id})
+
             conn.commit()
             return msg_id
     except Exception as e:
         logger.error(f"Error add_chat_message: {e}")
         return None
 
-def update_message_feedback(message_id: int, feedback: Optional[str], username: Optional[str] = None) -> bool:
-    """Update rating kepuasan pesan ('like', 'dislike', atau None).
-    
-    Bila username diberikan, pastikan pesan berasal dari sesi milik user tersebut.
-    """
+def update_message_feedback(message_id: int, feedback: Optional[str], oidc_sub: Optional[str] = None) -> bool:
+    """Update rating pesan, dibatasi pada pemilik sesi berdasarkan sub OIDC."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            if username is not None:
+            if oidc_sub is not None:
                 res = conn.execute(text("""
-                    UPDATE {DB_SCHEMA}.chat_messages m
-                    SET feedback = :fb
+                    UPDATE {DB_SCHEMA}.chat_messages m SET feedback = :fb
                     FROM {DB_SCHEMA}.chat_sessions s
-                    WHERE m.id = :mid
-                      AND m.session_id = s.session_id
-                      AND LOWER(s.username) = LOWER(:u)
-                """), {"mid": message_id, "fb": feedback, "u": username.strip()})
+                    WHERE m.id = :mid AND m.session_id = s.session_id AND s.oidc_sub = :sub
+                """), {"mid": message_id, "fb": feedback, "sub": oidc_sub.strip()})
             else:
                 res = conn.execute(text("""
                     UPDATE {DB_SCHEMA}.chat_messages
@@ -1199,7 +1216,7 @@ def update_message_feedback(message_id: int, feedback: Optional[str], username: 
         logger.error(f"Error update_message_feedback: {e}")
         return False
 
-def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]:
+def truncate_chat_messages_from(message_id: int, oidc_sub: str) -> Optional[str]:
     """Hapus satu pesan beserta seluruh pesan sesudahnya dalam sesi yang sama.
 
     Dipakai oleh "buat ulang jawaban" dan "edit pertanyaan": keduanya menulis
@@ -1209,7 +1226,7 @@ def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]
     Mengembalikan session_id bila ada yang dihapus, None bila pesan tidak
     ditemukan atau bukan milik user tersebut.
     """
-    if not message_id or not username:
+    if not message_id or not oidc_sub:
         return None
     try:
         engine = get_engine()
@@ -1218,8 +1235,8 @@ def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]
                 SELECT m.session_id
                 FROM {DB_SCHEMA}.chat_messages m
                 JOIN {DB_SCHEMA}.chat_sessions s ON s.session_id = m.session_id
-                WHERE m.id = :mid AND LOWER(s.username) = LOWER(:u)
-            """), {"mid": message_id, "u": username.strip()}).fetchone()
+                WHERE m.id = :mid AND s.oidc_sub = :sub
+            """), {"mid": message_id, "sub": oidc_sub.strip()}).fetchone()
             if not row:
                 return None
             session_id = row.session_id
@@ -1234,49 +1251,31 @@ def truncate_chat_messages_from(message_id: int, username: str) -> Optional[str]
         return None
 
 
-def search_chat_history(username: str, query: str, limit: int = 30):
-    """Cari kata kunci pada judul sesi dan isi pesan milik user.
-
-    Hasil dikelompokkan per sesi dan diurutkan dari percakapan terbaru, dengan
-    satu cuplikan pesan yang cocok agar pengguna tahu mengapa sesi itu muncul.
-    """
+def search_chat_history(oidc_sub: str, query: str, limit: int = 30):
+    """Cari riwayat milik satu subjek OIDC."""
     term = (query or "").strip()
-    if not username or len(term) < 2:
+    if not oidc_sub or len(term) < 2:
         return []
     pattern = f"%{term}%"
     try:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT s.session_id,
-                       s.title,
-                       s.updated_at,
-                       (
-                           SELECT m.content
-                           FROM {DB_SCHEMA}.chat_messages m
-                           WHERE m.session_id = s.session_id
-                             AND m.content ILIKE :q
-                           ORDER BY m.id DESC
-                           LIMIT 1
-                       ) AS snippet,
-                       (
-                           SELECT COUNT(*)
-                           FROM {DB_SCHEMA}.chat_messages m
-                           WHERE m.session_id = s.session_id
-                             AND m.content ILIKE :q
-                       ) AS hits
+                SELECT s.session_id, s.title, s.updated_at,
+                       (SELECT m.content FROM {DB_SCHEMA}.chat_messages m
+                        WHERE m.session_id = s.session_id AND m.content ILIKE :q
+                        ORDER BY m.id DESC LIMIT 1) AS snippet,
+                       (SELECT COUNT(*) FROM {DB_SCHEMA}.chat_messages m
+                        WHERE m.session_id = s.session_id AND m.content ILIKE :q) AS hits
                 FROM {DB_SCHEMA}.chat_sessions s
-                WHERE LOWER(s.username) = LOWER(:u)
-                  AND (
-                      s.title ILIKE :q
-                      OR EXISTS (
-                          SELECT 1 FROM {DB_SCHEMA}.chat_messages m
-                          WHERE m.session_id = s.session_id AND m.content ILIKE :q
-                      )
-                  )
+                WHERE s.oidc_sub = :sub
+                  AND (s.title ILIKE :q OR EXISTS (
+                      SELECT 1 FROM {DB_SCHEMA}.chat_messages m
+                      WHERE m.session_id = s.session_id AND m.content ILIKE :q
+                  ))
                 ORDER BY s.updated_at DESC
                 LIMIT :lim
-            """), {"u": username.strip(), "q": pattern, "lim": limit}).fetchall()
+            """), {"sub": oidc_sub.strip(), "q": pattern, "lim": limit}).fetchall()
 
             results = []
             for r in rows:
@@ -1435,12 +1434,57 @@ def set_role_limit(role: str, daily_token_limit: int, per_minute_limit: int) -> 
         return False
 
 
-def get_token_usage(username: str, tanggal: str = None) -> dict:
-    """Pemakaian token seorang pengguna pada satu hari."""
+def get_user_token_limits() -> dict:
+    """Batas per subjek OIDC; username hanya dipakai sebagai label tampilan."""
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT oidc_sub, daily_token_limit, per_minute_limit
+                FROM {DB_SCHEMA}.user_token_limits ORDER BY oidc_sub
+            """)).fetchall()
+            return {str(r.oidc_sub): {
+                "daily_token_limit": int(r.daily_token_limit or 0),
+                "per_minute_limit": int(r.per_minute_limit or 0),
+            } for r in rows}
+    except Exception as e:
+        logger.error(f"Error get_user_token_limits: {e}")
+        return {}
+
+
+def get_user_token_limit(oidc_sub: str) -> Optional[dict]:
+    if not oidc_sub:
+        return None
+    return get_user_token_limits().get(str(oidc_sub).strip())
+
+
+def set_user_token_limit(oidc_sub: str, daily_token_limit: int, per_minute_limit: int) -> bool:
+    if not oidc_sub:
+        return False
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO {DB_SCHEMA}.user_token_limits
+                    (oidc_sub, daily_token_limit, per_minute_limit)
+                VALUES (:sub, :h, :m)
+                ON CONFLICT (oidc_sub) DO UPDATE SET
+                    daily_token_limit = :h, per_minute_limit = :m,
+                    updated_at = CURRENT_TIMESTAMP
+            """), {"sub": str(oidc_sub).strip(), "h": max(0, int(daily_token_limit or 0)), "m": max(0, int(per_minute_limit or 0))})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error set_user_token_limit: {e}")
+        return False
+
+
+def get_token_usage(oidc_sub: str, tanggal: str = None) -> dict:
+    """Pemakaian token subjek OIDC pada satu hari."""
     tanggal = tanggal or tanggal_kuota()
     kosong = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
               "requests": 0, "estimated": False, "usage_date": tanggal}
-    if not username:
+    if not oidc_sub:
         return kosong
     try:
         engine = get_engine()
@@ -1448,8 +1492,8 @@ def get_token_usage(username: str, tanggal: str = None) -> dict:
             r = conn.execute(text("""
                 SELECT prompt_tokens, completion_tokens, total_tokens, requests, estimated
                 FROM {DB_SCHEMA}.token_usage
-                WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
-            """), {"u": username.strip(), "d": tanggal}).fetchone()
+                WHERE oidc_sub = :sub AND usage_date = :d
+            """), {"sub": str(oidc_sub).strip(), "d": tanggal}).fetchone()
             if not r:
                 return kosong
             return {
@@ -1465,10 +1509,10 @@ def get_token_usage(username: str, tanggal: str = None) -> dict:
         return kosong
 
 
-def record_token_usage(username: str, prompt_tokens: int, completion_tokens: int,
+def record_token_usage(oidc_sub: str, prompt_tokens: int, completion_tokens: int,
                        estimated: bool = False, tanggal: str = None) -> None:
-    """Tambahkan pemakaian satu permintaan ke catatan harian."""
-    if not username:
+    """Tambahkan pemakaian satu permintaan untuk subjek OIDC."""
+    if not oidc_sub:
         return
     tanggal = tanggal or tanggal_kuota()
     p = max(0, int(prompt_tokens or 0))
@@ -1478,10 +1522,10 @@ def record_token_usage(username: str, prompt_tokens: int, completion_tokens: int
         with engine.connect() as conn:
             conn.execute(text("""
                 INSERT INTO {DB_SCHEMA}.token_usage
-                    (username, usage_date, prompt_tokens, completion_tokens,
+                    (oidc_sub, usage_date, prompt_tokens, completion_tokens,
                      total_tokens, requests, estimated)
-                VALUES (:u, :d, :p, :c, :t, 1, :e)
-                ON CONFLICT (username, usage_date) DO UPDATE SET
+                VALUES (:sub, :d, :p, :c, :t, 1, :e)
+                ON CONFLICT (oidc_sub, usage_date) DO UPDATE SET
                     prompt_tokens     = {DB_SCHEMA}.token_usage.prompt_tokens + :p,
                     completion_tokens = {DB_SCHEMA}.token_usage.completion_tokens + :c,
                     total_tokens      = {DB_SCHEMA}.token_usage.total_tokens + :t,
@@ -1490,23 +1534,23 @@ def record_token_usage(username: str, prompt_tokens: int, completion_tokens: int
                     -- lagi hasil ukur murni.
                     estimated         = {DB_SCHEMA}.token_usage.estimated OR :e,
                     updated_at        = CURRENT_TIMESTAMP
-            """), {"u": username.strip(), "d": tanggal, "p": p, "c": c, "t": p + c,
+            """), {"sub": str(oidc_sub).strip(), "d": tanggal, "p": p, "c": c, "t": p + c,
                    "e": bool(estimated)})
             conn.commit()
     except Exception as e:
         logger.error(f"Error record_token_usage: {e}")
 
 
-def catat_permintaan(username: str) -> None:
-    """Catat satu permintaan untuk perhitungan batas per menit."""
-    if not username:
+def catat_permintaan(oidc_sub: str) -> None:
+    """Catat satu permintaan subjek OIDC untuk batas per menit."""
+    if not oidc_sub:
         return
     try:
         engine = get_engine()
         with engine.connect() as conn:
             conn.execute(
-                text("INSERT INTO {DB_SCHEMA}.request_log (username) VALUES (:u)"),
-                {"u": username.strip()},
+                text("INSERT INTO {DB_SCHEMA}.request_log (oidc_sub) VALUES (:sub)"),
+                {"sub": str(oidc_sub).strip()},
             )
             # Jejak lama tidak berguna untuk jendela satu menit dan hanya
             # menggemukkan tabel.
@@ -1519,34 +1563,34 @@ def catat_permintaan(username: str) -> None:
         logger.error(f"Error catat_permintaan: {e}")
 
 
-def hitung_permintaan_semenit(username: str) -> int:
-    """Jumlah permintaan pengguna dalam 60 detik terakhir."""
-    if not username:
+def hitung_permintaan_semenit(oidc_sub: str) -> int:
+    """Jumlah permintaan subjek OIDC dalam 60 detik terakhir."""
+    if not oidc_sub:
         return 0
     try:
         engine = get_engine()
         with engine.connect() as conn:
             return int(conn.execute(text("""
                 SELECT COUNT(*) FROM {DB_SCHEMA}.request_log
-                WHERE LOWER(username) = LOWER(:u)
+                WHERE oidc_sub = :sub
                   AND created_at >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
-            """), {"u": username.strip()}).scalar() or 0)
+            """), {"sub": str(oidc_sub).strip()}).scalar() or 0)
     except Exception as e:
         logger.error(f"Error hitung_permintaan_semenit: {e}")
         return 0
 
 
-def reset_token_usage(username: str = None, tanggal: str = None) -> int:
-    """Nolkan pemakaian. Tanpa username berarti seluruh pengguna pada hari itu."""
+def reset_token_usage(oidc_sub: str = None, tanggal: str = None) -> int:
+    """Nolkan pemakaian subjek OIDC; tanpa sub berarti seluruh pengguna."""
     tanggal = tanggal or tanggal_kuota()
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            if username:
+            if oidc_sub:
                 res = conn.execute(text("""
                     DELETE FROM {DB_SCHEMA}.token_usage
-                    WHERE LOWER(username) = LOWER(:u) AND usage_date = :d
-                """), {"u": username.strip(), "d": tanggal})
+                    WHERE oidc_sub = :sub AND usage_date = :d
+                """), {"sub": str(oidc_sub).strip(), "d": tanggal})
             else:
                 res = conn.execute(
                     text("DELETE FROM {DB_SCHEMA}.token_usage WHERE usage_date = :d"),
@@ -1566,18 +1610,16 @@ def ringkasan_pemakaian_harian(tanggal: str = None, limit: int = 100) -> list:
         engine = get_engine()
         with engine.connect() as conn:
             rows = conn.execute(text("""
-                SELECT t.username, t.total_tokens, t.prompt_tokens, t.completion_tokens,
-                       t.requests, t.estimated, u.role
+                SELECT t.oidc_sub, t.total_tokens, t.prompt_tokens, t.completion_tokens,
+                       t.requests, t.estimated
                 FROM {DB_SCHEMA}.token_usage t
-                LEFT JOIN {DB_SCHEMA}.users u ON LOWER(u.username) = LOWER(t.username)
                 WHERE t.usage_date = :d
                 ORDER BY t.total_tokens DESC
                 LIMIT :lim
             """), {"d": tanggal, "lim": max(1, min(int(limit or 100), 500))}).fetchall()
             return [
                 {
-                    "username": r.username,
-                    "role": r.role or "-",
+                    "oidc_sub": r.oidc_sub,
                     "total_tokens": int(r.total_tokens or 0),
                     "prompt_tokens": int(r.prompt_tokens or 0),
                     "completion_tokens": int(r.completion_tokens or 0),
@@ -1591,34 +1633,25 @@ def ringkasan_pemakaian_harian(tanggal: str = None, limit: int = 100) -> list:
         return []
 
 
-def session_belongs_to(session_id: str, username: str) -> bool:
-    """Cek apakah sesi percakapan dimiliki user tersebut."""
-    if not session_id or not username:
+def session_belongs_to(session_id: str, oidc_sub: str) -> bool:
+    """Cek kepemilikan sesi berdasarkan sub OIDC yang stabil."""
+    if not session_id or not oidc_sub:
         return False
     try:
         engine = get_engine()
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT 1 FROM {DB_SCHEMA}.chat_sessions
-                WHERE session_id = :sid AND LOWER(username) = LOWER(:u)
-            """), {"sid": session_id, "u": username.strip()}).fetchone()
+                WHERE session_id = :sid AND oidc_sub = :sub
+            """), {"sid": session_id, "sub": oidc_sub.strip()}).fetchone()
             return row is not None
     except Exception as e:
         logger.error(f"Error session_belongs_to: {e}")
         return False
 
 
-def get_chat_messages(session_id: str, username: str = None, limit: int = 200, before_id: int = None):
-    """Ambil pesan dalam suatu sesi percakapan.
-
-    Bila `username` diberikan, hasil dibatasi pada sesi milik user tersebut.
-    Pemanggil yang melewatkan None (jalur audit Super Admin) harus sudah
-    melakukan pemeriksaan otorisasinya sendiri.
-
-    Hasil dibatasi `limit` pesan TERAKHIR agar percakapan panjang tidak
-    mengirim seluruh isinya sekaligus; `before_id` dipakai untuk memuat
-    halaman sebelumnya.
-    """
+def get_chat_messages(session_id: str, oidc_sub: str = None, limit: int = 200, before_id: int = None):
+    """Ambil pesan sesi; bila sub ada, batasi pada kepemilikan OIDC."""
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -1629,13 +1662,13 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
             if before_id:
                 params["before"] = before_id
 
-            if username is not None:
-                params["u"] = username.strip()
+            if oidc_sub is not None:
+                params["sub"] = oidc_sub.strip()
                 sql = f"""
                     SELECT m.id, m.role, m.content, m.sources, m.artifacts, m.attachments, m.usage, m.feedback, m.created_at
                     FROM {DB_SCHEMA}.chat_messages m
                     JOIN {DB_SCHEMA}.chat_sessions s ON s.session_id = m.session_id
-                    WHERE m.session_id = :sid AND LOWER(s.username) = LOWER(:u) {page_filter}
+                    WHERE m.session_id = :sid AND s.oidc_sub = :sub {page_filter}
                     ORDER BY m.id DESC
                     LIMIT :lim
                 """
@@ -1668,9 +1701,9 @@ def get_chat_messages(session_id: str, username: str = None, limit: int = 200, b
         return []
 
 
-def get_recent_user_queries(username: str, limit: int = 8) -> list[str]:
-    """Ambil daftar pertanyaan terakhir yang diajukan oleh pengguna di seluruh sesinya."""
-    if not username or username.strip().lower() == "guest":
+def get_recent_user_queries(oidc_sub: str, limit: int = 8) -> list[str]:
+    """Ambil pertanyaan terakhir dari seluruh sesi milik subjek OIDC."""
+    if not oidc_sub or oidc_sub.strip().lower() == "guest":
         return []
     try:
         engine = get_engine()
@@ -1680,11 +1713,11 @@ def get_recent_user_queries(username: str, limit: int = 8) -> list[str]:
                     SELECT m.content
                     FROM {DB_SCHEMA}.chat_messages m
                     JOIN {DB_SCHEMA}.chat_sessions s ON s.session_id = m.session_id
-                    WHERE LOWER(s.username) = LOWER(:u) AND m.role = 'user'
+                    WHERE s.oidc_sub = :sub AND m.role = 'user'
                     ORDER BY m.id DESC
                     LIMIT :lim
                 """),
-                {"u": username.strip(), "lim": limit}
+                {"sub": oidc_sub.strip(), "lim": limit}
             ).fetchall()
             seen = set()
             result = []
@@ -2240,7 +2273,12 @@ def delete_user_by_admin(username: str):
         return {"success": False, "message": str(e)}
 
 def get_top_active_users(period: str = "month", limit: int = 10):
-    """Mengambil daftar user paling aktif berdasarkan jumlah sesi percakapan dengan filter periode."""
+    """Mengambil daftar user paling aktif berdasarkan sesi yang dibuat pada periode ini."""
+    period = str(period or "month").lower()
+    if period == "day":
+        period = "today"
+    if period not in {"today", "week", "month", "year", "all"}:
+        period = "month"
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -4413,6 +4451,32 @@ def record_auth_audit_log(
     except Exception as e:
         logger.error(f"Gagal mencatat auth_audit_log: {e}")
         return False
+
+
+def save_dashboard_session_token(session_id: str, access_token: str) -> bool:
+    """Simpan token OIDC terenkripsi pada sesi yang telah dibuat saat login."""
+    if not session_id or not access_token:
+        return False
+    with get_engine().begin() as conn:
+        result = conn.execute(text("""
+            UPDATE {DB_SCHEMA}.user_sessions
+            SET dashboard_token_encrypted = :token
+            WHERE id = :id AND is_active = TRUE
+        """), {"id": session_id, "token": encrypt_fernet(access_token)})
+        return result.rowcount == 1
+
+
+def get_dashboard_session_token(session_id: str) -> Optional[str]:
+    """Baca token OIDC hanya dari sesi aktif yang belum kedaluwarsa."""
+    if not session_id:
+        return None
+    with get_engine().connect() as conn:
+        encrypted = conn.execute(text("""
+            SELECT dashboard_token_encrypted FROM {DB_SCHEMA}.user_sessions
+            WHERE id = :id AND is_active = TRUE
+              AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+        """), {"id": session_id}).scalar()
+    return decrypt_fernet(encrypted) if encrypted else None
 
 
 def create_user_session(

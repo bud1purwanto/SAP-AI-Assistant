@@ -30,7 +30,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: '', url: '', enabled: true });
+  const [form, setForm] = useState({ id: '', name: '', url: '', enabled: true });
 
   // Delete confirm state
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, name: '' });
@@ -40,9 +40,23 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
     setLoading(true);
     setActionError('');
     try {
-      const res = await api.adminMcpServers();
-      const list = Array.isArray(res?.servers) ? res.servers : (Array.isArray(res) ? res : []);
-      setServers(list);
+      const [liveResponse, registryResponse] = await Promise.all([api.adminMcpServers(), api.adminMcpRegistry()]);
+      const live = Array.isArray(liveResponse?.servers) ? liveResponse.servers : [];
+      const registry = Array.isArray(registryResponse?.servers) ? registryResponse.servers : [];
+      const configuredById = new Map(registry.map((server) => [String(server.id).toLowerCase(), server]));
+      const liveIds = new Set(live.map((server) => String(server.id).toLowerCase()));
+      const combined = live.map((server) => {
+        const configured = configuredById.get(String(server.id).toLowerCase());
+        return configured
+          ? { ...server, ...configured, is_registered: true, live_status: server }
+          : { ...server, is_registered: false, live_status: server };
+      });
+      for (const server of registry) {
+        if (!liveIds.has(String(server.id).toLowerCase())) {
+          combined.push({ ...server, is_registered: true, live_status: null });
+        }
+      }
+      setServers(combined);
       if (onRefreshMcpServers) {
         onRefreshMcpServers();
       }
@@ -59,13 +73,20 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
 
   const openAddModal = () => {
     setEditingId(null);
-    setForm({ name: '', url: '', enabled: true });
+    setForm({ id: '', name: '', url: '', enabled: true });
+    setIsModalOpen(true);
+  };
+
+  const openConfigureModal = (server) => {
+    setEditingId(null);
+    setForm({ id: server.id, name: server.name || server.id, url: '', enabled: true });
     setIsModalOpen(true);
   };
 
   const openEditModal = (server) => {
     setEditingId(server.id);
     setForm({
+      id: server.id,
       name: server.name || '',
       url: server.url || '',
       enabled: server.enabled !== false,
@@ -73,11 +94,11 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
     setIsModalOpen(true);
   };
 
-  const closeModal = () => {
-    if (submitting) return;
+  const closeModal = (force = false) => {
+    if (submitting && force !== true) return;
     setIsModalOpen(false);
     setEditingId(null);
-    setForm({ name: '', url: '', enabled: true });
+    setForm({ id: '', name: '', url: '', enabled: true });
   };
 
   const handleSubmit = async (e) => {
@@ -97,14 +118,14 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
         });
       } else {
         await api.adminCreateMcpServer({
-          id: form.name.trim().toLowerCase().replace(/\s+/g, '-'),
+          id: form.id || form.name.trim().toLowerCase().replace(/\s+/g, '-'),
           name: form.name.trim(),
           url: form.url.trim(),
           enabled: form.enabled,
         });
       }
       setActionSuccess(t('mcp.saved'));
-      closeModal();
+      closeModal(true);
       await fetchServers();
     } catch (err) {
       setActionError(err.message || t('common.error'));
@@ -171,7 +192,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
             <span>MCP Servers</span>
           </h3>
           <p className="text-xs text-content-muted mt-0.5">
-            URL-only registry for Model Context Protocol upstream servers.
+            {t('mcp.registryDescription')}
           </p>
         </div>
         <button
@@ -218,7 +239,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
       ) : servers.length === 0 ? (
         <div className="p-8 text-center border border-dashed border-line rounded-2xl bg-surface/50 text-content-muted text-xs">
           <Server className="w-8 h-8 mx-auto mb-2 opacity-40" />
-          <p>No MCP servers registered yet.</p>
+          <p>{t('mcp.noServers')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3">
@@ -227,6 +248,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
             const isTesting = testingId === sid;
             const result = testResult && testResult.id === sid ? testResult : null;
             const isEnabled = server.enabled !== false;
+            const isOnline = server.live_status?.online === true || server.live_status?.status === 'online';
 
             return (
               <div
@@ -240,12 +262,14 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     </span>
                     <span
                       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                        isEnabled
+                        (server.live_status ? isOnline : isEnabled)
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                           : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
                       }`}
                     >
-                      {isEnabled ? t('mcp.enabled') : 'Disabled'}
+                      {server.live_status
+                        ? (isOnline ? t('mcp.online') : t('mcp.offline'))
+                        : (isEnabled ? t('mcp.enabled') : t('mcp.disabled'))}
                     </span>
                     {result && (
                       <span
@@ -265,7 +289,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     )}
                   </div>
                   <p className="text-[11px] font-mono text-content-muted truncate break-all">
-                    {server.url || '—'}
+                    {server.url || t('mcp.dashboardManaged')}
                   </p>
                 </div>
 
@@ -284,22 +308,31 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     )}
                     <span className="hidden xs:inline">Test</span>
                   </button>
-                  <button
+                  {!server.is_registered && <button
+                    type="button"
+                    onClick={() => openConfigureModal(server)}
+                    aria-label={t('mcp.setLocalUrl')}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>{t('mcp.setLocalUrl')}</span>
+                  </button>}
+                  {server.is_registered && <button
                     type="button"
                     onClick={() => openEditModal(server)}
                     aria-label={t('mcp.editServer')}
                     className="p-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs transition-colors cursor-pointer"
                   >
                     <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
+                  </button>}
+                  {server.is_registered && <button
                     type="button"
                     onClick={() => confirmDelete(server)}
                     aria-label={t('common.delete')}
                     className="p-1.5 rounded-lg border border-line hover:bg-rose-500/10 text-rose-500 hover:border-rose-500/20 text-xs transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </button>}
                 </div>
               </div>
             );
@@ -318,7 +351,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
             <div className="flex items-center justify-between p-4 border-b border-line">
               <h4 className="text-sm font-bold text-content flex items-center gap-2">
                 <Server className="w-4 h-4 text-accent" />
-                <span>{editingId ? t('mcp.editServer') : t('mcp.addServer')}</span>
+                <span>{editingId ? t('mcp.editServer') : form.id ? t('mcp.setLocalUrl') : t('mcp.addServer')}</span>
               </h4>
               <button
                 type="button"
@@ -387,7 +420,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-accent text-accent-contrast text-xs font-semibold hover:bg-accent/90 cursor-pointer disabled:opacity-50"
                 >
                   {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{editingId ? t('common.save') : t('mcp.addServer')}</span>
+                  <span>{editingId || form.id ? t('common.save') : t('mcp.addServer')}</span>
                 </button>
               </div>
             </form>

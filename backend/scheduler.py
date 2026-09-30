@@ -286,7 +286,8 @@ async def execute_task(task: dict, lease_owner: str = None) -> dict:
         # Buat sesi chat baru di riwayat percakapan pengguna
         now_wib_str = datetime.now(WIB_TZ).strftime('%d/%m/%Y %H:%M')
         session_title = f"📋 [{title}] {now_wib_str}"
-        session_info = database.create_chat_session(user_id, session_title)
+        # Tugas lama hanya menyimpan label username; riwayat baru wajib memakai sub OIDC.
+        session_info = database.create_chat_session(user_id, session_title, oidc_sub=user_id)
         active_session_id = session_info.get("session_id") if session_info else None
 
         if active_session_id:

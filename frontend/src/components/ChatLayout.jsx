@@ -181,6 +181,7 @@ const ChatLayout = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('persona');
+  const [sapCredentialIssue, setSapCredentialIssue] = useState(null);
   const [toast, setToast] = useState(null);
 
   const openSettings = useCallback((tab = 'persona') => {
@@ -1069,8 +1070,9 @@ const ChatLayout = () => {
     // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
     if (!isGuest && !targetSessionId) {
       try {
-        const title = text.trim().slice(0, 40) || (language === 'en' ? 'New Conversation' : 'Percakapan Baru');
-        const newSess = await api.createSession(title);
+        // Judul baru dipilih setelah jawaban AI selesai tersimpan, agar riwayat
+        // mencerminkan ringkasan hasil diskusi alih-alih hanya prompt pertama.
+        const newSess = await api.createSession(language === 'en' ? 'New Conversation' : 'Percakapan Baru');
         if (newSess?.session_id) {
           targetSessionId = newSess.session_id;
           setCurrentSessionId(targetSessionId);
@@ -1109,6 +1111,7 @@ const ChatLayout = () => {
     lastStreamActivityRef.current[targetKey] = Date.now();
 
     let finalSessionId = null;
+    const requestedSapTarget = connectorConfig.sapTarget || (activeServer.startsWith('sap:') ? activeServer.slice(4) : '');
     try {
       const history = prevMessages
         .filter((m) => !m.isWelcome)
@@ -1263,19 +1266,24 @@ const ChatLayout = () => {
         }));
         return;
       }
-      if (err?.code === 'NEED_SAP_CREDENTIAL' || err?.detail?.includes?.('NEED_SAP_CREDENTIAL') || err?.message?.includes?.('NEED_SAP_CREDENTIAL')) {
-        setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
-        let parsed = err;
-        try {
-          parsed = typeof err.detail === 'string' ? JSON.parse(err.detail) : (typeof err.message === 'string' && err.message.includes('NEED_SAP_CREDENTIAL') ? JSON.parse(err.message) : err);
-        } catch {
-          parsed = err;
+      const credentialDetail = (() => {
+        if (err?.detail && typeof err.detail === 'object') return err.detail;
+        for (const value of [err?.detail, err?.message]) {
+          if (typeof value !== 'string') continue;
+          try {
+            const parsed = JSON.parse(value);
+            if (parsed && typeof parsed === 'object') return parsed;
+          } catch { /* ordinary error text */ }
         }
-        const toastMsg = language === 'en' ? t('sap.bindRequired') : (parsed?.message || t('sap.bindRequired'));
-        showToast(toastMsg, 'warning', {
-          action: { label: t('settings.title'), onClick: () => openSettings('sap') }
-        });
-        return; // Don't show generic error
+        return null;
+      })();
+      const credentialCode = err?.code || credentialDetail?.code;
+      if (credentialCode === 'NEED_SAP_CREDENTIAL' || credentialCode === 'SAP_CREDENTIAL_INVALID') {
+        setMessagesMap((prev) => ({ ...prev, [targetKey]: prevMessages }));
+        const target = String(credentialDetail?.target || requestedSapTarget || '').replace(/^sap:/i, '');
+        setSapCredentialIssue({ code: credentialCode, target });
+        openSettings('sap');
+        return;
       }
 
       // Kuota tamu habis: arahkan ke login, bukan tampilkan error mentah.
@@ -1648,7 +1656,15 @@ const ChatLayout = () => {
                           ) : (
                             <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content-muted'}`} aria-hidden="true" />
                           )}
-                          <span className="truncate">{session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}</span>
+                          <span
+                            className="session-title-marquee"
+                            title={session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}
+                          >
+                            <span className="session-title-marquee__track">
+                              <span>{session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}</span>
+                              <span aria-hidden="true">{session.title || (language === 'en' ? 'AI Chat' : 'Obrolan AI')}</span>
+                            </span>
+                          </span>
                         </button>
                         <div className="flex items-center gap-0.5 pr-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
                           <button
@@ -2663,8 +2679,9 @@ const ChatLayout = () => {
 
       <SettingsModal
         isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+        onClose={() => { setIsSettingsOpen(false); setSapCredentialIssue(null); }}
         user={user}
+        sapCredentialIssue={sapCredentialIssue}
         initialTab={settingsTab}
         showToast={showToast}
       />

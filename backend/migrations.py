@@ -1059,6 +1059,97 @@ def _m0025_user_modes_sessions_auth_audit(conn):
     """))
 
 
+def _m0026_dashboard_session_token(conn):
+    """Simpan token OIDC terenkripsi agar sesi tetap valid antar worker/reload."""
+    conn.execute(text("""
+        ALTER TABLE {DB_SCHEMA}.user_sessions
+        ADD COLUMN IF NOT EXISTS dashboard_token_encrypted TEXT
+    """))
+
+
+def _m0027_user_token_limits(conn):
+    """Konfigurasi kuota aplikasi per subjek OIDC yang stabil."""
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS {DB_SCHEMA}.user_token_limits (
+            oidc_sub VARCHAR(255) PRIMARY KEY,
+            daily_token_limit INTEGER NOT NULL DEFAULT 0,
+            per_minute_limit INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT user_token_limits_nonnegative
+                CHECK (daily_token_limit >= 0 AND per_minute_limit >= 0)
+        )
+    """))
+
+
+def _m0028_kuota_pakai_sub_oidc(conn):
+    """Ganti nama kolom konfigurasi kuota lama menjadi identitas OIDC.
+
+    Nilai legacy yang masih berupa username tidak dapat ditebak sub-nya tanpa
+    directory OIDC, sehingga tidak dipakai sebagai kecocokan implisit. Admin
+    dapat menyimpan ulang batas untuk sub yang benar melalui dashboard.
+    """
+    old_column = conn.execute(text("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = '{DB_SCHEMA}'
+          AND table_name = 'user_token_limits'
+          AND column_name = 'username'
+    """)).fetchone()
+    new_column = conn.execute(text("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = '{DB_SCHEMA}'
+          AND table_name = 'user_token_limits'
+          AND column_name = 'oidc_sub'
+    """)).fetchone()
+    if old_column and not new_column:
+        conn.execute(text("""
+            ALTER TABLE {DB_SCHEMA}.user_token_limits
+            RENAME COLUMN username TO oidc_sub
+        """))
+    conn.execute(text("""
+        ALTER TABLE {DB_SCHEMA}.user_token_limits
+        ALTER COLUMN oidc_sub TYPE VARCHAR(255)
+    """))
+
+
+def _m0030_riwayat_chat_pakai_sub_oidc(conn):
+    """Kepemilikan riwayat chat memakai sub OIDC; username menjadi label legacy."""
+    conn.execute(text("""
+        ALTER TABLE {DB_SCHEMA}.chat_sessions
+        ADD COLUMN IF NOT EXISTS oidc_sub VARCHAR(255)
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_sub_updated
+        ON {DB_SCHEMA}.chat_sessions (oidc_sub, updated_at DESC)
+    """))
+
+
+def _m0029_pemakaian_kuota_pakai_sub_oidc(conn):
+    """Kolom identitas pemakaian dan rate-limit mengikuti sub OIDC."""
+    for table in ("token_usage", "request_log"):
+        old_column = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = '{DB_SCHEMA}'
+              AND table_name = :table AND column_name = 'username'
+        """), {"table": table}).fetchone()
+        new_column = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = '{DB_SCHEMA}'
+              AND table_name = :table AND column_name = 'oidc_sub'
+        """), {"table": table}).fetchone()
+        if old_column and not new_column:
+            conn.execute(text(f"ALTER TABLE {DB_SCHEMA}.{table} RENAME COLUMN username TO oidc_sub"))
+        conn.execute(text(f"ALTER TABLE {DB_SCHEMA}.{table} ALTER COLUMN oidc_sub TYPE VARCHAR(255)"))
+
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_token_usage_sub_tanggal
+        ON {DB_SCHEMA}.token_usage (oidc_sub, usage_date)
+    """))
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_request_log_sub_waktu
+        ON {DB_SCHEMA}.request_log (LOWER(oidc_sub), created_at DESC)
+    """))
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -1085,6 +1176,11 @@ MIGRATIONS = [
     ("0023_scheduled_task_leases", _m0023_scheduled_task_leases),
     ("0024_user_sap_tokens", _m0024_user_sap_tokens),
     ("0025_user_modes_sessions_auth_audit", _m0025_user_modes_sessions_auth_audit),
+    ("0026_dashboard_session_token", _m0026_dashboard_session_token),
+    ("0027_user_token_limits", _m0027_user_token_limits),
+    ("0028_kuota_pakai_sub_oidc", _m0028_kuota_pakai_sub_oidc),
+    ("0029_pemakaian_kuota_pakai_sub_oidc", _m0029_pemakaian_kuota_pakai_sub_oidc),
+    ("0030_riwayat_chat_pakai_sub_oidc", _m0030_riwayat_chat_pakai_sub_oidc),
 ]
 
 

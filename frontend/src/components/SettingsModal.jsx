@@ -26,7 +26,7 @@ import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 
-const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToast: parentShowToast }) => {
+const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCredentialIssue = null, showToast: parentShowToast }) => {
   const { language, setLanguage, t, languages } = useLanguage();
   const [activeTab, setActiveTab] = useState(initialTab || 'persona');
   const [config, setConfig] = useState({
@@ -63,6 +63,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
   const [isTargetDropdownOpen, setIsTargetDropdownOpen] = useState(false);
   const targetDropdownRef = useRef(null);
   const sapBannerRef = useRef(null);
+  const handledSapIssueRef = useRef(null);
+  const sapIssueLoadingRef = useRef(false);
+  const [sapIssueDismissed, setSapIssueDismissed] = useState(false);
 
   const [sapTarget, setSapTarget] = useState('');
   const [sapUser, setSapUser] = useState('');
@@ -135,6 +138,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
       setUserRole(currentRole);
       setSaveStatus('');
       setSapCredMsg({ type: '', text: '' });
+      setSapIssueDismissed(false);
+      handledSapIssueRef.current = null;
+      sapIssueLoadingRef.current = true;
       setTestResult(null);
       setIsEditMode(false);
       setEditingTarget(null);
@@ -170,7 +176,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
         api.mySapCredentials()
           .then(data => setSapCreds(Array.isArray(data) ? data : []))
           .catch(err => console.error('Failed to load SAP credentials', err))
-          .finally(() => setLoadingSapCreds(false));
+          .finally(() => { setLoadingSapCreds(false); sapIssueLoadingRef.current = false; });
       }
     }
   }, [isOpen, initialTab, user, loadSapServers]);
@@ -193,6 +199,34 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
       }
     }
   }, [availableSapServers, sapCreds, isEditMode, isSapTargetUnlocked, sapTarget]);
+
+  useEffect(() => {
+    if (!isOpen || !sapCredentialIssue || sapIssueLoadingRef.current || loadingSapCreds || loadingSapServers || handledSapIssueRef.current === sapCredentialIssue) return;
+    const target = String(sapCredentialIssue.target || '').replace(/^sap:/i, '').trim().toLowerCase();
+    if (!target) {
+      handledSapIssueRef.current = sapCredentialIssue;
+      return;
+    }
+    const server = availableSapServers.find((item) =>
+      [item.alias, item.name, ...(item.aliases || [])].some((name) => String(name || '').toLowerCase() === target)
+    );
+    if (server && !isSapTargetUnlocked(server)) return;
+    const names = [target, server?.alias, server?.name, ...(server?.aliases || [])]
+      .filter(Boolean).map((name) => String(name).toLowerCase());
+    const saved = sapCreds.find((cred) => names.includes(String(cred.target || '').toLowerCase()));
+    if (saved) {
+      setIsEditMode(true);
+      setEditingTarget(saved.target);
+      setSapTarget(saved.target);
+      setSapUser(saved.sap_user || '');
+      setSapClient(saved.sap_client || server?.client || '100');
+      setSapPass('');
+    } else if (server) {
+      setSapTarget(server.alias || server.name);
+      setSapClient(server.client || '100');
+    }
+    handledSapIssueRef.current = sapCredentialIssue;
+  }, [isOpen, sapCredentialIssue, sapCreds, availableSapServers, loadingSapCreds, loadingSapServers, isSapTargetUnlocked]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -295,6 +329,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
         ? (t('settings.sapUpdatedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil diperbarui.`)
         : (t('settings.sapSavedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil disimpan.`);
       setSapCredMsg({ type: 'success', text: successMsg });
+      setSapIssueDismissed(true);
       setSapPass('');
       setIsEditMode(false);
       setEditingTarget(null);
@@ -556,6 +591,20 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', showToas
                   {t('settings.sapAESDesc')}
                 </p>
               </div>
+
+              {sapCredentialIssue && !sapIssueDismissed && (
+                <div role="alert" className="p-3.5 rounded-2xl text-xs flex items-start gap-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="font-medium">
+                    {t(
+                      sapCredentialIssue.code === 'SAP_CREDENTIAL_INVALID'
+                        ? (sapCredentialIssue.target ? 'sap.invalidCredentialsForTarget' : 'sap.invalidCredentials')
+                        : (sapCredentialIssue.target ? 'sap.credentialRequiredForTarget' : 'sap.credentialRequired'),
+                      { target: sapCredentialIssue.target },
+                    )}
+                  </span>
+                </div>
+              )}
 
               {sapCredMsg.text && (
                 <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2.5 ${

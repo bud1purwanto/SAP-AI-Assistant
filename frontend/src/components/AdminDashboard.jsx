@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, MessageSquare, MonitorSmartphone, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, MessageSquare, MonitorSmartphone, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, User, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -54,6 +54,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [topUsersPeriod, setTopUsersPeriod] = useState('month');
   const [topUsersList, setTopUsersList] = useState([]);
   const [topUsersLoading, setTopUsersLoading] = useState(false);
+  const [topUsersUpdatedAt, setTopUsersUpdatedAt] = useState(null);
+  const [topUsersError, setTopUsersError] = useState(false);
+  const topUsersPeriodRef = useRef('month');
+  const topUsersRequestRef = useRef(0);
 
   // Dynamic Live MCP Servers for Dashboard Overview
   const liveMcpServers = useMemo(() => {
@@ -199,33 +203,57 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [savingBatas, setSavingBatas] = useState(false);
   const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
-  const fetchStats = useCallback(async (period = topUsersPeriod) => {
+  const fetchStats = useCallback(async (period = topUsersPeriodRef.current) => {
+    const requestId = topUsersRequestRef.current;
     setStatsLoading(true);
     try {
       const data = await api.adminStats(period, 10);
       setStats(data);
-      if (data?.top_users) {
+      if (Array.isArray(data?.top_users) && period === topUsersPeriodRef.current && requestId === topUsersRequestRef.current) {
         setTopUsersList(data.top_users);
+        setTopUsersUpdatedAt(data.as_of || new Date().toISOString());
+        setTopUsersError(false);
       }
     } catch (err) {
+      if (requestId === topUsersRequestRef.current) setTopUsersError(true);
       console.error("Gagal load stats:", err);
     } finally {
       setStatsLoading(false);
     }
-  }, [topUsersPeriod]);
+  }, []);
 
-  const handleTopUsersPeriodChange = async (newPeriod) => {
-    setTopUsersPeriod(newPeriod);
-    setTopUsersLoading(true);
+  const refreshTopUsers = useCallback(async (period, showLoading = false) => {
+    const requestId = ++topUsersRequestRef.current;
+    if (showLoading) setTopUsersLoading(true);
     try {
-      const res = await api.adminTopUsers(newPeriod, 10);
-      setTopUsersList(res?.top_users || []);
+      const res = await api.adminTopUsers(period, 10);
+      if (!Array.isArray(res)) throw new Error('Invalid top users response');
+      if (requestId !== topUsersRequestRef.current || period !== topUsersPeriodRef.current) return;
+      setTopUsersList(res);
+      setTopUsersUpdatedAt(new Date().toISOString());
+      setTopUsersError(false);
     } catch (err) {
+      if (requestId === topUsersRequestRef.current) setTopUsersError(true);
       console.error("Gagal load top users:", err);
     } finally {
-      setTopUsersLoading(false);
+      if (requestId === topUsersRequestRef.current) setTopUsersLoading(false);
     }
+  }, []);
+
+  const handleTopUsersPeriodChange = (newPeriod) => {
+    topUsersPeriodRef.current = newPeriod;
+    setTopUsersPeriod(newPeriod);
+    setTopUsersUpdatedAt(null);
+    setTopUsersList([]);
+    refreshTopUsers(newPeriod, true);
   };
+
+  useEffect(() => {
+    if (!isOpen || user?.role !== 'superadmin' || activeTab !== 'overview') return undefined;
+    fetchStats();
+    const timer = window.setInterval(() => fetchStats(), 60_000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, user?.role, activeTab, fetchStats]);
 
   const fetchFeedback = async (kind) => {
     setFeedbackLoading(true);
@@ -313,7 +341,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     if (isOpen && user?.role === 'superadmin') {
       setActionSuccess('');
       setActionError('');
-      fetchStats();
       fetchUsers();
       fetchSkills();
       fetchConfig();
@@ -340,16 +367,29 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const fetchKuota = async () => {
     setKuotaLoading(true);
     try {
-      const data = await api.adminQuota();
-      setKuota(data);
-      // Inisialisasi draft batas peran sesuai data backend.
+      const [data, directoryUsers] = await Promise.all([
+        api.adminQuota(),
+        api.adminUsers(),
+      ]);
       const draft = {};
-      Object.entries(data.role_limits || {}).forEach(([peran, cfg]) => {
-        draft[peran] = {
-          daily_token_limit: cfg.daily_token_limit ?? 0,
-          per_minute_limit: cfg.per_minute_limit ?? 0,
+      directoryUsers.forEach((directoryUser) => {
+        const oidcSub = String(directoryUser.id || '').trim();
+        if (!oidcSub) return;
+        const configured = data.user_limits?.[oidcSub];
+        const isConfigured = Boolean(configured);
+        draft[oidcSub] = {
+          username: directoryUser.username || oidcSub,
+          full_name: directoryUser.full_name || '',
+          configured: isConfigured,
+          daily_token_limit: configured?.daily_token_limit ?? (data.enforced ? data.pending_default_daily_token_limit : 0),
+          per_minute_limit: configured?.per_minute_limit ?? 0,
         };
       });
+      Object.entries(data.user_limits || {}).forEach(([oidcSub, configured]) => {
+        if (!draft[oidcSub]) draft[oidcSub] = { oidc_sub: oidcSub, ...configured };
+      });
+      setUsersList(directoryUsers);
+      setKuota(data);
       setBatasDraft(draft);
     } catch (err) {
       console.error('Gagal load kuota token:', err);
@@ -412,21 +452,22 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const simpanSemuaBatas = async () => {
     setActionError('');
     setActionSuccess('');
-    const roles = Object.keys(kuota?.role_limits || {});
-    if (roles.length === 0) return;
+    const subjects = Object.keys(batasDraft);
+    if (subjects.length === 0) return;
 
     const payloadLimits = {};
-    for (const peran of roles) {
-      const draft = batasDraft[peran] || {};
+    for (const oidcSub of subjects) {
+      const draft = batasDraft[oidcSub] || {};
       const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
       const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
       const harian = rawHarian === '' ? 0 : Number.parseInt(rawHarian, 10);
       const permenit = rawPermenit === '' ? 0 : Number.parseInt(rawPermenit, 10);
       if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
-        setActionError(language === 'en' ? `Limits for role '${peran}' must be non-negative integers.` : `Batas peran '${peran}' harus berupa angka bulat 0 atau lebih.`);
+        const label = draft.username || oidcSub;
+        setActionError(language === 'en' ? `Limits for user '${label}' must be non-negative integers.` : `Batas pengguna '${label}' harus berupa angka bulat 0 atau lebih.`);
         return;
       }
-      payloadLimits[peran] = {
+      payloadLimits[oidcSub] = {
         daily_token_limit: harian,
         per_minute_limit: permenit,
       };
@@ -435,8 +476,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setSavingBatas(true);
     try {
       const hasil = await api.adminQuotaBatas({ limits: payloadLimits });
-      setKuota((k) => (k ? { ...k, role_limits: hasil.role_limits } : k));
-      setActionSuccess(language === 'en' ? 'All role limits saved successfully.' : 'Semua batas peran berhasil disimpan.');
+      setKuota((k) => (k ? { ...k, user_limits: hasil.user_limits } : k));
+        setActionSuccess(language === 'en' ? 'All user limits saved successfully.' : 'Semua batas pengguna berhasil disimpan.');
     } catch (err) {
       setActionError(err.message);
     } finally {
@@ -444,8 +485,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const resetKuota = (username) => {
-    const sasaran = username || (language === 'en' ? 'ALL users' : 'SEMUA pengguna');
+  const resetKuota = (oidcSub, username = '') => {
+    const sasaran = username || oidcSub || (language === 'en' ? 'ALL users' : 'SEMUA pengguna');
     setConfirmModal({
       isOpen: true,
       variant: 'reset',
@@ -461,7 +502,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         setActionError('');
         setActionSuccess('');
         try {
-          const hasil = await api.adminQuotaReset(username);
+          const hasil = await api.adminQuotaReset(oidcSub);
           setActionSuccess(language === 'en' ? `Usage for ${hasil.direset} reset to 0.` : `Pemakaian ${hasil.direset} sudah dinolkan.`);
           fetchKuota();
           setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
@@ -1212,16 +1253,24 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </span>
                       </h4>
                       <p className="text-[11px] text-content-muted mt-0.5">
-                        {language === 'en' ? 'Ranked by chat sessions created' : 'Diurutkan berdasarkan total sesi percakapan'}
+                        {t('admin.topUsersBasis')}
                       </p>
+                      {topUsersUpdatedAt && (
+                        <p className="text-[10px] text-content-muted mt-1">
+                          {t('admin.topUsersUpdatedAt', {
+                            time: new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'id-ID', { hour: '2-digit', minute: '2-digit' }).format(new Date(topUsersUpdatedAt)),
+                          })}
+                        </p>
+                      )}
                     </div>
 
                     {/* Filter Period: default per month */}
-                    <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-xl border border-line/70 self-start sm:self-auto">
+                    <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                      <div className="flex items-center gap-1 bg-surface-sunken p-1 rounded-xl border border-line/70">
                       {[
                         { id: 'month', labelEn: 'Month', labelId: 'Bulan' },
                         { id: 'week', labelEn: 'Week', labelId: 'Minggu' },
-                        { id: 'day', labelEn: 'Today', labelId: 'Hari Ini' },
+                        { id: 'today', labelEn: 'Today', labelId: 'Hari Ini' },
                         { id: 'all', labelEn: 'All Time', labelId: 'Semua' },
                       ].map((p) => (
                         <button
@@ -1238,8 +1287,20 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                         </button>
                       ))}
                     </div>
+                      <button
+                      type="button"
+                      onClick={() => refreshTopUsers(topUsersPeriod, true)}
+                      disabled={topUsersLoading}
+                      aria-label={t('admin.refreshTopUsers')}
+                      title={t('admin.refreshTopUsers')}
+                      className="p-2 rounded-lg border border-line text-content-muted hover:text-content hover:bg-surface-hover disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${topUsersLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                    </div>
                   </div>
 
+                  {topUsersError && <p role="alert" className="text-xs text-rose-500 mb-2">{t('admin.topUsersRefreshFailed')}</p>}
                   <div className="divide-y divide-line/60">
                     {topUsersLoading ? (
                       <div className="py-6 text-center text-content-muted text-xs flex items-center justify-center gap-2">
@@ -1268,16 +1329,16 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               </div>
             )}
 
-            {/* TAB 2: USER MANAGEMENT (CRUD) */}
+            {/* TAB 2: USER DIRECTORY (OIDC READ-ONLY) */}
             {activeTab === 'users' && (
               <div className="space-y-6 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
                   <div className="hidden sm:block">
                     <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      {language === 'en' ? `User Management (${usersLoading && usersList.length === 0 ? '…' : usersList.length})` : `Manajemen Pengguna (${usersLoading && usersList.length === 0 ? '…' : usersList.length})`}
+                      {language === 'en' ? `OIDC User Directory (${usersLoading && usersList.length === 0 ? '…' : usersList.length})` : `Direktori Pengguna OIDC (${usersLoading && usersList.length === 0 ? '…' : usersList.length})`}
                     </h3>
                     <p className="text-xs text-content-muted mt-0.5">
-                      {language === 'en' ? 'Add new accounts, manage superadmin/user roles, reset passwords, or set individual personas.' : 'Tambah akun baru, kelola role superadmin/user, reset password, atau atur persona pribadi.'}
+                      {language === 'en' ? 'User, division, and role data are managed in OIDC and shown here as read-only.' : 'Data pengguna, divisi, dan role dikelola di OIDC dan hanya dibaca di sini.'}
                     </p>
                   </div>
 
@@ -2429,14 +2490,50 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 ) : (
                   <>
-                {/* Batas per peran - Compact Table Card */}
+                {kuota?.enforced && (kuota.pending_limit_users || []).length > 0 && (
+                  <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-3 sm:p-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                        <div>
+                          <p className="font-bold text-xs sm:text-sm text-content">
+                            {language === 'en' ? 'Pending user limits' : 'Pengguna menunggu pengaturan limit'}
+                          </p>
+                          <p className="text-[11px] text-content-muted mt-0.5">
+                            {language === 'en'
+                              ? `${kuota.pending_limit_users.length} OIDC users have not been configured. A temporary ${formatNumberSeparator(kuota.pending_default_daily_token_limit)} token/day limit is enforced.`
+                              : `${kuota.pending_limit_users.length} pengguna OIDC belum diatur. Limit sementara ${formatNumberSeparator(kuota.pending_default_daily_token_limit)} token/hari sedang diterapkan.`}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="self-start sm:self-auto px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                        {kuota.pending_limit_users.length} {language === 'en' ? 'Pending' : 'Menunggu'}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {kuota.pending_limit_users.slice(0, 12).map((pendingUser) => (
+                        <span key={pendingUser.id} className="inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-lg bg-surface border border-amber-500/20 text-[11px] text-content">
+                          <User className="w-3 h-3 shrink-0 text-amber-500" />
+                          <span className="truncate">{pendingUser.username || pendingUser.id}</span>
+                        </span>
+                      ))}
+                      {kuota.pending_limit_users.length > 12 && (
+                        <span className="inline-flex items-center px-2 py-1 rounded-lg bg-surface border border-line text-[11px] text-content-muted">
+                          +{kuota.pending_limit_users.length - 12}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Batas per pengguna - Compact Table Card */}
                 <div className="rounded-2xl border border-line/80 bg-surface overflow-hidden shadow-xs">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 border-b border-line/80 bg-surface">
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per Role' : 'Batas per Peran'}</p>
+                        <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per User' : 'Batas per Pengguna'}</p>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
-                          {Object.keys(kuota?.role_limits || {}).length} {language === 'en' ? 'Roles' : 'Peran'}
+                          {Object.keys(batasDraft).length} {language === 'en' ? 'Users' : 'Pengguna'}
                         </span>
                       </div>
                       <p className="text-[11px] text-content-muted mt-0.5">
@@ -2462,35 +2559,37 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <table className="w-full text-left text-xs sm:text-sm">
                       <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
                         <tr>
-                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'Role' : 'Peran'}</th>
+                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'User' : 'Pengguna'}</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Daily Tokens' : 'Token / Hari'}</th>
                           <th className="px-4 py-3 sm:w-48">{language === 'en' ? 'Per Minute (Burst)' : 'Batas per Menit'}</th>
                           <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'Limit Summary' : 'Ringkasan Batas'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-line/60 text-content-secondary">
-                        {Object.keys(kuota?.role_limits || {}).map((peran) => {
-                          const draft = batasDraft[peran] || {};
+                        {Object.keys(batasDraft).sort((a, b) => (batasDraft[a]?.username || a).localeCompare(batasDraft[b]?.username || b)).map((oidcSub) => {
+                          const draft = batasDraft[oidcSub] || {};
                           const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
                           const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
                           const isUnlimitedDaily = rawHarian === '0';
                           const isUnlimitedMinute = rawPermenit === '0';
+                          const displayName = draft.username || oidcSub;
 
                           return (
-                            <tr key={peran} className="hover:bg-surface-hover/70 transition-colors">
-                              {/* Role */}
+                            <tr key={oidcSub} className="hover:bg-surface-hover/70 transition-colors">
+                              {/* Label username OIDC; kunci penyimpanan tetap oidcSub. */}
                               <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
                                 <div className="flex items-center gap-2.5">
-                                  <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs ${getRoleBadgeStyle(peran)}`}>
-                                    {(() => {
-                                      const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (peran || '').toLowerCase());
-                                      const IconComp = getRoleIconComponent(meta?.icon || peran);
-                                      return <IconComp className="w-4 h-4" />;
-                                    })()}
+                                  <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
+                                    <User className="w-4 h-4" />
                                   </div>
-                                  <span className="font-semibold text-xs sm:text-sm text-content">
-                                    {formatRoleLabel(peran)}
-                                  </span>
+                                  <div className="min-w-0">
+                                    <span className="block font-semibold text-xs sm:text-sm text-content truncate">
+                                      {displayName}
+                                    </span>
+                                    {draft.full_name && draft.full_name !== displayName && (
+                                      <span className="block text-[10px] text-content-muted truncate">{draft.full_name}</span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
 
@@ -2498,7 +2597,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               <td className="px-4 py-3">
                                 <div className="max-w-xs">
                                   <input
-                                    id={`harian-${peran}`}
+                                    id={`harian-${oidcSub}`}
                                     type="text"
                                     inputMode="numeric"
                                     value={formatNumberSeparator(draft.daily_token_limit)}
@@ -2506,7 +2605,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                       const cleanDigits = e.target.value.replace(/\D/g, '');
                                       setBatasDraft((d) => ({
                                         ...d,
-                                        [peran]: { ...d[peran], daily_token_limit: cleanDigits },
+                                        [oidcSub]: { ...d[oidcSub], daily_token_limit: cleanDigits },
                                       }));
                                     }}
                                     placeholder="0"
@@ -2519,7 +2618,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                               <td className="px-4 py-3">
                                 <div className="max-w-[150px]">
                                   <input
-                                    id={`menit-${peran}`}
+                                    id={`menit-${oidcSub}`}
                                     type="text"
                                     inputMode="numeric"
                                     value={formatNumberSeparator(draft.per_minute_limit)}
@@ -2527,7 +2626,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                       const cleanDigits = e.target.value.replace(/\D/g, '');
                                       setBatasDraft((d) => ({
                                         ...d,
-                                        [peran]: { ...d[peran], per_minute_limit: cleanDigits },
+                                        [oidcSub]: { ...d[oidcSub], per_minute_limit: cleanDigits },
                                       }));
                                     }}
                                     placeholder="0"
@@ -2644,7 +2743,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             </thead>
                             <tbody>
                               {filteredUsage.map((baris) => {
-                                const batas = kuota.role_limits?.[baris.role]?.daily_token_limit || 0;
+                                const batas = kuota.user_limits?.[baris.oidc_sub]?.daily_token_limit || 0;
                                 const persen = batas ? Math.min(100, Math.round((baris.total_tokens / batas) * 100)) : 0;
                                 return (
                                   <tr key={baris.username} className="border-b border-line/60 last:border-0">
@@ -2660,7 +2759,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                                     <td className="py-2.5 pr-3 text-right tabular-nums text-content-muted">{baris.requests}</td>
                                     <td className="py-2.5 text-right">
                                       <button
-                                        onClick={() => resetKuota(baris.username)}
+                                        onClick={() => resetKuota(baris.oidc_sub, baris.username)}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-surface-hover text-content hover:bg-line transition-colors cursor-pointer"
                                       >
                                         <RotateCcw className="w-3.5 h-3.5" />

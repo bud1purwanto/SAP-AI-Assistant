@@ -144,6 +144,7 @@ def make_user(db):
 
         role = kwargs.get("role", "user")
         roles = kwargs.get("roles", [role])
+        oidc_sub = kwargs.get("sub", username)
 
         # Insert user to database so role checks and FK constraints work
         engine = db.get_engine()
@@ -158,16 +159,21 @@ def make_user(db):
             )
             conn.commit()
 
-        access_token = f"dashboard_mcp_mock_token_{username}"
-        cookie = create_session_cookie({
-            "sub": username,
+        # Uji endpoint lokal tidak memerlukan token upstream; pengujian OIDC yang
+        # membutuhkan token menyatakannya secara eksplisit.
+        access_token = kwargs.get("access_token")
+        principal = {
+            "sub": oidc_sub,
             "username": username,
             "role": role,
             "roles": roles,
             "org_units": kwargs.get("org_units", []),
             "is_guest": False,
-            "access_token": access_token,
-        })
+        }
+        if access_token:
+            principal["access_token"] = access_token
+        cookie = create_session_cookie(principal)
         return {"Cookie": f"sap_session={cookie}"}
+
 
     yield _make

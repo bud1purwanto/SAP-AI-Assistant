@@ -1,3 +1,4 @@
+import json
 import httpx
 import pytest
 import respx
@@ -97,3 +98,36 @@ def test_logout_clears_cookie_even_when_upstream_fails(client):
     # Cookie cleared: Set-Cookie header with empty/max-age=0.
     set_cookie = r.headers.get("set-cookie", "")
     assert "sap_session=" in set_cookie and ("Max-Age=0" in set_cookie or "Expires=" in set_cookie)
+
+@respx.mock
+def test_change_oidc_password_uses_temporary_token_without_app_cookie(client):
+    forced_user = {**DASH_USER_OK, "mustChangePassword": True}
+    respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        return_value=httpx.Response(200, json={"accessToken": "temporary-token", "user": forced_user})
+    )
+    change = respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/change-password").mock(
+        return_value=httpx.Response(204)
+    )
+    r = client.post("/api/auth/change-password", json={
+        "username": "alice", "current_password": "temporary", "new_password": "NewPass123!"
+    })
+    assert r.status_code == 200
+    assert "sap_session" not in r.cookies
+    assert change.called
+    assert change.calls[0].request.headers["authorization"] == "Bearer temporary-token"
+    assert json.loads(change.calls[0].request.content) == {"currentPassword": "temporary", "newPassword": "NewPass123!"}
+
+
+@respx.mock
+def test_change_oidc_password_rejects_wrong_temporary_password(client):
+    respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/login").mock(
+        return_value=httpx.Response(401, json={"message": "invalid credentials"})
+    )
+    change = respx.post(f"{settings.dashboard_oidc_issuer.rstrip('/')}/v1/auth/change-password").mock(
+        return_value=httpx.Response(204)
+    )
+    r = client.post("/api/auth/change-password", json={
+        "username": "alice", "current_password": "wrong", "new_password": "NewPass123!"
+    })
+    assert r.status_code == 401
+    assert not change.called

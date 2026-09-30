@@ -85,7 +85,7 @@ export class ApiError extends Error {
 /**
  * Pembungkus fetch untuk seluruh API.
  */
-export async function apiFetch(path, { method = 'GET', body, auth = true, signal } = {}) {
+export async function apiFetch(path, { method = 'GET', body, auth = true, signal, cache } = {}) {
   const isEn = getActiveLanguage() === 'en';
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -98,6 +98,7 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
       body: body === undefined ? undefined : JSON.stringify(body),
       credentials: 'include',
       signal,
+      ...(cache ? { cache } : {}),
     });
   } catch (err) {
     if (err.name === 'AbortError') throw err;
@@ -171,6 +172,8 @@ export const api = {
       body: { username, password },
       auth: false,
     }),
+  changeOidcPassword: (username, currentPassword, newPassword) =>
+    apiFetch('/api/auth/change-password', { method: 'POST', body: { username, current_password: currentPassword, new_password: newPassword }, auth: false }),
   authSession: () => apiFetch('/api/auth/session', { auth: false }),
   logout: () => apiFetch('/api/auth/logout', { method: 'POST', auth: false }),
   me: () => apiFetch('/api/me'),
@@ -206,8 +209,8 @@ export const api = {
       body: { feedback },
     }),
 
-  adminStats: (period = 'month', limit = 10) => apiFetch(`/api/admin/stats?period=${encodeURIComponent(period)}&limit=${limit}`),
-  adminTopUsers: (period = 'month', limit = 10) => apiFetch(`/api/admin/top-users?period=${encodeURIComponent(period)}&limit=${limit}`),
+  adminStats: (period = 'month', limit = 10) => apiFetch(`/api/admin/stats?period=${encodeURIComponent(period)}&limit=${limit}`, { cache: 'no-store' }),
+  adminTopUsers: (period = 'month', limit = 10) => apiFetch(`/api/admin/top-users?period=${encodeURIComponent(period)}&limit=${limit}`, { cache: 'no-store' }),
   quotaSaya: () => apiFetch('/api/quota'),
 
   adminQuota: () => apiFetch('/api/admin/quota'),
@@ -215,8 +218,8 @@ export const api = {
     apiFetch('/api/admin/quota/enabled', { method: 'POST', body: { enabled } }),
   adminQuotaBatas: (payload) =>
     apiFetch('/api/admin/quota/limits', { method: 'PUT', body: payload }),
-  adminQuotaReset: (username) =>
-    apiFetch(`/api/admin/quota/reset${username ? `?username=${encodeURIComponent(username)}` : ''}`,
+  adminQuotaReset: (oidcSub) =>
+    apiFetch(`/api/admin/quota/reset${oidcSub ? `?oidc_sub=${encodeURIComponent(oidcSub)}` : ''}`,
       { method: 'POST' }),
 
   adminFeedback: (kind = 'dislike', limit = 50) =>
@@ -299,6 +302,7 @@ export const api = {
 
   // Dynamic MCP Servers
   adminMcpServers: () => apiFetch('/api/admin/mcp/servers'),
+  adminMcpRegistry: () => apiFetch('/api/admin/mcp/registry'),
   adminCreateMcpServer: (data) => apiFetch('/api/admin/mcp/servers', { method: 'POST', body: data }),
   adminUpdateMcpServer: (id, data) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: data }),
   adminDeleteMcpServer: (id) => apiFetch(`/api/admin/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' }),

@@ -63,6 +63,8 @@ from database import (
     get_chat_sessions,
     get_feedback_messages,
     get_role_limits,
+    get_user_token_limit,
+    get_user_token_limits,
     get_token_usage,
     hitung_permintaan_semenit,
     catat_permintaan,
@@ -70,6 +72,7 @@ from database import (
     reset_token_usage,
     ringkasan_pemakaian_harian,
     set_role_limit,
+    set_user_token_limit,
     tanggal_kuota,
     truncate_chat_messages_from,
     get_system_config,
@@ -331,7 +334,11 @@ def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
         "role": primary,
         "roles": roles,
         "assistant_persona": "",  # populated lazily by ensure_user_exists
-        "force_change_password": False,
+        # Status ini adalah keputusan otoritas OIDC; jangan pernah diubah oleh
+        # BFF agar akun baru/reset tidak lolos ke aplikasi sebelum password baru disetel.
+        "force_change_password": bool(
+            dash_user.get("mustChangePassword", dash_user.get("must_change_password", False))
+        ),
         "division_code": first_div.get("code"),
         "division_name": first_div.get("name"),
         "job_level": str(first_pos.get("jobLevel", "staff")).lower(),
@@ -425,7 +432,7 @@ class LoginRequest(BaseModel):
 @app.post("/api/login")
 async def auth_login(req: LoginRequest, request: Request, response: Response):
     username = (req.username or "").strip()
-    password = (req.password or "").strip()
+    password = req.password or ""
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username dan password wajib diisi.")
 
@@ -437,6 +444,7 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
 
     base = settings.dashboard_oidc_issuer.rstrip("/")
     login_success = False
+    oidc_unavailable = False
     principal = None
     access_token = None
     session_exp_sec = settings.session_expire_hours * 3600
@@ -464,41 +472,13 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
             else:
                 logger.warning(f"Dashboard OIDC login failed for '{username}': HTTP {r.status_code} {r.text[:200]}")
     except httpx.HTTPError as e:
-        logger.warning(f"dashboard-mcp unreachable during login: {e}")
+        oidc_unavailable = True
+        logger.warning(f"dashboard-mcp tidak dapat dijangkau saat login: {e}")
 
-    # 2. Fallback: Autentikasi database lokal jika OIDC gagal / belum terdaftar di OIDC
-    if not login_success:
-        local_user = get_user_by_username(username)
-        if local_user and (local_user.get("password_hash") or local_user.get("password")):
-            from auth import verify_password
-            stored_hash = local_user.get("password_hash")
-            stored_plain = local_user.get("password")
-            if (stored_hash and verify_password(password, stored_hash)) or (stored_plain and stored_plain == password):
-                roles = local_user.get("roles") or [local_user.get("role", "user")]
-                primary_role = local_user.get("role") or roles[0]
-                access_token = f"local_token_{secrets.token_hex(16)}"
-                principal = {
-                    "sub": local_user["username"],
-                    "username": local_user["username"],
-                    "role": primary_role,
-                    "roles": roles,
-                    "full_name": local_user.get("full_name", ""),
-                    "assistant_persona": local_user.get("assistant_persona", ""),
-                    "division_code": local_user.get("division_code"),
-                    "division_name": local_user.get("division_name"),
-                    "job_level": local_user.get("job_level", "staff"),
-                    "org_units": [],
-                    "access_token": access_token,
-                    "is_guest": False,
-                }
-                ensure_user_exists(
-                    username=principal["username"],
-                    role=principal["role"],
-                    roles=principal["roles"],
-                    full_name=principal["full_name"],
-                )
-                login_success = True
-                logger.info(f"User '{username}' berhasil login via database lokal.")
+    # OIDC adalah satu-satunya sumber autentikasi. Database lokal hanya
+    # menyimpan preferensi aplikasi, tidak boleh menjadi jalur bypass login.
+    if oidc_unavailable:
+        raise HTTPException(status_code=502, detail="Layanan autentikasi OIDC tidak dapat dijangkau. Coba lagi nanti.")
 
     if not login_success or not principal:
         record_auth_audit_log(
@@ -514,6 +494,18 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
             details="Username atau password salah.",
         )
         raise HTTPException(status_code=401, detail="Username atau password salah.")
+
+    if principal.get("force_change_password"):
+        # Otoritas OIDC telah menerima password sementara, tetapi AI Assistant
+        # tidak boleh membuat sesi aplikasi sebelum password baru ditetapkan di OIDC.
+        raise HTTPException(
+            status_code=403,
+            detail="Akun ini wajib membuat password baru di Dashboard OIDC sebelum menggunakan Enterprise AI Assistant.",
+        )
+
+    # Durasi sesi BFF tidak boleh melebihi access token OIDC yang dipakai untuk
+    # memanggil directory/gateway atas nama pengguna.
+    session_exp_sec = min(max(int(session_exp_sec), 1), settings.session_expire_hours * 3600)
 
     # Single-session enforcement & daftarkan sesi baru
     session_id = str(uuid.uuid4())
@@ -563,6 +555,7 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
     )
 
     principal["session_id"] = session_id
+    principal["session_expire_seconds"] = session_exp_sec
 
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -581,6 +574,58 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
         "device_name": dev_name,
         "user": {**principal, "authenticated": True},
     }
+
+class ChangeOidcPasswordRequest(BaseModel):
+    username: str
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change-password")
+async def change_oidc_password(req: ChangeOidcPasswordRequest):
+    """Ganti password sementara langsung melalui otoritas OIDC tanpa membuat sesi aplikasi."""
+    username = req.username.strip()
+    if not username or not req.current_password or not req.new_password:
+        raise HTTPException(status_code=400, detail="Username dan kedua password wajib diisi.")
+    if req.current_password == req.new_password:
+        raise HTTPException(status_code=400, detail="Password baru harus berbeda dari password sementara.")
+
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    login_payload = {"username": username, "password": req.current_password}
+    if settings.dashboard_oidc_client_id:
+        login_payload["clientCode"] = settings.dashboard_oidc_client_id
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            login = await client.post(f"{base}/v1/auth/login", json=login_payload)
+            if login.status_code in (400, 401) and "clientCode" in login_payload:
+                retry = await client.post(
+                    f"{base}/v1/auth/login",
+                    json={"username": username, "password": req.current_password},
+                )
+                if retry.status_code == 200:
+                    login = retry
+            if login.status_code != 200:
+                raise HTTPException(status_code=401, detail="Username atau password sementara salah.")
+            session = login.json()
+            if not session.get("user", {}).get("mustChangePassword", session.get("user", {}).get("must_change_password", False)):
+                raise HTTPException(status_code=403, detail="Akun ini tidak memerlukan penggantian password sementara.")
+            token = session.get("accessToken")
+            if not token:
+                raise HTTPException(status_code=502, detail="Respons autentikasi OIDC tidak lengkap.")
+            changed = await client.post(
+                f"{base}/v1/auth/change-password",
+                json={"currentPassword": req.current_password, "newPassword": req.new_password},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("OIDC tidak dapat dijangkau saat mengganti password: %s", exc)
+        raise HTTPException(status_code=502, detail="Layanan autentikasi OIDC tidak dapat dijangkau.") from exc
+    if not changed.is_success:
+        logger.warning("OIDC password change failed: HTTP %s", changed.status_code)
+        raise HTTPException(status_code=400 if changed.status_code in (400, 409, 422) else 502,
+                            detail="Password gagal diganti di OIDC.")
+    return {"status": "success"}
+
 
 @app.post("/api/auth/logout")
 @app.post("/api/logout")
@@ -1344,33 +1389,31 @@ class RenameSessionRequest(BaseModel):
     title: str
 
 
+def _subjek_riwayat(user: dict) -> str:
+    """Sub OIDC adalah pemilik otoritatif riwayat percakapan."""
+    return str((user or {}).get("sub") or "").strip()
+
+
 @app.get("/api/sessions")
 async def get_sessions_endpoint(user: dict = Depends(get_current_user)):
-    return get_chat_sessions(user["username"])
+    return get_chat_sessions(_subjek_riwayat(user), username=user.get("username"))
 
 
 @app.post("/api/sessions")
-async def create_session_endpoint(
-    req: CreateSessionRequest,
-    user: dict = Depends(get_current_user),
-):
-    session = create_chat_session(user["username"], req.title)
+async def create_session_endpoint(req: CreateSessionRequest, user: dict = Depends(get_current_user)):
+    session = create_chat_session(user["username"], req.title, oidc_sub=_subjek_riwayat(user))
     if not session:
-        raise HTTPException(status_code=500, detail="Gagal membuat sesi percakapan.")
+        raise HTTPException(status_code=500, detail="Subjek OIDC tidak tersedia untuk membuat sesi percakapan.")
     return session
 
 
 @app.patch("/api/sessions/{session_id}")
 @app.put("/api/sessions/{session_id}")
-async def rename_session_endpoint(
-    session_id: str,
-    req: RenameSessionRequest,
-    user: dict = Depends(get_current_user),
-):
+async def rename_session_endpoint(session_id: str, req: RenameSessionRequest, user: dict = Depends(get_current_user)):
     title_clean = (req.title or "").strip()
     if not title_clean:
         raise HTTPException(status_code=400, detail="Judul sesi tidak boleh kosong.")
-    success = rename_chat_session(session_id, user["username"], title_clean[:100])
+    success = rename_chat_session(session_id, _subjek_riwayat(user), title_clean[:100])
     if not success:
         raise HTTPException(status_code=404, detail="Sesi tidak ditemukan atau bukan milik Anda.")
     return {"status": "success", "session_id": session_id, "title": title_clean[:100]}
@@ -1378,52 +1421,31 @@ async def rename_session_endpoint(
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session_endpoint(session_id: str, user: dict = Depends(get_current_user)):
-    success = delete_chat_session(session_id, user["username"])
+    success = delete_chat_session(session_id, _subjek_riwayat(user))
     if not success:
         raise HTTPException(status_code=404, detail="Sesi tidak ditemukan.")
     return {"status": "success"}
 
 
 @app.get("/api/sessions/search")
-async def search_sessions_endpoint(
-    q: str = "",
-    user: dict = Depends(get_current_user),
-):
-    """Cari kata kunci pada judul percakapan dan isi pesan milik user sendiri."""
-    return search_chat_history(user["username"], q)
+async def search_sessions_endpoint(q: str = "", user: dict = Depends(get_current_user)):
+    """Cari kata kunci hanya di riwayat subjek OIDC yang sedang login."""
+    return search_chat_history(_subjek_riwayat(user), q)
 
 
 @app.delete("/api/messages/{message_id}")
-async def truncate_from_message_endpoint(
-    message_id: int,
-    user: dict = Depends(get_current_user),
-):
-    """Hapus sebuah pesan beserta semua pesan sesudahnya.
-
-    Dipakai sebelum "buat ulang jawaban" dan "edit pertanyaan", agar riwayat
-    yang dikirim ulang ke model tidak memuat versi lama dari titik itu.
-    """
-    session_id = truncate_chat_messages_from(message_id, user["username"])
+async def truncate_from_message_endpoint(message_id: int, user: dict = Depends(get_current_user)):
+    session_id = truncate_chat_messages_from(message_id, _subjek_riwayat(user))
     if not session_id:
         raise HTTPException(status_code=404, detail="Pesan tidak ditemukan.")
     return {"session_id": session_id}
 
 
 @app.get("/api/sessions/{session_id}/messages")
-async def get_session_messages_endpoint(
-    session_id: str,
-    limit: int = 200,
-    before_id: int = None,
-    user: dict = Depends(get_current_user),
-):
-    """Riwayat pesan satu sesi, dibatasi pada sesi milik user yang meminta.
-
-    Mengembalikan `limit` pesan terakhir; `before_id` memuat halaman sebelumnya
-    agar percakapan panjang tidak dikirim sekaligus.
-    """
+async def get_session_messages_endpoint(session_id: str, limit: int = 200, before_id: int = None, user: dict = Depends(get_current_user)):
     if not session_id or session_id == "undefined":
         return []
-    return get_chat_messages(session_id, username=user["username"], limit=limit, before_id=before_id)
+    return get_chat_messages(session_id, oidc_sub=_subjek_riwayat(user), limit=limit, before_id=before_id)
 
 
 @app.get("/api/mcp/servers")
@@ -1446,6 +1468,7 @@ async def get_admin_stats_endpoint(
 ):
     """Mengambil metrik statistik sistem & status live MCP servers."""
     stats = get_admin_system_stats(period=period, top_users_limit=limit)
+    stats["as_of"] = datetime.now(timezone.utc).isoformat()
     mcp_st = await mcp_manager.check_servers_status()
     stats["mcp_status"] = mcp_st
     stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
@@ -1551,11 +1574,16 @@ def get_available_roles(enabled_only: bool = True) -> list[str]:
 
 # --- KUOTA TOKEN ---
 
-class BatasPeranRequest(BaseModel):
-    role: Optional[str] = None
+class BatasPenggunaRequest(BaseModel):
+    oidc_sub: Optional[str] = None
     daily_token_limit: Optional[int] = 0     # 0 = tanpa batas
     per_minute_limit: Optional[int] = 0      # 0 = tanpa batas
     limits: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+def _subject_kuota(user: dict) -> str:
+    """Subjek stabil untuk seluruh penyimpanan dan penegakan kuota."""
+    return str((user or {}).get("sub") or "").strip()
 
 
 class SaklarLimitRequest(BaseModel):
@@ -1566,6 +1594,7 @@ class SaklarLimitRequest(BaseModel):
 async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
     """Sisa kuota pengguna yang sedang login."""
     username = user.get("username") or user.get("sub", "")
+    oidc_sub = _subject_kuota(user)
     profil = get_user_by_username(username)
     if not profil:
         profil = get_user_by_username(user.get("sub", ""))
@@ -1579,7 +1608,7 @@ async def quota_saya_endpoint(user: dict = Depends(get_current_user)):
         except Exception:
             pass
     user_roles = (profil.get("roles") if profil else None) or user.get("roles") or [user.get("role", "user")]
-    return status_kuota(username, user_roles)
+    return status_kuota(oidc_sub, user_roles)
 
 
 @app.get("/api/admin/quota")
@@ -1589,11 +1618,32 @@ async def quota_admin_endpoint(
 ):
     """Pengaturan batas, status saklar, dan pemakaian seluruh pengguna hari ini."""
     cfg = get_system_config()
+    usage = ringkasan_pemakaian_harian(tanggal)
+    directory_users = await fetch_directory("users", admin.get("dashboard_token"))
+    labels_by_sub = {str(item.get("id") or "").strip(): item for item in directory_users}
+    for row in usage:
+        directory_user = labels_by_sub.get(str(row.get("oidc_sub") or ""), {})
+        row["username"] = directory_user.get("username") or row["oidc_sub"]
+        row["full_name"] = directory_user.get("full_name") or ""
+        row["role"] = directory_user.get("role") or "-"
+    user_limits = get_user_token_limits()
+    pending_limit_users = [
+        {
+            "id": str(directory_user.get("id") or "").strip(),
+            "username": directory_user.get("username") or "",
+            "full_name": directory_user.get("full_name") or "",
+        }
+        for directory_user in directory_users
+        if str(directory_user.get("id") or "").strip()
+        and str(directory_user.get("id") or "").strip() not in user_limits
+    ]
     return {
         "enforced": bool(cfg.get("token_limit_enabled")),
         "usage_date": tanggal or tanggal_kuota(),
-        "role_limits": get_role_limits(),
-        "usage": ringkasan_pemakaian_harian(tanggal),
+        "user_limits": user_limits,
+        "pending_limit_users": pending_limit_users,
+        "pending_default_daily_token_limit": DEFAULT_PENDING_DAILY_TOKEN_LIMIT,
+        "usage": usage,
     }
 
 
@@ -1612,50 +1662,45 @@ async def saklar_limit_endpoint(
 
 
 @app.put("/api/admin/quota/limits")
-async def atur_batas_peran_endpoint(
-    req: BatasPeranRequest,
+async def atur_batas_pengguna_endpoint(
+    req: BatasPenggunaRequest,
     admin: dict = Depends(require_superadmin),
 ):
-    """Ubah batas harian dan batas per menit untuk satu peran atau batch banyak peran."""
-    valid_roles = get_available_roles(enabled_only=False)
+    """Ubah batas harian dan batas per menit untuk pengguna OIDC atau batch."""
     if req.limits:
-        for r, vals in req.limits.items():
-            clean_r = str(r).strip().lower()
-            if clean_r not in valid_roles:
-                raise HTTPException(status_code=400, detail=f"Peran '{r}' tidak dikenal.")
+        for oidc_sub, vals in req.limits.items():
+            clean_sub = str(oidc_sub).strip()
+            if not clean_sub:
+                raise HTTPException(status_code=400, detail="Sub OIDC wajib diisi.")
             daily = vals.get("daily_token_limit", 0) if isinstance(vals, dict) else 0
             minute = vals.get("per_minute_limit", 0) if isinstance(vals, dict) else 0
             if not isinstance(daily, int) or not isinstance(minute, int) or daily < 0 or minute < 0:
                 raise HTTPException(status_code=400, detail="Batas tidak boleh negatif.")
-            if not set_role_limit(clean_r, daily, minute):
-                raise HTTPException(status_code=500, detail=f"Batas '{clean_r}' gagal disimpan.")
-        return {"status": "success", "role_limits": get_role_limits()}
+            if not set_user_token_limit(clean_sub, daily, minute):
+                raise HTTPException(status_code=500, detail=f"Batas untuk sub OIDC gagal disimpan.")
+        return {"status": "success", "user_limits": get_user_token_limits()}
 
-    if not req.role:
-        raise HTTPException(status_code=400, detail="Peran atau daftar batas harus disertakan.")
-
-    clean_role = req.role.strip().lower()
-    if clean_role not in valid_roles:
-        raise HTTPException(status_code=400, detail=f"Peran '{req.role}' tidak dikenal.")
+    if not req.oidc_sub:
+        raise HTTPException(status_code=400, detail="Sub OIDC atau daftar batas harus disertakan.")
     daily = req.daily_token_limit if req.daily_token_limit is not None else 0
     minute = req.per_minute_limit if req.per_minute_limit is not None else 0
     if daily < 0 or minute < 0:
         raise HTTPException(status_code=400, detail="Batas tidak boleh negatif.")
-    if not set_role_limit(clean_role, daily, minute):
+    if not set_user_token_limit(req.oidc_sub.strip(), daily, minute):
         raise HTTPException(status_code=500, detail="Batas gagal disimpan.")
-    return {"status": "success", "role_limits": get_role_limits()}
-
+    return {"status": "success", "user_limits": get_user_token_limits()}
 
 @app.post("/api/admin/quota/reset")
 async def reset_kuota_endpoint(
-    username: str = None,
+    oidc_sub: str = None,
     admin: dict = Depends(require_superadmin),
 ):
-    """Nolkan pemakaian hari ini — satu pengguna, atau semuanya bila tanpa username."""
-    jumlah = reset_token_usage(username)
+    """Nolkan pemakaian hari ini untuk satu subjek OIDC atau seluruh pengguna."""
+    clean_sub = str(oidc_sub).strip() if oidc_sub else None
+    jumlah = reset_token_usage(clean_sub)
     return {
         "status": "success",
-        "direset": username or "semua pengguna",
+        "direset": clean_sub or "semua pengguna",
         "baris_terhapus": jumlah,
     }
 
@@ -1675,10 +1720,13 @@ async def get_admin_feedback_endpoint(
     return get_feedback_messages(kind=kind, limit=limit, offset=offset)
 
 
+from oidc_directory import fetch_directory
+
+
 @app.get("/api/admin/users")
 async def get_admin_users_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mendapatkan daftar semua user yang ada di sistem."""
-    return list_all_users()
+    """Daftar pengguna dari OIDC; tabel pengguna lokal bukan sumber identitas."""
+    return await fetch_directory("users", admin.get("dashboard_token"))
 
 
 class AdminCreateUserRequest(BaseModel):
@@ -1698,6 +1746,7 @@ async def create_user_endpoint(
     req: AdminCreateUserRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Membuat profil user baru (oleh Super Admin)."""
     if not req.username:
         raise HTTPException(status_code=400, detail="Username wajib diisi.")
@@ -1742,6 +1791,7 @@ async def update_user_endpoint(
     req: AdminUpdateUserRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Memperbarui user (role, persona, divisi, atau reset password)."""
     available_roles = get_available_roles(enabled_only=True)
     clean_roles = None
@@ -1784,6 +1834,7 @@ async def update_user_endpoint(
 
 @app.delete("/api/admin/users/{username}")
 async def delete_user_endpoint(username: str, admin: dict = Depends(require_superadmin)):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Menghapus user tertentu."""
     if admin["username"].lower() == username.lower():
         raise HTTPException(status_code=400, detail="Tidak dapat menghapus akun Anda sendiri.")
@@ -1823,8 +1874,8 @@ async def get_active_divisions_endpoint(user: dict = Depends(get_current_user)):
 
 @app.get("/api/admin/divisions")
 async def get_admin_divisions_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mendapatkan seluruh daftar divisi untuk manajemen Super Admin."""
-    return list_divisions(enabled_only=False)
+    """Daftar divisi dari OIDC (baca saja)."""
+    return await fetch_directory("divisions", admin.get("dashboard_token"))
 
 
 @app.post("/api/admin/divisions")
@@ -1832,6 +1883,7 @@ async def create_admin_division_endpoint(
     req: AdminCreateDivisionRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Membuat divisi baru."""
     if not req.code or not req.code.strip():
         raise HTTPException(status_code=400, detail="Kode divisi wajib diisi.")
@@ -1858,6 +1910,7 @@ async def update_admin_division_endpoint(
     req: AdminUpdateDivisionRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Memperbarui divisi yang sudah ada."""
     res = update_division(
         code=code,
@@ -1887,6 +1940,7 @@ async def delete_admin_division_endpoint(
     code: str,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Menghapus divisi (melepas asosiasi divisi dari user secara aman)."""
     res = delete_division(code)
     if not res["success"]:
@@ -1923,8 +1977,8 @@ class AdminUpdateRoleRequest(BaseModel):
 
 @app.get("/api/admin/roles")
 async def get_admin_roles_endpoint(admin: dict = Depends(require_superadmin)):
-    """Mendapatkan daftar seluruh peran master beserta jumlah pengguna terdaftar."""
-    return get_roles(enabled_only=False)
+    """Daftar role dari OIDC (baca saja)."""
+    return await fetch_directory("roles", admin.get("dashboard_token"))
 
 
 @app.get("/api/admin/roles/{code}/impact")
@@ -1943,6 +1997,7 @@ async def create_admin_role_endpoint(
     req: AdminCreateRoleRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Membuat peran kustom baru dengan inisialisasi kuota dan perizinan default-deny."""
     c_clean = req.code.strip().lower()
     if not re.match(r'^[a-z0-9_]{2,40}$', c_clean):
@@ -1992,6 +2047,7 @@ async def clone_admin_role_endpoint(
     req: AdminCloneRoleRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Membuat peran baru dengan menyalin izin resource MCP dan mode chat dari peran sumber."""
     src_clean = source_code.strip().lower()
     c_clean = req.code.strip().lower()
@@ -2024,6 +2080,7 @@ async def update_admin_role_endpoint(
     req: AdminUpdateRoleRequest,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Memperbarui informasi peran master."""
     c_clean = code.strip().lower()
     existing = get_role_by_code(c_clean)
@@ -2055,6 +2112,7 @@ async def delete_admin_role_endpoint(
     code: str,
     admin: dict = Depends(require_superadmin),
 ):
+    raise HTTPException(status_code=405, detail="Identity master is managed by OIDC and is read-only here.")
     """Menghapus peran kustom jika tidak ada pengguna yang menggunakannya dan bukan peran sistem."""
     c_clean = code.strip().lower()
     try:
@@ -2564,9 +2622,15 @@ async def get_admin_mcp_servers_endpoint(admin: dict = Depends(require_superadmi
     return {"servers": list(st.values()) if isinstance(st, dict) else []}
 
 
+@app.get("/api/admin/mcp/registry")
+async def get_admin_mcp_registry_endpoint(admin: dict = Depends(require_superadmin)):
+    """Konfigurasi URL lokal yang dapat diedit, terpisah dari status live Dashboard MCP."""
+    return {"servers": database.list_mcp_servers()}
+
+
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    result = database.save_mcp_server(sid=req.name.lower().replace(" ", "-"), name=req.name, url=req.url, enabled=getattr(req, "enabled", True))
+    result = database.save_mcp_server(sid=req.id, name=req.name, url=req.url, enabled=getattr(req, "enabled", True))
     if not result:
         raise HTTPException(status_code=500, detail="Gagal menyimpan server MCP.")
     return {"success": True, "server": result}
@@ -2613,6 +2677,22 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
 
 # --- CHAT ---
 
+DEFAULT_PENDING_DAILY_TOKEN_LIMIT = 1_000_000
+
+
+def _batas_pengguna(oidc_sub: str, penegakan_aktif: bool) -> tuple[dict, bool]:
+    """Kembalikan batas efektif serta status apakah admin sudah menyimpannya."""
+    configured = get_user_token_limit(oidc_sub)
+    if configured is not None:
+        return configured, True
+    if penegakan_aktif:
+        return {
+            "daily_token_limit": DEFAULT_PENDING_DAILY_TOKEN_LIMIT,
+            "per_minute_limit": 0,
+        }, False
+    return {"daily_token_limit": 0, "per_minute_limit": 0}, False
+
+
 def _batas_peran(role: Union[str, list, None]) -> dict:
     roles = [role] if isinstance(role, str) else (role or ["user"])
     if "superadmin" in roles:
@@ -2653,12 +2733,12 @@ def _batas_peran(role: Union[str, list, None]) -> dict:
     return {"daily_token_limit": effective_daily, "per_minute_limit": effective_minute}
 
 
-def status_kuota(username: str, role: Union[str, list, None]) -> dict:
-    """Ringkasan kuota seorang pengguna untuk ditampilkan maupun ditegakkan."""
+def status_kuota(oidc_sub: str, role: Union[str, list, None]) -> dict:
+    """Ringkasan kuota untuk subjek OIDC yang ditampilkan maupun ditegakkan."""
     cfg = get_system_config()
     aktif = bool(cfg.get("token_limit_enabled"))
-    batas = _batas_peran(role)
-    pakai = get_token_usage(username)
+    batas, limit_configured = _batas_pengguna(oidc_sub, aktif)
+    pakai = get_token_usage(oidc_sub)
 
     harian = batas["daily_token_limit"]
     terpakai = pakai["total_tokens"]
@@ -2680,24 +2760,22 @@ def status_kuota(username: str, role: Union[str, list, None]) -> dict:
         "usage_date": pakai["usage_date"],
         "role": primary_role,
         "roles": [role] if isinstance(role, str) else (role or ["user"]),
+        "limit_scope": "oidc_sub",
+        "limit_configured": limit_configured,
+        "limit_status": "configured" if limit_configured else "pending",
     }
 
 
-def _tegakkan_kuota(username: str, role: Union[str, list, None]) -> None:
-    """Tolak permintaan bila kuota habis atau terlalu cepat beruntun.
-
-    Pemeriksaan memakai pemakaian yang SUDAH tercatat: jumlah token permintaan
-    ini sendiri baru diketahui setelah model menjawab. Satu permintaan karena
-    itu dapat melewati batas sedikit, dan yang berikutnya akan ditolak.
-    """
+def _tegakkan_kuota(oidc_sub: str, role: Union[str, list, None]) -> None:
+    """Tolak permintaan bila kuota subjek OIDC habis atau terlalu beruntun."""
     cfg = get_system_config()
     if not cfg.get("token_limit_enabled"):
         return
 
-    batas = _batas_peran(role)
+    batas, _limit_configured = _batas_pengguna(oidc_sub, True)
 
     per_menit = batas["per_minute_limit"]
-    if per_menit > 0 and hitung_permintaan_semenit(username) >= per_menit:
+    if per_menit > 0 and hitung_permintaan_semenit(oidc_sub) >= per_menit:
         raise HTTPException(
             status_code=429,
             detail=(
@@ -2708,7 +2786,7 @@ def _tegakkan_kuota(username: str, role: Union[str, list, None]) -> None:
 
     harian = batas["daily_token_limit"]
     if harian > 0:
-        terpakai = get_token_usage(username)["total_tokens"]
+        terpakai = get_token_usage(oidc_sub)["total_tokens"]
         if terpakai >= harian:
             raise HTTPException(
                 status_code=429,
@@ -2843,7 +2921,7 @@ async def get_chat_suggestions_endpoint(
                             division_name = div_info.get("name") or ""
                 except Exception as e:
                     logger.warning(f"Gagal mengambil persona divisi '{division_code}': {e}")
-        recent_queries = get_recent_user_queries(username, limit=6)
+        recent_queries = get_recent_user_queries(_subjek_riwayat(user), limit=6)
 
     sys_cfg = get_system_config()
     if not sys_cfg.get("ai_suggestions_enabled", True):
@@ -2884,8 +2962,10 @@ async def _run_chat(
     if dashboard_token:
         set_dashboard_access_token(dashboard_token)
     is_guest = user.get("is_guest", True)
+    oidc_sub = ""
     if is_guest:
-        if require_login:
+        # Nilai konfigurasi dapat berubah dari panel admin; jangan mengandalkan global.
+        if get_system_config().get("require_login", settings.require_login):
             raise HTTPException(
                 status_code=401,
                 detail="Autentikasi diperlukan. Silakan login terlebih dahulu untuk menggunakan AI Assistant.",
@@ -2930,17 +3010,20 @@ async def _run_chat(
         user_job_level = profile.get("job_level", "staff")
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
-        _tegakkan_kuota(profile["username"], user_roles)
-        catat_permintaan(profile["username"])
+        oidc_sub = _subject_kuota(user)
+        if not oidc_sub:
+            raise HTTPException(status_code=401, detail="Subjek OIDC tidak tersedia pada sesi.")
+        _tegakkan_kuota(oidc_sub, user_roles)
+        catat_permintaan(oidc_sub)
 
         user_message_id = None
         active_session_id = chat_req.session_id
         # Sesi yang dikirim klien harus benar-benar milik user tersebut.
-        if active_session_id and not session_belongs_to(active_session_id, profile["username"]):
+        if active_session_id and not session_belongs_to(active_session_id, oidc_sub):
             raise HTTPException(status_code=404, detail="Sesi percakapan tidak ditemukan.")
 
         if not active_session_id:
-            new_session = create_chat_session(profile["username"], title="Percakapan Baru")
+            new_session = create_chat_session(profile["username"], title="Percakapan Baru", oidc_sub=oidc_sub)
             if new_session:
                 active_session_id = new_session["session_id"]
 
@@ -2980,7 +3063,7 @@ async def _run_chat(
     if active_session_id:
         raw_msgs = get_chat_messages(
             active_session_id,
-            username=user["username"],
+            oidc_sub=oidc_sub,
             limit=settings.history_max_messages,
         )
         chat_req.history = [
@@ -3029,7 +3112,7 @@ async def _run_chat(
         pakai = response.usage
         if pakai and pakai.total_tokens:
             record_token_usage(
-                user["username"], pakai.prompt_tokens or 0, pakai.completion_tokens or 0,
+                oidc_sub, pakai.prompt_tokens or 0, pakai.completion_tokens or 0,
                 estimated=pakai.estimated,
             )
         else:
@@ -3038,7 +3121,7 @@ async def _run_chat(
             for m in (chat_req.history or []):
                 masuk += estimate_tokens(m.get("content") if isinstance(m, dict) else "")
             keluar = estimate_tokens(response.reply or "")
-            record_token_usage(user["username"], masuk, keluar, estimated=True)
+            record_token_usage(oidc_sub, masuk, keluar, estimated=True)
             if response.usage is None:
                 response.usage = UsageStats()
             response.usage.prompt_tokens = masuk
@@ -3046,7 +3129,7 @@ async def _run_chat(
             response.usage.total_tokens = masuk + keluar
             response.usage.estimated = True
 
-        response.quota = status_kuota(user["username"], user_roles)
+        response.quota = status_kuota(oidc_sub, user_roles)
 
     if not is_guest and active_session_id:
         sources_str = json.dumps([s.model_dump() for s in response.sources]) if response.sources else ""
@@ -3093,8 +3176,8 @@ async def message_feedback_endpoint(
     if req.feedback not in (None, "", "like", "dislike"):
         raise HTTPException(status_code=400, detail="Feedback harus bernilai 'like', 'dislike', atau null.")
     fb_val = req.feedback if req.feedback in ("like", "dislike") else None
-    username = None if user.get("is_guest") else user.get("username")
-    ok = update_message_feedback(message_id, fb_val, username=username)
+    oidc_sub = None if user.get("is_guest") else _subjek_riwayat(user)
+    ok = update_message_feedback(message_id, fb_val, oidc_sub=oidc_sub)
     return {"success": ok, "message_id": message_id, "feedback": fb_val}
 
 

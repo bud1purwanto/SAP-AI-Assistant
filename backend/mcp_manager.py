@@ -9,6 +9,29 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
+class SapCredentialRejected(Exception):
+    """SAP RFC rejected the user's saved credentials for the selected target."""
+
+
+def sap_error_text(error: Exception) -> str:
+    response = getattr(error, "response", None)
+    return f"{error} {getattr(response, 'text', '')}"
+
+
+def is_sap_credential_error(message: str) -> bool:
+    """Recognize SAP logon failures without treating access denial as a password error."""
+    text = str(message or "").lower()
+    markers = (
+        "invalid credential", "invalid username or password", "invalid user or password",
+        "name or password is incorrect", "username or password is incorrect",
+        "user or password incorrect", "logon failure", "logon failed",
+        "rfc_logon_failure", "rfc_error_logon_failure", "wrong password",
+        "password is incorrect", "password logon no longer possible",
+        "nama pengguna atau kata sandi salah", "username atau password salah",
+    )
+    return any(marker in text for marker in markers)
+
 # Definisi tool berubah jauh lebih jarang daripada percakapan masuk. Cache yang
 # lebih panjang menghindari handshake/list-tools berulang pada chat ringan;
 # perubahan konfigurasi tetap dapat memanggil clear_tools_cache().
@@ -753,6 +776,8 @@ class MCPManager:
                 logger.info(f"SAP Active Server diset ke '{target_sap}' (overrides: {bool(sap_credentials)}): {[c.text for c in res.content]}")
                 return True
             except Exception as ex:
+                if is_sap_credential_error(sap_error_text(ex)):
+                    raise SapCredentialRejected() from ex
                 last_error = ex
                 sap_client._initialized = False
                 self._active_sap_target = None

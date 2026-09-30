@@ -587,3 +587,37 @@ input[type="search"]::-webkit-search-decoration {
   vertical-align: baseline;
   animation: typewriter-blink 0.75s ease-in-out infinite;
 }
+
+/* Judul riwayat tetap ringkas saat diam, lalu menampilkan keseluruhan teks
+   hanya pada perangkat dengan hover ketika item diarahkan atau difokuskan. */
+.session-title-marquee {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.session-title-marquee__track {
+  display: inline-flex;
+  width: max-content;
+  gap: 2rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .session-title-marquee__track,
+  .group:focus-within .session-title-marquee__track {
+    animation: session-title-marquee 8s linear infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group:hover .session-title-marquee__track,
+  .group:focus-within .session-title-marquee__track {
+    animation: none;
+  }
+}
+
+@keyframes session-title-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% - 1rem)); }
+}

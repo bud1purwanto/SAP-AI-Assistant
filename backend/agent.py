@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, Union, List, Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage, AIMessage
-from mcp_manager import mcp_manager
+from mcp_manager import mcp_manager, SapCredentialRejected, is_sap_credential_error, sap_error_text
 from artifacts import ARTIFACT_PROMPT, extract_and_build
 from conversation import estimate_tokens, trim_history
 from analysis_policy import (
@@ -28,6 +28,30 @@ from config import settings
 
 from fastapi import HTTPException
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_sap_credential_rejected(server_name: str, result) -> None:
+    if server_name != "sap":
+        return
+    text = "\n".join(str(getattr(item, "text", "")) for item in (result.content or []))
+    if not is_sap_credential_error(text):
+        return
+    failed = bool(result.is_error)
+    if not failed:
+        try:
+            payload = json.loads(text)
+            failed = isinstance(payload, dict) and (payload.get("success") is False or bool(payload.get("error")))
+        except (TypeError, ValueError):
+            pass
+    if failed:
+        raise SapCredentialRejected()
+
+
+def _sap_credential_error(target: str | None) -> HTTPException:
+    return HTTPException(
+        status_code=428,
+        detail={"code": "SAP_CREDENTIAL_INVALID", "target": target or ""},
+    )
 
 # Penanda yang membuat teks perlu dibersihkan sebelum ditampilkan. Selama
 # tidak ada satu pun di dalamnya, potongan aliran dapat diteruskan apa adanya.
@@ -1892,6 +1916,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             if text_tool_match and iteration < max_iterations:
                 t_name = text_tool_match.group(1)
                 t_args_str = text_tool_match.group(2)
+                server_name = None
                 try:
                     t_args = json.loads(t_args_str)
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
@@ -1952,6 +1977,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         sql_target=sql_target,
                     )
                     
+                    _raise_if_sap_credential_rejected(server_name, tool_result)
                     res_str = ""
                     if tool_result.content:
                         res_str = "\n".join([item.text for item in tool_result.content if item.text])
@@ -1977,7 +2003,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         content=f"Hasil eksekusi {t_name}: {res_str}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
                     ))
                     continue
+                except SapCredentialRejected as exc:
+                    raise _sap_credential_error(sap_target) from exc
                 except Exception as parse_ex:
+                    if server_name == "sap" and is_sap_credential_error(sap_error_text(parse_ex)):
+                        raise _sap_credential_error(sap_target) from parse_ex
                     logger.warning(f"Gagal mem-parse text-based tool call: {parse_ex}")
 
             # Model kadang membocorkan penalaran alih-alih menjawab. Dorong sekali
@@ -2210,6 +2240,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     sap_credentials=user_sap_credentials,
                     sql_target=sql_target,
                 )
+                _raise_if_sap_credential_rejected(server_name, result)
                 texts = []
                 if result.content:
                     for c in result.content:
@@ -2254,7 +2285,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     name=f"Tool: {mcp_name}",
                     content=content_str[:500] + ("..." if len(content_str) > 500 else "")
                 ))
+            except SapCredentialRejected as exc:
+                raise _sap_credential_error(sap_target) from exc
             except Exception as e:
+                if server_name == "sap" and is_sap_credential_error(sap_error_text(e)):
+                    raise _sap_credential_error(sap_target) from e
                 logger.error(f"Error mengeksekusi tool {tool_name}: {e}")
                 messages.append(ToolMessage(content=f"System Error: {str(e)}", tool_call_id=tool_id))
     else:

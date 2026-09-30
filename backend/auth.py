@@ -57,6 +57,15 @@ def create_session_cookie(principal: dict) -> str:
     roles = principal.get("roles") or ([principal["role"]] if principal.get("role") else ["user"])
     primary_role = principal.get("role") or (roles[0] if roles else "user")
     expire_hours = getattr(settings, "session_expire_hours", 24) or 24
+    default_expire_seconds = int(expire_hours * 3600)
+    requested_expire_seconds = principal.get("session_expire_seconds")
+    try:
+        expire_seconds = int(requested_expire_seconds) if requested_expire_seconds is not None else default_expire_seconds
+    except (TypeError, ValueError):
+        expire_seconds = default_expire_seconds
+    # Sesi BFF tidak boleh lebih lama dari token OIDC upstream yang menjadi
+    # dasar hak aksesnya. Nilai minimum satu detik mencegah JWT tanpa masa berlaku.
+    expire_seconds = min(max(expire_seconds, 1), default_expire_seconds)
 
     payload: Dict[str, Any] = {
         "sub": str(principal.get("sub", "") or principal.get("username", "")),
@@ -66,7 +75,7 @@ def create_session_cookie(principal: dict) -> str:
         "org_units": principal.get("org_units") or [],
         "is_guest": bool(principal.get("is_guest", False)),
         "iat": now,
-        "exp": now + timedelta(hours=expire_hours),
+        "exp": now + timedelta(seconds=expire_seconds),
     }
     for k, v in principal.items():
         if k not in payload and k != "access_token":
@@ -74,11 +83,24 @@ def create_session_cookie(principal: dict) -> str:
 
     access_token = principal.get("access_token")
     if access_token:
-        session_id = secrets.token_urlsafe(32)
+        session_id = str(principal.get("session_id") or secrets.token_urlsafe(32))
+        from database import save_dashboard_session_token
+        if not save_dashboard_session_token(session_id, str(access_token)):
+            raise RuntimeError("Token OIDC gagal disimpan pada sesi login.")
         _dashboard_tokens[session_id] = (str(access_token), payload["exp"])
         payload["session_id"] = session_id
 
     return jwt.encode(payload, settings.session_secret, algorithm="HS256")
+
+
+def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    entry = _dashboard_tokens.get(session_id)
+    if entry and entry[1] > datetime.now(timezone.utc):
+        return entry[0]
+    from database import get_dashboard_session_token
+    return get_dashboard_session_token(session_id)
 
 
 def decode_session_cookie(token: str) -> Optional[dict]:
@@ -131,12 +153,7 @@ def get_current_principal(request: Request) -> dict:
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
     session_id = payload.get("session_id")
-    token_entry = _dashboard_tokens.get(session_id) if isinstance(session_id, str) else None
-    resolved_token = (
-        token_entry[0]
-        if token_entry and token_entry[1] > datetime.now(timezone.utc)
-        else (token if not payload.get("is_guest") else None)
-    )
+    resolved_token = _resolve_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
     username = payload.get("username") or payload.get("sub")
     user_role = payload.get("role", "user")
@@ -188,12 +205,7 @@ def get_current_user_optional(request: Request) -> dict:
         }
 
     session_id = payload.get("session_id")
-    token_entry = _dashboard_tokens.get(session_id) if isinstance(session_id, str) else None
-    resolved_token = (
-        token_entry[0]
-        if token_entry and token_entry[1] > datetime.now(timezone.utc)
-        else (token if not payload.get("is_guest") else None)
-    )
+    resolved_token = _resolve_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
     username = payload.get("username") or payload.get("sub")
     user_role = payload.get("role", "user")
