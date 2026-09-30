@@ -1484,7 +1484,7 @@ const ChatLayout = () => {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span className="text-[11px] text-content-muted font-medium">Online</span>
+                <span className="text-[11px] text-content-muted font-medium">{t('common.online')}</span>
               </div>
             </div>
           </div>
@@ -1528,7 +1528,7 @@ const ChatLayout = () => {
                   type="button"
                   onClick={() => setSessionQuery('')}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-content-subtle hover:bg-surface-hover hover:text-content cursor-pointer transition-colors"
-                  aria-label="Clear search"
+                  aria-label={t('common.clearSearch')}
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -1572,7 +1572,7 @@ const ChatLayout = () => {
               ))}
             </div>
           ) : isSessionsLoading ? (
-            <div className="space-y-2 p-2" aria-busy="true" aria-label="Loading sessions">
+            <div className="space-y-2 p-2" aria-busy="true" aria-label={t('common.loadingSessions')}>
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse" />
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse w-4/5" />
               <div className="h-8 sm:h-9 bg-surface-sunken rounded-xl animate-pulse w-3/4" />
@@ -1652,7 +1652,7 @@ const ChatLayout = () => {
                           aria-current={isActive ? 'page' : undefined}
                         >
                           {isThisSessionProcessing ? (
-                            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label="Processing" />
+                            <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" aria-label={t('common.processing')} />
                           ) : (
                             <MessageSquare className={`w-3.5 h-3.5 shrink-0 transition-colors ${isActive ? 'text-accent' : 'text-content-subtle group-hover:text-content-muted'}`} aria-hidden="true" />
                           )}
@@ -1716,13 +1716,13 @@ const ChatLayout = () => {
                 <div className="relative shrink-0">
                   <div
                     className="w-8 h-8 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 text-white flex items-center justify-center font-bold text-xs shadow-xs select-none"
-                    title="Guest"
+                    title={t('sidebar.guestWarning')}
                   >
                     GU
                   </div>
                   <span
                     className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
-                    title="Online"
+                    title={t('common.online')}
                   />
                 </div>
                 <div className="min-w-0">
@@ -1744,7 +1744,7 @@ const ChatLayout = () => {
                   onClick={() => cycleTheme()}
                   className="w-8 h-8 rounded-xl border border-transparent hover:border-line/60 text-content-muted hover:text-content hover:bg-surface-hover/80 transition-all cursor-pointer flex items-center justify-center"
                   title={t('nav.theme')}
-                  aria-label="Ganti tema tampilan"
+                  aria-label={t('nav.theme')}
                 >
                   <ThemeIcon className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -1777,7 +1777,7 @@ const ChatLayout = () => {
                   </div>
                   <span
                     className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
-                    title="Online"
+                    title={t('common.online')}
                   />
                 </div>
                 <div className="min-w-0">
@@ -1819,10 +1819,10 @@ const ChatLayout = () => {
                       ? 'bg-accent/15 border-accent/30 text-accent shadow-xs'
                       : 'border-transparent text-content-subtle hover:text-content hover:bg-surface-hover/80 hover:border-line/60'
                   }`}
-                  aria-label="Opsi Pengguna"
+                  aria-label={t('common.userOptions')}
                   aria-haspopup="true"
                   aria-expanded={isUserMenuOpen}
-                  title="Opsi & Pengaturan Akun"
+                  title={t('common.accountOptions')}
                 >
                   <MoreVertical className="w-4 h-4" aria-hidden="true" />
                 </button>

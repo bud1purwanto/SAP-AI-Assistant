@@ -652,7 +652,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                     type="button"
                     onClick={() => setTestResult(null)}
                     className="text-content-muted hover:text-content p-0.5 cursor-pointer"
-                    title="Dismiss"
+                    title={t('common.dismiss')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>

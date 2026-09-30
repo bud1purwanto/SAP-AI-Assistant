@@ -715,7 +715,7 @@ export default function AdminChatModes({
                 className={`relative h-6 w-11 shrink-0 rounded-full transition-all cursor-pointer ${
                   nineRouterEnabled ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-xs shadow-indigo-500/30' : 'bg-line'
                 }`}
-                aria-label="Toggle 9Router"
+                aria-label={t('common.toggle', { name: '9Router' })}
               >
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
                   nineRouterEnabled ? 'left-5.5' : 'left-0.5'
@@ -796,7 +796,7 @@ export default function AdminChatModes({
                 className={`relative h-6 w-11 shrink-0 rounded-full transition-all cursor-pointer ${
                   openrouterEnabled ? 'bg-gradient-to-r from-emerald-500 to-teal-600 shadow-xs shadow-emerald-500/30' : 'bg-line'
                 }`}
-                aria-label="Toggle OpenRouter"
+                aria-label={t('common.toggle', { name: 'OpenRouter' })}
               >
                 <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
                   openrouterEnabled ? 'left-5.5' : 'left-0.5'
@@ -894,7 +894,7 @@ export default function AdminChatModes({
             className={`relative h-6 w-11 shrink-0 rounded-full transition-all cursor-pointer ${
               masterEnabled ? 'bg-gradient-to-r from-indigo-500 to-violet-600 shadow-xs shadow-indigo-500/30' : 'bg-line'
             }`}
-            aria-label="Toggle Master Chat Modes"
+            aria-label={t('common.toggle', { name: 'Master Chat Modes' })}
           >
             <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
               masterEnabled ? 'left-5.5' : 'left-0.5'
@@ -941,7 +941,7 @@ export default function AdminChatModes({
             className={`relative h-6 w-11 shrink-0 rounded-full transition-all cursor-pointer ${
               suggestionsEnabled ? 'bg-gradient-to-r from-purple-500 to-indigo-600 shadow-xs shadow-purple-500/30' : 'bg-line'
             }`}
-            aria-label="Toggle AI Suggestions"
+            aria-label={t('common.toggle', { name: 'AI Suggestions' })}
           >
             <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
               suggestionsEnabled ? 'left-5.5' : 'left-0.5'

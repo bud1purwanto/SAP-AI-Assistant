@@ -348,7 +348,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
               type="button"
               onClick={handleSalinKode}
               className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-warning/40 text-content hover:bg-warning-soft transition-colors cursor-pointer"
-              title="Salin kode diagram"
+              title={t('diagram.copyCode')}
             >
               {salinSukses ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
               <span>{salinSukses ? 'Disalin' : 'Salin'}</span>
@@ -357,7 +357,7 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
               type="button"
               onClick={() => setPercobaanUlang((p) => p + 1)}
               className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border border-warning/40 text-content hover:bg-warning-soft transition-colors cursor-pointer"
-              title="Coba gambar ulang"
+              title={t('diagram.retry')}
             >
               <RotateCcw className="h-3 w-3" />
               <span>Coba Lagi</span>
@@ -431,8 +431,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={handleZoomIn}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Zoom In (+)"
-                  aria-label="Zoom In"
+                  title={t('diagram.zoomIn')}
+                  aria-label={t('diagram.zoomIn')}
                 >
                   <ZoomIn className="h-4 w-4" />
                 </button>
@@ -440,8 +440,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={handleZoomOut}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Zoom Out (-)"
-                  aria-label="Zoom Out"
+                  title={t('diagram.zoomOut')}
+                  aria-label={t('diagram.zoomOut')}
                 >
                   <ZoomOut className="h-4 w-4" />
                 </button>
@@ -449,8 +449,8 @@ const MermaidDiagram = ({ chart, isStreaming = false }) => {
                   type="button"
                   onClick={resetZoom}
                   className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-hover hover:text-content cursor-pointer"
-                  title="Reset Zoom (0)"
-                  aria-label="Reset Zoom"
+                  title={t('diagram.resetZoom')}
+                  aria-label={t('diagram.resetZoom')}
                 >
                   <RotateCcw className="h-4 w-4" />
                 </button>

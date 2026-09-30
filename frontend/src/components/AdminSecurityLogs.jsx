@@ -169,9 +169,9 @@ export default function AdminSecurityLogs() {
               <tr>
                 <th className="px-4 py-3">{isEn ? 'Timestamp' : 'Waktu'}</th>
                 <th className="px-4 py-3">{isEn ? 'Event Type' : 'Aktivitas'}</th>
-                <th className="px-4 py-3">Username</th>
+                <th className="px-4 py-3">{t('common.username')}</th>
                 <th className="px-4 py-3">{t('sessions.terminalHardware')}</th>
-                <th className="px-4 py-3">IP Address</th>
+                <th className="px-4 py-3">{t('common.ipAddress')}</th>
                 <th className="px-4 py-3">{isEn ? 'Details' : 'Keterangan'}</th>
               </tr>
             </thead>

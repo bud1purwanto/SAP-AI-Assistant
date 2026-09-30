@@ -298,21 +298,21 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     type="button"
                     disabled={isTesting}
                     onClick={() => handleTest(server)}
-                    aria-label="Test connection"
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                    aria-label={t('common.testConnection')}
+                    className="inline-flex items-center gap-1 min-h-9 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
                   >
                     {isTesting ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <Activity className="w-3.5 h-3.5 text-accent" />
                     )}
-                    <span className="hidden xs:inline">Test</span>
+                    <span className="hidden xs:inline">{t('common.test')}</span>
                   </button>
                   {!server.is_registered && <button
                     type="button"
                     onClick={() => openConfigureModal(server)}
                     aria-label={t('mcp.setLocalUrl')}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs font-medium transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 min-h-9 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs font-medium transition-colors cursor-pointer"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                     <span>{t('mcp.setLocalUrl')}</span>
@@ -321,7 +321,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     type="button"
                     onClick={() => openEditModal(server)}
                     aria-label={t('mcp.editServer')}
-                    className="p-1.5 rounded-lg border border-line hover:bg-surface-hover text-content text-xs transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center min-w-9 min-h-9 rounded-lg border border-line hover:bg-surface-hover text-content text-xs transition-colors cursor-pointer"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>}
@@ -329,7 +329,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                     type="button"
                     onClick={() => confirmDelete(server)}
                     aria-label={t('common.delete')}
-                    className="p-1.5 rounded-lg border border-line hover:bg-rose-500/10 text-rose-500 hover:border-rose-500/20 text-xs transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center min-w-9 min-h-9 rounded-lg border border-line hover:bg-rose-500/10 text-rose-500 hover:border-rose-500/20 text-xs transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>}

@@ -637,7 +637,7 @@ const ChatInput = ({
       {isSlashActive && filteredCommands.length > 0 && (
         <div
           role="listbox"
-          aria-label="Slash commands"
+          aria-label={t('common.slashCommands')}
           className="mb-2 w-full rounded-2xl border border-line bg-surface-raised/98 backdrop-blur-xl p-1.5 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-150"
         >
           <div className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-subtle flex items-center justify-between border-b border-line/60 mb-1">

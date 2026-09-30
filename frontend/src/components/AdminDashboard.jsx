@@ -893,7 +893,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               className="inline-flex items-center gap-1.5 text-accent font-bold px-2.5 py-1 rounded-lg bg-accent-soft/80 hover:bg-accent-soft active:scale-95 border border-accent/25 transition-all cursor-pointer shadow-2xs text-xs min-w-0"
               aria-expanded={isMobileNavOpen}
               aria-haspopup="listbox"
-              title="Pilih Menu"
+              title={t('common.selectMenu')}
             >
               <CurrentTabIcon className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate max-w-[140px] sm:max-w-[200px]">{currentTab?.label}</span>
@@ -910,7 +910,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             onClick={onClose}
             className="-mr-1 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
             aria-label={t('admin.closeAria')}
-            title="Tutup (Esc)"
+            title={t('common.closeShortcut')}
           >
             <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
@@ -1370,7 +1370,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     <table className="w-full text-left text-xs sm:text-sm">
                       <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
                         <tr>
-                          <th className="px-4 py-3">Username</th>
+                          <th className="px-4 py-3">{t('common.username')}</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
                           <th className="px-4 py-3">{language === 'en' ? 'Division' : 'Divisi'}</th>
                           <th className="px-4 py-3">{t('admin.jobLevel')}</th>
@@ -2689,7 +2689,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                           <button
                             onClick={() => setKuotaUserSearch('')}
                             className="absolute right-2.5 top-2.5 text-content-subtle hover:text-content p-0.5 cursor-pointer"
-                            aria-label="Clear search"
+                            aria-label={t('common.clearSearch')}
                           >
                             <X className="w-3.5 h-3.5" />
                           </button>

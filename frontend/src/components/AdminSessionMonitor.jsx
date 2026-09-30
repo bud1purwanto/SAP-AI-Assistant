@@ -267,7 +267,7 @@ export default function AdminSessionMonitor({ masterRoles = [] }) {
               <tr>
                 <th className="px-4 py-3">{isEn ? 'User & Division' : 'Pengguna & Divisi'}</th>
                 <th className="px-4 py-3">{t('sessions.terminalHardware')}</th>
-                <th className="px-4 py-3">IP Address</th>
+                <th className="px-4 py-3">{t('common.ipAddress')}</th>
                 <th className="px-4 py-3">{t('sessions.currentAction')}</th>
                 <th className="px-4 py-3">{isEn ? 'Status & Last Active' : 'Status & Terakhir Aktif'}</th>
                 <th className="px-4 py-3 text-right">{isEn ? 'Action' : 'Aksi'}</th>

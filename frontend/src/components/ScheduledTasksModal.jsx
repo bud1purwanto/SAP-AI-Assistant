@@ -381,7 +381,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
             type="button"
             onClick={onClose}
             className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-content-muted hover:text-content bg-surface-sunken/80 hover:bg-surface-hover border border-line/50 transition-all duration-200 shrink-0 cursor-pointer hover:rotate-90"
-            aria-label="Tutup"
+            aria-label={t('common.close')}
           >
             <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
@@ -673,7 +673,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                                 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                                 : 'bg-surface-sunken text-content-muted border-line hover:bg-surface-hover'
                             }`}
-                            title="Klik untuk mengubah status aktif/nonaktif"
+                            title={t('common.toggleTask')}
                           >
                             {task.is_active ? t('scheduled.active') : t('scheduled.inactive')}
                           </button>
@@ -707,7 +707,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                           type="button"
                           onClick={() => handleOpenEdit(task)}
                           className="p-1.5 rounded-lg text-content-muted hover:text-content hover:bg-surface transition-colors cursor-pointer"
-                          title="Edit"
+                          title={t('common.edit')}
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
@@ -715,7 +715,7 @@ export default function ScheduledTasksModal({ isOpen, onClose }) {
                           type="button"
                           onClick={() => handleDelete(task.id)}
                           className="p-1.5 rounded-lg text-content-muted hover:text-rose-500 hover:bg-surface transition-colors cursor-pointer"
-                          title="Hapus"
+                          title={t('common.delete')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

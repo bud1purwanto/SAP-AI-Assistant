@@ -214,7 +214,7 @@ const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
             aria-label={t('chat.openInPanel')}
           >
             <Columns2 className="w-3 h-3" aria-hidden="true" />
-            <span className="hidden sm:inline">Panel</span>
+            <span className="hidden sm:inline">{t('common.panel')}</span>
           </button>
         )}
         <button
