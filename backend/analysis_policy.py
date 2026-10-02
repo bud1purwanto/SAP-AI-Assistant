@@ -84,13 +84,14 @@ _LOOKUP = re.compile(
 )
 _RAG = re.compile(r"\b(rag|dokumen internal|sop|blueprint|manual|kebijakan|prosedur)\b", re.I)
 _SQL = re.compile(r"\b(sql|database|tabel sql|query)\b", re.I)
+_EMAIL = re.compile(r"\b(email|e-mail|surat|inbox|kotak masuk|pesan masuk|kalender|calendar|agenda|mail)\b", re.I)
 _SAP = re.compile(
     r"\b(sap|material|stok|stock|purchase order|production order|invoice|vendor|"
     r"bom|mrp|mara|marc|mard|aufk|ekko|ekpo|tcode)\b", re.I
 )
 _ATTACHMENT = re.compile(r"\b(lampiran|dokumen yang saya lampirkan|file ini|teks berikut)\b", re.I)
 _EXPLICIT_LIVE_SOURCE = re.compile(
-    r"\b(di|dari|ke|pada)\s+(sap|database|sql|rag)\b|\b(tabel\s+(sap|sql)|query\s+sql)\b",
+    r"\b(di|dari|ke|pada)\s+(sap|database|sql|rag|email|inbox)\b|\b(tabel\s+(sap|sql)|query\s+sql)\b",
     re.I,
 )
 _DIRECT = re.compile(r"^(halo|hai|hi|selamat|terima kasih|makasih)\b|\b(apa itu|terjemahkan|ringkas(?:an)?)\b", re.I)
@@ -107,12 +108,14 @@ def _normalise_target(target_server: str) -> str:
         return "sql"
     if target.startswith("rag"):
         return "rag"
+    if target.startswith("email"):
+        return "email"
     return "sap"
 
 
 def _required_sources(message: str, target_server: str) -> list[str]:
     sources: list[str] = []
-    for source, pattern in (("sap", _SAP), ("sql", _SQL), ("rag", _RAG)):
+    for source, pattern in (("email", _EMAIL), ("rag", _RAG), ("sql", _SQL), ("sap", _SAP)):
         if pattern.search(message) and source not in sources:
             sources.append(source)
     if not sources:

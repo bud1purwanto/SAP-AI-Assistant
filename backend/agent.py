@@ -1361,14 +1361,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"**A. Permintaan data / investigasi SQL Database** (cek database, tabel, kolom, view, record, atau query SQL pada server **{sql_server_name}**)\n"
             f"   -> WAJIB panggil tool MCP SQL (`sql__sql_list_databases`, `sql__sql_list_tables`, `sql__sql_describe_table`, `sql__sql_run_query`, dsb.) untuk mengambil data LIVE dari database SQL.\n"
             f"   -> Server SQL aktif yang dipilih pengguna adalah **{sql_server_name}**. Jalankan inspeksi dan query langsung ke server SQL tersebut.\n"
+            f"   -> Awali jawaban dengan indikator: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
             f"   -> JANGAN mencari ke SAP atau menyebut sistem SAP, karena pengguna secara spesifik memilih koneksi ke SQL Database ({sql_server_name}).\n\n"
-        )
-        format_source_rule = (
-            f"2. Jika jawaban mengambil data live dari SQL Database, sertakan indikator sumber data "
-            f"berformat: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
-            f"   Gunakan tool SQL untuk memeriksa dan membaca tabel/data pada server {sql_server_name}. "
-            f"   DILARANG mengarahkan jawaban ke sistem SAP atau menulis 'Data langsung dari sistem SAP' "
-            f"   karena pengguna secara tegas memilih target koneksi SQL Database ({sql_server_name}).\n"
         )
     else:
         approach_a = (
@@ -1378,17 +1372,21 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"   -> Contoh: cek plant material 'SRRPAI' -> `sap__read_table` dengan `table: 'MARC'`, "
             f"`where: [\"MATNR = 'SRRPAI'\"]`, atau `sap__sap_read_table` dengan `table_name: 'MARC'`, "
             f"`options: [\"MATNR = 'SRRPAI'\"]`.\n"
+            f"   -> Awali jawaban dengan indikator: 📦 **Data langsung dari sistem {sap_server_name}**\n"
             f"   -> Server SAP aktif SUDAH dipilih pengguna lewat antarmuka. Jangan bertanya ulang "
             f"soal pilihan server dan jangan menolak permintaan data.\n\n"
         )
-        format_source_rule = (
-            f"2. Jika jawaban mengambil data live dari SAP, sertakan indikator sumber data "
-            f"berformat: 📦 **Data langsung dari sistem {sap_server_name}** — nama sistem SAP aktif "
-            f"yang disebutkan pada bagian KONTEKS PERMINTAAN INI di bagian bawah prompt ini.\n"
-            f"   Tulis dalam bahasa kerja sehari-hari; hindari istilah internal seperti SID, MCP, RAG, "
-            f"atau nama tool kepada pengguna. Untuk jawaban yang TIDAK mengambil data SAP, JANGAN "
-            f"tampilkan baris tersebut.\n"
-        )
+
+    format_source_rule = (
+        "2. INDIKATOR SUMBER DATA PADA AWAL JAWABAN (WAJIB SESUAIKAN DENGAN SUMBER DATA OUTPUT):\n"
+        "   Sertakan baris pertama indikator sumber HANYA sesuai jenis data yang Anda ambil dan sajikan ke pengguna:\n"
+        f"   - JIKA data diambil dari SAP: sertakan baris pertama: 📦 **Data langsung dari sistem {sap_server_name}**\n"
+        "   - JIKA data diambil dari Layanan Email: sertakan baris pertama: 📬 **Data langsung dari Layanan Email**\n"
+        "   - JIKA data diambil dari Dokumen / Basis Pengetahuan RAG: sertakan baris pertama: 📚 **Data langsung dari Dokumen RAG: [Nama / Judul Dokumen]**\n"
+        f"   - JIKA data diambil dari Database SQL: sertakan baris pertama: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
+        "   - JIKA jawaban TIDAK mengambil data live dari sistem eksternal di atas (misal percakapan umum, analisis murni, kalkulasi, pembuatan draf, atau bantuan konseptual): JANGAN tampilkan baris indikator sumber data sama sekali.\n"
+        f"   - ATURAN SANGAT KETAT: Dilarang keras menampilkan 'Data langsung dari sistem {sap_server_name}' jika Anda tidak mengambil data dari SAP! Misalnya, saat memeriksa email pengguna, Anda WAJIB menggunakan '📬 **Data langsung dari Layanan Email**' dan DILARANG menyebut atau mengecek status sistem SAP {sap_server_name}.\n"
+    )
 
     forbidden_instruction = ""
 
@@ -1410,24 +1408,31 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
         f"{approach_a}"
-        f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal**\n"
+        f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal (RAG)**\n"
         f"   -> Gunakan `rag__rag_answer` atau `rag__rag_search` bila jawabannya kemungkinan ada di dokumen internal (blueprint, SOP, manual).\n"
+        f"   -> Awali jawaban dengan indikator: 📚 **Data langsung dari Dokumen RAG: [Nama Dokumen / SOP]**\n"
         f"   -> ATURAN EFISIENSI RAG (PENTING):\n"
         f"      - Tool `rag_answer` sudah merangkum jawaban dokumen beserta kutipan halamannya secara komprehensif. Setelah mendapatkan hasil yang relevan, SEGERA tuliskan jawaban akhir lengkap untuk pengguna.\n"
         f"      - DILARANG memanggil tool RAG berulang-ulang secara berantai (misal memanggil `rag_get_page_context` berkali-kali untuk setiap halaman berurutan). Maksimal pemanggilan konteks lanjutan hanya 1 kali bila benar-benar krusial.\n"
         f"      - Bila dokumen tidak ditemukan, segera jelaskan dengan sopan dari pengetahuan umum Anda tanpa mencoba pencarian RAG berulang-ulang.\n\n"
-        f"**C. Permintaan yang menyertakan lampiran** (pengguna mengirim gambar atau dokumen)\n"
+        f"**C. Permintaan terkait Email, Kalender, atau Kotak Masuk** (cek email terakhir, cari email, baca email, kirim/draf/forward email, agenda kalender):\n"
+        f"   -> WAJIB panggil tool MCP Email (`email__search_emails`, `email__read_email`, `email__get_email`, `email__get_calendar`, dsb.) untuk membaca atau mengelola email.\n"
+        f"   -> Awali jawaban dengan indikator: 📬 **Data langsung dari Layanan Email**\n"
+        f"   -> Sajikan rincian email dengan jelas (Pengirim/From, Penerima/To, Tanggal/Waktu, Subjek, dan Ringkasan/Isi email).\n"
+        f"   -> DILARANG KERAS memanggil tool SAP (seperti `get_system_info`, `read_table`) atau menyebut status sistem SAP ketika pengguna meminta pengecekan email!\n\n"
+        f"**D. Permintaan yang menyertakan lampiran** (pengguna mengirim gambar atau dokumen)\n"
         f"   -> Isi berkas sudah disediakan untuk Anda dalam blok LAMPIRAN DARI PENGGUNA. "
         f"Baca dan gunakan isinya; jangan meminta pengguna menempelkan ulang isinya.\n"
         f"   -> Sebutkan nama berkas ketika jawaban Anda bersumber dari lampiran tersebut.\n"
         f"   -> Bila lampiran bertentangan dengan data sistem, sampaikan perbedaannya, jangan "
         f"memilih diam-diam salah satunya.\n\n"
         f"{custom_mcp_guidance}"
-        f"**Permintaan umum di luar data sistem** — menulis, meringkas, menerjemahkan, "
+        f"**E. Permintaan umum di luar data sistem** — menulis, meringkas, menerjemahkan, "
         f"menghitung, menyusun tabel/laporan, membuat berkas Excel/CSV, menjelaskan konsep, "
         f"membantu kode, brainstorming, atau sekadar menyapa.\n"
         f"   -> JAWAB LANGSUNG dengan kemampuan Anda sendiri. JANGAN memanggil tool sistem "
-        f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi yang tidak diminta.\n\n"
+        f"hanya karena tool tersedia, dan JANGAN mengubah jawaban menjadi laporan investigasi yang tidak diminta.\n"
+        f"   -> JANGAN sertakan indikator sumber data apa pun di awal jawaban.\n\n"
         f"Bila sebuah permintaan menggabungkan beberapa jenis (misalnya: ambil data lalu "
         f"rapikan jadi Excel), kerjakan berurutan: ambil datanya dulu, baru olah hasilnya.\n\n"
         f"**ATURAN PEMANGGILAN TOOL (PENTING):**\n"
@@ -1644,9 +1649,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         )
     elif has_sap:
         konteks.append(
-            f"- Target Sistem Aktif yang Dipilih Pengguna: **SAP ERP**\n"
-            f"- Sistem SAP aktif: **{sap_server_name}** (SID: {sap_sid}). "
-            f"Inilah NAMA_SERVER yang dipakai pada baris status di aturan FORMAT JAWABAN.\n"
+            f"- Target Sistem SAP Terhubung: **{sap_server_name}** (SID: {sap_sid})\n"
+            f"- PENTING: Header '📦 **Data langsung dari sistem {sap_server_name}**' HANYA dipakai jika pengguna meminta data SAP.\n"
+            f"  Jika pengguna meminta data Email, gunakan '📬 **Data langsung dari Layanan Email**' dan jangan sebutkan sistem SAP.\n"
+            f"  Jika pengguna meminta dokumen RAG, gunakan '📚 **Data langsung dari Dokumen RAG: ...**' dan jangan sebutkan sistem SAP.\n"
         )
     else:
         konteks.append(
@@ -2275,7 +2281,14 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         content_str += (
                             "\n\n[SISTEM]: Informasi dari dokumen SOP / basis pengetahuan RAG sudah memadai. "
                             "Segera susun jawaban akhir yang lengkap dan rapi dalam Bahasa Indonesia untuk pengguna sekarang "
-                            "tanpa memanggil tool RAG tambahan."
+                            "diawali '📚 **Data langsung dari Dokumen RAG: [Judul Dokumen]**' tanpa memanggil tool RAG tambahan atau tool sistem lain."
+                        )
+                elif server_name == "email":
+                    if mcp_name in ("search_emails", "read_email", "get_email", "get_calendar") and any(k in content_str.lower() for k in ("subject", "from", "sender", "snippet", "body", "events", "calendar")):
+                        content_str += (
+                            "\n\n[SISTEM]: Data email/kalender yang diminta telah berhasil diperoleh. "
+                            "Segera susun jawaban akhir lengkap untuk pengguna sekarang diawali '📬 **Data langsung dari Layanan Email**'. "
+                            "DILARANG memanggil tool SAP (seperti get_system_info, read_table) atau menyebut sistem SAP!"
                         )
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
@@ -2296,7 +2309,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         try:
             await reset_stream()
             summary_messages = messages + [
-                HumanMessage(content="Berdasarkan seluruh hasil panggilan tool di atas, rangkum dan berikan jawaban akhir yang jelas dan lengkap dalam bahasa Indonesia diawali header box server.")
+                HumanMessage(content="Berdasarkan seluruh hasil panggilan tool di atas, rangkum dan berikan jawaban akhir yang jelas dan lengkap dalam bahasa Indonesia diawali indikator sumber data yang sesuai (misal: 📬 **Data langsung dari Layanan Email** jika dari email, 📦 **Data langsung dari sistem ...** jika dari SAP, atau 📚 **Data langsung dari Dokumen RAG: ...** jika dari RAG).")
             ]
             try:
                 final_res = await call_model(llm_primary, summary_messages)
@@ -2307,6 +2320,50 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 reply_text = "Maaf, data dari tool sudah terkumpul tetapi rangkuman jawaban tidak dapat diproses."
         except Exception as e:
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
+
+    # Normalisasi konsistensi header sumber data agar sesuai dengan output aktual
+    used_servers = {s.type.lower() for s in sources}
+    has_sap_source = any("sap" in s for s in used_servers)
+    has_email_source = any("email" in s for s in used_servers)
+    has_rag_source = any("rag" in s or "doc" in s for s in used_servers)
+    has_sql_source = any("sql" in s for s in used_servers)
+
+    if reply_text:
+        # Jika hasil HANYA dari Email (tanpa SAP), tapi model masih menyertakan badge SAP di baris pertama
+        if has_email_source and not has_sap_source:
+            if "📦 **Data langsung dari sistem" in reply_text:
+                reply_text = re.sub(
+                    r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
+                    "📬 **Data langsung dari Layanan Email**\n\n",
+                    reply_text.strip(),
+                    count=1
+                )
+        # Jika hasil HANYA dari RAG (tanpa SAP), tapi model menyertakan badge SAP di baris pertama
+        elif has_rag_source and not has_sap_source:
+            if "📦 **Data langsung dari sistem" in reply_text:
+                reply_text = re.sub(
+                    r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
+                    "📚 **Data langsung dari Dokumen RAG**\n\n",
+                    reply_text.strip(),
+                    count=1
+                )
+        # Jika hasil HANYA dari SQL (tanpa SAP), tapi model menyertakan badge SAP di baris pertama
+        elif has_sql_source and not has_sap_source:
+            if "📦 **Data langsung dari sistem" in reply_text:
+                reply_text = re.sub(
+                    r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
+                    f"📦 **Data langsung dari database SQL: {sql_server_name}**\n\n",
+                    reply_text.strip(),
+                    count=1
+                )
+        # Jika tidak ada tool eksternal sama sekali yang dipanggil, hapus badge live data palsu
+        elif not sources and ("📦 **Data langsung dari sistem" in reply_text or "📦 **Data langsung dari database" in reply_text):
+            reply_text = re.sub(
+                r"^📦 \*\*Data langsung dari [^\n]+\*\*\n*",
+                "",
+                reply_text.strip(),
+                count=1
+            )
 
     if "```sap-artifact" in (reply_text or ""):
         await report("building", "Generating document file…" if is_en else "Menyiapkan berkas hasil…", max_iterations)
