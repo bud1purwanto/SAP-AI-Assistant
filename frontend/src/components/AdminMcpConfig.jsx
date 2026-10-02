@@ -169,7 +169,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
       setTestResult({
         id,
         success: ok,
-        message: ok ? t('mcp.testSuccess') : (res?.error || t('mcp.testFailed')),
+        message: ok ? (res?.message || t('mcp.testSuccess')) : (res?.message || res?.error || t('mcp.testFailed')),
       });
     } catch (err) {
       setTestResult({

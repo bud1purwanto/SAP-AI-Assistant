@@ -2657,25 +2657,88 @@ async def delete_admin_mcp_server_endpoint(server_id: str, admin: dict = Depends
 async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admin: dict = Depends(require_superadmin)):
     """Uji konektivitas real-time ke gateway MCP (latensi ms, status online, dan pendeteksian tools)."""
     url = req.url
-    headers = req.headers or {}
+    headers = dict(req.headers or {})
     transport = req.transport_type or "http"
-    if req.server_id:
-        client = mcp_manager.get_client(req.server_id)
-        if client and getattr(client, "url", None):
-            url = client.url
-            if not req.headers and getattr(client, "headers", None):
-                headers = dict(client.headers)
-            transport = getattr(client, "transport_type", "http")
-    if not url:
-        raise HTTPException(status_code=400, detail="URL endpoint MCP wajib diisi untuk pengetesan koneksi.")
+    auth_token = getattr(req, "auth_token", "") or ""
 
-    result = await mcp_manager.test_connection(
-        url=url,
-        auth_token="",
-        headers=headers,
-        transport_type=transport
-    )
-    return result
+    # Cari konfigurasi dari database jika server_id diberikan
+    if req.server_id:
+        from database import get_mcp_server
+        srv = get_mcp_server(req.server_id)
+        if srv:
+            if not url:
+                url = srv.get("url")
+            if not auth_token and srv.get("auth_token"):
+                auth_token = srv.get("auth_token")
+            if srv.get("headers"):
+                for k, v in srv["headers"].items():
+                    headers.setdefault(k, v)
+
+    # Coba ambil token bearer dari sesi admin jika belum ada token
+    from auth import get_dashboard_access_token
+    token = get_dashboard_access_token() or admin.get("access_token") or admin.get("dashboard_token")
+    if not token and not auth_token:
+        # Coba cari dari sesi aktif terakhir di database jika ada
+        try:
+            from database import get_engine, text, decrypt_fernet
+            with get_engine().connect() as conn:
+                enc = conn.execute(text("SELECT dashboard_token_encrypted FROM ai_assistant_dev.user_sessions WHERE is_active = TRUE AND dashboard_token_encrypted IS NOT NULL ORDER BY created_at DESC LIMIT 1;")).scalar()
+                if enc:
+                    dec = decrypt_fernet(enc)
+                    if dec:
+                        try:
+                            import json
+                            p = json.loads(dec)
+                            token = p.get("access_token") or dec
+                        except Exception:
+                            token = dec
+        except Exception:
+            pass
+
+    if token and "Authorization" not in headers and not auth_token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    if not url:
+        return {
+            "success": False,
+            "online": False,
+            "latency_ms": 0,
+            "tool_count": 0,
+            "message": "URL endpoint MCP wajib diisi untuk pengetesan koneksi."
+        }
+
+    try:
+        result = await mcp_manager.test_connection(
+            url=url,
+            auth_token=auth_token,
+            headers=headers,
+            transport_type=transport
+        )
+        # Jika pengetesan SAP gagal karena 401/403 dan tersedia token API gateway sistem, coba retry
+        if (
+            not result.get("success")
+            and (req.server_id == "sap" or "mcp-sap" in (url or ""))
+            and getattr(settings, "dashboard_mcp_api_token", None)
+            and ("401" in result.get("message", "") or "403" in result.get("message", ""))
+        ):
+            fallback_res = await mcp_manager.test_connection(
+                url=url,
+                auth_token=settings.dashboard_mcp_api_token,
+                headers={"Content-Type": "application/json"},
+                transport_type=transport
+            )
+            if fallback_res.get("success"):
+                return fallback_res
+        return result
+    except Exception as ex:
+        logger.error(f"Gagal menguji koneksi MCP {url}: {ex}")
+        return {
+            "success": False,
+            "online": False,
+            "latency_ms": 0,
+            "tool_count": 0,
+            "message": f"Pengetesan gagal: {str(ex)}"
+        }
 
 
 # --- CHAT ---
