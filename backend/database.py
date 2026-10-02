@@ -931,7 +931,7 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             r = conn.execute(text("""
-                SELECT id, name, url, enabled, display_order
+                SELECT id, name, url, enabled, display_order, auth_token, headers
                 FROM {DB_SCHEMA}.mcp_servers
                 WHERE LOWER(id) = LOWER(:id)
             """), {"id": sid}).fetchone()
@@ -943,6 +943,8 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
                 "url": r.url,
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
+                "auth_token": getattr(r, "auth_token", None),
+                "headers": getattr(r, "headers", None) or {},
             }
     except Exception as e:
         logger.error(f"Error get_mcp_server: {e}")
@@ -4453,30 +4455,69 @@ def record_auth_audit_log(
         return False
 
 
-def save_dashboard_session_token(session_id: str, access_token: str) -> bool:
-    """Simpan token OIDC terenkripsi pada sesi yang telah dibuat saat login."""
+def save_dashboard_session_token(
+    session_id: str,
+    access_token: str,
+    refresh_token: Optional[str] = None,
+    expires_at: Optional[datetime] = None,
+) -> bool:
+    """Simpan token OIDC (dan refresh token bila ada) terenkripsi pada sesi login."""
     if not session_id or not access_token:
         return False
+    data = {
+        "access_token": str(access_token),
+        "refresh_token": str(refresh_token) if refresh_token else None,
+        "exp": expires_at.isoformat() if expires_at else None,
+    }
+    payload_str = json.dumps(data)
     with get_engine().begin() as conn:
         result = conn.execute(text("""
             UPDATE {DB_SCHEMA}.user_sessions
             SET dashboard_token_encrypted = :token
             WHERE id = :id AND is_active = TRUE
-        """), {"id": session_id, "token": encrypt_fernet(access_token)})
+        """), {"id": session_id, "token": encrypt_fernet(payload_str)})
         return result.rowcount == 1
 
 
-def get_dashboard_session_token(session_id: str) -> Optional[str]:
-    """Baca token OIDC hanya dari sesi aktif yang belum kedaluwarsa."""
+def get_dashboard_session_data(session_id: str) -> Optional[dict]:
+    """Baca metadata token OIDC (access_token, refresh_token, exp) dari sesi aktif."""
     if not session_id:
         return None
+    # expires_at dibuat dari jam aplikasi saat login. Bandingkan dengan jam
+    # yang sama agar selisih waktu pada host PostgreSQL tidak mematikan sesi
+    # yang masih berlaku.
+    now = datetime.now(timezone.utc)
     with get_engine().connect() as conn:
         encrypted = conn.execute(text("""
             SELECT dashboard_token_encrypted FROM {DB_SCHEMA}.user_sessions
             WHERE id = :id AND is_active = TRUE
-              AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-        """), {"id": session_id}).scalar()
-    return decrypt_fernet(encrypted) if encrypted else None
+              AND (expires_at IS NULL OR expires_at > :now)
+        """), {"id": session_id, "now": now}).scalar()
+    if not encrypted:
+        return None
+    decrypted = decrypt_fernet(encrypted)
+    if not decrypted:
+        return None
+    try:
+        parsed = json.loads(decrypted)
+        if isinstance(parsed, dict) and "access_token" in parsed:
+            exp_str = parsed.get("exp")
+            exp_dt = datetime.fromisoformat(exp_str) if exp_str else None
+            return {
+                "access_token": parsed.get("access_token"),
+                "refresh_token": parsed.get("refresh_token"),
+                "exp": exp_dt,
+            }
+    except Exception:
+        pass
+    # Fallback jika data terenkripsi adalah token mentah string versi lama
+    return {"access_token": decrypted, "refresh_token": None, "exp": None}
+
+
+def get_dashboard_session_token(session_id: str) -> Optional[str]:
+    """Baca token akses OIDC hanya dari sesi aktif yang belum kedaluwarsa."""
+    data = get_dashboard_session_data(session_id)
+    return data.get("access_token") if data else None
 
 
 def create_user_session(

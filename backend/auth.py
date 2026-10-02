@@ -84,23 +84,84 @@ def create_session_cookie(principal: dict) -> str:
     access_token = principal.get("access_token")
     if access_token:
         session_id = str(principal.get("session_id") or secrets.token_urlsafe(32))
+        refresh_token = principal.get("refresh_token")
+        oidc_exp_sec = int(principal.get("oidc_expires_in") or 900)
+        oidc_exp = now + timedelta(seconds=oidc_exp_sec)
         from database import save_dashboard_session_token
-        if not save_dashboard_session_token(session_id, str(access_token)):
+        if not save_dashboard_session_token(session_id, str(access_token), refresh_token=refresh_token, expires_at=oidc_exp):
             raise RuntimeError("Token OIDC gagal disimpan pada sesi login.")
-        _dashboard_tokens[session_id] = (str(access_token), payload["exp"])
+        _dashboard_tokens[session_id] = (str(access_token), oidc_exp, refresh_token)
         payload["session_id"] = session_id
 
     return jwt.encode(payload, settings.session_secret, algorithm="HS256")
 
 
+def _try_refresh_dashboard_token(session_id: str, refresh_token: str) -> Optional[str]:
+    """Coba perbarui token akses OIDC menggunakan refresh token via Central Dashboard."""
+    if not refresh_token:
+        return None
+    base = settings.dashboard_oidc_issuer.rstrip("/")
+    try:
+        import httpx
+        with httpx.Client(timeout=5.0) as client:
+            res = client.post(f"{base}/v1/auth/refresh", cookies={"refresh_token": refresh_token})
+            if res.status_code == 200:
+                data = res.json()
+                new_access = data.get("accessToken")
+                new_refresh = res.cookies.get("refresh_token") or refresh_token
+                expires_in = int(data.get("expiresIn") or 900)
+                now = datetime.now(timezone.utc)
+                new_exp = now + timedelta(seconds=expires_in)
+                _dashboard_tokens[session_id] = (new_access, new_exp, new_refresh)
+                from database import save_dashboard_session_token
+                save_dashboard_session_token(session_id, new_access, refresh_token=new_refresh, expires_at=new_exp)
+                logger.info(f"OIDC access token diperbarui otomatis untuk sesi {session_id[:8]}...")
+                return new_access
+            else:
+                logger.warning(f"OIDC auto-refresh gagal ({res.status_code}): {res.text[:150]}")
+    except Exception as exc:
+        logger.warning(f"OIDC auto-refresh error: {exc}")
+    return None
+
+
 def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
+    """Selesaikan token akses OIDC aktif, melakukan auto-refresh jika hampir kedaluwarsa."""
     if not isinstance(session_id, str) or not session_id:
         return None
+    now = datetime.now(timezone.utc)
     entry = _dashboard_tokens.get(session_id)
-    if entry and entry[1] > datetime.now(timezone.utc):
-        return entry[0]
-    from database import get_dashboard_session_token
-    return get_dashboard_session_token(session_id)
+    if entry:
+        token = entry[0]
+        exp = entry[1]
+        refresh_token = entry[2] if len(entry) > 2 else None
+        # Jika token masih aktif lebih dari 60 detik, gunakan langsung
+        if exp > now + timedelta(seconds=60):
+            return token
+        # Token kedaluwarsa atau mendekati kedaluwarsa (<60 detik), coba refresh jika punya refresh token
+        if refresh_token:
+            refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
+            if refreshed:
+                return refreshed
+        if exp > now:
+            return token
+
+    from database import get_dashboard_session_data
+    data = get_dashboard_session_data(session_id)
+    if data:
+        token = data.get("access_token")
+        refresh_token = data.get("refresh_token")
+        exp = data.get("exp")
+        if token and (not exp or exp > now + timedelta(seconds=60)):
+            _dashboard_tokens[session_id] = (token, exp or (now + timedelta(hours=1)), refresh_token)
+            return token
+        if refresh_token:
+            refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
+            if refreshed:
+                return refreshed
+        if token and (not exp or exp > now):
+            return token
+
+    return None
 
 
 def decode_session_cookie(token: str) -> Optional[dict]:
@@ -172,6 +233,7 @@ def get_current_principal(request: Request) -> dict:
         "org_units": payload.get("org_units", []),
         "dashboard_token": resolved_token,
         "access_token": resolved_token,
+        "session_id": session_id,
         "is_guest": False,
     }
 
@@ -224,6 +286,7 @@ def get_current_user_optional(request: Request) -> dict:
         "org_units": payload.get("org_units", []),
         "dashboard_token": resolved_token,
         "access_token": resolved_token,
+        "session_id": session_id,
         "is_guest": False,
     }
 

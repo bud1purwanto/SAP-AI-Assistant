@@ -161,7 +161,7 @@ class StreamableHttpClient:
         actual_tool_name = tool_name
         if self.url.rstrip("/").endswith("/v1/gateway") and "__" not in tool_name:
             prefix_map = {
-                "sap": "sap-leader-mcp__",
+                "sap": "mcp-sap__",
                 "sql": "mcp-sql__",
                 "email": "mcp-email__",
                 "gitea": "mcp-gitea__",
@@ -263,6 +263,35 @@ SQL_TOOL_NAMES = {
     "reload_config",
 }
 
+SAP_TARGET_KEY_MAP = {
+    "dev": "sap:dev",
+    "development": "sap:dev",
+    "development aix": "sap:dev",
+    "dev-aix": "sap:dev",
+    "dev-win": "sap:dev-win",
+    "development windows": "sap:dev-win",
+    "qa": "sap:qa",
+    "sandbox": "sap:sandbox",
+    "sandbox competence": "sap:sandbox",
+    "sandbox build competence": "sap:sandbox",
+    "sandbox-new": "sap:sandbox-new",
+    "sandbox new company": "sap:sandbox-new",
+    "prod": "sap:prod",
+    "production": "sap:prod",
+    "production aix": "sap:prod",
+    "prod-win": "sap:prod-win",
+    "production windows": "sap:prod-win",
+}
+
+def resolve_sap_resource_key(target: Optional[str]) -> Optional[str]:
+    """Resolve human-readable SAP target name or alias to Gateway resource_key."""
+    if not target:
+        return None
+    cleaned = str(target).strip()
+    if cleaned.startswith("sap:"):
+        return cleaned
+    return SAP_TARGET_KEY_MAP.get(cleaned.lower(), f"sap:{cleaned}")
+
 
 def strip_gateway_tool_prefix(tool_name: str) -> str:
     """Return the upstream MCP tool name without Dashboard gateway namespace."""
@@ -283,7 +312,7 @@ def classify_gateway_tool(tool_name: str) -> str:
         return "sql"
     if name.startswith("mcp-email__") or is_email_tool(base):
         return "email"
-    if name.startswith("sap-leader-mcp__") or base.startswith("sap_"):
+    if name.startswith("sap-leader-mcp__") or name.startswith("mcp-sap__") or base.startswith("sap_"):
         return "sap"
     if name.startswith("mcp-rag__") or base.startswith("rag_"):
         return "rag"
@@ -328,12 +357,24 @@ class MCPManager:
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         """Resolve MCP server URL: local DB first, gateway fallback."""
-        from database import list_mcp_servers
-        # Check local registry
+        from database import get_mcp_server, list_mcp_servers
+        # Check local registry by id
+        srv = get_mcp_server(name)
+        if srv and srv.get("enabled"):
+            url = srv["url"].rstrip("/")
+            headers = dict(srv.get("headers") or {})
+            if srv.get("auth_token"):
+                headers["auth_token"] = srv["auth_token"]
+            return url, headers
+
         servers = list_mcp_servers(enabled_only=True)
         for s in servers:
             if s["id"] == name or s["name"] == name:
-                return s["url"].rstrip("/"), {}
+                srv_detail = get_mcp_server(s["id"])
+                headers = dict((srv_detail or {}).get("headers") or {})
+                if srv_detail and srv_detail.get("auth_token"):
+                    headers["auth_token"] = srv_detail["auth_token"]
+                return s["url"].rstrip("/"), headers
         # Fallback to gateway for unregistered connectors
         gateway_base = (settings.dashboard_mcp_gateway_url or "").rstrip("/")
         if not gateway_base:
@@ -343,15 +384,19 @@ class MCPManager:
         return f"{gateway_base}/{name}", {}
 
     def get_client(self, name: str) -> StreamableHttpClient:
-        """Per-user MCP client authenticated with user's OIDC Bearer token."""
+        """Per-user MCP client authenticated with user's OIDC Bearer token or dedicated auth_token."""
         from auth import get_dashboard_access_token
         access_token = get_dashboard_access_token()
-        if not access_token:
-            raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
-        gw_headers["Authorization"] = f"Bearer {access_token}"
-        cache_key = (name, access_token)
+        dedicated_token = gw_headers.pop("auth_token", None)
+        if dedicated_token:
+            gw_headers["Authorization"] = f"Bearer {dedicated_token}"
+        elif access_token:
+            gw_headers["Authorization"] = f"Bearer {access_token}"
+        else:
+            raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
+        cache_key = (name, dedicated_token or access_token)
         if cache_key not in self.clients or self.clients[cache_key].url != url:
             self.clients[cache_key] = StreamableHttpClient(name=name, url=url, headers=gw_headers)
         return self.clients[cache_key]
@@ -717,8 +762,10 @@ class MCPManager:
         """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
         sap_client = self.get_client("sap")
         last_error = None
-        sap_resource_key = target_sap if str(target_sap).startswith("sap:") else f"sap:{target_sap}"
-        payload = {"server_ref": target_sap, "resource_key": sap_resource_key}
+        sap_resource_key = resolve_sap_resource_key(target_sap)
+        payload = {"server_ref": target_sap}
+        if sap_resource_key:
+            payload["resource_key"] = sap_resource_key
         if sap_credentials:
             if sap_credentials.get("sap_user"):
                 payload["user"] = sap_credentials["sap_user"]
@@ -957,7 +1004,9 @@ class MCPManager:
         extra_sap_headers = {}
         if server_name == "sap":
             if isinstance(final_args, dict) and sap_target and "resource_key" not in final_args:
-                final_args["resource_key"] = sap_target if str(sap_target).startswith("sap:") else f"sap:{sap_target}"
+                res_key = resolve_sap_resource_key(sap_target)
+                if res_key:
+                    final_args["resource_key"] = res_key
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
             if sap_credentials:
@@ -1164,6 +1213,14 @@ class MCPManager:
         if clean_tool == "call_function" and "parameters" in cleaned and isinstance(cleaned["parameters"], dict):
             # Pastikan dict parameters bersih dari meta-keys
             cleaned["parameters"] = _clean(cleaned["parameters"])
+        elif clean_tool in ("read_table", "sap_read_table"):
+            # Pastikan where dan options saling sinkron untuk RFC_READ_TABLE
+            if "options" in cleaned and "where" not in cleaned:
+                opts = cleaned["options"]
+                cleaned["where"] = [opts] if isinstance(opts, str) else list(opts)
+            elif "where" in cleaned and "options" not in cleaned:
+                wh = cleaned["where"]
+                cleaned["options"] = " AND ".join(wh) if isinstance(wh, list) else str(wh)
         return cleaned
 
 mcp_manager = MCPManager()

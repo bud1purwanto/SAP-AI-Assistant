@@ -467,7 +467,11 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
                 session = r.json()
                 principal = _map_dashboard_user(session["user"], session["accessToken"])
                 access_token = session["accessToken"]
-                session_exp_sec = int(session.get("expiresIn") or settings.session_expire_hours * 3600)
+                refresh_token = r.cookies.get("refresh_token")
+                if refresh_token:
+                    principal["refresh_token"] = refresh_token
+                principal["oidc_expires_in"] = int(session.get("expiresIn") or 900)
+                session_exp_sec = int(settings.session_expire_hours * 3600)
                 login_success = True
             else:
                 logger.warning(f"Dashboard OIDC login failed for '{username}': HTTP {r.status_code} {r.text[:200]}")
@@ -503,9 +507,8 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
             detail="Akun ini wajib membuat password baru di Dashboard OIDC sebelum menggunakan Enterprise AI Assistant.",
         )
 
-    # Durasi sesi BFF tidak boleh melebihi access token OIDC yang dipakai untuk
-    # memanggil directory/gateway atas nama pengguna.
-    session_exp_sec = min(max(int(session_exp_sec), 1), settings.session_expire_hours * 3600)
+    # Durasi sesi BFF ditentukan oleh konfigurasi server (default 24 jam)
+    session_exp_sec = int(settings.session_expire_hours * 3600)
 
     # Single-session enforcement & daftarkan sesi baru
     session_id = str(uuid.uuid4())
