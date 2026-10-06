@@ -639,6 +639,7 @@ class MCPManager:
                 "sap", "rag", "sql", "email",
                 "mcp_sap", "mcp_rag", "mcp_sql", "mcp_email", "mcp_gitea",
                 "sap-leader-mcp", "mcp-rag", "mcp-sql", "mcp-email", "mcp-gitea",
+                "mssql", "mysql", "postgres", "postgresql", "oracle",
             }
 
             # Custom servers in dash_status
@@ -665,13 +666,16 @@ class MCPManager:
 
             # Custom servers in resources that might not be in dash_status
             for r in resources:
+                # Sub-target dari konektor inti (SAP, SQL/database) adalah target koneksi, bukan server MCP mandiri
+                if r.get("kind") in ("sap", "sql", "database"):
+                    continue
                 raw_sid = r.get("serverId") or r.get("server_id") or ""
                 if re.match(r"^[0-9a-fA-F-]{36}$", str(raw_sid)):
                     raw_sid = ""
                 sid = raw_sid
                 if not sid and ":" in r.get("resource_key", ""):
                     prefix = r["resource_key"].split(":", 1)[0]
-                    if prefix not in ("sap", "rag", "sql", "email", "service"):
+                    if prefix not in ("sap", "rag", "sql", "email", "service", "mssql", "mysql", "postgres", "postgresql", "oracle"):
                         sid = prefix
                 if sid and sid not in status and sid not in known_server_keys and not re.match(r"^[0-9a-fA-F-]{36}$", str(sid)):
                     status[sid] = {
