@@ -573,6 +573,9 @@ export const TRANSLATIONS = {
     // MCP Server Registry
     'mcp.serverName': 'Server Name',
     'mcp.serverUrl': 'Server URL',
+    'mcp.authToken': 'Bearer Token / API Key',
+    'mcp.authTokenPlaceholder': 'Leave empty to forward user OIDC token automatically',
+    'mcp.authTokenHelp': 'Optional upstream Bearer Token. If omitted, the logged-in user\'s OIDC Access Token will be forwarded automatically.',
     'admin.topUsersBasis': 'Ranked by chat sessions created in the selected period.',
     'admin.topUsersUpdatedAt': 'Updated at {time}',
     'admin.refreshTopUsers': 'Refresh active users',
@@ -1171,6 +1174,9 @@ export const TRANSLATIONS = {
 
     'mcp.serverName': 'Nama Server',
     'mcp.serverUrl': 'URL Server',
+    'mcp.authToken': 'Bearer Token / API Key',
+    'mcp.authTokenPlaceholder': 'Kosongkan untuk meneruskan token OIDC user secara otomatis',
+    'mcp.authTokenHelp': 'Bearer Token opsional untuk server upstream. Jika dikosongkan, token akses OIDC user yang sedang login akan diteruskan otomatis.',
     'admin.topUsersBasis': 'Diurutkan berdasarkan sesi percakapan yang dibuat pada periode terpilih.',
     'admin.topUsersUpdatedAt': 'Diperbarui pukul {time}',
     'admin.refreshTopUsers': 'Perbarui pengguna aktif',

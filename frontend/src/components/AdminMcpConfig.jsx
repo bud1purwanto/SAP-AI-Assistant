@@ -9,7 +9,10 @@ import {
   XCircle,
   Loader2,
   X,
-  AlertCircle
+  AlertCircle,
+  Key,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
@@ -30,7 +33,8 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ id: '', name: '', url: '', enabled: true });
+  const [showToken, setShowToken] = useState(false);
+  const [form, setForm] = useState({ id: '', name: '', url: '', enabled: true, auth_token: '' });
 
   // Delete confirm state
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, name: '' });
@@ -73,23 +77,27 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
 
   const openAddModal = () => {
     setEditingId(null);
-    setForm({ id: '', name: '', url: '', enabled: true });
+    setShowToken(false);
+    setForm({ id: '', name: '', url: '', enabled: true, auth_token: '' });
     setIsModalOpen(true);
   };
 
   const openConfigureModal = (server) => {
     setEditingId(null);
-    setForm({ id: server.id, name: server.name || server.id, url: '', enabled: true });
+    setShowToken(false);
+    setForm({ id: server.id, name: server.name || server.id, url: server.url || '', enabled: true, auth_token: server.auth_token || '' });
     setIsModalOpen(true);
   };
 
   const openEditModal = (server) => {
     setEditingId(server.id);
+    setShowToken(false);
     setForm({
       id: server.id,
       name: server.name || '',
       url: server.url || '',
       enabled: server.enabled !== false,
+      auth_token: server.auth_token || '',
     });
     setIsModalOpen(true);
   };
@@ -98,7 +106,8 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
     if (submitting && force !== true) return;
     setIsModalOpen(false);
     setEditingId(null);
-    setForm({ id: '', name: '', url: '', enabled: true });
+    setShowToken(false);
+    setForm({ id: '', name: '', url: '', enabled: true, auth_token: '' });
   };
 
   const handleSubmit = async (e) => {
@@ -115,6 +124,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
           name: form.name.trim(),
           url: form.url.trim(),
           enabled: form.enabled,
+          auth_token: form.auth_token?.trim() || '',
         });
       } else {
         await api.adminCreateMcpServer({
@@ -122,6 +132,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
           name: form.name.trim(),
           url: form.url.trim(),
           enabled: form.enabled,
+          auth_token: form.auth_token?.trim() || '',
         });
       }
       setActionSuccess(t('mcp.saved'));
@@ -164,7 +175,7 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
     setTestingId(id);
     setTestResult(null);
     try {
-      const res = await api.adminTestMcpConnection({ server_id: id, url: server.url });
+      const res = await api.adminTestMcpConnection({ server_id: id, url: server.url, auth_token: server.auth_token });
       const ok = res?.online ?? res?.success ?? true;
       setTestResult({
         id,
@@ -390,6 +401,40 @@ export default function AdminMcpConfig({ onRefreshMcpServers }) {
                   placeholder="https://mcp.internal.example.com"
                   className="w-full px-3 py-2 text-xs rounded-xl bg-surface-sunken border border-line focus:outline-hidden focus:border-accent text-content font-mono"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-content flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-accent" />
+                    <span>{t('mcp.authToken')}</span>
+                  </span>
+                  <span className="text-[10px] text-content-muted font-normal">
+                    Optional
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showToken ? 'text' : 'password'}
+                    value={form.auth_token}
+                    onChange={(e) => setForm({ ...form, auth_token: e.target.value })}
+                    placeholder={t('mcp.authTokenPlaceholder')}
+                    className="w-full px-3 py-2 pr-9 text-xs rounded-xl bg-surface-sunken border border-line focus:outline-hidden focus:border-accent text-content font-mono"
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-0.5 cursor-pointer"
+                    title={showToken ? 'Hide token' : 'Show token'}
+                  >
+                    {showToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-content-muted leading-relaxed">
+                  {t('mcp.authTokenHelp')}
+                </p>
               </div>
 
               <div className="flex items-center gap-2 pt-1">

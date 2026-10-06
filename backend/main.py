@@ -2672,7 +2672,13 @@ async def get_admin_mcp_registry_endpoint(admin: dict = Depends(require_superadm
 
 @app.post("/api/admin/mcp/servers")
 async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    result = database.save_mcp_server(sid=req.id, name=req.name, url=req.url, enabled=getattr(req, "enabled", True))
+    result = database.save_mcp_server(
+        sid=req.id,
+        name=req.name,
+        url=req.url,
+        enabled=getattr(req, "enabled", True),
+        auth_token=getattr(req, "auth_token", None),
+    )
     if not result:
         raise HTTPException(status_code=500, detail="Gagal menyimpan server MCP.")
     return {"success": True, "server": result}
@@ -2680,7 +2686,13 @@ async def create_admin_mcp_server_endpoint(req: CreateMcpServerRequest, admin: d
 
 @app.put("/api/admin/mcp/servers/{server_id}")
 async def update_admin_mcp_server_endpoint(server_id: str, req: UpdateMcpServerRequest, admin: dict = Depends(require_superadmin)):
-    result = database.update_mcp_server(server_id, name=getattr(req, "name", None), url=getattr(req, "url", None), enabled=getattr(req, "enabled", None))
+    result = database.update_mcp_server(
+        server_id,
+        name=getattr(req, "name", None),
+        url=getattr(req, "url", None),
+        enabled=getattr(req, "enabled", None),
+        auth_token=getattr(req, "auth_token", None),
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Server MCP tidak ditemukan.")
     return {"success": True, "server": result}

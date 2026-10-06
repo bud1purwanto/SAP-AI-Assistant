@@ -901,7 +901,7 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
         engine = get_engine()
         with engine.connect() as conn:
             query = """
-                SELECT id, name, url, enabled, display_order
+                SELECT id, name, url, enabled, display_order, auth_token
                 FROM {DB_SCHEMA}.mcp_servers
             """
             params = {}
@@ -918,6 +918,7 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
                     "url": r.url,
                     "enabled": bool(r.enabled),
                     "display_order": r.display_order or 0,
+                    "auth_token": getattr(r, "auth_token", None) or "",
                 })
             return servers
     except Exception as e:
@@ -946,7 +947,7 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
                 "url": r.url,
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
-                "auth_token": getattr(r, "auth_token", None),
+                "auth_token": getattr(r, "auth_token", None) or "",
                 "headers": getattr(r, "headers", None) or {},
             }
     except Exception as e:
@@ -954,8 +955,8 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
         return None
 
 
-def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True) -> Optional[dict]:
-    """Menyimpan atau memperbarui server MCP (name, url, enabled)."""
+def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True, auth_token: Optional[str] = None) -> Optional[dict]:
+    """Menyimpan atau memperbarui server MCP (name, url, enabled, auth_token)."""
     sid = (sid or "").strip().lower()
     name = (name or "").strip()
     url = (url or "").strip()
@@ -964,23 +965,25 @@ def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True) -> Opti
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, display_order FROM {DB_SCHEMA}.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            existing = conn.execute(text("SELECT id, display_order, auth_token FROM {DB_SCHEMA}.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if existing:
+                token_val = auth_token.strip() if auth_token is not None else getattr(existing, "auth_token", None)
                 conn.execute(text("""
                     UPDATE {DB_SCHEMA}.mcp_servers
-                    SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                    SET name = :name, url = :url, enabled = :enabled, auth_token = :token, updated_at = CURRENT_TIMESTAMP
                     WHERE LOWER(id) = LOWER(:id)
-                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled)})
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "token": token_val})
                 order = existing.display_order or 0
             else:
                 max_order = conn.execute(text("SELECT COALESCE(MAX(display_order), 0) FROM {DB_SCHEMA}.mcp_servers")).scalar() or 0
                 order = max_order + 1
+                token_val = auth_token.strip() if auth_token else None
                 conn.execute(text("""
-                    INSERT INTO {DB_SCHEMA}.mcp_servers (id, name, url, enabled, display_order)
-                    VALUES (:id, :name, :url, :enabled, :order)
-                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "order": order})
+                    INSERT INTO {DB_SCHEMA}.mcp_servers (id, name, url, enabled, display_order, auth_token)
+                    VALUES (:id, :name, :url, :enabled, :order, :token)
+                """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "order": order, "token": token_val})
             conn.commit()
-            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order}
+            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order, "auth_token": token_val or ""}
     except Exception as e:
         logger.error(f"Error save_mcp_server: {e}")
         return None
@@ -998,14 +1001,15 @@ def create_mcp_server(data: dict) -> dict:
         return {"success": False, "message": "Nama server MCP wajib diisi."}
     if not url:
         return {"success": False, "message": "URL endpoint MCP wajib diisi."}
-    res = save_mcp_server(sid=sid, name=name, url=url, enabled=enabled)
+    auth_token = data.get("auth_token")
+    res = save_mcp_server(sid=sid, name=name, url=url, enabled=enabled, auth_token=auth_token)
     if res:
         return {"success": True, "message": f"Server MCP '{name}' berhasil ditambahkan.", "id": sid, "server": res}
     return {"success": False, "message": "Gagal menambahkan server MCP."}
 
 
-def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[str] = None, enabled: Optional[bool] = None, **kwargs) -> Optional[dict]:
-    """Memperbarui informasi server MCP (name, url, enabled). Mendukung pemanggilan argumen atau dict (backward-compat)."""
+def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[str] = None, enabled: Optional[bool] = None, auth_token: Optional[str] = None, **kwargs) -> Optional[dict]:
+    """Memperbarui informasi server MCP (name, url, enabled, auth_token). Mendukung pemanggilan argumen atau dict (backward-compat)."""
     sid = (server_id or "").strip().lower()
     if not sid:
         return None
@@ -1015,22 +1019,28 @@ def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[
         name = data.get("name")
         url = data.get("url")
         enabled = data.get("enabled")
+        if "auth_token" in data:
+            auth_token = data.get("auth_token")
+    if "auth_token" in kwargs:
+        auth_token = kwargs.get("auth_token")
+
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            existing = conn.execute(text("SELECT id, name, url, enabled, display_order FROM {DB_SCHEMA}.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
+            existing = conn.execute(text("SELECT id, name, url, enabled, display_order, auth_token FROM {DB_SCHEMA}.mcp_servers WHERE LOWER(id) = LOWER(:id)"), {"id": sid}).fetchone()
             if not existing:
                 return None
             new_name = name.strip() if name is not None else existing.name
             new_url = url.strip() if url is not None else existing.url
             new_enabled = bool(enabled) if enabled is not None else bool(existing.enabled)
+            new_token = auth_token.strip() if auth_token is not None else getattr(existing, "auth_token", None)
             conn.execute(text("""
                 UPDATE {DB_SCHEMA}.mcp_servers
-                SET name = :name, url = :url, enabled = :enabled, updated_at = CURRENT_TIMESTAMP
+                SET name = :name, url = :url, enabled = :enabled, auth_token = :token, updated_at = CURRENT_TIMESTAMP
                 WHERE LOWER(id) = LOWER(:id)
-            """), {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled})
+            """), {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "token": new_token})
             conn.commit()
-            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0}
+            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0, "auth_token": new_token or ""}
     except Exception as e:
         logger.error(f"Error update_mcp_server: {e}")
         return None
