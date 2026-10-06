@@ -27,6 +27,7 @@ from auth import (
 )
 from auth import require_superadmin as require_superadmin_token
 from config import settings, _EPHEMERAL_SESSION_SECRET
+from oidc_directory import fetch_directory
 import database
 from database import (
     add_chat_message,
@@ -1472,6 +1473,26 @@ async def get_admin_stats_endpoint(
     """Mengambil metrik statistik sistem & status live MCP servers."""
     stats = get_admin_system_stats(period=period, top_users_limit=limit)
     stats["as_of"] = datetime.now(timezone.utc).isoformat()
+
+    # Selaraskan jumlah user dan metadata akun dengan OIDC Directory terpusat
+    token = admin.get("dashboard_token")
+    if token:
+        try:
+            directory_users = await fetch_directory("users", token)
+            if isinstance(directory_users, list):
+                stats["total_users"] = len(directory_users)
+                dir_map_by_username = {str(u.get("username") or "").lower(): u for u in directory_users if u.get("username")}
+                dir_map_by_sub = {str(u.get("id") or "").lower(): u for u in directory_users if u.get("id")}
+                for item in stats.get("top_users", []):
+                    u_str = str(item.get("username") or "").lower()
+                    sub_str = str(item.get("oidc_sub") or "").lower()
+                    matched = dir_map_by_sub.get(sub_str) or dir_map_by_username.get(u_str) or dir_map_by_sub.get(u_str)
+                    if matched:
+                        item["full_name"] = matched.get("full_name") or matched.get("displayName") or ""
+                        item["role"] = matched.get("role") or "-"
+        except Exception as e:
+            logger.warning(f"Gagal memuat OIDC directory untuk admin stats: {e}")
+
     mcp_st = await mcp_manager.check_servers_status()
     stats["mcp_status"] = mcp_st
     stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
@@ -1485,7 +1506,24 @@ async def get_admin_top_users_endpoint(
     admin: dict = Depends(require_superadmin)
 ):
     """Mengambil daftar user teraktif berdasarkan filter periode tanpa reload MCP."""
-    return get_top_active_users(period=period, limit=limit)
+    top_users = get_top_active_users(period=period, limit=limit)
+    token = admin.get("dashboard_token")
+    if token:
+        try:
+            directory_users = await fetch_directory("users", token)
+            if isinstance(directory_users, list):
+                dir_map_by_username = {str(u.get("username") or "").lower(): u for u in directory_users if u.get("username")}
+                dir_map_by_sub = {str(u.get("id") or "").lower(): u for u in directory_users if u.get("id")}
+                for item in top_users:
+                    u_str = str(item.get("username") or "").lower()
+                    sub_str = str(item.get("oidc_sub") or "").lower()
+                    matched = dir_map_by_sub.get(sub_str) or dir_map_by_username.get(u_str) or dir_map_by_sub.get(u_str)
+                    if matched:
+                        item["full_name"] = matched.get("full_name") or matched.get("displayName") or ""
+                        item["role"] = matched.get("role") or "-"
+        except Exception as e:
+            logger.warning(f"Gagal memuat OIDC directory untuk top users: {e}")
+    return top_users
 
 
 # --- ADMIN SESSION MONITOR & SECURITY LOGS ---
@@ -1725,9 +1763,6 @@ async def get_admin_feedback_endpoint(
     ini: perbaikan persona dan skill berangkat dari isi jawaban yang di-👎.
     """
     return get_feedback_messages(kind=kind, limit=limit, offset=offset)
-
-
-from oidc_directory import fetch_directory
 
 
 @app.get("/api/admin/users")

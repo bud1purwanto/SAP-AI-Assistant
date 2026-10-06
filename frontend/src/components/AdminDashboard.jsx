@@ -1179,7 +1179,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                     </p>
                     <p className="text-[9px] xs:text-[10px] sm:text-[11px] text-content-muted mt-0.5 truncate hidden xs:flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
-                      <span className="truncate">{language === 'en' ? 'Accounts' : 'Akun'}</span>
+                      <span className="truncate">{language === 'en' ? 'OIDC Accounts' : 'Akun OIDC'}</span>
                     </p>
                   </div>
 
@@ -1410,7 +1410,12 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                             <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 text-indigo-400 border border-indigo-500/30 font-bold text-xs flex items-center justify-center shrink-0">
                               {i + 1}
                             </div>
-                            <span className="font-semibold text-xs sm:text-sm text-content truncate">{u.username}</span>
+                            <div className="min-w-0">
+                              <span className="block font-semibold text-xs sm:text-sm text-content truncate">{u.username}</span>
+                              {u.full_name && u.full_name !== u.username && (
+                                <span className="block text-[10px] text-content-muted truncate">{u.full_name}</span>
+                              )}
+                            </div>
                           </div>
                           <span className="text-[11px] sm:text-xs font-semibold px-2.5 py-0.5 bg-surface-sunken text-content-muted rounded-full border border-line/60 shrink-0 font-mono">
                             {u.sessions} {language === 'en' ? 'Chat Sessions' : 'Sesi Chat'}

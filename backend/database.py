@@ -2385,7 +2385,7 @@ def get_top_active_users(period: str = "month", limit: int = 10):
             where_str = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
             query = text(f"""
-                SELECT username, COUNT(session_id) as session_count
+                SELECT username, MAX(oidc_sub) as oidc_sub, COUNT(session_id) as session_count
                 FROM {DB_SCHEMA}.chat_sessions
                 {where_str}
                 GROUP BY username
@@ -2393,7 +2393,7 @@ def get_top_active_users(period: str = "month", limit: int = 10):
                 LIMIT :limit
             """)
             rows = conn.execute(query, params).fetchall()
-            return [{"username": r.username, "sessions": r.session_count} for r in rows]
+            return [{"username": r.username, "oidc_sub": r.oidc_sub, "sessions": r.session_count} for r in rows]
     except Exception as e:
         logger.error(f"Error get_top_active_users: {e}")
         return []
