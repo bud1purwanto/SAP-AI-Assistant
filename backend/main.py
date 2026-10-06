@@ -3089,7 +3089,9 @@ async def _run_chat(
             raise HTTPException(status_code=404, detail="Sesi percakapan tidak ditemukan.")
 
         if not active_session_id:
-            new_session = create_chat_session(profile["username"], title="Percakapan Baru", oidc_sub=oidc_sub)
+            from database import _bersihkan_judul_awal
+            initial_title = _bersihkan_judul_awal(chat_req.message)
+            new_session = create_chat_session(profile["username"], title=initial_title, oidc_sub=oidc_sub)
             if new_session:
                 active_session_id = new_session["session_id"]
 
@@ -3203,6 +3205,17 @@ async def _run_chat(
         # token tetap tersedia setelah halaman dimuat ulang.
         artifacts_str = json.dumps([a.model_dump() for a in response.artifacts]) if response.artifacts else ""
         usage_str = json.dumps(response.usage.model_dump()) if response.usage else ""
+
+        # Ringkas judul percakapan jika ini giliran respons AI pertama pada sesi
+        summary_title = None
+        has_prior_ai = any(m.get("role") in ("ai", "assistant") for m in (chat_req.history or []))
+        if not has_prior_ai:
+            try:
+                from agent import generate_chat_title_summary
+                summary_title = await generate_chat_title_summary(chat_req.message, response.reply)
+            except Exception as e:
+                logger.warning(f"Gagal generate summary title: {e}")
+
         msg_id = add_chat_message(
             active_session_id,
             "ai",
@@ -3210,8 +3223,11 @@ async def _run_chat(
             sources_str,
             artifacts_str,
             usage=usage_str,
+            summary_title=summary_title,
         )
         response.message_id = msg_id
+        if summary_title:
+            response.session_title = summary_title
 
     response.session_id = active_session_id
     response.user_message_id = user_message_id

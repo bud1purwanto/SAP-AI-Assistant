@@ -226,6 +226,9 @@ def init_db():
 
             # 5a. Migrasi & index untuk chat_messages / chat_sessions.
             conn.execute(text(
+                "ALTER TABLE {DB_SCHEMA}.chat_sessions ADD COLUMN IF NOT EXISTS is_title_custom BOOLEAN DEFAULT FALSE"
+            ))
+            conn.execute(text(
                 "ALTER TABLE {DB_SCHEMA}.chat_messages ADD COLUMN IF NOT EXISTS artifacts TEXT"
             ))
             # Lampiran dari pengguna dipisahkan dari berkas hasil generate:
@@ -1053,7 +1056,7 @@ def delete_mcp_server(server_id: str) -> bool:
 
 # --- CHAT SESSION & HISTORY FUNCTIONS ---
 
-def create_chat_session(username: str, title: str = "Percakapan Baru", oidc_sub: str = None):
+def create_chat_session(username: str, title: str = "Percakapan Baru", oidc_sub: Optional[str] = None, is_title_custom: bool = False):
     """Buat sesi chat dengan sub OIDC sebagai pemilik otoritatif."""
     session_id = f"session_{uuid.uuid4().hex[:12]}"
     clean_sub = str(oidc_sub or "").strip()
@@ -1062,10 +1065,10 @@ def create_chat_session(username: str, title: str = "Percakapan Baru", oidc_sub:
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            conn.execute(text("""
-                INSERT INTO {DB_SCHEMA}.chat_sessions (session_id, username, oidc_sub, title)
-                VALUES (:sid, :u, :sub, :t)
-            """), {"sid": session_id, "u": username, "sub": clean_sub, "t": title})
+            conn.execute(text(f"""
+                INSERT INTO {DB_SCHEMA}.chat_sessions (session_id, username, oidc_sub, title, is_title_custom)
+                VALUES (:sid, :u, :sub, :t, :c)
+            """), {"sid": session_id, "u": username, "sub": clean_sub, "t": title, "c": is_title_custom})
             conn.commit()
             return {"session_id": session_id, "username": username, "oidc_sub": clean_sub, "title": title}
     except Exception as e:
@@ -1131,8 +1134,9 @@ def rename_chat_session(session_id: str, oidc_sub: str, new_title: str):
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            res = conn.execute(text("""
-                UPDATE {DB_SCHEMA}.chat_sessions SET title = :t, updated_at = CURRENT_TIMESTAMP
+            res = conn.execute(text(f"""
+                UPDATE {DB_SCHEMA}.chat_sessions
+                SET title = :t, is_title_custom = TRUE, updated_at = CURRENT_TIMESTAMP
                 WHERE session_id = :sid AND oidc_sub = :sub
             """), {"t": new_title.strip()[:100], "sid": session_id, "sub": oidc_sub.strip()})
             conn.commit()
@@ -1140,6 +1144,36 @@ def rename_chat_session(session_id: str, oidc_sub: str, new_title: str):
     except Exception as e:
         logger.error(f"Error rename_chat_session: {e}")
         return False
+
+
+def _bersihkan_judul_awal(content: str) -> str:
+    """Ambil judul ringkas dari pertanyaan pertama pengguna (maks 60 karakter)."""
+    if not content:
+        return "Percakapan Baru"
+    for raw_line in (content or "").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("|", "```", "---", "***")):
+            continue
+        line = re.sub(r"^#{1,6}\s+", "", line)
+        line = re.sub(r"^[*_-]+\s*", "", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"[*_`#]", "", line)
+        line = re.sub(r"\s+", " ", line).strip(" .:-")
+        if line:
+            return line[:60]
+    return "Percakapan Baru"
+
+
+def _ringkas_judul_percakapan(user_prompt: str, ai_content: str) -> str:
+    """Ekstraksi judul ringkas deterministik jika LLM summary tidak tersedia."""
+    heading = _judul_dari_ringkasan_ai(ai_content)
+    if heading and heading not in ("Percakapan Baru", "New Conversation"):
+        return heading[:100]
+    clean_user = _bersihkan_judul_awal(user_prompt)
+    if clean_user and clean_user not in ("Percakapan Baru", "New Conversation"):
+        return clean_user[:100]
+    return "Percakapan Baru"
+
 
 def _judul_dari_ringkasan_ai(content: str) -> str:
     """Ambil judul pendek dari heading atau kalimat pertama respons AI."""
@@ -1159,12 +1193,24 @@ def _judul_dari_ringkasan_ai(content: str) -> str:
 def add_chat_message(session_id: str, role: str, content: str,
                      sources: Optional[str] = None, artifacts: Optional[str] = None,
                      attachments: Optional[str] = None,
-                     usage: Optional[str] = None) -> Optional[int]:
-    """Tambah pesan dan jadikan ringkasan jawaban AI sebagai judul otomatis."""
+                     usage: Optional[str] = None,
+                     summary_title: Optional[str] = None) -> Optional[int]:
+    """Tambah pesan. Judul sesi memakai teks awal pertanyaan user pada prompt pertama,
+    dan otomatis diperbarui dengan ringkasan pertanyaan + respons pada giliran AI pertama.
+    """
     try:
         engine = get_engine()
         with engine.connect() as conn:
-            res = conn.execute(text("""
+            sess_row = conn.execute(text(f"""
+                SELECT title, COALESCE(is_title_custom, FALSE) as is_custom
+                FROM {DB_SCHEMA}.chat_sessions
+                WHERE session_id = :sid
+            """), {"sid": session_id}).fetchone()
+
+            current_title = sess_row[0] if sess_row else None
+            is_custom = bool(sess_row[1]) if sess_row else False
+
+            res = conn.execute(text(f"""
                 INSERT INTO {DB_SCHEMA}.chat_messages
                     (session_id, role, content, sources, artifacts, attachments, usage)
                 VALUES (:sid, :r, :c, :s, :a, :att, :usage)
@@ -1174,16 +1220,55 @@ def add_chat_message(session_id: str, role: str, content: str,
             row = res.fetchone()
             msg_id = row[0] if row else None
 
-            if role in ("ai", "assistant"):
-                conn.execute(text("""
-                    UPDATE {DB_SCHEMA}.chat_sessions
-                    SET updated_at = CURRENT_TIMESTAMP,
-                        title = :title
-                    WHERE session_id = :sid
-                      AND title IN ('Percakapan Baru', 'New Conversation')
-                """), {"title": _judul_dari_ringkasan_ai(content), "sid": session_id})
+            if not is_custom:
+                if role == "user":
+                    # SAAT PERTAMA CHAT: Jika judul masih default, langsung isi dengan teks awal pertanyaan user
+                    if current_title in ("Percakapan Baru", "New Conversation"):
+                        clean_initial = _bersihkan_judul_awal(content)
+                        conn.execute(text(f"""
+                            UPDATE {DB_SCHEMA}.chat_sessions
+                            SET updated_at = CURRENT_TIMESTAMP,
+                                title = :title
+                            WHERE session_id = :sid
+                        """), {"title": clean_initial, "sid": session_id})
+                    else:
+                        conn.execute(text(f"""
+                            UPDATE {DB_SCHEMA}.chat_sessions
+                            SET updated_at = CURRENT_TIMESTAMP
+                            WHERE session_id = :sid
+                        """), {"sid": session_id})
+                elif role in ("ai", "assistant"):
+                    prior_ai_count = conn.execute(text(f"""
+                        SELECT COUNT(*) FROM {DB_SCHEMA}.chat_messages
+                        WHERE session_id = :sid AND role IN ('ai', 'assistant') AND id != :mid
+                    """), {"sid": session_id, "mid": msg_id or 0}).scalar() or 0
+
+                    if prior_ai_count == 0:
+                        # TAPI SAAT DIJAWAB LLM PERTAMA: langsung disummary lalu diubah
+                        final_title = (summary_title or "").strip()
+                        if not final_title:
+                            user_msg = conn.execute(text(f"""
+                                SELECT content FROM {DB_SCHEMA}.chat_messages
+                                WHERE session_id = :sid AND role = 'user'
+                                ORDER BY id ASC LIMIT 1
+                            """), {"sid": session_id}).scalar() or ""
+                            final_title = _ringkas_judul_percakapan(user_msg, content)
+
+                        if final_title:
+                            conn.execute(text(f"""
+                                UPDATE {DB_SCHEMA}.chat_sessions
+                                SET updated_at = CURRENT_TIMESTAMP,
+                                    title = :title
+                                WHERE session_id = :sid
+                            """), {"title": final_title[:100], "sid": session_id})
+                    else:
+                        conn.execute(text(f"""
+                            UPDATE {DB_SCHEMA}.chat_sessions
+                            SET updated_at = CURRENT_TIMESTAMP
+                            WHERE session_id = :sid
+                        """), {"sid": session_id})
             else:
-                conn.execute(text("""
+                conn.execute(text(f"""
                     UPDATE {DB_SCHEMA}.chat_sessions
                     SET updated_at = CURRENT_TIMESTAMP
                     WHERE session_id = :sid

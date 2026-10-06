@@ -3546,3 +3546,63 @@ Return ONLY valid JSON array with no markdown formatting around it."""
         logger.warning(f"Gagal generate dynamic suggestions via LLM, menggunakan fallback: {e}")
 
     return fallback_list
+
+
+async def generate_chat_title_summary(user_message: str, ai_reply: str, sys_cfg: Optional[dict] = None) -> str:
+    """Ringkas pertanyaan user dan jawaban AI menjadi judul topik percakapan padat (5-8 kata)."""
+    clean_user = (user_message or "").strip()
+    clean_ai = (ai_reply or "").strip()
+    if not clean_user and not clean_ai:
+        return "Percakapan Baru"
+
+    if sys_cfg is None:
+        try:
+            from database import get_system_config
+            sys_cfg = get_system_config() or {}
+        except Exception:
+            sys_cfg = {}
+
+    from conversation import compact_message
+    from database import _ringkas_judul_percakapan
+
+    user_snippet = clean_user[:250]
+    ai_snippet = compact_message(clean_ai, max_chars=350).strip()
+
+    prompt = (
+        "Berdasarkan percakapan berikut:\n"
+        f"User: {user_snippet}\n"
+        f"AI: {ai_snippet}\n\n"
+        "Tugas: Buat SATU judul topik percakapan yang sangat ringkas, padat, dan representatif (maksimal 5-8 kata) dalam Bahasa Indonesia.\n"
+        "Aturan ketat:\n"
+        "- Langsung keluarkan teks judul saja tanpa tanda kutip, tanpa markdown asteris/bold, dan tanpa titik di akhir kalimat.\n"
+        "- Dilarang menambahkan kata pengantar seperti 'Judul:' atau 'Topik:'."
+    )
+
+    primary_provider = "nine_router" if sys_cfg.get("nine_router_enabled", True) else "openrouter"
+    primary_model = sys_cfg.get("nine_router_model") if primary_provider == "nine_router" else (sys_cfg.get("openrouter_model") or "openrouter/auto")
+    fallback_provider = "openrouter" if primary_provider == "nine_router" else None
+    fallback_model = sys_cfg.get("openrouter_fallback_model") or sys_cfg.get("openrouter_model") or "openrouter/free"
+
+    providers_to_try = [(primary_provider, primary_model)]
+    if fallback_provider:
+        providers_to_try.append((fallback_provider, fallback_model))
+
+    for prov, mdl in providers_to_try:
+        try:
+            llm = _buat_llm(prov, str(mdl or ""), sys_cfg, max_tokens=60, temperature=0.3)
+            if not llm:
+                continue
+            res = await asyncio.wait_for(
+                llm.ainvoke([HumanMessage(content=prompt)]),
+                timeout=4.0
+            )
+            title = _extract_text(res.content).strip()
+            title = re.sub(r"^[*_#`\"\']+|[*_#`\"\']+$", "", title).strip()
+            title = re.sub(r"^(Judul|Topic|Topik)\s*:\s*", "", title, flags=re.IGNORECASE).strip()
+            title = re.sub(r"\s+", " ", title).strip(" .:-")
+            if title and len(title) >= 3:
+                return title[:100]
+        except Exception as err:
+            logger.debug(f"Peringkasan judul percakapan via {prov} gagal/timeout: {err}")
+
+    return _ringkas_judul_percakapan(clean_user, clean_ai)

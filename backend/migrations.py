@@ -1123,6 +1123,14 @@ def _m0030_riwayat_chat_pakai_sub_oidc(conn):
     """))
 
 
+def _m0031_chat_sessions_is_title_custom(conn):
+    """Tambahkan kolom is_title_custom pada chat_sessions untuk menandai judul manual."""
+    conn.execute(text("""
+        ALTER TABLE {DB_SCHEMA}.chat_sessions
+        ADD COLUMN IF NOT EXISTS is_title_custom BOOLEAN DEFAULT FALSE
+    """))
+
+
 def _m0029_pemakaian_kuota_pakai_sub_oidc(conn):
     """Kolom identitas pemakaian dan rate-limit mengikuti sub OIDC."""
     for table in ("token_usage", "request_log"):
@@ -1181,6 +1189,7 @@ MIGRATIONS = [
     ("0028_kuota_pakai_sub_oidc", _m0028_kuota_pakai_sub_oidc),
     ("0029_pemakaian_kuota_pakai_sub_oidc", _m0029_pemakaian_kuota_pakai_sub_oidc),
     ("0030_riwayat_chat_pakai_sub_oidc", _m0030_riwayat_chat_pakai_sub_oidc),
+    ("0031_chat_sessions_is_title_custom", _m0031_chat_sessions_is_title_custom),
 ]
 
 

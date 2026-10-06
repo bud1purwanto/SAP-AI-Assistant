@@ -88,6 +88,10 @@ class ChatResponse(BaseModel):
         default=None,
         description="Sisa kuota token harian pengguna setelah permintaan ini",
     )
+    session_title: Optional[str] = Field(
+        default=None,
+        description="Judul sesi percakapan terbaru hasil pembaruan",
+    )
 
 
 class ScheduledTaskCreate(BaseModel):

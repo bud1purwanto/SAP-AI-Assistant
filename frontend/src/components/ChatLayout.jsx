@@ -1070,9 +1070,9 @@ const ChatLayout = () => {
     // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
     if (!isGuest && !targetSessionId) {
       try {
-        // Judul baru dipilih setelah jawaban AI selesai tersimpan, agar riwayat
-        // mencerminkan ringkasan hasil diskusi alih-alih hanya prompt pertama.
-        const newSess = await api.createSession(language === 'en' ? 'New Conversation' : 'Percakapan Baru');
+        // SAAT PERTAMA CHAT: Langsung gunakan potongan teks pertanyaan awal user
+        const cleanInitialTitle = (text || '').trim().replace(/\s+/g, ' ').slice(0, 60) || (language === 'en' ? 'New Conversation' : 'Percakapan Baru');
+        const newSess = await api.createSession(cleanInitialTitle);
         if (newSess?.session_id) {
           targetSessionId = newSess.session_id;
           setCurrentSessionId(targetSessionId);
@@ -1255,6 +1255,10 @@ const ChatLayout = () => {
 
       if (data.session_id && !targetSessionId) {
         setCurrentSessionId(data.session_id);
+      }
+      if (data.session_title && (data.session_id || targetSessionId)) {
+        const sid = data.session_id || targetSessionId;
+        setSessions((prev) => prev.map((s) => (s.session_id === sid ? { ...s, title: data.session_title } : s)));
       }
       if (data.quota) setKuota(data.quota);
       if (!isGuest) fetchSessions(true, true);
