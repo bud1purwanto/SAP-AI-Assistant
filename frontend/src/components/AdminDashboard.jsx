@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Activity, BookOpen, Building2, Check, CheckCircle, ChevronDown, ChevronUp, Code, Database, Edit3, Eye, EyeOff, Gauge, History, MessageSquare, MonitorSmartphone, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, User, UserCheck, UserCog, Users, X, XCircle } from 'lucide-react';
+import { Activity, BookOpen, Building2, Check, CheckCircle, CheckCircle2, ChevronDown, ChevronUp, Clock, Code, Database, Edit3, Eye, EyeOff, Gauge, History, Loader2, MessageSquare, MonitorSmartphone, Plus, RefreshCw, RotateCcw, Save, Search, Server, ShieldAlert, ShieldCheck, Sliders, Sparkles, Star, ThumbsDown, ThumbsUp, Trash2, User, UserCheck, UserCog, Users, X, XCircle, Zap } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
@@ -201,6 +201,9 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [kuotaLoading, setKuotaLoading] = useState(false);
   const [batasDraft, setBatasDraft] = useState({});
   const [savingBatas, setSavingBatas] = useState(false);
+  const [savingRowSub, setSavingRowSub] = useState(null);
+  const [batasSearch, setBatasSearch] = useState('');
+  const [batasStatusFilter, setBatasStatusFilter] = useState('all'); // 'all' | 'pending' | 'configured'
   const [kuotaUserSearch, setKuotaUserSearch] = useState('');
 
   const fetchStats = useCallback(async (period = topUsersPeriodRef.current) => {
@@ -372,6 +375,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         api.adminUsers(),
       ]);
       const draft = {};
+      const defaultDaily = data.pending_default_daily_token_limit ?? 1_000_000;
+      const defaultBurst = data.pending_default_per_minute_limit ?? 60_000;
       directoryUsers.forEach((directoryUser) => {
         const oidcSub = String(directoryUser.id || '').trim();
         if (!oidcSub) return;
@@ -381,12 +386,18 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           username: directoryUser.username || oidcSub,
           full_name: directoryUser.full_name || '',
           configured: isConfigured,
-          daily_token_limit: configured?.daily_token_limit ?? (data.enforced ? data.pending_default_daily_token_limit : 0),
-          per_minute_limit: configured?.per_minute_limit ?? 0,
+          daily_token_limit: isConfigured ? (configured?.daily_token_limit ?? 0) : defaultDaily,
+          per_minute_limit: isConfigured ? (configured?.per_minute_limit ?? 0) : defaultBurst,
         };
       });
       Object.entries(data.user_limits || {}).forEach(([oidcSub, configured]) => {
-        if (!draft[oidcSub]) draft[oidcSub] = { oidc_sub: oidcSub, ...configured };
+        if (!draft[oidcSub]) {
+          draft[oidcSub] = {
+            oidc_sub: oidcSub,
+            configured: true,
+            ...configured,
+          };
+        }
       });
       setUsersList(directoryUsers);
       setKuota(data);
@@ -476,13 +487,98 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     setSavingBatas(true);
     try {
       const hasil = await api.adminQuotaBatas({ limits: payloadLimits });
-      setKuota((k) => (k ? { ...k, user_limits: hasil.user_limits } : k));
-        setActionSuccess(language === 'en' ? 'All user limits saved successfully.' : 'Semua batas pengguna berhasil disimpan.');
+      setKuota((k) => (k ? { ...k, user_limits: hasil.user_limits, pending_limit_users: [] } : k));
+      setBatasDraft((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((s) => {
+          if (next[s]) next[s] = { ...next[s], configured: true };
+        });
+        return next;
+      });
+      setActionSuccess(language === 'en' ? 'All user limits saved successfully.' : 'Semua batas pengguna berhasil disimpan.');
     } catch (err) {
       setActionError(err.message);
     } finally {
       setSavingBatas(false);
     }
+  };
+
+  const simpanBatasPengguna = async (oidcSub) => {
+    setActionError('');
+    setActionSuccess('');
+    const draft = batasDraft[oidcSub];
+    if (!draft) return;
+    const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
+    const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
+    const harian = rawHarian === '' ? 0 : Number.parseInt(rawHarian, 10);
+    const permenit = rawPermenit === '' ? 0 : Number.parseInt(rawPermenit, 10);
+    if (!Number.isFinite(harian) || !Number.isFinite(permenit) || harian < 0 || permenit < 0) {
+      const label = draft.username || oidcSub;
+      setActionError(language === 'en' ? `Limits for user '${label}' must be non-negative integers.` : `Batas pengguna '${label}' harus berupa angka bulat 0 atau lebih.`);
+      return;
+    }
+
+    setSavingRowSub(oidcSub);
+    try {
+      const payloadLimits = {
+        [oidcSub]: {
+          daily_token_limit: harian,
+          per_minute_limit: permenit,
+        },
+      };
+      const hasil = await api.adminQuotaBatas({ limits: payloadLimits });
+      setKuota((k) => {
+        if (!k) return k;
+        const nextPending = (k.pending_limit_users || []).filter(
+          (u) => String(u.id || '').trim() !== String(oidcSub).trim()
+        );
+        return {
+          ...k,
+          user_limits: hasil.user_limits || { ...k.user_limits, [oidcSub]: { daily_token_limit: harian, per_minute_limit: permenit } },
+          pending_limit_users: nextPending,
+        };
+      });
+      setBatasDraft((prev) => ({
+        ...prev,
+        [oidcSub]: {
+          ...prev[oidcSub],
+          configured: true,
+          daily_token_limit: harian,
+          per_minute_limit: permenit,
+        },
+      }));
+      const uLabel = draft.username || oidcSub;
+      setActionSuccess(
+        language === 'en'
+          ? `Token limits for '${uLabel}' saved successfully.`
+          : `Batas token untuk '${uLabel}' berhasil disimpan.`
+      );
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setSavingRowSub(null);
+    }
+  };
+
+  const isiSemuaDefaultBurst = () => {
+    const defaultBurst = kuota?.pending_default_per_minute_limit ?? 60000;
+    let count = 0;
+    setBatasDraft((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((sub) => {
+        const val = String(next[sub]?.per_minute_limit ?? '').replace(/\D/g, '');
+        if (val === '0' || val === '') {
+          next[sub] = { ...next[sub], per_minute_limit: defaultBurst };
+          count++;
+        }
+      });
+      return next;
+    });
+    setActionSuccess(
+      language === 'en'
+        ? `Filled default burst (${formatNumberSeparator(defaultBurst)}) for ${count} users. Click 'Save All Limits' to commit.`
+        : `Default burst (${formatNumberSeparator(defaultBurst)}) berhasil diisikan untuk ${count} pengguna. Klik 'Simpan Semua Batas' untuk menyimpan.`
+    );
   };
 
   const resetKuota = (oidcSub, username = '') => {
@@ -2490,181 +2586,378 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                   </div>
                 ) : (
                   <>
-                {kuota?.enforced && (kuota.pending_limit_users || []).length > 0 && (
-                  <div className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-3 sm:p-4 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <div className="flex items-start gap-2.5">
-                        <ShieldAlert className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
-                        <div>
-                          <p className="font-bold text-xs sm:text-sm text-content">
-                            {language === 'en' ? 'Pending user limits' : 'Pengguna menunggu pengaturan limit'}
-                          </p>
-                          <p className="text-[11px] text-content-muted mt-0.5">
-                            {language === 'en'
-                              ? `${kuota.pending_limit_users.length} OIDC users have not been configured. A temporary ${formatNumberSeparator(kuota.pending_default_daily_token_limit)} token/day limit is enforced.`
-                              : `${kuota.pending_limit_users.length} pengguna OIDC belum diatur. Limit sementara ${formatNumberSeparator(kuota.pending_default_daily_token_limit)} token/hari sedang diterapkan.`}
-                          </p>
+                {(() => {
+                  const allSubList = Object.keys(batasDraft);
+                  const pendingCount = allSubList.filter((sub) => !batasDraft[sub]?.configured).length;
+                  const configuredCount = allSubList.filter((sub) => Boolean(batasDraft[sub]?.configured)).length;
+
+                  const filteredSubs = allSubList
+                    .filter((oidcSub) => {
+                      const draft = batasDraft[oidcSub] || {};
+                      const isPending = !draft.configured;
+                      if (batasStatusFilter === 'pending' && !isPending) return false;
+                      if (batasStatusFilter === 'configured' && isPending) return false;
+
+                      if (batasSearch.trim()) {
+                        const q = batasSearch.toLowerCase().trim();
+                        const username = (draft.username || '').toLowerCase();
+                        const fullName = (draft.full_name || '').toLowerCase();
+                        const sub = oidcSub.toLowerCase();
+                        if (!username.includes(q) && !fullName.includes(q) && !sub.includes(q)) {
+                          return false;
+                        }
+                      }
+                      return true;
+                    })
+                    .sort((a, b) => {
+                      const draftA = batasDraft[a] || {};
+                      const draftB = batasDraft[b] || {};
+                      if (draftA.configured !== draftB.configured) {
+                        return draftA.configured ? 1 : -1;
+                      }
+                      return (draftA.username || a).localeCompare(draftB.username || b);
+                    });
+
+                  return (
+                    <>
+                      {/* Banner Peringatan Pengguna Pending */}
+                      {pendingCount > 0 && (
+                        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 sm:p-4 shadow-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="flex items-start gap-2.5">
+                              <ShieldAlert className="w-5 h-5 mt-0.5 shrink-0 text-amber-500" />
+                              <div>
+                                <p className="font-bold text-xs sm:text-sm text-content">
+                                  {language === 'en'
+                                    ? `${pendingCount} user(s) pending token limit setup`
+                                    : `${pendingCount} pengguna menunggu penetapan batas token`}
+                                </p>
+                                <p className="text-[11px] text-content-muted mt-0.5">
+                                  {language === 'en'
+                                    ? 'New users have not been assigned specific limits. A recommended default limit is pre-filled below for you to review and save.'
+                                    : 'Pengguna baru belum pernah ditetapkan limitnya oleh admin. Nilai default rekomendasi telah terisi di bawah agar Anda tidak lupa menetapkannya.'}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                              <button
+                                onClick={() => setBatasStatusFilter('pending')}
+                                className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-2xs transition-all cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Clock className="w-3.5 h-3.5" />
+                                <span>{language === 'en' ? `View Pending (${pendingCount})` : `Lihat Pending (${pendingCount})`}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Batas per pengguna - Table Card dengan Search & Filter */}
+                      <div className="rounded-2xl border border-line/80 bg-surface overflow-hidden shadow-xs">
+                        <div className="p-3 sm:p-4 border-b border-line/80 bg-surface space-y-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per User' : 'Batas per Pengguna'}</p>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
+                                  {allSubList.length} {language === 'en' ? 'Users' : 'Pengguna'}
+                                </span>
+                                {pendingCount > 0 && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/30 flex items-center gap-1">
+                                    <Clock className="w-2.5 h-2.5 animate-pulse" />
+                                    {pendingCount} {language === 'en' ? 'Pending' : 'Pending Set'}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-content-muted mt-0.5">
+                                {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun (burst).'}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={isiSemuaDefaultBurst}
+                                title={language === 'en' ? 'Fill 0/empty burst fields with default 60,000/min' : 'Isi kolom burst yang masih 0/kosong dengan default 60.000/menit'}
+                                className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-surface-sunken hover:bg-surface-hover text-indigo-400 border border-indigo-500/30 shadow-2xs transition-all cursor-pointer"
+                              >
+                                <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                                <span className="hidden sm:inline">{language === 'en' ? 'Fill Default Burst (60k)' : 'Isi Default Burst (60rb)'}</span>
+                              </button>
+
+                              <button
+                                onClick={simpanSemuaBatas}
+                                disabled={savingBatas || kuotaLoading}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {savingBatas ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                                <span>
+                                  {savingBatas
+                                    ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
+                                    : (language === 'en' ? 'Save All Limits' : 'Simpan Semua Batas')}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Search & Filter Toolbar */}
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-line/60">
+                            <div className="relative flex-1 max-w-sm">
+                              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-content-subtle" />
+                              <input
+                                type="text"
+                                placeholder={language === 'en' ? 'Search user by username or name…' : 'Cari pengguna atau nama…'}
+                                value={batasSearch}
+                                onChange={(e) => setBatasSearch(e.target.value)}
+                                className="pl-9 pr-8 py-1.5 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full text-content"
+                              />
+                              {batasSearch && (
+                                <button
+                                  onClick={() => setBatasSearch('')}
+                                  className="absolute right-2.5 top-2 text-content-subtle hover:text-content p-0.5 cursor-pointer"
+                                  aria-label={t('common.clearSearch')}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+                              <button
+                                onClick={() => setBatasStatusFilter('all')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                  batasStatusFilter === 'all'
+                                    ? 'bg-indigo-600 text-white shadow-2xs'
+                                    : 'bg-surface-sunken hover:bg-surface-hover text-content-muted border border-line'
+                                }`}
+                              >
+                                <span>{language === 'en' ? 'All' : 'Semua'}</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${batasStatusFilter === 'all' ? 'bg-black/20 text-white' : 'bg-surface border border-line text-content-muted'}`}>
+                                  {allSubList.length}
+                                </span>
+                              </button>
+
+                              <button
+                                onClick={() => setBatasStatusFilter('pending')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                  batasStatusFilter === 'pending'
+                                    ? 'bg-amber-600 text-white shadow-2xs'
+                                    : 'bg-surface-sunken hover:bg-surface-hover text-amber-500 border border-line'
+                                }`}
+                              >
+                                <Clock className="w-3 h-3" />
+                                <span>{language === 'en' ? 'Pending Set' : 'Belum Diatur'}</span>
+                                {pendingCount > 0 && (
+                                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${batasStatusFilter === 'pending' ? 'bg-black/20 text-white' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                                    {pendingCount}
+                                  </span>
+                                )}
+                              </button>
+
+                              <button
+                                onClick={() => setBatasStatusFilter('configured')}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                                  batasStatusFilter === 'configured'
+                                    ? 'bg-emerald-600 text-white shadow-2xs'
+                                    : 'bg-surface-sunken hover:bg-surface-hover text-emerald-400 border border-line'
+                                }`}
+                              >
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>{language === 'en' ? 'Configured' : 'Ditetapkan'}</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${batasStatusFilter === 'configured' ? 'bg-black/20 text-white' : 'bg-surface border border-line text-content-muted'}`}>
+                                  {configuredCount}
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs sm:text-sm">
+                            <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
+                              <tr>
+                                <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'User' : 'Pengguna'}</th>
+                                <th className="px-3 py-3 w-32">{language === 'en' ? 'Status' : 'Status'}</th>
+                                <th className="px-4 py-3">{language === 'en' ? 'Daily Tokens' : 'Token / Hari'}</th>
+                                <th className="px-4 py-3 sm:w-44">{language === 'en' ? 'Per Minute (Burst)' : 'Batas per Menit'}</th>
+                                <th className="px-4 py-3 sm:w-52">{language === 'en' ? 'Limit Summary' : 'Ringkasan Batas'}</th>
+                                <th className="px-4 sm:px-5 py-3 text-right w-28">{language === 'en' ? 'Action' : 'Aksi'}</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-line/60 text-content-secondary">
+                              {filteredSubs.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="px-4 py-8 text-center text-xs text-content-muted">
+                                    {batasSearch
+                                      ? (language === 'en' ? `No users matching "${batasSearch}".` : `Tidak ada pengguna yang cocok dengan "${batasSearch}".`)
+                                      : (language === 'en' ? 'No users in this filter.' : 'Tidak ada pengguna dalam filter ini.')}
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredSubs.map((oidcSub) => {
+                                  const draft = batasDraft[oidcSub] || {};
+                                  const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
+                                  const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
+                                  const isUnlimitedDaily = rawHarian === '0';
+                                  const isUnlimitedMinute = rawPermenit === '0';
+                                  const isPending = !draft.configured;
+                                  const displayName = draft.username || oidcSub;
+
+                                  return (
+                                    <tr
+                                      key={oidcSub}
+                                      className={`transition-colors ${
+                                        isPending
+                                          ? 'bg-amber-500/[0.04] hover:bg-amber-500/[0.08]'
+                                          : 'hover:bg-surface-hover/70'
+                                      }`}
+                                    >
+                                      {/* User Column */}
+                                      <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
+                                        <div className="flex items-center gap-2.5">
+                                          <div
+                                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs ${
+                                              isPending
+                                                ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                                                : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                                            }`}
+                                          >
+                                            <User className="w-4 h-4" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <span className="block font-semibold text-xs sm:text-sm text-content truncate">
+                                              {displayName}
+                                            </span>
+                                            {draft.full_name && draft.full_name !== displayName && (
+                                              <span className="block text-[10px] text-content-muted truncate">{draft.full_name}</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </td>
+
+                                      {/* Status Column */}
+                                      <td className="px-3 py-3 whitespace-nowrap">
+                                        {isPending ? (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                                            <Clock className="w-3 h-3 animate-pulse" />
+                                            {language === 'en' ? 'Pending Set' : 'Belum Diatur'}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                            <CheckCircle2 className="w-3 h-3" />
+                                            {language === 'en' ? 'Configured' : 'Ditetapkan'}
+                                          </span>
+                                        )}
+                                      </td>
+
+                                      {/* Daily Tokens Input */}
+                                      <td className="px-4 py-3">
+                                        <div className="max-w-xs">
+                                          <input
+                                            id={`harian-${oidcSub}`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatNumberSeparator(draft.daily_token_limit)}
+                                            onChange={(e) => {
+                                              const cleanDigits = e.target.value.replace(/\D/g, '');
+                                              setBatasDraft((d) => ({
+                                                ...d,
+                                                [oidcSub]: { ...d[oidcSub], daily_token_limit: cleanDigits },
+                                              }));
+                                            }}
+                                            placeholder="1,000,000"
+                                            className={`w-full px-3 py-1.5 rounded-lg border text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all ${
+                                              isPending
+                                                ? 'border-amber-500/40 bg-amber-500/[0.03] text-content'
+                                                : 'border-line bg-surface-sunken/60 hover:bg-surface text-content'
+                                            }`}
+                                          />
+                                        </div>
+                                      </td>
+
+                                      {/* Per Minute (Burst) Input */}
+                                      <td className="px-4 py-3">
+                                        <div className="max-w-[150px]">
+                                          <input
+                                            id={`menit-${oidcSub}`}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={formatNumberSeparator(draft.per_minute_limit)}
+                                            onChange={(e) => {
+                                              const cleanDigits = e.target.value.replace(/\D/g, '');
+                                              setBatasDraft((d) => ({
+                                                ...d,
+                                                [oidcSub]: { ...d[oidcSub], per_minute_limit: cleanDigits },
+                                              }));
+                                            }}
+                                            placeholder="60,000"
+                                            className={`w-full px-3 py-1.5 rounded-lg border text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all ${
+                                              isPending
+                                                ? 'border-amber-500/40 bg-amber-500/[0.03] text-content'
+                                                : 'border-line bg-surface-sunken/60 hover:bg-surface text-content'
+                                            }`}
+                                          />
+                                        </div>
+                                      </td>
+
+                                      {/* Summary Badges */}
+                                      <td className="px-4 py-3 whitespace-nowrap">
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          {isUnlimitedDaily ? (
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                              ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                              ≈ {formatTokenWordHelper(draft.daily_token_limit)} / {language === 'en' ? 'day' : 'hari'}
+                                            </span>
+                                          )}
+                                          {isUnlimitedMinute ? (
+                                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
+                                              Burst: ∞
+                                            </span>
+                                          ) : (
+                                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
+                                              Burst: {formatNumberSeparator(draft.per_minute_limit)}/m
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+
+                                      {/* Action Column */}
+                                      <td className="px-4 sm:px-5 py-3 whitespace-nowrap text-right">
+                                        <button
+                                          onClick={() => simpanBatasPengguna(oidcSub)}
+                                          disabled={savingRowSub === oidcSub || savingBatas}
+                                          className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer disabled:opacity-50 ${
+                                            isPending
+                                              ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-2xs font-bold'
+                                              : 'bg-surface-hover hover:bg-line text-content border border-line'
+                                          }`}
+                                          title={language === 'en' ? 'Save this user limit' : 'Simpan limit pengguna ini'}
+                                        >
+                                          {savingRowSub === oidcSub ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          ) : (
+                                            <Save className="w-3.5 h-3.5" />
+                                          )}
+                                          <span>
+                                            {isPending
+                                              ? (language === 'en' ? 'Set Limit' : 'Tetapkan')
+                                              : (language === 'en' ? 'Save' : 'Simpan')}
+                                          </span>
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
-                      <span className="self-start sm:self-auto px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                        {kuota.pending_limit_users.length} {language === 'en' ? 'Pending' : 'Menunggu'}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {kuota.pending_limit_users.slice(0, 12).map((pendingUser) => (
-                        <span key={pendingUser.id} className="inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-lg bg-surface border border-amber-500/20 text-[11px] text-content">
-                          <User className="w-3 h-3 shrink-0 text-amber-500" />
-                          <span className="truncate">{pendingUser.username || pendingUser.id}</span>
-                        </span>
-                      ))}
-                      {kuota.pending_limit_users.length > 12 && (
-                        <span className="inline-flex items-center px-2 py-1 rounded-lg bg-surface border border-line text-[11px] text-content-muted">
-                          +{kuota.pending_limit_users.length - 12}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Batas per pengguna - Compact Table Card */}
-                <div className="rounded-2xl border border-line/80 bg-surface overflow-hidden shadow-xs">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 sm:p-4 border-b border-line/80 bg-surface">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-content text-xs sm:text-sm">{language === 'en' ? 'Limits Per User' : 'Batas per Pengguna'}</p>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-sunken border border-line text-content-muted">
-                          {Object.keys(batasDraft).length} {language === 'en' ? 'Users' : 'Pengguna'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-content-muted mt-0.5">
-                        {language === 'en' ? 'Enter 0 for unlimited. Per-minute limit controls burst requests.' : 'Isi 0 untuk tanpa batas. Batas per menit menahan kiriman beruntun.'}
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={simpanSemuaBatas}
-                      disabled={savingBatas || kuotaLoading}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition-all cursor-pointer shrink-0 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>
-                        {savingBatas
-                          ? (language === 'en' ? 'Saving...' : 'Menyimpan...')
-                          : (language === 'en' ? 'Save All Limits' : 'Simpan Semua Batas')}
-                      </span>
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
-                        <tr>
-                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'User' : 'Pengguna'}</th>
-                          <th className="px-4 py-3">{language === 'en' ? 'Daily Tokens' : 'Token / Hari'}</th>
-                          <th className="px-4 py-3 sm:w-48">{language === 'en' ? 'Per Minute (Burst)' : 'Batas per Menit'}</th>
-                          <th className="px-4 sm:px-5 py-3 sm:w-56">{language === 'en' ? 'Limit Summary' : 'Ringkasan Batas'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line/60 text-content-secondary">
-                        {Object.keys(batasDraft).sort((a, b) => (batasDraft[a]?.username || a).localeCompare(batasDraft[b]?.username || b)).map((oidcSub) => {
-                          const draft = batasDraft[oidcSub] || {};
-                          const rawHarian = String(draft.daily_token_limit ?? '').replace(/\D/g, '');
-                          const rawPermenit = String(draft.per_minute_limit ?? '').replace(/\D/g, '');
-                          const isUnlimitedDaily = rawHarian === '0';
-                          const isUnlimitedMinute = rawPermenit === '0';
-                          const displayName = draft.username || oidcSub;
-
-                          return (
-                            <tr key={oidcSub} className="hover:bg-surface-hover/70 transition-colors">
-                              {/* Label username OIDC; kunci penyimpanan tetap oidcSub. */}
-                              <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 shadow-2xs bg-indigo-500/10 text-indigo-400 border-indigo-500/20">
-                                    <User className="w-4 h-4" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <span className="block font-semibold text-xs sm:text-sm text-content truncate">
-                                      {displayName}
-                                    </span>
-                                    {draft.full_name && draft.full_name !== displayName && (
-                                      <span className="block text-[10px] text-content-muted truncate">{draft.full_name}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-
-                              {/* Daily Tokens Input */}
-                              <td className="px-4 py-3">
-                                <div className="max-w-xs">
-                                  <input
-                                    id={`harian-${oidcSub}`}
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={formatNumberSeparator(draft.daily_token_limit)}
-                                    onChange={(e) => {
-                                      const cleanDigits = e.target.value.replace(/\D/g, '');
-                                      setBatasDraft((d) => ({
-                                        ...d,
-                                        [oidcSub]: { ...d[oidcSub], daily_token_limit: cleanDigits },
-                                      }));
-                                    }}
-                                    placeholder="0"
-                                    className="w-full px-3 py-1.5 rounded-lg border border-line bg-surface-sunken/60 hover:bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-                                  />
-                                </div>
-                              </td>
-
-                              {/* Per Minute Input */}
-                              <td className="px-4 py-3">
-                                <div className="max-w-[150px]">
-                                  <input
-                                    id={`menit-${oidcSub}`}
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={formatNumberSeparator(draft.per_minute_limit)}
-                                    onChange={(e) => {
-                                      const cleanDigits = e.target.value.replace(/\D/g, '');
-                                      setBatasDraft((d) => ({
-                                        ...d,
-                                        [oidcSub]: { ...d[oidcSub], per_minute_limit: cleanDigits },
-                                      }));
-                                    }}
-                                    placeholder="0"
-                                    className="w-full px-3 py-1.5 rounded-lg border border-line bg-surface-sunken/60 hover:bg-surface text-content text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-                                  />
-                                </div>
-                              </td>
-
-                              {/* Summary Badges */}
-                              <td className="px-4 sm:px-5 py-3 whitespace-nowrap">
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {isUnlimitedDaily ? (
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                      ♾️ {language === 'en' ? 'Unlimited' : 'Tanpa Batas'}
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold font-mono px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                                      ≈ {formatTokenWordHelper(draft.daily_token_limit)} / {language === 'en' ? 'day' : 'hari'}
-                                    </span>
-                                  )}
-                                  {isUnlimitedMinute ? (
-                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
-                                      Burst: ∞
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-sunken text-content-muted border border-line">
-                                      Burst: {draft.per_minute_limit || 0}/m
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                    </>
+                  );
+                })()}
 
                 {/* Pemakaian per pengguna */}
                 <div className="rounded-2xl border border-line bg-surface p-4">

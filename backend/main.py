@@ -1577,6 +1577,9 @@ def get_available_roles(enabled_only: bool = True) -> list[str]:
 
 # --- KUOTA TOKEN ---
 
+DEFAULT_PENDING_DAILY_TOKEN_LIMIT = 1_000_000
+DEFAULT_PENDING_BURST_TOKEN_LIMIT = 60_000
+
 class BatasPenggunaRequest(BaseModel):
     oidc_sub: Optional[str] = None
     daily_token_limit: Optional[int] = 0     # 0 = tanpa batas
@@ -1646,6 +1649,7 @@ async def quota_admin_endpoint(
         "user_limits": user_limits,
         "pending_limit_users": pending_limit_users,
         "pending_default_daily_token_limit": DEFAULT_PENDING_DAILY_TOKEN_LIMIT,
+        "pending_default_per_minute_limit": DEFAULT_PENDING_BURST_TOKEN_LIMIT,
         "usage": usage,
     }
 
@@ -2754,7 +2758,7 @@ def _batas_pengguna(oidc_sub: str, penegakan_aktif: bool) -> tuple[dict, bool]:
     if penegakan_aktif:
         return {
             "daily_token_limit": DEFAULT_PENDING_DAILY_TOKEN_LIMIT,
-            "per_minute_limit": 0,
+            "per_minute_limit": DEFAULT_PENDING_BURST_TOKEN_LIMIT,
         }, False
     return {"daily_token_limit": 0, "per_minute_limit": 0}, False
 
