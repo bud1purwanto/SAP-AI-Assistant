@@ -356,15 +356,12 @@ class MCPManager:
         self._cache_ttl: float = 10.0
 
     def _get_client_config(self, name: str) -> tuple[str, dict]:
-        """Resolve MCP server URL: local DB first, gateway fallback."""
+        """Resolve the enabled MCP server URL from the local registry."""
         from database import get_mcp_server, list_mcp_servers
-        # SAP dan SQL memakai hak akses per pengguna di Dashboard gateway.
-        # URL MCP lama di registry lokal dapat menunjuk ke layanan yang salah.
-        if name in ("sap", "sql") and settings.dashboard_mcp_gateway_url:
-            return settings.dashboard_mcp_gateway_url.rstrip("/"), {}
-        # Check local registry by id
         srv = get_mcp_server(name)
-        if srv and srv.get("enabled"):
+        if srv:
+            if not srv.get("enabled"):
+                raise RuntimeError(f"MCP server '{name}' dinonaktifkan di registry.")
             url = srv["url"].rstrip("/")
             headers = dict(srv.get("headers") or {})
             if srv.get("auth_token"):
@@ -379,13 +376,7 @@ class MCPManager:
                 if srv_detail and srv_detail.get("auth_token"):
                     headers["auth_token"] = srv_detail["auth_token"]
                 return s["url"].rstrip("/"), headers
-        # Fallback to gateway for unregistered connectors
-        gateway_base = (settings.dashboard_mcp_gateway_url or "").rstrip("/")
-        if not gateway_base:
-            raise RuntimeError("No MCP URL found for '{}' and gateway not configured.".format(name))
-        if name in ("sap", "rag", "sql", "email"):
-            return gateway_base, {}
-        return f"{gateway_base}/{name}", {}
+        raise RuntimeError(f"MCP server '{name}' tidak ditemukan di registry.")
 
     def get_client(self, name: str) -> StreamableHttpClient:
         """Per-user MCP client authenticated with user's OIDC Bearer token or dedicated auth_token."""
@@ -488,9 +479,8 @@ class MCPManager:
 
     async def _fetch_dashboard_resources(self, http_client: httpx.AsyncClient) -> Optional[dict]:
         """Ambil list resource & status server dinamis dari Dashboard MCP jika tersedia."""
-        if not settings.dashboard_mcp_url:
-            return None
-        url = f"{settings.dashboard_mcp_url.rstrip('/')}/v1/integration/resources"
+        from mcp_registry import mcp_control_plane_base
+        url = f"{mcp_control_plane_base('sap')}/v1/integration/resources"
         from auth import get_dashboard_access_token
         token = get_dashboard_access_token() or getattr(settings, "dashboard_mcp_api_token", "")
         headers = {"Authorization": f"Bearer {token}"} if token else {}

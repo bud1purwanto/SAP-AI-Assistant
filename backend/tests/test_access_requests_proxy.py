@@ -23,6 +23,7 @@ def test_access_requests_available_proxy():
     mock_client.get.return_value = mock_resp
 
     with patch("auth.get_dashboard_access_token", return_value="fake-token"), \
+         patch("main.mcp_control_plane_base", return_value="http://dashboard.example"), \
          patch("httpx.AsyncClient", return_value=mock_client):
         res = asyncio.run(
             get_available_mcp_access_requests(user={"username": "test-user", "access_token": "fake-token"})
@@ -46,6 +47,7 @@ def test_access_requests_submit_proxy():
     mock_client.post.return_value = mock_resp
 
     with patch("auth.get_dashboard_access_token", return_value="fake-token"), \
+         patch("main.mcp_control_plane_base", return_value="http://dashboard.example"), \
          patch("httpx.AsyncClient", return_value=mock_client):
         res = asyncio.run(
             submit_mcp_access_request(
@@ -65,7 +67,8 @@ def test_my_access_requests_proxy():
     mock_client.__aenter__.return_value = mock_client
     mock_client.get.return_value = mock_resp
 
-    with patch("httpx.AsyncClient", return_value=mock_client):
+    with patch("main.mcp_control_plane_base", return_value="http://dashboard.example"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
         res = asyncio.run(
             get_my_mcp_access_requests(user={"username": "test-user", "access_token": "fake-token"})
         )

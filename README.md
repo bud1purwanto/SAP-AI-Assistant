@@ -70,7 +70,7 @@ Proyek ini menggunakan struktur monorepo:
 
 ## Fitur Utama
 1. **Centralized Identity & OIDC SSO (PKCE):** Otentikasi terpusat ke Dashboard Identity Provider menggunakan RFC 7636 Authorization Code flow dengan S256 PKCE. Single Sign-On (SSO) tanpa login terpisah.
-2. **Unified MCP Gateway Routing:** Seluruh perkakas MCP (SAP, RAG, SQL, Email) diakses secara aman dan dinamis melalui endpoint gateway terpusat (`DASHBOARD_MCP_GATEWAY_URL`), tanpa IP direct ataupun token statis bawaan.
+2. **Unified MCP Gateway Routing:** Seluruh perkakas MCP (SAP, RAG, SQL, Email) memakai URL server aktif dari tabel `mcp_servers` dan token pengguna OIDC. Katalog serta permintaan akses MCP memakai host gateway yang terdaftar untuk SAP.
 3. **Agentic Traceability:** Setiap balasan AI yang menggunakan RAG atau data SAP MCP menampilkan tombol "View Source" untuk melihat data raw yang digunakan.
 4. **🌈 Diagram & Flowchart Auto-Render (Mermaid.js):** Visualisasi otomatis alur proses bisnis SAP (Procure-to-Pay, Order-to-Cash, Production Order) langsung di bubble chat.
 5. **🌐 Multilanguage & i18n Ready:** Mendukung Bahasa Indonesia (`id`) dan English (`en`) secara dinamis di seluruh antarmuka dan respons asisten.

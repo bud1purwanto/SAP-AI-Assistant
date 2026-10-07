@@ -82,6 +82,7 @@ def test_sap_credential_delete_uses_oidc_connection_id():
 
 def test_oidc_http_contract_uses_user_jwt_and_expected_methods(monkeypatch):
     calls = []
+    monkeypatch.setattr(oidc, "mcp_control_plane_base", lambda server: "http://dashboard.example")
 
     def handler(request):
         calls.append((request.method, request.url.path, request.headers.get("authorization"), request.content))
@@ -107,6 +108,7 @@ def test_oidc_http_contract_uses_user_jwt_and_expected_methods(monkeypatch):
 
 def test_oidc_uuid_is_enriched_with_human_target_name(monkeypatch):
     connection_id = "cd30606b-2ad1-4483-a5d0-f35037a126e3"
+    monkeypatch.setattr(oidc, "mcp_control_plane_base", lambda server: "http://dashboard.example")
 
     def handler(request):
         if request.url.path.endswith("/mine"):

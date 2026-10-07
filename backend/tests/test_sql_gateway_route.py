@@ -2,14 +2,13 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 from auth import set_dashboard_access_token
-from config import settings
 from mcp_manager import MCPCallResult, MCPManager
 
 
-def test_sql_ignores_obsolete_registry_and_uses_user_oidc_token():
+def test_sql_uses_registry_url_and_user_oidc_token():
     manager = MCPManager()
     with patch("database.get_mcp_server", return_value={
-        "id": "sql", "enabled": True, "url": "http://legacy.example/mcp",
+        "id": "sql", "enabled": True, "url": "http://dashboard.example/v1/gateway/mcp-sql",
         "auth_token": "legacy-token",
     }):
         set_dashboard_access_token("user-oidc-token")
@@ -18,7 +17,7 @@ def test_sql_ignores_obsolete_registry_and_uses_user_oidc_token():
         finally:
             set_dashboard_access_token(None)
 
-    assert client.url == settings.dashboard_mcp_gateway_url.rstrip("/")
+    assert client.url == "http://dashboard.example/v1/gateway/mcp-sql"
     assert client.headers["Authorization"] == "Bearer user-oidc-token"
 
 

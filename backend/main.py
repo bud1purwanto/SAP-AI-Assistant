@@ -120,6 +120,7 @@ from database import (
     get_division_impact,
 )
 from mcp_manager import mcp_manager
+from mcp_registry import mcp_control_plane_base
 from models import ChatRequest, ChatResponse, UsageStats, ScheduledTaskCreate, ScheduledTaskUpdate
 
 logger = logging.getLogger(__name__)
@@ -913,7 +914,7 @@ async def get_available_mcp_access_requests(user: dict = Depends(get_current_use
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
         raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
-    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
@@ -935,7 +936,7 @@ async def submit_mcp_access_request(req: RequestMcpAccessPayload, user: dict = D
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
         raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
-    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
@@ -958,7 +959,7 @@ async def get_my_mcp_access_requests(user: dict = Depends(get_current_user)):
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
         raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
-    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
+    base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(

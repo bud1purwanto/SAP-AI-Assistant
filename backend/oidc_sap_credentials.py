@@ -6,6 +6,7 @@ import httpx
 from fastapi import HTTPException
 
 from config import settings
+from mcp_registry import mcp_control_plane_base
 
 
 def _token(user: dict) -> str:
@@ -93,7 +94,7 @@ def saved_credentials(rows: list[dict]) -> list[dict]:
 
 
 async def _request(method: str, path: str, user: dict, body: dict | None = None):
-    url = settings.dashboard_oidc_issuer.rstrip("/") + path
+    url = mcp_control_plane_base("sap") + path
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.request(method, url, json=body,
@@ -145,7 +146,7 @@ async def list_sap_resources() -> list[dict]:
     token = (settings.dashboard_mcp_api_token or "").strip()
     if not token:
         raise HTTPException(status_code=502, detail="Token layanan katalog MCP OIDC belum dikonfigurasi.")
-    url = settings.dashboard_mcp_url.rstrip("/") + "/v1/integration/resources"
+    url = mcp_control_plane_base("sap") + "/v1/integration/resources"
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
