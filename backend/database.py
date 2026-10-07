@@ -3545,6 +3545,7 @@ def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None)
         return {"username": "", "modes": []}
 
     try:
+        user_row = {"username": clean_u, "full_name": ""}
         if oidc_roles is None:
             user_row = get_user_by_username(clean_u)
             if not user_row:

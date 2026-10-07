@@ -2322,7 +2322,7 @@ async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmi
         oidc_sub = str(u.get("id") or "").strip()
         if not oidc_sub:
             continue
-        u_ovrs = ovrs_by_user.get(oidc_sub.lower(), [])
+        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
         result.append({
             "username": u_name,
             "oidc_sub": oidc_sub,
@@ -2348,9 +2348,13 @@ async def _oidc_mode_user(username: str, admin: dict) -> dict:
 async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
     """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
     directory_user = await _oidc_mode_user(username, admin)
-    res = get_user_modes_matrix(str(directory_user["id"]), oidc_roles=directory_user.get("roles") or [])
-    if "error" in res and res.get("error") == "User not found":
-        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+    res = get_user_modes_matrix(directory_user["username"], oidc_roles=directory_user.get("roles") or [])
+    if res.get("error"):
+        if res["error"] == "User not found":
+            raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+        raise HTTPException(status_code=500, detail="Matriks mode chat gagal dimuat.")
+    res["username"] = directory_user["username"]
+    res["full_name"] = directory_user.get("full_name") or ""
     return res
 
 
@@ -2358,7 +2362,7 @@ async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depe
 async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
     """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
     directory_user = await _oidc_mode_user(username, admin)
-    oidc_sub = str(directory_user["id"])
+    mode_username = directory_user["username"]
 
     items_to_process = []
     if req.items is not None:
@@ -2384,15 +2388,20 @@ async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserMo
         elif st is None:
             st = "inherit"
 
-        ok = set_user_mode_override(oidc_sub, m_code, st)
+        ok = set_user_mode_override(mode_username, m_code, st)
         if ok:
             success_count += 1
 
+    matrix = get_user_modes_matrix(mode_username, oidc_roles=directory_user.get("roles") or [])
+    if matrix.get("error"):
+        raise HTTPException(status_code=500, detail="Matriks mode chat gagal dimuat.")
+    matrix["username"] = directory_user["username"]
+    matrix["full_name"] = directory_user.get("full_name") or ""
     return {
         "status": "success",
         "username": username,
         "updated": success_count,
-        "matrix": get_user_modes_matrix(oidc_sub, oidc_roles=directory_user.get("roles") or []),
+        "matrix": matrix,
     }
 
 
