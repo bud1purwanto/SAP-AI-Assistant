@@ -32,3 +32,22 @@ def test_agent_passes_allowed_connectors():
     server_filter, allowed_conn = captured["args"]
     assert allowed_conn == {"sap", "sql"}, f"allowed_conn={allowed_conn}"
     assert "sandbox-new" in server_filter
+
+
+def test_active_sql_target_enables_sql_with_stale_browser_connector_preferences():
+    req = ChatRequest(
+        message="cek stored procedure",
+        active_server="sql:dev-224",
+        enabled_connectors=["rag", "email"],
+    )
+    captured = {}
+
+    async def fake_get_all_tools(server_filter="all", allowed_connectors=None):
+        captured["args"] = (server_filter, allowed_connectors)
+        return []
+
+    with patch("mcp_manager.mcp_manager.get_all_tools", side_effect=fake_get_all_tools), \
+         patch("agent._buat_llm", return_value=None):
+        asyncio.run(process_chat(chat_req=req, user_role="user", username="test-user", oidc_sub="oidc-test-user"))
+
+    assert captured["args"] == ("sql:dev-224", {"rag", "email", "sql"})

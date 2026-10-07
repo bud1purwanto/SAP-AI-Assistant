@@ -1147,7 +1147,10 @@ const ChatLayout = () => {
         });
         return !connectorTargets.some((entry) => entry.accessState === 'approved');
       };
-      const enabledConnectors = initialConnectors.filter((c) => {
+      const requestedConnectors = new Set(initialConnectors);
+      if (activeSystemForPayload === 'sql' && sqlTarget) requestedConnectors.add('sql');
+      if (activeSystemForPayload === 'sap' && sapTarget) requestedConnectors.add('sap');
+      const enabledConnectors = [...requestedConnectors].filter((c) => {
         if (c === 'sap' && isSapLocked) return false;
         if (c === 'sql' && isSqlLocked) return false;
         return !isConnectorLocked(c);

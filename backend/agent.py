@@ -1095,6 +1095,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
     # gunakan perilaku lama (fallback server_filter-based exclusivity).
     allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors else None
+    # Target yang aktif di header chat harus tersedia walau preferensi konektor
+    # lama di browser belum memasukkan SQL/SAP ke enabled_connectors.
+    if allowed_connectors is not None and target_srv.startswith("sql:"):
+        allowed_connectors.add("sql")
+    elif allowed_connectors is not None and target_srv.startswith("sap:"):
+        allowed_connectors.add("sap")
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
