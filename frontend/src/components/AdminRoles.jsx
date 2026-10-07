@@ -77,11 +77,9 @@ export default function AdminRoles({ onRefreshRoles }) {
       const data = await api.adminRoles();
       const rolesList = Array.isArray(data) ? data : [];
       setRoles(rolesList);
-      try {
-        localStorage.setItem('sap_ai_master_roles', JSON.stringify(rolesList));
-      } catch {}
       if (onRefreshRoles) onRefreshRoles();
     } catch (err) {
+      setRoles([]);
       console.error('Gagal mengambil daftar peran:', err);
       setActionError(err.message || (isEn ? 'Failed to fetch roles' : 'Gagal mengambil data peran'));
     } finally {

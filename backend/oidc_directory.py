@@ -37,7 +37,7 @@ def _first(value: Any) -> dict:
 
 
 def _role_codes(user: dict) -> list[str]:
-    raw = user.get("roles") or user.get("rawRole") or user.get("role") or "user"
+    raw = user.get("roles") or user.get("rawRole") or user.get("role") or []
     if isinstance(raw, (str, dict)):
         raw = [raw]
     return [str(item.get("code") or item.get("name") or item.get("key") if isinstance(item, dict) else item).strip().lower()
@@ -56,15 +56,16 @@ def normalize_directory(kind: str, payload: Any) -> list[dict]:
                 "id": row.get("id"),
                 "username": row.get("username") or row.get("userName") or "",
                 "full_name": row.get("displayName") or row.get("display_name") or row.get("fullName") or row.get("name") or "",
-                "role": roles[0] if roles else "user",
+                "role": roles[0] if roles else "",
                 "roles": roles,
                 "division_code": division.get("code") or division.get("name") or "",
                 "division_name": division.get("name") or "",
                 "department_code": _first(row.get("departments") or row.get("department")).get("code") or "",
+                "department_name": _first(row.get("departments") or row.get("department")).get("name") or "",
                 "position_code": position.get("code") or position.get("name") or "",
                 "position_name": position.get("name") or "",
-                "job_level": str(position.get("jobLevel") or "staff").lower(),
-                "enabled": row.get("isActive", row.get("enabled", True)),
+                "job_level": str(position.get("jobLevel") or "").lower(),
+                "enabled": row.get("isActive", row.get("enabled")),
             })
         return result
     if kind == "roles":
@@ -72,14 +73,14 @@ def normalize_directory(kind: str, payload: Any) -> list[dict]:
             "code": str(row.get("code") or row.get("key") or row.get("name") or "").lower(),
             "label": row.get("label") or row.get("displayName") or row.get("name") or "",
             "description": row.get("description") or "",
-            "enabled": row.get("isActive", row.get("enabled", True)),
+            "enabled": row.get("isActive", row.get("enabled")),
         } for row in rows]
     if kind in ("divisions", "departments"):
         return [{
             "code": str(row.get("code") or row.get("key") or row.get("id") or ""),
             "name": row.get("name") or row.get("displayName") or "",
             "description": row.get("description") or "",
-            "enabled": row.get("isActive", row.get("enabled", True)),
+            "enabled": row.get("isActive", row.get("enabled")),
             "department_id": row.get("departmentId") or row.get("department_id"),
         } for row in rows]
     return rows

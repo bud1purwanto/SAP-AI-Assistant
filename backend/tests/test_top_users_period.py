@@ -2,15 +2,13 @@
 
 from types import SimpleNamespace
 
-import pytest
-
 import database
 import main
 
 
 class _Rows:
     def fetchall(self):
-        return [SimpleNamespace(username="alice", session_count=2)]
+        return [SimpleNamespace(username="alice", oidc_sub="oidc-alice", session_count=2)]
 
 
 class _Connection:
@@ -40,12 +38,17 @@ def test_today_and_day_filter_sessions_created_today(monkeypatch):
     connection = _Connection()
     monkeypatch.setattr(database, "get_engine", lambda: _Engine(connection))
     for period in ("today", "day"):
-        assert database.get_top_active_users(period=period) == [{"username": "alice", "sessions": 2}]
+        assert database.get_top_active_users(period=period) == [{"username": "alice", "oidc_sub": "oidc-alice", "sessions": 2}]
         assert "date_trunc('day', CURRENT_TIMESTAMP)" in connection.query
 
 
-@pytest.mark.asyncio
-async def test_top_users_endpoint_keeps_list_response(monkeypatch):
-    monkeypatch.setattr(main, "get_top_active_users", lambda **_kwargs: [{"username": "alice", "sessions": 2}])
-    result = await main.get_admin_top_users_endpoint(period="today", admin={"username": "admin"})
-    assert result == [{"username": "alice", "sessions": 2}]
+def test_top_users_endpoint_keeps_list_response(monkeypatch):
+    import asyncio
+
+    async def directory(_kind, _token):
+        return [{"id": "oidc-alice", "username": "alice-new", "full_name": "Alice", "role": "analyst"}]
+
+    monkeypatch.setattr(main, "get_top_active_users", lambda **_kwargs: [{"username": "alice", "oidc_sub": "oidc-alice", "sessions": 2}])
+    monkeypatch.setattr(main, "fetch_directory", directory)
+    result = asyncio.run(main.get_admin_top_users_endpoint(period="today", admin={"dashboard_token": "token"}))
+    assert result == [{"username": "alice-new", "oidc_sub": "oidc-alice", "full_name": "Alice", "role": "analyst", "sessions": 2}]

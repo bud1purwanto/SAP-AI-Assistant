@@ -71,6 +71,7 @@ export default function AdminDivisions({ onRefreshDivisions }) {
         onRefreshDivisions();
       }
     } catch (err) {
+      setDivisions([]);
       console.error('Failed to fetch divisions:', err);
       setActionError(err.message || (isEn ? 'Failed to fetch divisions' : 'Gagal memuat data divisi'));
     } finally {

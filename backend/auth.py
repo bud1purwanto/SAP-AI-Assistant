@@ -54,8 +54,10 @@ def get_dashboard_access_token() -> Optional[str]:
 def create_session_cookie(principal: dict) -> str:
     """Tandatangani payload sesi menggunakan secret server."""
     now = datetime.now(timezone.utc)
-    roles = principal.get("roles") or ([principal["role"]] if principal.get("role") else ["user"])
-    primary_role = principal.get("role") or (roles[0] if roles else "user")
+    roles = principal.get("roles") or []
+    if not principal.get("sub") or not principal.get("username") or not roles:
+        raise ValueError("Identitas OIDC tidak lengkap; sesi tidak dapat dibuat.")
+    primary_role = principal.get("role") or roles[0]
     expire_hours = getattr(settings, "session_expire_hours", 24) or 24
     default_expire_seconds = int(expire_hours * 3600)
     requested_expire_seconds = principal.get("session_expire_seconds")
@@ -63,13 +65,13 @@ def create_session_cookie(principal: dict) -> str:
         expire_seconds = int(requested_expire_seconds) if requested_expire_seconds is not None else default_expire_seconds
     except (TypeError, ValueError):
         expire_seconds = default_expire_seconds
-    # Sesi BFF tidak boleh lebih lama dari token OIDC upstream yang menjadi
-    # dasar hak aksesnya. Nilai minimum satu detik mencegah JWT tanpa masa berlaku.
+    # Batasi masa berlaku cookie sesuai konfigurasi sesi aplikasi.
+    # Nilai minimum satu detik mencegah JWT tanpa masa berlaku.
     expire_seconds = min(max(expire_seconds, 1), default_expire_seconds)
 
     payload: Dict[str, Any] = {
-        "sub": str(principal.get("sub", "") or principal.get("username", "")),
-        "username": str(principal.get("username") or principal.get("sub", "")),
+        "sub": str(principal["sub"]),
+        "username": str(principal["username"]),
         "role": primary_role,
         "roles": roles,
         "org_units": principal.get("org_units") or [],
@@ -78,7 +80,7 @@ def create_session_cookie(principal: dict) -> str:
         "exp": now + timedelta(seconds=expire_seconds),
     }
     for k, v in principal.items():
-        if k not in payload and k != "access_token":
+        if k not in payload and k not in ("access_token", "refresh_token"):
             payload[k] = v
 
     access_token = principal.get("access_token")
@@ -164,6 +166,35 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
     return None
 
 
+def _session_dashboard_token(session_id: Optional[str]) -> Optional[str]:
+    """Pulihkan token OIDC; izinkan sesi BFF aktif saat token upstream tidak ada."""
+    if not session_id:
+        raise _credentials_exception("Sesi tidak valid. Silakan login kembali.")
+    try:
+        token = _resolve_dashboard_token(session_id)
+        if token:
+            return token
+        from database import get_user_session
+        session = get_user_session(session_id)
+        if not session or not session.get("is_active"):
+            raise _credentials_exception("Sesi telah dihentikan. Silakan login kembali.")
+        expires_at = session.get("expires_at")
+        if expires_at:
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= datetime.now(timezone.utc):
+                raise _credentials_exception("Sesi telah kedaluwarsa. Silakan login kembali.")
+        return None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Gagal memulihkan token OIDC dari sesi aktif")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Sesi belum dapat diverifikasi. Coba lagi.") from exc
+
+
 def decode_session_cookie(token: str) -> Optional[dict]:
     """Validasi dan baca payload sesi dari cookie atau header."""
     if not token:
@@ -210,17 +241,17 @@ def get_current_principal(request: Request) -> dict:
         raise _credentials_exception("Diperlukan autentikasi. Silakan login terlebih dahulu.")
 
     payload = decode_session_cookie(token)
-    if not payload or not (payload.get("sub") or payload.get("username")) or payload.get("is_guest"):
+    if not payload or not payload.get("sub") or not payload.get("username") or not payload.get("roles") or payload.get("is_guest"):
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
     session_id = payload.get("session_id")
-    resolved_token = _resolve_dashboard_token(session_id)
+    resolved_token = _session_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
-    username = payload.get("username") or payload.get("sub")
-    user_role = payload.get("role", "user")
-    user_roles = payload.get("roles") or [user_role]
+    username = payload["username"]
+    user_role = payload.get("role") or payload["roles"][0]
+    user_roles = payload["roles"]
     return {
-        "sub": payload.get("sub") or username,
+        "sub": payload["sub"],
         "username": username,
         "role": user_role,
         "roles": user_roles,
@@ -229,7 +260,9 @@ def get_current_principal(request: Request) -> dict:
         "force_change_password": bool(payload.get("force_change_password", False)),
         "division_code": payload.get("division_code"),
         "division_name": payload.get("division_name"),
-        "job_level": payload.get("job_level", "staff"),
+        "department_code": payload.get("department_code"),
+        "department_name": payload.get("department_name") or ((payload.get("org_units") or [None])[0]),
+        "job_level": payload.get("job_level"),
         "org_units": payload.get("org_units", []),
         "dashboard_token": resolved_token,
         "access_token": resolved_token,
@@ -255,25 +288,18 @@ def get_current_user_optional(request: Request) -> dict:
         }
 
     payload = decode_session_cookie(token)
-    if not payload or not (payload.get("sub") or payload.get("username")) or payload.get("is_guest"):
+    if not payload or not payload.get("sub") or not payload.get("username") or not payload.get("roles") or payload.get("is_guest"):
         set_dashboard_access_token(None)
-        return {
-            "sub": "guest",
-            "username": GUEST_USERNAME,
-            "role": GUEST_ROLE,
-            "roles": [GUEST_ROLE],
-            "org_units": [],
-            "is_guest": True,
-        }
+        raise _credentials_exception("Sesi OIDC tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
     session_id = payload.get("session_id")
-    resolved_token = _resolve_dashboard_token(session_id)
+    resolved_token = _session_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
-    username = payload.get("username") or payload.get("sub")
-    user_role = payload.get("role", "user")
-    user_roles = payload.get("roles") or [user_role]
+    username = payload["username"]
+    user_role = payload.get("role") or payload["roles"][0]
+    user_roles = payload["roles"]
     return {
-        "sub": payload.get("sub") or username,
+        "sub": payload["sub"],
         "username": username,
         "role": user_role,
         "roles": user_roles,
@@ -282,7 +308,9 @@ def get_current_user_optional(request: Request) -> dict:
         "force_change_password": bool(payload.get("force_change_password", False)),
         "division_code": payload.get("division_code"),
         "division_name": payload.get("division_name"),
-        "job_level": payload.get("job_level", "staff"),
+        "department_code": payload.get("department_code"),
+        "department_name": payload.get("department_name") or ((payload.get("org_units") or [None])[0]),
+        "job_level": payload.get("job_level"),
         "org_units": payload.get("org_units", []),
         "dashboard_token": resolved_token,
         "access_token": resolved_token,

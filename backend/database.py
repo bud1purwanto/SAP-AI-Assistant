@@ -674,6 +674,7 @@ def get_system_config():
     token_limit_enabled = bool(settings.token_limit_enabled)
     chat_modes_enabled = True
     ai_suggestions_enabled = True
+    require_login = bool(settings.require_login)
     mcp_access_control_enabled = False  # vestigial
 
     try:
@@ -693,6 +694,8 @@ def get_system_config():
                     chat_modes_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'ai_suggestions_enabled' and r.value is not None:
                     ai_suggestions_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'require_login' and r.value is not None:
+                    require_login = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'mcp_access_control_enabled' and r.value is not None:  # vestigial
                     mcp_access_control_enabled = r.value.lower() in ('true', '1', 'yes')  # vestigial
                 elif r.key == 'nine_router_enabled' and r.value is not None:
@@ -736,6 +739,7 @@ def get_system_config():
         "token_limit_enabled": token_limit_enabled,
         "chat_modes_enabled": chat_modes_enabled,
         "ai_suggestions_enabled": ai_suggestions_enabled,
+        "require_login": require_login,
         "mcp_access_control_enabled": mcp_access_control_enabled,  # vestigial
     }
 
@@ -756,6 +760,7 @@ def update_system_config(
     token_limit_enabled: bool = None,
     chat_modes_enabled: bool = None,
     ai_suggestions_enabled: bool = None,
+    require_login: bool = None,
     mcp_access_control_enabled: bool = None,  # vestigial
 ):
     """Update konfigurasi MCP, 9Router, OpenRouter, persona global, dan mode di database."""
@@ -3531,7 +3536,7 @@ def set_user_mode_override(username: str, mode_code: str, state: Any) -> bool:
         return False
 
 
-def get_user_modes_matrix(username: str) -> dict:
+def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None) -> dict:
     """Mengambil matriks lengkap perizinan mode chat untuk pengguna tertentu,
     menampilkan status bawaan peran (role_allowed), override (tri-state), dan hasil efektif (effective_allowed).
     """
@@ -3540,11 +3545,13 @@ def get_user_modes_matrix(username: str) -> dict:
         return {"username": "", "modes": []}
 
     try:
-        user_row = get_user_by_username(clean_u)
-        if not user_row:
-            return {"username": clean_u, "error": "User not found", "modes": []}
-
-        roles_list = user_row.get("roles") or ([user_row.get("role")] if user_row.get("role") else ["user"])
+        if oidc_roles is None:
+            user_row = get_user_by_username(clean_u)
+            if not user_row:
+                return {"username": clean_u, "error": "User not found", "modes": []}
+            roles_list = user_row.get("roles") or ([user_row.get("role")] if user_row.get("role") else [])
+        else:
+            roles_list = oidc_roles
 
         engine = get_engine()
         with engine.connect() as conn:
@@ -3674,10 +3681,6 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
     if enabled_only and _ROLE_CODES_CACHE and (now - _ROLE_CODES_CACHE_TIME < _ROLE_CACHE_TTL):
         return list(_ROLE_CODES_CACHE)
 
-    default_fallback = [
-        "superadmin", "abaper", "functional", "backend",
-        "frontend", "basis", "data_analyst", "user", "guest"
-    ]
     try:
         engine = get_engine()
         with engine.connect() as conn:
@@ -3701,9 +3704,9 @@ def get_role_codes(enabled_only: bool = True) -> list[str]:
                 _ROLE_CODES_CACHE = list(codes)
                 _ROLE_CODES_CACHE_TIME = now
             return codes
-    except Exception as e:
-        logger.warning(f"Fallback get_role_codes triggered: {e}")
-        return default_fallback
+    except Exception:
+        logger.exception("Gagal mengambil kode peran dari database")
+        raise
 
 
 def get_roles_can_modify_program() -> set[str]:
@@ -4190,7 +4193,7 @@ def decrypt_fernet(encrypted_data: str) -> Optional[str]:
     logger.warning("Gagal mendekripsi data kredensial SAP dengan session_secret.")
     return None
 
-def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "100") -> bool:
+def save_user_sap_credential(username: str, target: str, sap_user: str, sap_password: Optional[str] = None, sap_client: str = "") -> bool:
     """Save encrypted SAP credentials for a specific user and SAP target.
     
     If sap_password is empty/None and an existing credential exists for this target,
@@ -4210,7 +4213,7 @@ def save_user_sap_credential(username: str, target: str, sap_user: str, sap_pass
         else:
             return False  # Password is required for new credentials
     
-    plain_payload = f"{clean_sap_user}\t{password_to_store}\t{(sap_client or '100').strip()}"
+    plain_payload = f"{clean_sap_user}\t{password_to_store}\t{(sap_client or '').strip()}"
     enc = encrypt_fernet(plain_payload)
     
     engine = get_engine()
@@ -4225,8 +4228,8 @@ def save_user_sap_credential(username: str, target: str, sap_user: str, sap_pass
     return True
 
 
-def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, str]]:
-    """Retrieve and decrypt SAP credentials for a user and target."""
+def get_user_sap_credential(username: str, target: str, legacy_username: str = None) -> Optional[Dict[str, str]]:
+    """Read an OIDC-owned credential, including a row saved under its former username."""
     clean_user = (username or "").strip()
     clean_target = (target or "").strip()
     if not clean_user or not clean_target:
@@ -4236,8 +4239,10 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
     with engine.connect() as conn:
         row = conn.execute(text("""
             SELECT encrypted_data FROM {DB_SCHEMA}.user_sap_credentials
-            WHERE LOWER(username) = LOWER(:u) AND LOWER(target) = LOWER(:t)
-        """), {"u": clean_user, "t": clean_target}).fetchone()
+            WHERE LOWER(username) IN (LOWER(:u), LOWER(:legacy)) AND LOWER(target) = LOWER(:t)
+            ORDER BY CASE WHEN LOWER(username) = LOWER(:u) THEN 0 ELSE 1 END
+            LIMIT 1
+        """), {"u": clean_user, "legacy": (legacy_username or clean_user).strip(), "t": clean_target}).fetchone()
 
     
     if not row or not row[0]:
@@ -4257,8 +4262,8 @@ def get_user_sap_credential(username: str, target: str) -> Optional[Dict[str, st
     return None
 
 
-def list_user_sap_credentials(username: str) -> List[Dict[str, Any]]:
-    """List all configured SAP credential targets for a user (without exposing passwords)."""
+def list_user_sap_credentials(username: str, legacy_username: str = None) -> List[Dict[str, Any]]:
+    """List the OIDC subject's rows and its exact legacy username rows, without passwords."""
     clean_user = (username or "").strip()
     if not clean_user:
         return []
@@ -4268,16 +4273,20 @@ def list_user_sap_credentials(username: str) -> List[Dict[str, Any]]:
         rows = conn.execute(text("""
             SELECT target, encrypted_data, updated_at
             FROM {DB_SCHEMA}.user_sap_credentials
-            WHERE username = :u
-            ORDER BY target ASC
-        """), {"u": clean_user}).fetchall()
+            WHERE LOWER(username) IN (LOWER(:u), LOWER(:legacy))
+            ORDER BY CASE WHEN LOWER(username) = LOWER(:u) THEN 0 ELSE 1 END, target ASC
+        """), {"u": clean_user, "legacy": (legacy_username or clean_user).strip()}).fetchall()
     
     result = []
+    seen_targets = set()
     for r in rows:
         target_name = r[0]
+        if target_name.lower() in seen_targets:
+            continue
+        seen_targets.add(target_name.lower())
         dec = decrypt_fernet(r[1])
         sap_user = ""
-        sap_client = "100"
+        sap_client = ""
         if dec:
             parts = dec.split("\t")
             if len(parts) >= 3:
@@ -4292,22 +4301,25 @@ def list_user_sap_credentials(username: str) -> List[Dict[str, Any]]:
     return result
 
 
-def delete_user_sap_credential(username: str, target: str) -> bool:
-    """Delete configured SAP credentials for a user and target."""
+def delete_user_sap_credential(username: str, target: str, legacy_username: str = None) -> bool:
+    """Delete a selected target under the OIDC subject and its former username."""
     clean_user = (username or "").strip()
     clean_target = (target or "").strip()
     if not clean_user or not clean_target:
         return False
     
     engine = get_engine()
-    with engine.connect() as conn:
-        conn.execute(text("""
+    params = {"u": clean_user, "legacy": (legacy_username or clean_user).strip(), "t": clean_target}
+    with engine.begin() as conn:
+        result = conn.execute(text("""
             DELETE FROM {DB_SCHEMA}.user_sap_credentials
-            WHERE username = :u AND target = :t
-        """), {"u": clean_user, "t": clean_target})
-        conn.commit()
-    delete_user_sap_token(clean_user, clean_target)
-    return True
+            WHERE LOWER(username) IN (LOWER(:u), LOWER(:legacy)) AND LOWER(target) = LOWER(:t)
+        """), params)
+        conn.execute(text("""
+            DELETE FROM {DB_SCHEMA}.user_sap_tokens
+            WHERE LOWER(username) IN (LOWER(:u), LOWER(:legacy)) AND LOWER(target) = LOWER(:t)
+        """), params)
+    return result.rowcount > 0
 
 
 def save_user_sap_token(username: str, target: str, token: str, expires_at=None) -> bool:
@@ -4324,13 +4336,15 @@ def save_user_sap_token(username: str, target: str, token: str, expires_at=None)
     return True
 
 
-def get_user_sap_token(username: str, target: str) -> Optional[Dict[str, Any]]:
+def get_user_sap_token(username: str, target: str, legacy_username: str = None) -> Optional[Dict[str, Any]]:
     engine = get_engine()
     with engine.connect() as conn:
         row = conn.execute(text("""
             SELECT encrypted_token, expires_at FROM {DB_SCHEMA}.user_sap_tokens
-            WHERE username = :u AND target = :t
-        """), {"u": username, "t": target}).fetchone()
+            WHERE LOWER(username) IN (LOWER(:u), LOWER(:legacy)) AND LOWER(target) = LOWER(:t)
+            ORDER BY CASE WHEN LOWER(username) = LOWER(:u) THEN 0 ELSE 1 END
+            LIMIT 1
+        """), {"u": username, "legacy": (legacy_username or username).strip(), "t": target}).fetchone()
     if not row:
         return None
     enc_token = getattr(row, "encrypted_token", row[0])
@@ -4953,6 +4967,3 @@ def list_auth_audit_logs(
             logs.append(m)
 
         return {"logs": logs, "total": total}
-
-
-

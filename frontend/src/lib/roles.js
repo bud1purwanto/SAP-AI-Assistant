@@ -364,19 +364,6 @@ export function getRoleDescription(role, isEn = false) {
   return currentDesc || '';
 }
 
-export function getStoredMasterRoles() {
-  try {
-    const raw = localStorage.getItem('sap_ai_master_roles');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    // Ignore error
-  }
-  return [];
-}
-
 /**
  * Mendapatkan label peran terjemahan jika tersedia.
  */
@@ -394,24 +381,13 @@ export function getRoleLabel(role, isEn = false) {
     return explicitLabel;
   }
 
-  // 2. Cek dari master roles yang tersimpan di cache lokal
-  const cachedRoles = getStoredMasterRoles();
-  const cached = cachedRoles.find((r) => (r.code || '').toLowerCase() === code);
-  if (cached && cached.label) {
-    const sys = SYSTEM_ROLE_TRANSLATIONS[code];
-    if (sys && (cached.label === sys.label.id || cached.label === sys.label.en)) {
-      return sys.label[isEn ? 'en' : 'id'];
-    }
-    return cached.label;
-  }
-
-  // 3. Cek kamus peran sistem bawaan
+  // Cek kamus peran sistem bawaan
   const sys = SYSTEM_ROLE_TRANSLATIONS[code];
   if (sys) {
     return sys.label[isEn ? 'en' : 'id'];
   }
 
-  // 4. Format kode string (misal: "data_analyst" -> "Data Analyst")
+  // Format kode string (misal: "data_analyst" -> "Data Analyst")
   return formatRoleLabel(code);
 }
 

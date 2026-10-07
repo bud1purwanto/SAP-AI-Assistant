@@ -1800,13 +1800,13 @@ const ChatLayout = () => {
                         </span>
                       );
                     })()}
-                    {user.division_code && (
+                    {(user.department_code || user.department_name) && (
                       <span
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
-                        title={user.division_name ? `${user.division_code} - ${user.division_name}` : user.division_code}
+                        title={user.department_name || user.department_code}
                       >
                         <Building2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                        <span>{user.division_code}</span>
+                        <span className="truncate max-w-[9rem] sm:max-w-[12rem]">{user.department_name || user.department_code}</span>
                       </span>
                     )}
                   </div>
@@ -1859,13 +1859,13 @@ const ChatLayout = () => {
                                 </span>
                               );
                             })()}
-                            {user.division_code && (
+                            {(user.department_code || user.department_name) && (
                               <span
                                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border leading-none bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/25 font-mono"
-                                title={user.division_name ? `${user.division_code} - ${user.division_name}` : user.division_code}
+                                title={user.department_name || user.department_code}
                               >
                                 <Building2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                                <span>{user.division_code}</span>
+                                <span className="truncate max-w-[9rem] sm:max-w-[12rem]">{user.department_name || user.department_code}</span>
                               </span>
                             )}
                           </div>

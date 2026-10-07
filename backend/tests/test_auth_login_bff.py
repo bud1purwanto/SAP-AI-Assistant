@@ -42,6 +42,7 @@ def test_login_success_sets_cookie_and_returns_principal(client):
     assert body["user"]["role"] == "admin"
     assert body["user"]["org_units"] == ["Engineering"]
     assert body["user"]["division_code"] == "PLAT"
+    assert body["user"]["department_name"] == "Engineering"
     assert body["user"]["force_change_password"] is False
     assert "sap_session" in r.cookies
     assert route.called
@@ -76,7 +77,8 @@ def test_mapper_handles_missing_departments_divisions_positions():
     assert p["org_units"] == []
     assert p["division_code"] is None
     assert p["division_name"] is None
-    assert p["job_level"] == "staff"
+    assert p["job_level"] == ""
+    assert p["department_name"] is None
     assert p["roles"] == ["viewer"]
     assert p["force_change_password"] is False
 

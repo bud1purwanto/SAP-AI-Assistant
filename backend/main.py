@@ -320,18 +320,25 @@ def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
     consumers of `org_units`/`division_code`. Upgrade path: pluralize keys
     when multi-org scoping lands.
     """
-    depts = dash_user.get("departments") or []
+    raw_depts = dash_user.get("departments") or dash_user.get("department") or []
+    depts = raw_depts if isinstance(raw_depts, list) else [raw_depts]
+    depts = [dept for dept in depts if isinstance(dept, dict)]
     divs = dash_user.get("divisions") or []
     poss = dash_user.get("positions") or []
-    raw_role = dash_user.get("rawRole") or dash_user.get("role") or "user"
-    roles = [str(r).strip().lower() for r in ([raw_role] if isinstance(raw_role, str) else (raw_role or ["user"])) if str(r).strip()] or ["user"]
-    primary = roles[0] if roles else "user"
+    raw_role = dash_user.get("rawRole") or dash_user.get("roles") or dash_user.get("role")
+    roles = [str(r.get("code") or r.get("name") or "" if isinstance(r, dict) else r).strip().lower()
+             for r in ([raw_role] if isinstance(raw_role, (str, dict)) else (raw_role or [])) if r]
+    roles = [r for r in roles if r]
+    if not dash_user.get("id") or not dash_user.get("username") or not roles:
+        raise HTTPException(status_code=502, detail="Respons identitas OIDC tidak lengkap.")
+    primary = roles[0]
+    first_dept = depts[0] if depts else {}
     first_div = divs[0] if divs else {}
     first_pos = poss[0] if poss else {}
     return {
         "sub": dash_user["id"],
         "username": dash_user["username"],
-        "full_name": dash_user.get("displayName") or dash_user.get("display_name") or dash_user["username"],
+        "full_name": dash_user.get("displayName") or dash_user.get("display_name") or "",
         "role": primary,
         "roles": roles,
         "assistant_persona": "",  # populated lazily by ensure_user_exists
@@ -342,8 +349,11 @@ def _map_dashboard_user(dash_user: dict, access_token: str) -> dict:
         ),
         "division_code": first_div.get("code"),
         "division_name": first_div.get("name"),
-        "job_level": str(first_pos.get("jobLevel", "staff")).lower(),
-        "org_units": [d["name"] for d in depts if d.get("name")],
+        "department_code": first_dept.get("code") or first_dept.get("key"),
+        "department_name": first_dept.get("name") or first_dept.get("displayName"),
+        "job_level": str(first_pos.get("jobLevel") or "").lower(),
+        "org_units": [d.get("name") or d.get("displayName") for d in depts
+                      if d.get("name") or d.get("displayName")],
         "access_token": access_token,
         "is_guest": False,
     }
@@ -671,9 +681,15 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
     profile = {
         "sub": user["sub"],
         "username": user["username"],
-        "role": user.get("role", "user"),
-        "roles": user.get("roles", ["user"]),
-        "org_units": user.get("org_units", []),
+        "role": user.get("role"),
+        "roles": user.get("roles") or [],
+        "full_name": user.get("full_name") or "",
+        "division_code": user.get("division_code"),
+        "division_name": user.get("division_name"),
+        "department_code": user.get("department_code"),
+        "department_name": user.get("department_name"),
+        "job_level": user.get("job_level"),
+        "org_units": user.get("org_units") or [],
         "is_guest": False,
         "authenticated": True,
     }
@@ -685,17 +701,13 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
         try:
             local = ensure_user_exists(
                 username=user["username"],
-                role=user.get("role", "user"),
-                roles=user.get("roles") or [user.get("role", "user")],
+                role=user.get("role"),
+                roles=user.get("roles") or [],
             )
         except Exception:
             pass
     if local:
-        profile["full_name"] = local.get("full_name", "")
         profile["assistant_persona"] = local.get("assistant_persona", "")
-        profile["division_code"] = local.get("division_code")
-        profile["division_name"] = local.get("division_name")
-        profile["job_level"] = local.get("job_level", "staff")
 
     session_id = user.get("session_id")
     if not session_id and not user.get("is_guest") and user.get("username"):
@@ -754,11 +766,20 @@ async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current
 
 # --- PER-USER SAP CREDENTIALS ---
 
+def _sap_subject(user: dict) -> str:
+    """Use the authenticated OIDC subject as the SAP credential owner."""
+    subject = str((user or {}).get("sub") or "").strip()
+    if not subject:
+        raise HTTPException(status_code=401, detail="Subjek OIDC tidak tersedia pada sesi.")
+    return subject
+
+
 class UserSapCredentialRequest(BaseModel):
     target: str
     sap_user: str = ""
     sap_password: Optional[str] = None
-    sap_client: str = "100"
+    sap_client: Optional[str] = None
+    connection_id: Optional[str] = None
     is_update: bool = False
 
 
@@ -769,38 +790,35 @@ class BindSapTokenRequest(BaseModel):
 @app.get("/api/me/sap-credentials")
 async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
     """Ambil daftar konfigurasi kredensial SAP milik pengguna saat ini (tanpa password plaintext)."""
-    from database import list_user_sap_credentials
-    return list_user_sap_credentials(user["username"])
+    from oidc_sap_credentials import list_status, saved_credentials
+    _sap_subject(user)
+    return saved_credentials(await list_status(user))
 
 
 @app.get("/api/me/sap-credentials/available-servers")
 async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
-    """Mengambil daftar server SAP terdaftar dengan status otorisasi dan konfigurasi kredensial pengguna."""
-    username = user["username"]
-    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
-    if dashboard_token:
-        set_dashboard_access_token(dashboard_token)
-    # 1. Ambil status live dan sub_servers dari MCP SAP
-    raw_status = await mcp_manager.check_servers_status()
-    sap_subs = raw_status.get("sap", {}).get("sub_servers", []) if isinstance(raw_status, dict) else []
-    # 2. Ambil target kredensial yang sudah pernah disimpan pengguna
-    user_creds = database.list_user_sap_credentials(username)
-    saved_targets = {c.get("target", "").lower().strip() for c in user_creds if c.get("target")}
+    """Mengambil target SAP OIDC dan status kredensial pengguna."""
+    _sap_subject(user)
+    from oidc_sap_credentials import _connection_id, _target_names, list_sap_resources, list_status, saved_credentials
+    sap_subs = await list_sap_resources()
+    oidc_rows = await list_status(user)
+    user_creds = saved_credentials(oidc_rows)
+    saved_ids = {c["connection_id"] for c in user_creds}
+    saved_targets = {c["target"].lower().strip() for c in user_creds}
 
     servers = []
     for srv in sap_subs:
-        name = srv.get("name", "")
+        name = srv.get("label") or srv.get("name") or srv.get("resource_key") or ""
         sid = srv.get("sid", "")
-        client = str(srv.get("client") or "100")
+        client = str(srv.get("client") or "")
         env = srv.get("environment", "development")
-        prod_warn = bool(srv.get("production_warning", False))
+        prod_warn = bool(srv.get("is_production", False))
         aliases = srv.get("aliases") or []
-        primary_alias = aliases[0] if aliases else name.lower().replace(" ", "-")
-        has_credential = (
-            primary_alias.lower() in saved_targets or
-            name.lower() in saved_targets or
-            any(a.lower() in saved_targets for a in aliases)
-        )
+        resource_key = str(srv.get("resource_key") or "")
+        primary_alias = aliases[0] if aliases else (resource_key.removeprefix("sap:") or name.lower().replace(" ", "-"))
+        matching_row = next((row for row in oidc_rows if
+                             {primary_alias.lower(), name.lower(), resource_key.lower(), *(a.lower() for a in aliases)} & _target_names(row)), None)
+        has_credential = bool(matching_row and _connection_id(matching_row) in saved_ids)
         servers.append({
             "name": name,
             "alias": primary_alias,
@@ -811,6 +829,8 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
             "production_warning": prod_warn,
             "is_allowed": True,
             "has_credential": has_credential,
+            "connection_id": _connection_id(matching_row or {}),
+            "resource_key": resource_key,
         })
         
     return {
@@ -819,253 +839,19 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
     }
 
 
-@app.post("/api/me/sap-credentials/test")
-async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
-    """Uji konektivitas live ke server SAP menggunakan kredensial yang dimasukkan."""
-    target = (req.target or "").strip()
-    if not target:
-        raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
-
-    username = user["username"]
-    dashboard_token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
-    if dashboard_token:
-        set_dashboard_access_token(dashboard_token)
-
-
-    # 2. Siapkan username dan password: jika kosong saat pengujian, coba gunakan yang tersimpan
-    user_to_test = (req.sap_user or "").strip()
-    pass_to_test = (req.sap_password or "").strip()
-    client_to_test = (req.sap_client or "").strip()
-
-    if not user_to_test or not pass_to_test:
-        existing = database.get_user_sap_credential(username, target)
-        if existing:
-            if not user_to_test and existing.get("sap_user"):
-                user_to_test = existing["sap_user"]
-            if not pass_to_test and existing.get("sap_password"):
-                pass_to_test = existing["sap_password"]
-            if not client_to_test and existing.get("sap_client"):
-                client_to_test = existing["sap_client"]
-
-    if not user_to_test:
-        raise HTTPException(status_code=400, detail="Username SAP wajib diisi untuk melakukan pengujian.")
-    if not pass_to_test:
-        raise HTTPException(status_code=400, detail="Password SAP wajib diisi untuk melakukan pengujian.")
-    if not client_to_test:
-        client_to_test = "100"
-
-    # 3. Uji via MCP SAP Gateway (set_active_server, get_system_info, USR02, dan SUSR_LOGIN_CHECK_RFC)
-    try:
-        sap_creds = {
-            "sap_user": user_to_test,
-            "sap_password": pass_to_test,
-            "sap_client": client_to_test
-        }
-        res = await mcp_manager.call_tool(
-            server_name="sap",
-            tool_name="get_system_info",
-            arguments={},
-            sap_target=target,
-            sap_credentials=sap_creds
-        )
-        if res.is_error:
-            err_text = res.content[0].text if res.content else "Unknown error from SAP Gateway"
-            err_lower = err_text.lower()
-            if "logon" in err_lower or "password" in err_lower or "152" in err_lower or "auth" in err_lower or "user" in err_lower:
-                return {
-                    "success": False,
-                    "message": f"Autentikasi gagal: Username atau password tidak sesuai untuk user SAP '{user_to_test}' pada server '{target}'."
-                }
-            return {"success": False, "message": f"Koneksi ke SAP '{target}' gagal: {err_text}"}
-        
-        server_info = {}
-        if res.content and res.content[0].text:
-            try:
-                import json
-                data = json.loads(res.content[0].text)
-                server_info = {
-                    "active_server": data.get("active_server", target),
-                    "sid": data.get("sid", ""),
-                    "environment": data.get("environment", ""),
-                    "host": data.get("host", ""),
-                    "connected": True
-                }
-            except Exception:
-                pass
-                
-        srv_name = server_info.get("active_server") or target
-        srv_sid = f" (SID: {server_info.get('sid')})" if server_info.get("sid") else ""
-
-        # 4. Validasi keberadaan user dan status lock pada tabel USR02
-        user_upper = user_to_test.upper()
-        try:
-            where_cond = f"BNAME = '{user_upper}'"
-            if client_to_test:
-                where_cond += f" AND MANDT = '{client_to_test}'"
-
-            usr_res = await mcp_manager.call_tool(
-                server_name="sap",
-                tool_name="read_table",
-                arguments={
-                    "table": "USR02",
-                    "fields": ["MANDT", "BNAME", "UFLAG", "GLTGV", "GLTGB"],
-                    "where": [where_cond],
-                    "rowcount": 1
-                },
-                sap_target=target,
-                sap_credentials=sap_creds
-            )
-            if usr_res.is_error:
-                err_text = usr_res.content[0].text if usr_res.content else ""
-                err_lower = err_text.lower()
-                if "logon" in err_lower or "password" in err_lower or "152" in err_lower or "auth" in err_lower:
-                    return {
-                        "success": False,
-                        "message": f"Autentikasi gagal: Password tidak sesuai untuk user SAP '{user_upper}' pada server '{srv_name}'."
-                    }
-            elif usr_res.content and usr_res.content[0].text:
-                try:
-                    import json, datetime
-                    usr_data = json.loads(usr_res.content[0].text)
-                    rows = usr_data.get("rows", [])
-                    if not rows:
-                        return {
-                            "success": False,
-                            "message": f"User SAP '{user_upper}' tidak terdaftar pada server '{srv_name}' (Client {client_to_test})."
-                        }
-                    row = rows[0]
-                    user_row = row
-                    uflag_val = str(row.get("UFLAG", "0")).strip()
-                    if uflag_val != "0" and uflag_val != "":
-                        lock_reason = "dalam status terkunci"
-                        if uflag_val == "64":
-                            lock_reason = "dikunci oleh Administrator (UFLAG: 64)"
-                        elif uflag_val == "128":
-                            lock_reason = "terkunci karena salah memasukkan password berkali-kali (UFLAG: 128)"
-                        return {
-                            "success": False,
-                            "message": f"User SAP '{user_upper}' {lock_reason} pada server '{srv_name}'."
-                        }
-
-                    # Cek masa berlaku akun (GLTGV: Valid from, GLTGB: Valid to)
-                    today_str = datetime.date.today().strftime("%Y%m%d")
-                    gltgv = (row.get("GLTGV") or "").strip()
-                    gltgb = (row.get("GLTGB") or "").strip()
-                    if gltgv and gltgv != "00000000" and today_str < gltgv:
-                        return {
-                            "success": False,
-                            "message": f"Masa berlaku akun user SAP '{user_upper}' belum aktif (Aktif mulai {gltgv})."
-                        }
-                    if gltgb and gltgb != "00000000" and today_str > gltgb:
-                        return {
-                            "success": False,
-                            "message": f"Masa berlaku akun user SAP '{user_upper}' telah berakhir pada {gltgb}."
-                        }
-                except Exception:
-                    pass
-        except Exception as ex:
-            logger.debug(f"Pengecekan USR02 dilewati: {ex}")
-
-        # 5. Uji otentikasi live password via Function Module SUSR_LOGIN_CHECK_RFC
-        try:
-            login_res = await mcp_manager.call_tool(
-                server_name="sap",
-                tool_name="call_function",
-                arguments={
-                    "function_name": "SUSR_LOGIN_CHECK_RFC",
-                    "parameters": {
-                        "BNAME": user_upper,
-                        "PASSWORD": pass_to_test,
-                        "USE_NEW_EXCEPTION": 1
-                    }
-                },
-                sap_target=target,
-                sap_credentials=sap_creds
-            )
-            if login_res.is_error:
-                err_raw = login_res.content[0].text if login_res.content else ""
-                # Password salah
-                if "152" in err_raw or "WRONG_PASSWORD" in err_raw:
-                    return {
-                        "success": False,
-                        "message": f"Password tidak sesuai untuk user SAP '{user_upper}' pada server '{srv_name}'."
-                    }
-                # Akun terkunci karena percobaan berulang
-                if "200" in err_raw or "PASSWORD_ATTEMPTS_LIMITED" in err_raw:
-                    return {
-                        "success": False,
-                        "message": f"User SAP '{user_upper}' terkunci karena salah memasukkan password berkali-kali pada server '{srv_name}'."
-                    }
-                # Akun dikunci admin
-                if "158" in err_raw or "USER_LOCKED" in err_raw:
-                    return {
-                        "success": False,
-                        "message": f"User SAP '{user_upper}' dikunci oleh Administrator pada server '{srv_name}'."
-                    }
-                # Masa berlaku akun habis
-                if "148" in err_raw or "USER_NOT_ACTIVE" in err_raw:
-                    return {
-                        "success": False,
-                        "message": f"Masa berlaku akun user SAP '{user_upper}' tidak aktif pada server '{srv_name}'."
-                    }
-                # Password cocok namun berstatus Initial Password atau Expired di SAP
-                if "000" in err_raw or "PASSWORD_EXPIRED" in err_raw or "292" in err_raw:
-                    pwd_state = str(user_row.get("PWDSTATE", "") if user_row else "").strip()
-                    extra_note = ""
-                    if pwd_state == "1":
-                        extra_note = " (Catatan: Password berstatus Initial Password dan perlu diubah saat login pertama di SAP GUI)"
-                    elif pwd_state == "3":
-                        extra_note = " (Catatan: Password telah kedaluwarsa di SAP dan perlu diganti)"
-                    return {
-                        "success": True,
-                        "message": f"Koneksi dan autentikasi kredensial user SAP '{user_upper}' pada server '{srv_name}'{srv_sid} berhasil terverifikasi!{extra_note}",
-                        "server_info": {
-                            **server_info,
-                            "user": user_upper,
-                            "client": client_to_test,
-                            "authenticated": True
-                        }
-                    }
-                # Galat lainnya
-                return {
-                    "success": False,
-                    "message": f"Autentikasi kredensial user SAP '{user_upper}' gagal: {err_raw}"
-                }
-        except Exception as ex:
-            return {
-                "success": False,
-                "message": f"Gagal memverifikasi password SAP: {str(ex)}"
-            }
-
-        return {
-            "success": True,
-            "message": f"Koneksi dan autentikasi kredensial user SAP '{user_upper}' pada server '{srv_name}'{srv_sid} berhasil terverifikasi!",
-            "server_info": {
-                **server_info,
-                "user": user_upper,
-                "client": client_to_test,
-                "authenticated": True
-            }
-        }
-    except Exception as ex:
-        logger.error(f"Gagal menguji koneksi SAP ke '{target}': {ex}")
-        return {"success": False, "message": f"Koneksi ke SAP gagal: {str(ex)}"}
-
-
 @app.post("/api/me/sap-credentials")
 async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
-    """Simpan kredensial login SAP pribadi terenkripsi untuk target tertentu."""
-    from database import save_user_sap_credential, get_user_sap_credential
-    username = user["username"]
+    """Simpan kredensial SAP di Dashboard OIDC untuk target pengguna."""
+    from oidc_sap_credentials import list_status, resolve_connection_id, save, saved_credentials
+    _sap_subject(user)
     target = (req.target or "").strip()
     sap_user = (req.sap_user or "").strip()
     if not target or not sap_user:
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
         
-    # Pastikan hak otorisasi server
-
-    # Cek apakah target sudah ada jika bukan is_update
-    existing = get_user_sap_credential(username, target)
+    rows = await list_status(user)
+    connection_id = resolve_connection_id(rows, target, req.connection_id or "")
+    existing = next((item for item in saved_credentials(rows) if item["connection_id"] == connection_id), None)
     if existing and not req.is_update:
         # Jika bukan update, jangan izinkan duplikasi
         raise HTTPException(
@@ -1073,72 +859,33 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
             detail=f"Kredensial untuk target SAP '{target}' sudah tersimpan. Silakan gunakan tombol Edit untuk memperbaruinya."
         )
 
-    # Jika kredensial baru (bukan edit) dan password kosong, tolak
-    if not existing and not (req.sap_password or "").strip():
+    password = (req.sap_password or "").strip()
+    if not existing and not password:
         raise HTTPException(status_code=400, detail="Password SAP wajib diisi untuk kredensial baru.")
-    
-    ok = save_user_sap_credential(
-        username=username,
-        target=target,
-        sap_user=sap_user,
-        sap_password=req.sap_password,
-        sap_client=(req.sap_client or "100").strip()
-    )
-    if not ok:
-        raise HTTPException(status_code=500, detail="Gagal menyimpan kredensial SAP.")
-    return {"success": True, "message": f"Kredensial SAP untuk '{target}' berhasil disimpan terenkripsi."}
+    await save(user, connection_id, sap_user, password or None)
+    return {"success": True,
+            "message": f"Kredensial SAP untuk '{target}' berhasil disimpan terenkripsi."}
 
 
 @app.delete("/api/me/sap-credentials/{target}")
 async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
-    """Hapus kredensial SAP pribadi untuk target tertentu."""
-    from database import delete_user_sap_credential, delete_user_sap_token
+    """Hapus kredensial SAP pribadi di Dashboard OIDC."""
+    from oidc_sap_credentials import delete, list_status, resolve_connection_id
+    from database import delete_user_sap_token
+    subject = _sap_subject(user)
     target_clean = (target or "").strip()
     if not target_clean:
         raise HTTPException(status_code=400, detail="Target tidak valid.")
-    ok = delete_user_sap_credential(user["username"], target_clean)
-    delete_user_sap_token(user["username"], target_clean)
-    return {"success": ok, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
+    connection_id = resolve_connection_id(await list_status(user), target_clean)
+    await delete(user, connection_id)
+    delete_user_sap_token(subject, connection_id)
+    return {"success": True, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}
 
 
 @app.post("/api/me/sap-credentials/bind-token")
 async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_current_user)):
-    """Generate a bound SAP token via dashboard-mcp and store it locally."""
-    from database import get_user_sap_credential, save_user_sap_token
-    from auth import get_dashboard_access_token
-    username = user["username"]
-    target = (req.target or "").strip()
-    if not target:
-        raise HTTPException(status_code=400, detail="Target SAP wajib diisi.")
-    cred = get_user_sap_credential(username, target)
-    if not cred:
-        raise HTTPException(status_code=404, detail=f"Kredensial SAP untuk '{target}' tidak ditemukan. Simpan kredensial terlebih dahulu.")
-    access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
-    if not access_token:
-        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
-    base = (settings.dashboard_mcp_url or settings.dashboard_oidc_issuer or "").rstrip("/")
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(
-                f"{base}/v1/integration/sap-tokens",
-                json={"target": target, "sap_user": cred["sap_user"],
-                      "sap_password": cred["sap_password"], "sap_client": cred.get("sap_client", "100")},
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-    except httpx.HTTPError as e:
-        logger.error(f"dashboard-mcp unreachable for sap-token bind: {e}")
-        raise HTTPException(status_code=502, detail="Layanan token SAP tidak tersedia.")
-    if r.status_code in (404, 501):
-        # ponytail: dashboard-mcp endpoint not yet implemented; credential saved, token not bound
-        logger.warning(f"dashboard-mcp /v1/integration/sap-tokens returned {r.status_code}; fallback to legacy X-SAP headers")
-        return {"success": True, "token_bound": False, "message": "Kredensial disimpan. Token binding belum tersedia di dashboard."}
-    if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text)
-    data = r.json()
-    from datetime import datetime, timezone, timedelta
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expiresIn", 86400))
-    save_user_sap_token(username, target, data["token"], expires_at)
-    return {"success": True, "token_bound": True, "expires_at": expires_at.isoformat()}
+    """Endpoint lama; kredensial kini disimpan dan dipakai langsung di OIDC."""
+    raise HTTPException(status_code=410, detail="Gunakan SAP Login yang tersambung ke Dashboard OIDC.")
 
 
 class RequestMcpAccessPayload(BaseModel):
@@ -1274,17 +1021,17 @@ async def get_config(user: dict = Depends(get_current_user)):
         try:
             profile = ensure_user_exists(
                 username=user["username"],
-                role=user.get("role", "user"),
-                roles=user.get("roles") or [user.get("role", "user")],
+                role=user.get("role"),
+                roles=user.get("roles") or [],
             )
         except Exception:
             pass
     if not profile:
-        user_role = user.get("role", "user")
-        user_roles = user.get("roles") or [user_role]
+        user_role = user.get("role")
+        user_roles = user.get("roles") or []
         profile = {
             "username": user["username"],
-            "full_name": user.get("full_name", user["username"]),
+            "full_name": user.get("full_name") or "",
             "role": user_role,
             "roles": user_roles,
             "assistant_persona": "",
@@ -1292,12 +1039,12 @@ async def get_config(user: dict = Depends(get_current_user)):
         }
 
     sys_cfg = get_system_config()
-    is_admin = profile.get("role") == "superadmin" or "superadmin" in [r.lower() for r in profile.get("roles", [])]
+    is_admin = "superadmin" in [str(r).lower() for r in user.get("roles") or []]
 
     payload = {
         "assistant_persona": profile["assistant_persona"],
-        "full_name": profile.get("full_name", ""),
-        "role": profile["role"],
+        "full_name": user.get("full_name") or "",
+        "role": user.get("role") or "",
         # Persona organisasi ditampilkan (baca-saja bagi non-admin) agar user
         # memahami dasar perilaku asisten sebelum menambah preferensi pribadi.
         "global_assistant_persona": sys_cfg.get("global_assistant_persona", ""),
@@ -1353,7 +1100,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
     if config.full_name is not None:
         update_user_full_name(profile["username"], config.full_name)
 
-    if profile["role"] == "superadmin":
+    if "superadmin" in [str(r).lower() for r in user.get("roles") or []]:
         # Nilai bertanda mask berarti field tidak diubah user — jangan timpa.
         nine_key = config.nine_router_api_key
         if nine_key and "••••" in nine_key:
@@ -1362,7 +1109,7 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
         if open_key and "••••" in open_key:
             open_key = None
 
-        update_system_config(
+        saved = update_system_config(
             mcp_sap_json=config.mcp_sap_config_json,
             mcp_rag_json=config.mcp_rag_config_json,
             mcp_sql_json=config.mcp_sql_config_json or config.mcp_email_config_json,
@@ -1379,6 +1126,8 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             ai_suggestions_enabled=config.ai_suggestions_enabled,
             require_login=config.require_login,
         )
+        if not saved:
+            raise HTTPException(status_code=503, detail="Konfigurasi provider gagal disimpan. Periksa koneksi database.")
 
     return {"status": "success"}
 
@@ -1474,24 +1223,19 @@ async def get_admin_stats_endpoint(
     stats = get_admin_system_stats(period=period, top_users_limit=limit)
     stats["as_of"] = datetime.now(timezone.utc).isoformat()
 
-    # Selaraskan jumlah user dan metadata akun dengan OIDC Directory terpusat
-    token = admin.get("dashboard_token")
-    if token:
-        try:
-            directory_users = await fetch_directory("users", token)
-            if isinstance(directory_users, list):
-                stats["total_users"] = len(directory_users)
-                dir_map_by_username = {str(u.get("username") or "").lower(): u for u in directory_users if u.get("username")}
-                dir_map_by_sub = {str(u.get("id") or "").lower(): u for u in directory_users if u.get("id")}
-                for item in stats.get("top_users", []):
-                    u_str = str(item.get("username") or "").lower()
-                    sub_str = str(item.get("oidc_sub") or "").lower()
-                    matched = dir_map_by_sub.get(sub_str) or dir_map_by_username.get(u_str) or dir_map_by_sub.get(u_str)
-                    if matched:
-                        item["full_name"] = matched.get("full_name") or matched.get("displayName") or ""
-                        item["role"] = matched.get("role") or "-"
-        except Exception as e:
-            logger.warning(f"Gagal memuat OIDC directory untuk admin stats: {e}")
+    # OIDC is the only source of user identity and labels.
+    directory_users = await fetch_directory("users", admin.get("dashboard_token"))
+    stats["total_users"] = len(directory_users)
+    users_by_sub = {str(u.get("id")): u for u in directory_users if u.get("id")}
+    top_users = []
+    for item in stats.get("top_users", []):
+        matched = users_by_sub.get(str(item.get("oidc_sub") or ""))
+        if matched:
+            item["username"] = matched.get("username") or ""
+            item["full_name"] = matched.get("full_name") or ""
+            item["role"] = matched.get("role") or ""
+            top_users.append(item)
+    stats["top_users"] = top_users
 
     mcp_st = await mcp_manager.check_servers_status()
     stats["mcp_status"] = mcp_st
@@ -1507,23 +1251,17 @@ async def get_admin_top_users_endpoint(
 ):
     """Mengambil daftar user teraktif berdasarkan filter periode tanpa reload MCP."""
     top_users = get_top_active_users(period=period, limit=limit)
-    token = admin.get("dashboard_token")
-    if token:
-        try:
-            directory_users = await fetch_directory("users", token)
-            if isinstance(directory_users, list):
-                dir_map_by_username = {str(u.get("username") or "").lower(): u for u in directory_users if u.get("username")}
-                dir_map_by_sub = {str(u.get("id") or "").lower(): u for u in directory_users if u.get("id")}
-                for item in top_users:
-                    u_str = str(item.get("username") or "").lower()
-                    sub_str = str(item.get("oidc_sub") or "").lower()
-                    matched = dir_map_by_sub.get(sub_str) or dir_map_by_username.get(u_str) or dir_map_by_sub.get(u_str)
-                    if matched:
-                        item["full_name"] = matched.get("full_name") or matched.get("displayName") or ""
-                        item["role"] = matched.get("role") or "-"
-        except Exception as e:
-            logger.warning(f"Gagal memuat OIDC directory untuk top users: {e}")
-    return top_users
+    directory_users = await fetch_directory("users", admin.get("dashboard_token"))
+    users_by_sub = {str(u.get("id")): u for u in directory_users if u.get("id")}
+    result = []
+    for item in top_users:
+        matched = users_by_sub.get(str(item.get("oidc_sub") or ""))
+        if matched:
+            item["username"] = matched.get("username") or ""
+            item["full_name"] = matched.get("full_name") or ""
+            item["role"] = matched.get("role") or ""
+            result.append(item)
+    return result
 
 
 # --- ADMIN SESSION MONITOR & SECURITY LOGS ---
@@ -1591,28 +1329,6 @@ async def get_admin_security_logs_endpoint(
 # 'user' lama berisi para pengembang ABAP, jadi seluruhnya dipindahkan ke
 # 'abaper' oleh migrasi 0004. 'functional' dan 'user' adalah peran baru yang
 # TIDAK berhak mengubah program.
-ROLE_TERSEDIA = (
-    "superadmin",
-    "abaper",
-    "functional",
-    "backend",
-    "frontend",
-    "basis",
-    "data_analyst",
-    "user",
-    "guest",
-)
-
-
-def get_available_roles(enabled_only: bool = True) -> list[str]:
-    """Mengambil daftar peran aktif dari database dengan fallback ke ROLE_TERSEDIA."""
-    try:
-        return get_role_codes(enabled_only=enabled_only)
-    except Exception as e:
-        logger.warning(f"Gagal mengambil kode peran dari database: {e}")
-        return list(ROLE_TERSEDIA)
-
-
 # --- KUOTA TOKEN ---
 
 DEFAULT_PENDING_DAILY_TOKEN_LIMIT = 1_000_000
@@ -1911,7 +1627,7 @@ class AdminUpdateDivisionRequest(BaseModel):
 @app.get("/api/divisions")
 async def get_active_divisions_endpoint(user: dict = Depends(get_current_user)):
     """Mengambil daftar divisi aktif untuk pilihan dropdown pengguna/antarmuka."""
-    return list_divisions(enabled_only=True)
+    return await fetch_directory("divisions", user.get("dashboard_token"))
 
 
 @app.get("/api/admin/divisions")
@@ -2431,7 +2147,7 @@ async def get_role_modes_endpoint(admin: dict = Depends(require_superadmin)):
     return {
         "chat_modes_enabled": cfg.get("chat_modes_enabled", True),
         "matrix": matrix,
-        "roles": get_roles(enabled_only=False),
+        "roles": await fetch_directory("roles", admin.get("dashboard_token")),
     }
 
 
@@ -2450,7 +2166,8 @@ async def set_role_mode_endpoint(req: AdminUpdateRoleModeRequest, admin: dict = 
         raise HTTPException(status_code=404, detail=f"Mode dengan kode '{req.mode_code}' tidak ditemukan.")
 
     role_clean = (req.role or "").strip().lower()
-    if not get_role_by_code(role_clean):
+    directory_roles = await fetch_directory("roles", admin.get("dashboard_token"))
+    if not any(str(role.get("code") or "").lower() == role_clean for role in directory_roles):
         raise HTTPException(status_code=404, detail=f"Peran '{req.role}' tidak ditemukan.")
 
     target_enabled = req.enabled if req.enabled is not None else (req.allowed if req.allowed is not None else True)
@@ -2577,7 +2294,7 @@ class AdminUpdateUserModeRequest(BaseModel):
 @app.get("/api/admin/modes/users")
 async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmin)):
     """Mendapatkan daftar pengguna beserta ringkasan status override mode chat."""
-    users = list_all_users()
+    users = await fetch_directory("users", admin.get("dashboard_token"))
     all_ovrs = get_all_user_mode_overrides()
     ovrs_by_user = {}
     for o in all_ovrs:
@@ -2588,13 +2305,17 @@ async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmi
 
     result = []
     for u in users:
-        u_name = u.get("username", "")
-        u_ovrs = ovrs_by_user.get(u_name.lower(), [])
+        u_name = u.get("username") or ""
+        oidc_sub = str(u.get("id") or "").strip()
+        if not oidc_sub:
+            continue
+        u_ovrs = ovrs_by_user.get(oidc_sub.lower(), [])
         result.append({
             "username": u_name,
-            "full_name": u.get("full_name", ""),
-            "role": u.get("role", "user"),
-            "roles": u.get("roles", [u.get("role", "user")]),
+            "oidc_sub": oidc_sub,
+            "full_name": u.get("full_name") or "",
+            "role": u.get("role") or "",
+            "roles": u.get("roles") or [],
             "division_name": u.get("division_name"),
             "override_count": len(u_ovrs),
             "overrides": u_ovrs,
@@ -2602,10 +2323,19 @@ async def get_admin_modes_users_endpoint(admin: dict = Depends(require_superadmi
     return result
 
 
+async def _oidc_mode_user(username: str, admin: dict) -> dict:
+    users = await fetch_directory("users", admin.get("dashboard_token"))
+    match = next((u for u in users if str(u.get("username") or "").lower() == username.lower()), None)
+    if not match or not match.get("id"):
+        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan di OIDC.")
+    return match
+
+
 @app.get("/api/admin/modes/users/{username}")
 async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depends(require_superadmin)):
     """Mengambil matriks mode chat untuk pengguna tertentu, termasuk role baseline, user override, dan effective allowed."""
-    res = get_user_modes_matrix(username)
+    directory_user = await _oidc_mode_user(username, admin)
+    res = get_user_modes_matrix(str(directory_user["id"]), oidc_roles=directory_user.get("roles") or [])
     if "error" in res and res.get("error") == "User not found":
         raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
     return res
@@ -2614,9 +2344,8 @@ async def get_admin_user_modes_matrix_endpoint(username: str, admin: dict = Depe
 @app.put("/api/admin/modes/users/{username}")
 async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserModeRequest, admin: dict = Depends(require_superadmin)):
     """Menyimpan override izin mode chat untuk pengguna tertentu (tri-state: inherit, allow, deny)."""
-    user_row = get_user_by_username(username)
-    if not user_row:
-        raise HTTPException(status_code=404, detail=f"Pengguna '{username}' tidak ditemukan.")
+    directory_user = await _oidc_mode_user(username, admin)
+    oidc_sub = str(directory_user["id"])
 
     items_to_process = []
     if req.items is not None:
@@ -2642,7 +2371,7 @@ async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserMo
         elif st is None:
             st = "inherit"
 
-        ok = set_user_mode_override(username, m_code, st)
+        ok = set_user_mode_override(oidc_sub, m_code, st)
         if ok:
             success_count += 1
 
@@ -2650,7 +2379,7 @@ async def update_admin_user_modes_endpoint(username: str, req: AdminUpdateUserMo
         "status": "success",
         "username": username,
         "updated": success_count,
-        "matrix": get_user_modes_matrix(username),
+        "matrix": get_user_modes_matrix(oidc_sub, oidc_roles=directory_user.get("roles") or []),
     }
 
 
@@ -3109,22 +2838,21 @@ async def _run_chat(
         if not profile:
             # Identitas dikelola oleh Dashboard OIDC; bila belum ada profil lokal,
             # gunakan atribut dari principal sesi.
-            user_role = user.get("role", "user")
-            user_roles = user.get("roles") or [user_role]
+            user_role = user.get("role")
+            user_roles = user.get("roles") or []
             profile = {
                 "username": user["username"],
                 "role": user_role,
                 "roles": user_roles,
                 "assistant_persona": "",
                 "division_code": None,
-                "job_level": "staff",
+                "job_level": None,
             }
-        else:
-            user_roles = profile.get("roles") or [profile["role"]]
-            user_role = profile["role"]
+        user_roles = user.get("roles") or []
+        user_role = user.get("role")
         user_persona = profile.get("assistant_persona", "")
-        user_division = profile.get("division_code")
-        user_job_level = profile.get("job_level", "staff")
+        user_division = user.get("division_code")
+        user_job_level = user.get("job_level")
         # Kuota diperiksa sebelum pekerjaan dimulai; menolak setelah model
         # menjawab berarti biayanya sudah terlanjur keluar.
         oidc_sub = _subject_kuota(user)
@@ -3211,6 +2939,8 @@ async def _run_chat(
             call_kwargs["division_code"] = div_to_pass
         if "job_level" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
             call_kwargs["job_level"] = job_level_to_pass
+        if "oidc_sub" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+            call_kwargs["oidc_sub"] = oidc_sub
     except (ValueError, TypeError):
         pass
 

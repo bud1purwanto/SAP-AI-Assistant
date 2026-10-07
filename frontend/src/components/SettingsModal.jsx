@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
-  Activity,
   AlertCircle, 
   Bot, 
   CheckCircle2, 
@@ -26,7 +26,7 @@ import { api } from '../lib/api';
 import { useLanguage } from '../hooks/useLanguage';
 import { useMcpAccessRequests } from '../hooks/useMcpAccess';
 
-const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCredentialIssue = null, showToast: parentShowToast }) => {
+const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCredentialIssue = null }) => {
   const { language, setLanguage, t, languages } = useLanguage();
   const [activeTab, setActiveTab] = useState(initialTab || 'persona');
   const [config, setConfig] = useState({
@@ -53,16 +53,13 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
   // SAP Per-user credentials state
   const [sapCreds, setSapCreds] = useState([]);
   const [loadingSapCreds, setLoadingSapCreds] = useState(false);
+  const [sapCredLoadError, setSapCredLoadError] = useState('');
   const [availableSapServers, setAvailableSapServers] = useState([]);
   const [loadingSapServers, setLoadingSapServers] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingTarget, setEditingTarget] = useState(null);
-  const [testingSap, setTestingSap] = useState(false);
-  const [testingTarget, setTestingTarget] = useState(null);
-  const [testResult, setTestResult] = useState(null);
   const [isTargetDropdownOpen, setIsTargetDropdownOpen] = useState(false);
   const targetDropdownRef = useRef(null);
-  const sapBannerRef = useRef(null);
   const handledSapIssueRef = useRef(null);
   const sapIssueLoadingRef = useRef(false);
   const [sapIssueDismissed, setSapIssueDismissed] = useState(false);
@@ -71,12 +68,43 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
   const [sapUser, setSapUser] = useState('');
   const [sapPass, setSapPass] = useState('');
   const [showSapPass, setShowSapPass] = useState(false);
-  const [sapClient, setSapClient] = useState('100');
   const [sapCredMsg, setSapCredMsg] = useState({ type: '', text: '' });
   const [savingSapCred, setSavingSapCred] = useState(false);
-  const { lookupTarget: lookupMcpAccessTarget } = useMcpAccessRequests(
+  const [credentialToDelete, setCredentialToDelete] = useState(null);
+  const [deletingSapCred, setDeletingSapCred] = useState(false);
+  const [sapDeleteError, setSapDeleteError] = useState('');
+  const { targets: mcpAccessTargets, lookupTarget: lookupMcpAccessTarget } = useMcpAccessRequests(
     isOpen && Boolean(user?.username && user?.role !== 'guest'),
   );
+  const findSapServer = (credential) => {
+    const target = String(credential?.target || '').toLowerCase();
+    const connectionId = String(credential?.connection_id || '').toLowerCase();
+    const accessTarget = mcpAccessTargets.find(item =>
+      String(item.connectionId || item.connection_id || '').toLowerCase() === connectionId && connectionId
+    );
+    const resourceKey = String(accessTarget?.resourceKey || accessTarget?.resource_key || '').toLowerCase();
+    return availableSapServers.find(server => {
+      const names = [server.alias, server.name, server.resource_key, ...(server.aliases || [])]
+        .map(value => String(value || '').toLowerCase());
+      return (connectionId && String(server.connection_id || '').toLowerCase() === connectionId)
+        || (target && names.includes(target))
+        || (resourceKey && names.includes(resourceKey));
+    });
+  };
+  const sapDisplayName = (credential) => {
+    const server = findSapServer(credential);
+    if (server?.name) return server.name;
+    if (credential?.display_name) return credential.display_name;
+    const accessTarget = mcpAccessTargets.find(item =>
+      String(item.connectionId || item.connection_id || '').toLowerCase()
+        === String(credential?.connection_id || credential?.target || '').toLowerCase()
+    );
+    if (accessTarget?.name) return accessTarget.name;
+    const target = String(credential?.target || '');
+    return /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(target)
+      ? t('settings.sapUnknownTarget')
+      : target;
+  };
   const isSapTargetUnlocked = useCallback((server) => {
     if (!server || server.is_allowed === false) return false;
     const serverKey = server.alias || server.name;
@@ -87,16 +115,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
     });
     return accessEntry?.accessState === 'approved';
   }, [lookupMcpAccessTarget]);
-  const showToast = useCallback((message, type = 'info') => {
-    setSapCredMsg({
-      type: type === 'error' ? 'error' : (type === 'info' ? 'info' : 'success'),
-      text: message
-    });
-    if (typeof parentShowToast === 'function') {
-      parentShowToast(message, type);
-    }
-  }, [parentShowToast]);
-
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (targetDropdownRef.current && !targetDropdownRef.current.contains(e.target)) {
@@ -116,17 +134,13 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       const list = Array.isArray(res?.servers) ? res.servers : [];
       setAvailableSapServers(list);
     } catch (err) {
+      setAvailableSapServers([]);
       console.error('Failed to load available SAP servers', err);
     } finally {
       setLoadingSapServers(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (testResult && sapBannerRef.current) {
-      sapBannerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [testResult]);
 
   useEffect(() => {
     if (isOpen) {
@@ -138,13 +152,16 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       setUserRole(currentRole);
       setSaveStatus('');
       setSapCredMsg({ type: '', text: '' });
+      setSapCreds([]);
+      setSapCredLoadError('');
+      setAvailableSapServers([]);
       setSapIssueDismissed(false);
       handledSapIssueRef.current = null;
       sapIssueLoadingRef.current = true;
-      setTestResult(null);
       setIsEditMode(false);
       setEditingTarget(null);
-      setTestingTarget(null);
+      setCredentialToDelete(null);
+      setSapDeleteError('');
 
       if (user?.username && user?.role !== 'guest') {
         api.getConfig()
@@ -175,7 +192,11 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
         setLoadingSapCreds(true);
         api.mySapCredentials()
           .then(data => setSapCreds(Array.isArray(data) ? data : []))
-          .catch(err => console.error('Failed to load SAP credentials', err))
+          .catch(err => {
+            setSapCreds([]);
+            setSapCredLoadError(err.message || t('settings.sapLoadFailed'));
+            console.error('Failed to load SAP credentials', err);
+          })
           .finally(() => { setLoadingSapCreds(false); sapIssueLoadingRef.current = false; });
       }
     }
@@ -192,9 +213,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
         if (firstAvailable) {
           const tKey = firstAvailable.alias || firstAvailable.name;
           setSapTarget(tKey);
-          if (firstAvailable.client) {
-            setSapClient(firstAvailable.client);
-          }
         }
       }
     }
@@ -219,11 +237,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       setEditingTarget(saved.target);
       setSapTarget(saved.target);
       setSapUser(saved.sap_user || '');
-      setSapClient(saved.sap_client || server?.client || '100');
       setSapPass('');
     } else if (server) {
       setSapTarget(server.alias || server.name);
-      setSapClient(server.client || '100');
     }
     handledSapIssueRef.current = sapCredentialIssue;
   }, [isOpen, sapCredentialIssue, sapCreds, availableSapServers, loadingSapCreds, loadingSapServers, isSapTargetUnlocked]);
@@ -248,7 +264,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
     setSapTarget(cred.target);
     setSapUser(cred.sap_user || '');
     setSapPass('');
-    setSapClient(cred.sap_client || '100');
     setSapCredMsg({ type: '', text: '' });
     setTestResult(null);
   };
@@ -264,52 +279,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       || availableSapServers.find(s => isSapTargetUnlocked(s));
     if (firstAvailable) {
       setSapTarget(firstAvailable.alias || firstAvailable.name);
-      if (firstAvailable.client) setSapClient(firstAvailable.client);
-    }
-  };
-
-  const handleTestConnection = async () => {
-    if (!sapTarget) return;
-    setTestingSap(true);
-    setTestResult(null);
-    try {
-      const res = await api.testSapConnection({
-        target: sapTarget,
-        sap_user: sapUser || undefined,
-        sap_password: sapPass || undefined,
-        sap_client: sapClient || undefined
-      });
-      setTestResult(res);
-    } catch (err) {
-      setTestResult({
-        success: false,
-        message: err.message || t('settings.sapTestFailed')
-      });
-    } finally {
-      setTestingSap(false);
-    }
-  };
-
-  const handleTestSavedCredential = async (c) => {
-    if (!c?.target) return;
-    setTestingTarget(c.target);
-    setTestResult(null);
-    try {
-      const isCurrentlyEditing = isEditMode && editingTarget === c.target;
-      const res = await api.testSapConnection({
-        target: c.target,
-        sap_user: (isCurrentlyEditing && sapUser ? sapUser : c.sap_user) || undefined,
-        sap_password: (isCurrentlyEditing && sapPass ? sapPass : undefined),
-        sap_client: (isCurrentlyEditing && sapClient ? sapClient : c.sap_client) || undefined
-      });
-      setTestResult(res);
-    } catch (err) {
-      setTestResult({
-        success: false,
-        message: err.message || t('settings.sapTestFailed')
-      });
-    } finally {
-      setTestingTarget(null);
     }
   };
 
@@ -318,38 +287,29 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
     setSavingSapCred(true);
     setSapCredMsg({ type: '', text: '' });
     try {
+      const selectedServer = findSapServer(
+        sapCreds.find(cred => cred.target === sapTarget) || { target: sapTarget }
+      );
       await api.saveMySapCredential({
         target: sapTarget,
         sap_user: sapUser,
         sap_password: sapPass || undefined,
-        sap_client: sapClient || '100',
+        connection_id: selectedServer?.connection_id || undefined,
         is_update: isEditMode
       });
+      const displayTarget = sapDisplayName(sapCreds.find(c => c.target === sapTarget) || { target: sapTarget });
       const successMsg = isEditMode
-        ? (t('settings.sapUpdatedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil diperbarui.`)
-        : (t('settings.sapSavedSuccess', { target: sapTarget }) || `Kredensial SAP '${sapTarget}' berhasil disimpan.`);
+        ? t('settings.sapUpdatedSuccess', { target: displayTarget })
+        : t('settings.sapSavedSuccess', { target: displayTarget });
       setSapCredMsg({ type: 'success', text: successMsg });
       setSapIssueDismissed(true);
       setSapPass('');
       setIsEditMode(false);
       setEditingTarget(null);
-      setTestResult(null);
-
-      // After credential saved successfully, attempt token binding
-      try {
-        const bindResult = await api.bindSapToken(sapTarget);
-        if (bindResult.token_bound) {
-          showToast(t('sap.tokenBound').replace('{target}', sapTarget), 'success');
-        } else {
-          showToast(t('sap.tokenNotAvailable'), 'info');
-        }
-      } catch (bindErr) {
-        console.warn('Token binding failed, credentials saved:', bindErr);
-        showToast(t('sap.tokenNotAvailable'), 'info');
-      }
 
       const updated = await api.mySapCredentials();
       setSapCreds(Array.isArray(updated) ? updated : []);
+      setSapCredLoadError('');
       await loadSapServers();
     } catch (err) {
       setSapCredMsg({ 
@@ -360,6 +320,35 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       setSavingSapCred(false);
     }
   };
+
+  const handleDeleteSapCredential = async () => {
+    if (!credentialToDelete || deletingSapCred) return;
+    setDeletingSapCred(true);
+    setSapDeleteError('');
+    try {
+      await api.deleteMySapCredential(credentialToDelete.target);
+      setSapCreds(prev => prev.filter(item => item.target !== credentialToDelete.target));
+      if (isEditMode && editingTarget === credentialToDelete.target) handleCancelEdit();
+      setCredentialToDelete(null);
+      await loadSapServers();
+    } catch (err) {
+      setSapDeleteError(err.message || t('settings.sapDeleteFailed'));
+    } finally {
+      setDeletingSapCred(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!credentialToDelete) return;
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' && !deletingSapCred) {
+        event.stopPropagation();
+        setCredentialToDelete(null);
+      }
+    };
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [credentialToDelete, deletingSapCred]);
 
   if (!isOpen) return null;
 
@@ -444,7 +433,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
     }
   ];
 
-  return (
+  return (<>
     <div
       className="fixed inset-0 bg-black/65 backdrop-blur-md z-50 overflow-y-auto overscroll-contain transition-opacity duration-200 animate-modal-backdrop"
       onClick={(e) => {
@@ -625,53 +614,16 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                 </div>
               )}
 
-              {testResult && (
-                <div ref={sapBannerRef} className={`p-3.5 rounded-2xl text-xs flex items-start justify-between gap-2.5 ${
-                  testResult.success
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                    : 'bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                }`}>
-                  <div className="flex items-start gap-2.5">
-                    {testResult.success ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
-                    )}
-                    <div className="space-y-0.5">
-                      <p className="font-semibold">{testResult.message}</p>
-                      {testResult.server_info && (
-                        <p className="text-[11px] opacity-80 font-mono">
-                          {testResult.server_info.active_server && `Server: ${testResult.server_info.active_server}`}
-                          {testResult.server_info.sid && ` • SID: ${testResult.server_info.sid}`}
-                          {testResult.server_info.client && ` • Client: ${testResult.server_info.client}`}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setTestResult(null)}
-                    className="text-content-muted hover:text-content p-0.5 cursor-pointer"
-                    title={t('common.dismiss')}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-
               <form onSubmit={handleSaveSapCredential} className="space-y-3.5 bg-surface-sunken p-4 rounded-2xl border border-line">
                 {isEditMode && (() => {
-                  const editingServerObj = availableSapServers.find(
-                    s => (s.alias || '').toLowerCase() === (editingTarget || '').toLowerCase()
-                      || (s.name || '').toLowerCase() === (editingTarget || '').toLowerCase()
-                      || (s.aliases && s.aliases.some(a => a.toLowerCase() === (editingTarget || '').toLowerCase()))
+                  const editingServerName = sapDisplayName(
+                    sapCreds.find(c => c.target === editingTarget) || { target: editingTarget }
                   );
-                  const editingServerName = editingServerObj?.name || editingTarget;
                   return (
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-line text-xs">
                       <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
                         <Edit2 className="w-3.5 h-3.5" />
-                        <span>{language === 'en' ? `Editing: ${editingServerName}` : `Mode Edit: ${editingServerName}`}</span>
+                        <span>{t('settings.sapEditing', { target: editingServerName })}</span>
                       </div>
                       <button
                         type="button"
@@ -684,7 +636,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                   );
                 })()}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div className="relative z-20" ref={targetDropdownRef}>
                     <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
                       {t('settings.sapTargetSystem')}
@@ -704,11 +656,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                         <span className="truncate font-medium text-content">
                           {loadingSapServers
                             ? t('settings.sapLoadingServers')
-                            : (availableSapServers.find(s => 
-                                (s.alias || '').toLowerCase() === (sapTarget || '').toLowerCase() || 
-                                (s.name || '').toLowerCase() === (sapTarget || '').toLowerCase() ||
-                                (s.aliases && s.aliases.some(a => a.toLowerCase() === (sapTarget || '').toLowerCase()))
-                              )?.name || sapTarget || t('settings.sapSelectTarget'))}
+                            : (sapTarget
+                              ? sapDisplayName(sapCreds.find(c => c.target === sapTarget) || { target: sapTarget })
+                              : t('settings.sapSelectTarget'))}
                         </span>
                       </div>
                       <ChevronDown className={`w-3.5 h-3.5 text-content-muted shrink-0 transition-transform duration-200 ${
@@ -745,7 +695,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                                   disabled={isDisabled}
                                   onClick={() => {
                                     setSapTarget(srvKey);
-                                    if (s.client) setSapClient(s.client);
                                     setIsTargetDropdownOpen(false);
                                   }}
                                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-colors text-left ${
@@ -774,18 +723,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                     )}
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-content-secondary mb-1 uppercase tracking-wider">
-                      {t('settings.sapClient')}
-                    </label>
-                    <input
-                      type="text"
-                      value={sapClient}
-                      onChange={e => setSapClient(e.target.value)}
-                      placeholder="100, 130"
-                      className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono"
-                    />
-                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -798,7 +735,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                       required
                       value={sapUser}
                       onChange={e => setSapUser(e.target.value)}
-                      placeholder="Username SAP"
+                      placeholder={t('settings.sapUsernamePlaceholder')}
                       className="w-full bg-surface border border-line rounded-xl px-3.5 py-2 text-xs text-content focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 font-mono"
                     />
                   </div>
@@ -820,7 +757,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                         type="button"
                         onClick={() => setShowSapPass(!showSapPass)}
                         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-content-muted hover:text-content p-0.5 cursor-pointer"
-                        title={showSapPass ? "Hide password" : "Show password"}
+                        title={t(showSapPass ? 'settings.sapHidePassword' : 'settings.sapShowPassword')}
                       >
                         {showSapPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
@@ -830,20 +767,6 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
 
                 {/* Tombol Aksi Form */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testingSap || !sapTarget || (!isEditMode && (!sapUser || !sapPass))}
-                    className="w-full sm:w-auto sm:flex-1 h-10 px-3.5 bg-surface hover:bg-surface-sunken border border-line hover:border-emerald-500/50 text-content rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
-                  >
-                    {testingSap ? (
-                      <Loader2 className="w-3.5 h-3.5 text-emerald-500 animate-spin" />
-                    ) : (
-                      <Activity className="w-3.5 h-3.5 text-emerald-500" />
-                    )}
-                    <span>{testingSap ? t('settings.sapTesting') : t('settings.sapBtnTest')}</span>
-                  </button>
-
                   <button
                     type="submit"
                     disabled={savingSapCred || !sapTarget || !sapUser || (!isEditMode && !sapPass)}
@@ -856,7 +779,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                     )}
                     <span>
                       {savingSapCred 
-                        ? (language === 'en' ? 'Saving...' : 'Menyimpan...') 
+                        ? t('settings.sapSaving')
                         : (isEditMode ? t('settings.sapBtnUpdate') : t('settings.sapBtnSave'))}
                     </span>
                   </button>
@@ -880,20 +803,17 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                   {t('settings.sapSavedTargets')}
                 </h4>
                 {loadingSapCreds ? (
-                  <p className="text-xs text-content-muted">{language === 'en' ? 'Loading saved credentials...' : 'Memuat kredensial tersimpan...'}</p>
+                  <p className="text-xs text-content-muted">{t('settings.sapLoadingCredentials')}</p>
+                ) : sapCredLoadError ? (
+                  <p role="alert" className="text-xs text-rose-500 break-words">{sapCredLoadError}</p>
                 ) : sapCreds.length === 0 ? (
                   <p className="text-xs text-content-muted italic">{t('settings.sapNoCreds')}</p>
                 ) : (
                   <div className="space-y-1.5">
                     {sapCreds.map((c) => {
                       const isEditing = isEditMode && editingTarget === c.target;
-                      const isTestingThis = testingTarget === c.target;
-                      const serverObj = availableSapServers.find(
-                        s => (s.alias || '').toLowerCase() === (c.target || '').toLowerCase()
-                          || (s.name || '').toLowerCase() === (c.target || '').toLowerCase()
-                          || (s.aliases && s.aliases.some(a => a.toLowerCase() === (c.target || '').toLowerCase()))
-                      );
-                      const serverDisplayName = serverObj?.name || c.target;
+                      const serverObj = findSapServer(c);
+                      const serverDisplayName = sapDisplayName(c);
                       const sid = serverObj?.sid;
                       return (
                         <div 
@@ -930,30 +850,11 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                               </div>
                               <div className="flex items-center flex-wrap gap-1.5 text-xs text-content-muted">
                                 <span className="font-mono text-content-secondary font-medium">{c.sap_user || '—'}</span>
-                                <span className="text-content-subtle">•</span>
-                                <span>Client <span className="font-mono text-content-secondary">{c.sap_client || '—'}</span></span>
                               </div>
                             </div>
                           </div>
                           
                           <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-52">
-                            {/* Baris 1: Test Connection */}
-                            <button
-                              type="button"
-                              disabled={isTestingThis || testingSap}
-                              onClick={() => handleTestSavedCredential(c)}
-                              className="w-full text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border border-emerald-500/30 hover:border-emerald-500/60 bg-surface/60 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={t('settings.sapBtnTest')}
-                            >
-                              {isTestingThis ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                              ) : (
-                                <Activity className="w-3.5 h-3.5 text-emerald-500" />
-                              )}
-                              <span>{isTestingThis ? t('settings.sapTesting') : t('settings.sapBtnTest')}</span>
-                            </button>
-
-                            {/* Baris 2: Edit & Delete */}
                             <div className="grid grid-cols-2 gap-1.5">
                               <button
                                 type="button"
@@ -971,19 +872,9 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
 
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  const confirmPrompt = t('settings.sapDeleteConfirm', { target: serverDisplayName }) || `Hapus kredensial tersimpan untuk target '${serverDisplayName}'?`;
-                                  if (!window.confirm(confirmPrompt)) return;
-                                  try {
-                                    await api.deleteMySapCredential(c.target);
-                                    setSapCreds(prev => prev.filter(x => x.target !== c.target));
-                                    if (isEditMode && editingTarget === c.target) {
-                                      handleCancelEdit();
-                                    }
-                                    await loadSapServers();
-                                  } catch (err) {
-                                    alert(err.message || 'Gagal menghapus');
-                                  }
+                                onClick={() => {
+                                  setSapDeleteError('');
+                                  setCredentialToDelete({ target: c.target, name: serverDisplayName });
                                 }}
                                 className="w-full text-xs font-semibold px-2 py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer text-rose-500 hover:text-rose-600 bg-surface/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-line hover:border-rose-300 dark:hover:border-rose-800"
                                 title={t('settings.sapDelete')}
@@ -1274,7 +1165,70 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       </div>
     </div>
   </div>
-  );
+  {credentialToDelete && createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/75 px-4 py-6 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !deletingSapCred) setCredentialToDelete(null);
+      }}
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="sap-delete-title"
+        aria-describedby="sap-delete-description"
+        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-line bg-surface-raised p-5 text-left shadow-2xl sm:rounded-3xl sm:p-6"
+      >
+        <div className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-rose-500/10 blur-3xl" />
+        <div className="relative flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-500/25 bg-rose-500/10 text-rose-500">
+            <Trash2 className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 pt-0.5">
+            <h3 id="sap-delete-title" className="text-base font-bold text-content sm:text-lg">
+              {t('settings.sapDeleteTitle')}
+            </h3>
+            <p id="sap-delete-description" className="mt-1.5 text-sm leading-relaxed text-content-secondary">
+              {t('settings.sapDeleteConfirm', { target: credentialToDelete.name })}
+            </p>
+          </div>
+        </div>
+        <div className="relative mt-5 rounded-xl border border-line bg-surface-sunken px-4 py-3">
+          <span className="block text-[10px] font-bold uppercase tracking-wider text-content-muted">{t('settings.sapTargetSystem')}</span>
+          <span className="mt-1 block break-words text-sm font-semibold text-content">{credentialToDelete.name}</span>
+        </div>
+        <p className="relative mt-3 text-xs leading-relaxed text-content-muted">{t('settings.sapDeleteWarning')}</p>
+        {sapDeleteError && (
+          <div role="alert" className="relative mt-4 flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-500">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{sapDeleteError}</span>
+          </div>
+        )}
+        <div className="relative mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            autoFocus
+            disabled={deletingSapCred}
+            onClick={() => setCredentialToDelete(null)}
+            className="min-h-11 rounded-xl border border-line bg-surface px-5 text-sm font-semibold text-content-secondary transition-colors hover:bg-surface-hover hover:text-content disabled:opacity-50 sm:min-w-28"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            disabled={deletingSapCred}
+            onClick={handleDeleteSapCredential}
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white shadow-lg shadow-rose-950/20 transition-colors hover:bg-rose-500 disabled:cursor-wait disabled:opacity-65 sm:min-w-36"
+          >
+            {deletingSapCred ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {deletingSapCred ? t('settings.sapDeleting') : t('settings.sapDelete')}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )}
+  </>);
 };
 
 export default SettingsModal;

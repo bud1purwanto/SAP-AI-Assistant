@@ -16,17 +16,6 @@ import {
   getRoleIconComponent,
 } from '../lib/roles';
 
-const AVAILABLE_ROLES_OPTIONS = [
-  { value: 'abaper', label: 'ABAPer' },
-  { value: 'functional', label: 'Functional' },
-  { value: 'backend', label: 'Backend' },
-  { value: 'frontend', label: 'Frontend' },
-  { value: 'basis', label: 'Basis' },
-  { value: 'data_analyst', label: 'Data Analyst' },
-  { value: 'user', label: 'Standard User' },
-  { value: 'superadmin', label: 'Super Admin' },
-];
-
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers, onRefreshModes }) {
   const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'persona' | 'mcp' | 'audit'
@@ -275,6 +264,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     try {
       setUsersList(await api.adminUsers());
     } catch (err) {
+      setUsersList([]);
+      setActionError(err.message || t('admin.loadUsersFailed'));
       console.error("Gagal load users:", err);
     } finally {
       setUsersLoading(false);
@@ -318,13 +309,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const fetchMasterRoles = async () => {
     try {
       const data = await api.adminRoles();
-      if (Array.isArray(data) && data.length > 0) {
-        setMasterRoles(data);
-        try {
-          localStorage.setItem('sap_ai_master_roles', JSON.stringify(data));
-        } catch {}
-      }
+      setMasterRoles(Array.isArray(data) ? data : []);
     } catch (err) {
+      setMasterRoles([]);
+      setActionError(err.message || t('admin.loadRolesFailed'));
       console.warn("Gagal memuat master roles:", err);
     }
   };
@@ -336,6 +324,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         setMasterDivisions(data);
       }
     } catch (err) {
+      setMasterDivisions([]);
+      setActionError(err.message || t('admin.loadDivisionsFailed'));
       console.warn("Gagal memuat master divisi:", err);
     }
   };
@@ -914,12 +904,10 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   // Bisa ditetapkan ke user baru hanya jika enabled DAN tidak suspended (samakan
   // dengan validasi backend di get_role_codes(enabled_only=True)).
-  const activeRoleOptions = masterRoles.length > 0
-    ? masterRoles.filter(r => r.enabled && !r.suspended).map(r => ({ value: r.code, label: r.label, enabled: true }))
-    : AVAILABLE_ROLES_OPTIONS;
+  const activeRoleOptions = masterRoles.filter(r => r.enabled && !r.suspended)
+    .map(r => ({ value: r.code, label: r.label, enabled: true }));
 
-  const editRoleOptions = masterRoles.length > 0
-    ? masterRoles
+  const editRoleOptions = masterRoles
         .filter(r => (r.enabled && !r.suspended) || (editUserForm.roles || [editUserForm.role]).includes(r.code))
         .map(r => ({
           value: r.code,
@@ -932,8 +920,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
               : ''),
           enabled: r.enabled,
           suspended: r.suspended,
-        }))
-    : AVAILABLE_ROLES_OPTIONS;
+        }));
 
   const isCurrentTabLoading =
     (activeTab === 'overview' && statsLoading) ||

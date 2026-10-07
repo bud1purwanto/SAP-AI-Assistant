@@ -154,6 +154,10 @@ export default function AdminChatModes({
 
       if (onRefreshModes) onRefreshModes();
     } catch (err) {
+      setRolesList([]);
+      setRoleMatrix([]);
+      setModeUsersList([]);
+      setSelectedUser('');
       console.error('Gagal load chat modes & config:', err);
       if (setActionError) setActionError(err.message || 'Failed to load chat modes');
     } finally {
