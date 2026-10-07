@@ -521,6 +521,19 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
     # Durasi sesi BFF ditentukan oleh konfigurasi server (default 24 jam)
     session_exp_sec = int(settings.session_expire_hours * 3600)
 
+    # user_sessions.username memiliki FK ke users.username. Akun OIDC yang baru
+    # pertama kali masuk belum tentu sudah tersimpan di database aplikasi.
+    local_user = ensure_user_exists(
+        username=principal["username"],
+        role=principal.get("role"),
+        roles=principal.get("roles") or [],
+        full_name=principal.get("full_name") or "",
+    )
+    if not local_user:
+        raise HTTPException(status_code=503, detail="Profil pengguna gagal disiapkan. Coba lagi nanti.")
+    # PostgreSQL FK bersifat case-sensitive, sedangkan pencarian user lokal tidak.
+    principal["username"] = local_user["username"]
+
     # Single-session enforcement & daftarkan sesi baru
     session_id = str(uuid.uuid4())
     kicked = invalidate_existing_user_sessions(

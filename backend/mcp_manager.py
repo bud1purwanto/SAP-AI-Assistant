@@ -358,6 +358,10 @@ class MCPManager:
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         """Resolve MCP server URL: local DB first, gateway fallback."""
         from database import get_mcp_server, list_mcp_servers
+        # SAP memakai vault kredensial per pengguna di Dashboard gateway.
+        # URL MCP SAP lama di registry lokal tidak menerima JWT OIDC pengguna.
+        if name == "sap" and settings.dashboard_mcp_gateway_url:
+            return settings.dashboard_mcp_gateway_url.rstrip("/"), {}
         # Check local registry by id
         srv = get_mcp_server(name)
         if srv and srv.get("enabled"):

@@ -1,8 +1,10 @@
+import asyncio
 import json
 import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from main import app, _map_dashboard_user
 from config import settings
@@ -46,6 +48,68 @@ def test_login_success_sets_cookie_and_returns_principal(client):
     assert body["user"]["force_change_password"] is False
     assert "sap_session" in r.cookies
     assert route.called
+
+
+def test_first_oidc_login_creates_local_user_before_session():
+    import main
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"accessToken": "tok-new", "user": DASH_USER_OK}
+    ))
+    events = []
+
+    def ensure(**kwargs):
+        events.append("user")
+        return {"username": kwargs["username"].upper()}
+
+    def create_session(**kwargs):
+        events.append("session")
+        assert kwargs["username"] == "ALICE"
+        return {"id": kwargs["session_id"]}
+
+    with patch("main.httpx.AsyncClient", side_effect=lambda **kwargs: real_async_client(transport=transport)), \
+         patch("main.ensure_user_exists", side_effect=ensure), \
+         patch("main.invalidate_existing_user_sessions", return_value=[]), \
+         patch("main.create_user_session", side_effect=create_session), \
+         patch("main.record_auth_audit_log"), \
+         patch("main.create_session_cookie", return_value="signed-session"):
+        response = Response()
+        result = asyncio.run(main.auth_login(
+            main.LoginRequest(username="alice", password="pw"),
+            Request({"type": "http", "method": "POST", "path": "/api/auth/login", "headers": []}),
+            response,
+        ))
+
+    assert result["status"] == "success"
+    assert result["user"]["username"] == "ALICE"
+    assert events == ["user", "session"]
+
+
+def test_login_stops_if_local_user_cannot_be_created():
+    import main
+    from fastapi import HTTPException
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"accessToken": "tok-new", "user": DASH_USER_OK}
+    ))
+    with patch("main.httpx.AsyncClient", side_effect=lambda **kwargs: real_async_client(transport=transport)), \
+         patch("main.ensure_user_exists", return_value=None), \
+         patch("main.create_user_session") as create_session:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(main.auth_login(
+                main.LoginRequest(username="alice", password="pw"),
+                Request({"type": "http", "method": "POST", "path": "/api/auth/login", "headers": []}),
+                Response(),
+            ))
+
+    assert exc.value.status_code == 503
+    create_session.assert_not_called()
 
 
 @respx.mock
