@@ -358,9 +358,9 @@ class MCPManager:
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         """Resolve MCP server URL: local DB first, gateway fallback."""
         from database import get_mcp_server, list_mcp_servers
-        # SAP memakai vault kredensial per pengguna di Dashboard gateway.
-        # URL MCP SAP lama di registry lokal tidak menerima JWT OIDC pengguna.
-        if name == "sap" and settings.dashboard_mcp_gateway_url:
+        # SAP dan SQL memakai hak akses per pengguna di Dashboard gateway.
+        # URL MCP lama di registry lokal dapat menunjuk ke layanan yang salah.
+        if name in ("sap", "sql") and settings.dashboard_mcp_gateway_url:
             return settings.dashboard_mcp_gateway_url.rstrip("/"), {}
         # Check local registry by id
         srv = get_mcp_server(name)
@@ -394,10 +394,10 @@ class MCPManager:
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
         dedicated_token = gw_headers.pop("auth_token", None)
-        if name == "sap":
+        if name in ("sap", "sql"):
             if not access_token:
-                raise PermissionError("Sesi OIDC pengguna tidak tersedia untuk MCP SAP.")
-            # OIDC vault resolves personal SAP credentials from the end-user JWT.
+                raise PermissionError(f"Sesi OIDC pengguna tidak tersedia untuk MCP {name.upper()}.")
+            # Gateway memeriksa izin target dan kredensial dari JWT pengguna.
             gw_headers["Authorization"] = f"Bearer {access_token}"
             dedicated_token = None
         elif dedicated_token:
@@ -1043,23 +1043,37 @@ class MCPManager:
                 target = sql_target
                 if not target and sap_target and str(sap_target).startswith("sql:"):
                     target = sap_target.split(":", 1)[1]
-                    try:
-                        resources = await self.get_live_resources()
-                        sql_res = [r for r in resources if r.get("kind") == "sql"]
-                        if sql_res:
-                            target = sql_res[0].get("resource_key") or sql_res[0].get("name")
-                    except Exception as ex:
-                        logger.warning(f"Gagal mendeteksi resource SQL default: {ex}")
                 if target:
                     try:
-                        await client.call_tool(http_client, "set_active_server", {"server_ref": target, "resource_key": target})
+                        resources = await self.get_live_resources()
+                    except Exception as ex:
+                        logger.warning(f"Gagal membaca katalog target SQL: {ex}")
+                        resources = []
+                    wanted = str(target).strip().lower()
+                    sql_resource = next((r for r in resources if r.get("kind") == "sql" and wanted in {
+                        str(r.get("resource_key") or "").strip().lower(),
+                        str(r.get("label") or "").strip().lower(),
+                        str(r.get("name") or "").strip().lower(),
+                        *(str(alias).strip().lower() for alias in (r.get("aliases") or [])),
+                    }), None)
+                    if not sql_resource or not sql_resource.get("resource_key"):
+                        return MCPCallResult(
+                            content=[MCPContentItem(text=f"Target SQL '{target}' tidak ditemukan di katalog gateway.")],
+                            is_error=True,
+                        )
+                    resource_key = sql_resource["resource_key"]
+                    try:
+                        await client.call_tool(
+                            http_client, "set_active_server",
+                            {"server_ref": target, "resource_key": resource_key},
+                        )
                     except Exception as ex:
                         logger.warning(f"Gagal mengatur active SQL server '{target}': {ex}")
                     if isinstance(final_args, dict):
                         if "server" not in final_args:
                             final_args["server"] = target
                         if "resource_key" not in final_args:
-                            final_args["resource_key"] = target
+                            final_args["resource_key"] = resource_key
             res = await client.call_tool(http_client, tool_name, final_args)
 
             if server_name == "sql" and res.content:
