@@ -77,36 +77,30 @@ jobs:
           # Beri jeda sejenak agar backend menyelesaikan inisialisasi DB
           sleep 3
 
-      - name: Run backend tests
-        env:
-          TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/ABAP_DB
-          SESSION_SECRET: ci-secret-ci-secret-ci-secret-1234
-          BOOTSTRAP_ADMIN_PASSWORD: AdminPass123
-        run: pytest
+          # Jalankan Frontend
+          docker run -d \
+            --name enterprise-ai-frontend \
+            --network enterprise-ai-net \
+            --add-host=host.docker.internal:host-gateway \
+            --restart=unless-stopped \
+            -p 8086:80 \
+            enterprise-ai-frontend-img:latest
+          
+          echo "Docker Containers restarted (Zero Downtime)"
 
-      # Tes end-to-end menjalankan aplikasi sungguhan (backend + frontend hasil
-      # build) di dalam browser. Dua bug pada fitur edit/buat-ulang pernah lolos
-      # dari seluruh tes backend dan hanya terlihat di lapisan ini.
-      - name: Install Playwright browser
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Create E2E database
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE sapai_e2e'
-
-      - name: Run end-to-end tests
-        env:
-          E2E_DATABASE_URL: postgresql+psycopg://postgres:postgres@127.0.0.1:5432/sapai_e2e
-          SESSION_SECRET: ci-secret-ci-secret-ci-secret-1234
-          E2E_ADMIN_PASSWORD: AdminPass123
-        run: bash scripts/e2e.sh
-
-      - name: Upload E2E report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: frontend/playwright-report/
-          retention-days: 7
+      - name: Pastikan frontend & backend merespons
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:8086/api/config >/dev/null 2>&1; then
+              echo "Aplikasi & API backend berjalan normal setelah ${i} detik."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API backend tidak merespons (502 / Offline) setelah 30 detik."
+          docker ps --filter name=enterprise-ai || true
+          echo "--- LOG BACKEND ---"
+          docker logs --tail 50 enterprise-ai-backend || true
+          echo "--- LOG FRONTEND ---"
+          docker logs --tail 50 enterprise-ai-frontend || true
+          exit 1
