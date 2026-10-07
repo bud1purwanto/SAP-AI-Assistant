@@ -91,8 +91,9 @@ jobs:
       - name: Pastikan frontend & backend merespons
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 5 http://127.0.0.1:8086/api/config >/dev/null 2>&1; then
-              echo "Aplikasi & API backend berjalan normal setelah ${i} detik."
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 http://127.0.0.1:8086/api/config 2>/dev/null || true)
+            if [ "$CODE" = "200" ] || [ "$CODE" = "401" ]; then
+              echo "Aplikasi & API backend berjalan normal (HTTP $CODE) setelah ${i} detik."
               exit 0
             fi
             sleep 1
