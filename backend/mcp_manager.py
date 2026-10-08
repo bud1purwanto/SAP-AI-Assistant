@@ -163,6 +163,13 @@ class StreamableHttpClient:
         if extra_headers:
             headers.update(extra_headers)
 
+        # Konfirmasi target PRD wajib ikut pada setiap request tools/call.
+        # Terapkan di transport agar semua tool (termasuk panggilan internal)
+        # mengirim boolean JSON yang sama, tanpa bergantung pada argumen LLM.
+        gateway_arguments = arguments
+        if self.name == "sap" and (extra_headers or {}).get("X-Confirm-Production") == "true":
+            gateway_arguments = {**arguments, "confirm_production": True}
+
         actual_tool_name = tool_name
         if self.url.rstrip("/").endswith("/v1/gateway") and "__" not in tool_name:
             prefix_map = {
@@ -181,9 +188,16 @@ class StreamableHttpClient:
             "method": "tools/call",
             "params": {
                 "name": actual_tool_name,
-                "arguments": arguments
+                "arguments": gateway_arguments
             }
         }
+        if self.name == "sap":
+            logger.info(
+                "SAP gateway request: tool=%s target=%s confirm_production=%s",
+                actual_tool_name,
+                gateway_arguments.get("resource_key") or headers.get("X-SAP-Server"),
+                gateway_arguments.get("confirm_production") is True,
+            )
         try:
             res = await client.post(self.url, headers=headers, json=payload, timeout=45.0)
             res.raise_for_status()
@@ -268,72 +282,45 @@ SQL_TOOL_NAMES = {
     "reload_config",
 }
 
-SAP_TARGET_KEY_MAP = {
-    "dev": "sap:dev",
-    "development": "sap:dev",
-    "development aix": "sap:dev",
-    "dev-aix": "sap:dev",
-    "dev-win": "sap:dev-win",
-    "development windows": "sap:dev-win",
-    "qa": "sap:qa",
-    "sandbox": "sap:sandbox",
-    "sandbox competence": "sap:sandbox",
-    "sandbox build competence": "sap:sandbox",
-    "sandbox-new": "sap:sandbox-new",
-    "sandbox new company": "sap:sandbox-new",
-    "prod": "sap:prod",
-    "prod-aix": "sap:prod",
-    "production": "sap:prod",
-    "production aix": "sap:prod",
-    "prd": "sap:prod",
-    "prt": "sap:prod",
-    "prod-win": "sap:prod-win",
-    "prod-windows": "sap:prod-win",
-    "production windows": "sap:prod-win",
-    "prp": "sap:prod-win",
-}
-
-def resolve_sap_resource_key(target: Optional[str], resources: Optional[list] = None) -> Optional[str]:
-    """Resolve human-readable SAP target name or alias to Gateway resource_key."""
+def _find_sap_resource(target: Optional[str], resources: Optional[list] = None) -> Optional[dict]:
+    """Cocokkan target hanya dengan resource dan alias dari katalog MCP."""
     if not target:
         return None
-    cleaned = str(target).strip()
-    wanted = cleaned.lower().removeprefix("sap:")
+
+    def normalize(value):
+        return str(value or "").strip().lower().removeprefix("sap:")
+
+    wanted = normalize(target)
+    if not wanted:
+        return None
+    sid_matches = []
     for resource in resources or []:
         if resource.get("kind") != "sap" or not resource.get("resource_key"):
             continue
         names = {
-            str(resource.get("resource_key")).lower().removeprefix("sap:"),
-            str(resource.get("label") or "").strip().lower(),
-            str(resource.get("name") or "").strip().lower(),
-            *(str(alias).strip().lower() for alias in (resource.get("aliases") or [])),
+            normalize(resource.get("resource_key")),
+            normalize(resource.get("label")),
+            normalize(resource.get("name")),
+            *(normalize(alias) for alias in (resource.get("aliases") or [])),
         }
         if wanted in names:
-            return str(resource["resource_key"])
-    return SAP_TARGET_KEY_MAP.get(wanted, f"sap:{wanted}")
+            return resource
+        if wanted == normalize(resource.get("sid")):
+            sid_matches.append(resource)
+    # SID dapat sama pada beberapa instalasi; jangan menebak targetnya.
+    return sid_matches[0] if len(sid_matches) == 1 else None
+
+
+def resolve_sap_resource_key(target: Optional[str], resources: Optional[list] = None) -> Optional[str]:
+    """Ambil resource_key kanonis dari katalog, tanpa pemetaan target statis."""
+    resource = _find_sap_resource(target, resources)
+    return str(resource["resource_key"]) if resource else None
 
 
 def is_production_sap_target(target: Optional[str], resources: Optional[list] = None) -> bool:
-    """Periksa apakah target SAP merupakan server produksi yang memerlukan confirm_production."""
-    if not target:
-        return False
-    t = str(target).strip().lower()
-    if any(k in t for k in ("prod", "prd", "prt", "prp", "trp", "production")):
-        return True
-    if resources:
-        for r in resources:
-            if r.get("kind") == "sap" and r.get("is_production"):
-                names = {
-                    str(r.get("label", "")).lower(),
-                    str(r.get("name", "")).lower(),
-                    str(r.get("sid", "")).lower(),
-                    str(r.get("resource_key", "")).lower(),
-                    str(r.get("resource_key", "")).removeprefix("sap:").lower(),
-                    *(str(a).lower() for a in (r.get("aliases") or []))
-                }
-                if t in names or f"sap:{t}" in names:
-                    return True
-    return False
+    """Status production mengikuti flag katalog, bukan nama/alias server."""
+    resource = _find_sap_resource(target, resources)
+    return resource is not None and resource.get("is_production") is True
 
 
 def strip_gateway_tool_prefix(tool_name: str) -> str:
@@ -807,12 +794,14 @@ class MCPManager:
         extra_headers: Optional[dict] = None,
     ):
         """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
+        sap_resource_key = resolve_sap_resource_key(target_sap, self._resources_cache)
+        if not sap_resource_key:
+            self._active_sap_target = None
+            self._last_sap_error = "SAP_TARGET_NOT_FOUND"
+            return False
         sap_client = self.get_client("sap")
         last_error = None
-        sap_resource_key = resolve_sap_resource_key(target_sap, self._resources_cache)
-        payload = {"server_ref": target_sap}
-        if sap_resource_key:
-            payload["resource_key"] = sap_resource_key
+        payload = {"server_ref": target_sap, "resource_key": sap_resource_key}
         if is_production_sap_target(target_sap, self._resources_cache):
             payload["confirm_production"] = True
 
@@ -863,6 +852,9 @@ class MCPManager:
         """Set server aktif pada MCP SAP (dilindungi lock)."""
         if not target_sap:
             return
+        resources = await self.get_live_resources()
+        if isinstance(resources, list):
+            self._resources_cache = resources
         async with self._sap_lock:
             async with httpx.AsyncClient() as http_client:
                 await self._set_active_sap_server_unlocked(http_client, target_sap)
@@ -1026,7 +1018,6 @@ class MCPManager:
             )
 
         # Katalog MCP adalah sumber target dan penanda production terbaru.
-        # Alias bawaan tetap dapat dipakai saat katalog sementara tidak tersedia.
         if server_name == "sap" and sap_target:
             resources = await self.get_live_resources()
             if isinstance(resources, list):
@@ -1037,6 +1028,8 @@ class MCPManager:
         final_args = arguments
         if server_name == "sap" and isinstance(arguments, dict):
             final_args = self._sanitize_sap_arguments(tool_name, arguments)
+            # Konfirmasi ditentukan oleh metadata target terpilih, bukan oleh LLM.
+            final_args.pop("confirm_production", None)
 
         extra_sap_headers = {}
         if server_name == "sap":
@@ -1046,6 +1039,8 @@ class MCPManager:
                     final_args["resource_key"] = res_key
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
+            if is_production_sap_target(sap_target, self._resources_cache):
+                extra_sap_headers["X-Confirm-Production"] = "true"
             if sap_credentials:
                 if sap_credentials.get("sap_token") and "X-SAP-Token" not in extra_sap_headers:
                     extra_sap_headers["X-SAP-Token"] = sap_credentials["sap_token"]

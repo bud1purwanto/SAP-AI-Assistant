@@ -39,6 +39,9 @@ def test_sap_tool_forwards_bound_token_to_target_and_execution():
     result = MCPCallResult([MCPContentItem('{"success": true}')])
     with patch.object(manager, "_set_active_sap_server_unlocked", new_callable=AsyncMock, return_value=True) as select, \
          patch.object(manager, "_handle_sap_call", new_callable=AsyncMock, return_value=result) as execute, \
+         patch.object(manager, "get_live_resources", new_callable=AsyncMock, return_value=[
+             {"kind": "sap", "resource_key": "sap:dev", "is_production": False},
+         ]), \
          patch.object(manager, "get_client", return_value=object()):
         actual = asyncio.run(manager.call_tool("sap", "read_table", {"table_name": "MARA"},
                                                sap_target="dev", sap_credentials={"sap_token": "bound"}))
