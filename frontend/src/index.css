@@ -179,6 +179,21 @@
   --sat: env(safe-area-inset-top, 0px);
 }
 
+/* Ketika aplikasi berjalan di dalam iframe (misal: di-embed di PWA ABAP Dashboard),
+   area status bar / notch iOS sudah ditangani oleh wrapper aplikasi induk.
+   Nol-kan inset top dan paksa safe padding bernilai 0 agar tidak terjadi
+   double header padding atau celah kosong berlebih. */
+:root.is-embedded-iframe,
+body.is-embedded-iframe,
+.is-embedded-iframe {
+  --sat: 0px !important;
+}
+
+:root.is-embedded-iframe .pt-safe,
+.is-embedded-iframe .pt-safe {
+  padding-top: 0px !important;
+}
+
 html, body {
   height: 100%;
   height: 100dvh;

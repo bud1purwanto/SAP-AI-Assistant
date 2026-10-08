@@ -31,11 +31,23 @@
       (function () {
         try {
           var root = document.documentElement;
-          var isStandalone = window.navigator.standalone === true ||
-            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-            (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches);
-          if (isStandalone) {
-            root.classList.add('is-pwa-standalone');
+          var isEmbedded = false;
+          try {
+            isEmbedded = window.self !== window.top;
+          } catch (e) {
+            isEmbedded = true;
+          }
+
+          if (isEmbedded) {
+            root.classList.add('is-embedded-iframe');
+            root.style.setProperty('--sat', '0px');
+          } else {
+            var isStandalone = window.navigator.standalone === true ||
+              (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+              (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches);
+            if (isStandalone) {
+              root.classList.add('is-pwa-standalone');
+            }
           }
           // Tinggi viewport nyata. Di PWA standalone iOS, 100dvh bisa menyisakan
           // celah kosong di bawah karena area home-indicator ikut terhitung;

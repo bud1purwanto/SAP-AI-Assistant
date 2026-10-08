@@ -1983,7 +1983,7 @@ const ChatLayout = () => {
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
         <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-20 shrink-0 max-w-full">
-          <div className="app-header-row h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative">
+          <div className="app-header-row h-12 sm:h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
@@ -2418,16 +2418,17 @@ const ChatLayout = () => {
         )}
 
         {isGuest && (
-          <div className="bg-warning-soft border-b border-warning/30 px-3.5 sm:px-6 py-2 flex items-center justify-between gap-2.5 shrink-0">
-            <div className="flex items-center gap-2 text-xs font-semibold text-warning min-w-0">
-              <ShieldAlert className="w-4 h-4 shrink-0" aria-hidden="true" />
-              <span className="leading-tight">
-                {t('sidebar.guestDesc')}
+          <div className="bg-warning-soft border-b border-warning/30 px-3 sm:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-2 sm:gap-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-semibold text-warning min-w-0">
+              <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" aria-hidden="true" />
+              <span className="leading-tight sm:leading-snug truncate sm:whitespace-normal">
+                <span className="sm:hidden">{t('sidebar.guestDescShort') || t('sidebar.guestDesc')}</span>
+                <span className="hidden sm:inline">{t('sidebar.guestDesc')}</span>
               </span>
             </div>
             <button
               onClick={() => { setCustomLoginMsg(''); setIsLoginModalOpen(true); }}
-              className="text-xs font-bold bg-warning text-surface px-3 py-1.5 rounded-lg shrink-0 shadow-xs hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+              className="text-[11px] sm:text-xs font-bold bg-warning text-surface px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg shrink-0 shadow-xs hover:brightness-110 active:scale-95 transition-all cursor-pointer whitespace-nowrap"
             >
               {t('sidebar.loginPrompt')}
             </button>
