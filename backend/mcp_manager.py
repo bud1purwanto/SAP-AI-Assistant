@@ -282,20 +282,35 @@ SAP_TARGET_KEY_MAP = {
     "sandbox-new": "sap:sandbox-new",
     "sandbox new company": "sap:sandbox-new",
     "prod": "sap:prod",
+    "prod-aix": "sap:prod",
     "production": "sap:prod",
     "production aix": "sap:prod",
+    "prd": "sap:prod",
+    "prt": "sap:prod",
     "prod-win": "sap:prod-win",
+    "prod-windows": "sap:prod-win",
     "production windows": "sap:prod-win",
+    "prp": "sap:prod-win",
 }
 
-def resolve_sap_resource_key(target: Optional[str]) -> Optional[str]:
+def resolve_sap_resource_key(target: Optional[str], resources: Optional[list] = None) -> Optional[str]:
     """Resolve human-readable SAP target name or alias to Gateway resource_key."""
     if not target:
         return None
     cleaned = str(target).strip()
-    if cleaned.startswith("sap:"):
-        return cleaned
-    return SAP_TARGET_KEY_MAP.get(cleaned.lower(), f"sap:{cleaned}")
+    wanted = cleaned.lower().removeprefix("sap:")
+    for resource in resources or []:
+        if resource.get("kind") != "sap" or not resource.get("resource_key"):
+            continue
+        names = {
+            str(resource.get("resource_key")).lower().removeprefix("sap:"),
+            str(resource.get("label") or "").strip().lower(),
+            str(resource.get("name") or "").strip().lower(),
+            *(str(alias).strip().lower() for alias in (resource.get("aliases") or [])),
+        }
+        if wanted in names:
+            return str(resource["resource_key"])
+    return SAP_TARGET_KEY_MAP.get(wanted, f"sap:{wanted}")
 
 
 def is_production_sap_target(target: Optional[str], resources: Optional[list] = None) -> bool:
@@ -303,7 +318,7 @@ def is_production_sap_target(target: Optional[str], resources: Optional[list] = 
     if not target:
         return False
     t = str(target).strip().lower()
-    if any(k in t for k in ("prod", "prd", "prt", "trp", "production")):
+    if any(k in t for k in ("prod", "prd", "prt", "prp", "trp", "production")):
         return True
     if resources:
         for r in resources:
@@ -794,7 +809,7 @@ class MCPManager:
         """Set server aktif pada MCP SAP dengan opsi kredensial per-user. Pemanggil wajib memegang _sap_lock."""
         sap_client = self.get_client("sap")
         last_error = None
-        sap_resource_key = resolve_sap_resource_key(target_sap)
+        sap_resource_key = resolve_sap_resource_key(target_sap, self._resources_cache)
         payload = {"server_ref": target_sap}
         if sap_resource_key:
             payload["resource_key"] = sap_resource_key
@@ -804,6 +819,8 @@ class MCPManager:
         req_headers = dict(extra_headers or {})
         if target_sap and "X-SAP-Server" not in req_headers:
             req_headers["X-SAP-Server"] = target_sap
+        if is_production_sap_target(target_sap, self._resources_cache):
+            req_headers["X-Confirm-Production"] = "true"
         if sap_credentials:
             if sap_credentials.get("sap_token") and "X-SAP-Token" not in req_headers:
                 req_headers["X-SAP-Token"] = sap_credentials["sap_token"]
@@ -1001,6 +1018,13 @@ class MCPManager:
         query ke sistem yang salah.
         """
 
+        # Katalog MCP adalah sumber target dan penanda production terbaru.
+        # Alias bawaan tetap dapat dipakai saat katalog sementara tidak tersedia.
+        if server_name == "sap" and sap_target:
+            resources = await self.get_live_resources()
+            if isinstance(resources, list):
+                self._resources_cache = resources
+
         # Bersihkan meta-key yang lazim disisipkan LLM (seperti 'reason', 'comment', 'note')
         # yang ditolak ketat oleh interface PyRFC SAP ('field reason not found').
         final_args = arguments
@@ -1010,14 +1034,16 @@ class MCPManager:
         extra_sap_headers = {}
         if server_name == "sap":
             if isinstance(final_args, dict) and sap_target and "resource_key" not in final_args:
-                res_key = resolve_sap_resource_key(sap_target)
+                res_key = resolve_sap_resource_key(sap_target, self._resources_cache)
                 if res_key:
                     final_args["resource_key"] = res_key
-            if isinstance(final_args, dict) and is_production_sap_target(sap_target, self._resources_cache):
-                if tool_name.endswith("set_active_server"):
-                    final_args["confirm_production"] = True
+            active_target = sap_target or self._active_sap_target
+            if isinstance(final_args, dict) and is_production_sap_target(active_target, self._resources_cache):
+                final_args["confirm_production"] = True
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
+            if is_production_sap_target(active_target, self._resources_cache):
+                extra_sap_headers["X-Confirm-Production"] = "true"
             if sap_credentials:
                 if sap_credentials.get("sap_token") and "X-SAP-Token" not in extra_sap_headers:
                     extra_sap_headers["X-SAP-Token"] = sap_credentials["sap_token"]
