@@ -273,50 +273,55 @@ def get_current_principal(request: Request) -> dict:
 def get_current_user_optional(request: Request) -> dict:
     """User yang sedang login, atau identitas tamu bila tidak ada sesi valid.
     
-    Dipakai endpoint yang mengizinkan akses tamu (mis. chat kuota tamu).
+    Dipakai endpoint yang mengizinkan akses tamu (mis. chat kuota tamu, daftar server, mode chat).
     """
+    guest_user = {
+        "sub": "guest",
+        "username": GUEST_USERNAME,
+        "role": GUEST_ROLE,
+        "roles": [GUEST_ROLE],
+        "org_units": [],
+        "is_guest": True,
+    }
     token = _extract_token_from_request(request)
     if not token:
         set_dashboard_access_token(None)
+        return guest_user
+
+    try:
+        payload = decode_session_cookie(token)
+        if not payload or not payload.get("sub") or not payload.get("username") or not payload.get("roles") or payload.get("is_guest"):
+            set_dashboard_access_token(None)
+            return guest_user
+
+        session_id = payload.get("session_id")
+        resolved_token = _session_dashboard_token(session_id)
+        set_dashboard_access_token(resolved_token)
+        username = payload["username"]
+        user_role = payload.get("role") or payload["roles"][0]
+        user_roles = payload["roles"]
         return {
-            "sub": "guest",
-            "username": GUEST_USERNAME,
-            "role": GUEST_ROLE,
-            "roles": [GUEST_ROLE],
-            "org_units": [],
-            "is_guest": True,
+            "sub": payload["sub"],
+            "username": username,
+            "role": user_role,
+            "roles": user_roles,
+            "full_name": payload.get("full_name", ""),
+            "assistant_persona": payload.get("assistant_persona", ""),
+            "force_change_password": bool(payload.get("force_change_password", False)),
+            "division_code": payload.get("division_code"),
+            "division_name": payload.get("division_name"),
+            "department_code": payload.get("department_code"),
+            "department_name": payload.get("department_name") or ((payload.get("org_units") or [None])[0]),
+            "job_level": payload.get("job_level"),
+            "org_units": payload.get("org_units", []),
+            "dashboard_token": resolved_token,
+            "access_token": resolved_token,
+            "session_id": session_id,
+            "is_guest": False,
         }
-
-    payload = decode_session_cookie(token)
-    if not payload or not payload.get("sub") or not payload.get("username") or not payload.get("roles") or payload.get("is_guest"):
+    except Exception:
         set_dashboard_access_token(None)
-        raise _credentials_exception("Sesi OIDC tidak valid atau telah kedaluwarsa. Silakan login kembali.")
-
-    session_id = payload.get("session_id")
-    resolved_token = _session_dashboard_token(session_id)
-    set_dashboard_access_token(resolved_token)
-    username = payload["username"]
-    user_role = payload.get("role") or payload["roles"][0]
-    user_roles = payload["roles"]
-    return {
-        "sub": payload["sub"],
-        "username": username,
-        "role": user_role,
-        "roles": user_roles,
-        "full_name": payload.get("full_name", ""),
-        "assistant_persona": payload.get("assistant_persona", ""),
-        "force_change_password": bool(payload.get("force_change_password", False)),
-        "division_code": payload.get("division_code"),
-        "division_name": payload.get("division_name"),
-        "department_code": payload.get("department_code"),
-        "department_name": payload.get("department_name") or ((payload.get("org_units") or [None])[0]),
-        "job_level": payload.get("job_level"),
-        "org_units": payload.get("org_units", []),
-        "dashboard_token": resolved_token,
-        "access_token": resolved_token,
-        "session_id": session_id,
-        "is_guest": False,
-    }
+        return guest_user
 
 def get_current_user(principal: dict = Depends(get_current_principal)) -> dict:
     """Wrapper kompatibilitas untuk endpoint yang memanggil get_current_user."""

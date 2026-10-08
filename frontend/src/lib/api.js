@@ -192,7 +192,7 @@ export const api = {
   deleteSession: (id) => apiFetch(`/api/sessions/${id}`, { method: 'DELETE' }),
   sessionMessages: (id) => apiFetch(`/api/sessions/${id}/messages`),
 
-  mcpServers: () => apiFetch('/api/mcp/servers', { auth: true }),
+  mcpServers: () => apiFetch('/api/mcp/servers', { auth: false }),
   mcpAccessTargets: () => apiFetch('/api/mcp/access-requests/available', { auth: true }),
   requestMcpAccess: (payload) => apiFetch('/api/mcp/access-requests', { method: 'POST', body: payload, auth: true }),
   myMcpAccessRequests: () => apiFetch('/api/mcp/access-requests/me', { auth: true }),
@@ -271,7 +271,7 @@ export const api = {
   adminUpdateSkill: (id, payload) => apiFetch(`/api/admin/skills/${id}`, { method: 'PUT', body: payload }),
   adminDeleteSkill: (id) => apiFetch(`/api/admin/skills/${id}`, { method: 'DELETE' }),
 
-  getModes: () => apiFetch('/api/modes', { auth: true }),
+  getModes: () => apiFetch('/api/modes', { auth: false }),
   adminModes: () => apiFetch('/api/admin/modes'),
   adminCreateMode: (payload) => apiFetch('/api/admin/modes', { method: 'POST', body: payload }),
   adminUpdateMode: (id, payload) => apiFetch(`/api/admin/modes/${id}`, { method: 'PUT', body: payload }),

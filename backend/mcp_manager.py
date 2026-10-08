@@ -298,6 +298,29 @@ def resolve_sap_resource_key(target: Optional[str]) -> Optional[str]:
     return SAP_TARGET_KEY_MAP.get(cleaned.lower(), f"sap:{cleaned}")
 
 
+def is_production_sap_target(target: Optional[str], resources: Optional[list] = None) -> bool:
+    """Periksa apakah target SAP merupakan server produksi yang memerlukan confirm_production."""
+    if not target:
+        return False
+    t = str(target).strip().lower()
+    if any(k in t for k in ("prod", "prd", "prt", "trp", "production")):
+        return True
+    if resources:
+        for r in resources:
+            if r.get("kind") == "sap" and r.get("is_production"):
+                names = {
+                    str(r.get("label", "")).lower(),
+                    str(r.get("name", "")).lower(),
+                    str(r.get("sid", "")).lower(),
+                    str(r.get("resource_key", "")).lower(),
+                    str(r.get("resource_key", "")).removeprefix("sap:").lower(),
+                    *(str(a).lower() for a in (r.get("aliases") or []))
+                }
+                if t in names or f"sap:{t}" in names:
+                    return True
+    return False
+
+
 def strip_gateway_tool_prefix(tool_name: str) -> str:
     """Return the upstream MCP tool name without Dashboard gateway namespace."""
     name = str(tool_name or "")
@@ -775,6 +798,8 @@ class MCPManager:
         payload = {"server_ref": target_sap}
         if sap_resource_key:
             payload["resource_key"] = sap_resource_key
+        if is_production_sap_target(target_sap, self._resources_cache):
+            payload["confirm_production"] = True
 
         req_headers = dict(extra_headers or {})
         if target_sap and "X-SAP-Server" not in req_headers:
@@ -988,6 +1013,9 @@ class MCPManager:
                 res_key = resolve_sap_resource_key(sap_target)
                 if res_key:
                     final_args["resource_key"] = res_key
+            if isinstance(final_args, dict) and is_production_sap_target(sap_target, self._resources_cache):
+                if tool_name.endswith("set_active_server"):
+                    final_args["confirm_production"] = True
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
             if sap_credentials:

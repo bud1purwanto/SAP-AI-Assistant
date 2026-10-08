@@ -485,6 +485,7 @@ const ChatLayout = () => {
   // --- Sesi berakhir di sisi server: kembalikan UI ke mode tamu & pastikan kembali ke Home ---
   useEffect(() => {
     setUnauthorizedHandler((reason, code) => {
+      setUser(GUEST_USER);
       resetToHome();
       fetchServers();
       fetchModes();
