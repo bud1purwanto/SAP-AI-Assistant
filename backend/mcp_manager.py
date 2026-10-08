@@ -836,8 +836,9 @@ class MCPManager:
                 if res.content and res.content[0].text:
                     try:
                         data = json.loads(res.content[0].text)
-                        if not data.get("success", True):
-                            raise RuntimeError(f"MCP SAP menolak active server '{target_sap}': {data.get('message')}")
+                        if isinstance(data, dict) and (data.get("success") is False or data.get("error")):
+                            detail = data.get("error") or data.get("message") or data
+                            raise RuntimeError(f"MCP SAP menolak active server '{target_sap}': {detail}")
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -917,7 +918,7 @@ class MCPManager:
                     sap_tools = await sap_client.list_tools(http_client)
                     for t in sap_tools:
                         cls = classify_gateway_tool(t.name)
-                        if cls == "sap":
+                        if cls == "sap" and strip_gateway_tool_prefix(t.name) != "set_active_server":
                             tools.append({"server": "sap", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching SAP tools: {e}")
@@ -1018,6 +1019,12 @@ class MCPManager:
         query ke sistem yang salah.
         """
 
+        if server_name == "sap" and not sap_target:
+            return MCPCallResult(
+                content=[MCPContentItem("Target SAP wajib dipilih sebelum memanggil tool MCP SAP.")],
+                is_error=True,
+            )
+
         # Katalog MCP adalah sumber target dan penanda production terbaru.
         # Alias bawaan tetap dapat dipakai saat katalog sementara tidak tersedia.
         if server_name == "sap" and sap_target:
@@ -1033,17 +1040,12 @@ class MCPManager:
 
         extra_sap_headers = {}
         if server_name == "sap":
-            if isinstance(final_args, dict) and sap_target and "resource_key" not in final_args:
+            if isinstance(final_args, dict) and sap_target:
                 res_key = resolve_sap_resource_key(sap_target, self._resources_cache)
                 if res_key:
                     final_args["resource_key"] = res_key
-            active_target = sap_target or self._active_sap_target
-            if isinstance(final_args, dict) and is_production_sap_target(active_target, self._resources_cache):
-                final_args["confirm_production"] = True
             if sap_target:
                 extra_sap_headers["X-SAP-Server"] = sap_target
-            if is_production_sap_target(active_target, self._resources_cache):
-                extra_sap_headers["X-Confirm-Production"] = "true"
             if sap_credentials:
                 if sap_credentials.get("sap_token") and "X-SAP-Token" not in extra_sap_headers:
                     extra_sap_headers["X-SAP-Token"] = sap_credentials["sap_token"]
@@ -1069,6 +1071,10 @@ class MCPManager:
                                 )
                             )],
                             is_error=True,
+                        )
+                    if strip_gateway_tool_prefix(tool_name) == "set_active_server":
+                        return MCPCallResult(
+                            content=[MCPContentItem(json.dumps({"success": True, "resource_key": resolve_sap_resource_key(sap_target, self._resources_cache)}))],
                         )
                     client = self.get_client(server_name)
                     return await self._handle_sap_call(
