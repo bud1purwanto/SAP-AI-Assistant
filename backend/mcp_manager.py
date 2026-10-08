@@ -29,6 +29,11 @@ def is_sap_credential_error(message: str) -> bool:
         "rfc_logon_failure", "rfc_error_logon_failure", "wrong password",
         "password is incorrect", "password logon no longer possible",
         "nama pengguna atau kata sandi salah", "username atau password salah",
+        "kredensial salah", "kredensial tidak valid", "kredensial sap salah",
+        "user locked", "user is locked", "account locked", "akun terkunci",
+        "password expired", "kata sandi kedaluwarsa", "sandi kedaluwarsa",
+        "authorization failure", "no authorization", "auth_failed",
+        "user disabled", "pengguna dinonaktifkan",
     )
     return any(marker in text for marker in markers)
 
@@ -808,6 +813,7 @@ class MCPManager:
                     await asyncio.sleep(0.5)
 
         self._active_sap_target = None
+        self._last_sap_error = str(last_error) if last_error else "Unknown error"
         logger.error(f"Gagal menset SAP active server ke '{target_sap}' setelah 2 percobaan: {type(last_error).__name__} ({last_error or 'timeout'})")
         return False
     async def set_active_sap_server(self, target_sap: str):
@@ -1000,11 +1006,12 @@ class MCPManager:
                         extra_headers=extra_sap_headers,
                     )
                     if not ok:
+                        err_detail = getattr(self, "_last_sap_error", "") or "Kendala koneksi atau autentikasi SAP"
                         return MCPCallResult(
                             content=[MCPContentItem(
                                 text=(
-                                    f"Gagal mengarahkan permintaan ke sistem SAP '{sap_target}'. "
-                                     "Tool tidak dijalankan untuk menghindari eksekusi pada sistem yang salah."
+                                    f"Koneksi ke sistem SAP '{sap_target}' gagal dari gateway MCP: {err_detail}. "
+                                    "Bukan berarti sistem SAP offline; periksa rincian pesan error atau kredensial akun SAP di atas."
                                 )
                             )],
                             is_error=True,

@@ -1449,6 +1449,19 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"Sertakan penjelasan singkat berupa teks di samping/bawah diagram — jangan hanya diagram saja.\n"
         f"6. HINDARI menuliskan format struktur, pola penomoran, atau rangkaian teks menggunakan sintaks LaTeX formula seperti `$$\\text{...}$$` atau `$...$`. Gunakan selalu format Markdown standar: inline code (misal `| a | b | c | d | e | f |`), tabel markdown, atau blok kode teks biasa agar bersih dan rapi.\n"
         f"7. Sebutkan dengan jujur bila data tidak ditemukan; jangan mengarang isi tabel SAP.\n"
+        f"7b. PENANGANAN KENDALA KONEKSI & ERROR MCP SAP (SANGAT KETAT):\n"
+        f"    - DILARANG KERAS berasumsi atau memberitahu pengguna bahwa sistem/server SAP sedang 'offline', 'mati', atau 'tidak dapat dihubungi' ketika eksekusi tool MCP SAP gagal!\n"
+        f"    - JANGAN memberikan kesimpulan yang terlalu umum/general (seperti 'koneksi bermasalah' atau 'server offline').\n"
+        f"    - WAJIB sampaikan HASIL KONEKSI AKTUAL dari MCP SAP secara transparan dan TERJEMAHKAN ke bahasa yang digunakan pengguna (Bahasa Indonesia / English yang mudah dipahami):\n"
+        f"      * Jika error terkait KREDENSIAL / LOGIN (misal: RFC_LOGON_FAILURE, Name or password is incorrect, Invalid user or password, Username atau password salah):\n"
+        f"        -> Jelaskan secara jelas bahwa autentikasi ke MCP SAP ditolak karena kredensial (username atau kata sandi SAP) pengguna salah / tidak valid.\n"
+        f"        -> Sarankan pengguna secara langsung untuk memeriksa dan memperbarui kredensial SAP mereka di menu Pengaturan (Settings -> Akun SAP).\n"
+        f"      * Jika error terkait AKUN TERKUNCI (misal: Password logon no longer possible - too many failed attempts / User locked):\n"
+        f"        -> Jelaskan secara spesifik bahwa akun SAP pengguna terkunci akibat percobaan login yang gagal berulang kali, dan sarankan menghubungi tim Basis/Admin SAP untuk membuka kunci akun.\n"
+        f"      * Jika error terkait OTORISASI (misal: No RFC authorization, missing authorization object):\n"
+        f"        -> Jelaskan secara spesifik bahwa akun SAP pengguna tidak memiliki otorisasi untuk mengakses tabel/transaksi tersebut di SAP.\n"
+        f"      * Jika error berupa PESAN TEKNIS DARI GATEWAY / RFC LAINNYA:\n"
+        f"        -> Terjemahkan dan sampaikan pesan teknis aktual dari MCP SAP tersebut secara objektif apa adanya tanpa menyimpulkan server offline.\n"
         f"8. DILARANG menampilkan penalaran internal berbahasa Inggris seperti 'We need to answer...', "
         f"9. PEMBUATAN / EKSEKUSI TRANSAKSI & BAPI VIA RFC:\n"
         f"   - Bila pengguna meminta membuat dokumen/data transaksi baru (misal PO, SO, Material), gunakan tool BAPI RFC (`call_function`), BUKAN membaca tabel data yang sudah ada (`read_table`).\n"
@@ -1963,8 +1976,18 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                         content=res_str[:500] if len(res_str) > 500 else res_str
                     ))
                     
+                    sap_prompt_hint = ""
+                    if server_name == "sap" and (tool_result.is_error or is_sap_credential_error(res_str) or "error" in res_str.lower() or "gagal" in res_str.lower()):
+                        sap_prompt_hint = (
+                            "\n\n[SISTEM]: Pemanggilan tool MCP SAP mengalami kendala. "
+                            "DILARANG KERAS mengatakan sistem SAP offline! "
+                            "Sampaikan hasil error aktual dari MCP di atas secara transparan dan terjemahkan ke bahasa pengguna "
+                            "(misal: kredensial salah, username/password ditolak, otorisasi kurang, atau akun terkunci). "
+                            "Berikan panduan tindak lanjut yang tepat bagi pengguna (seperti mengecek kredensial di Settings)."
+                        )
+                    
                     messages.append(HumanMessage(
-                        content=f"Hasil eksekusi {t_name}: {res_str}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
+                        content=f"Hasil eksekusi {t_name}: {res_str}{sap_prompt_hint}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
                     ))
                     continue
                 except SapCredentialRejected as exc:
@@ -2225,6 +2248,14 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                             "Segera susun jawaban akhir lengkap untuk pengguna sekarang diawali '📬 **Data langsung dari Layanan Email**'. "
                             "DILARANG memanggil tool SAP (seperti get_system_info, read_table) atau menyebut sistem SAP!"
                         )
+                elif server_name == "sap" and (result.is_error or is_sap_credential_error(content_str) or "error" in content_str.lower() or "gagal" in content_str.lower()):
+                    content_str += (
+                        "\n\n[SISTEM]: Pemanggilan tool MCP SAP mengalami kendala. "
+                        "DILARANG KERAS mengatakan sistem SAP offline! "
+                        "Sampaikan hasil error aktual dari MCP di atas secara transparan dan terjemahkan ke bahasa pengguna "
+                        "(misal: kredensial salah, username/password ditolak, otorisasi kurang, atau akun terkunci). "
+                        "Berikan panduan tindak lanjut yang tepat bagi pengguna (seperti mengecek kredensial di Settings)."
+                    )
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
                 source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
@@ -2239,7 +2270,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 if server_name == "sap" and is_sap_credential_error(sap_error_text(e)):
                     raise _sap_credential_error(sap_target) from e
                 logger.error(f"Error mengeksekusi tool {tool_name}: {e}")
-                messages.append(ToolMessage(content=f"System Error: {str(e)}", tool_call_id=tool_id))
+                err_msg = f"System Error: {str(e)}"
+                if server_name == "sap":
+                    err_msg += (
+                        "\n\n[SISTEM]: Pemanggilan tool MCP SAP mengalami kendala eksekusi. "
+                        "DILARANG KERAS mengatakan sistem SAP offline! Terjemahkan rincian error teknis MCP di atas ke bahasa pengguna secara jelas."
+                    )
+                messages.append(ToolMessage(content=err_msg, tool_call_id=tool_id))
     else:
         try:
             await reset_stream()

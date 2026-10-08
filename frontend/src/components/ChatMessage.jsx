@@ -11,7 +11,7 @@ import { copyToClipboard } from '../lib/clipboard';
 import { useLanguage } from '../hooks/useLanguage';
 import MermaidDiagram from './MermaidDiagram';
 import UsagePill from './UsagePill';
-import { ABAP_TOKEN_CLASS, isAbapLanguage, tokenizeAbap } from '../lib/abapHighlight';
+import { ABAP_TOKEN_CLASS, getCodeBlockMeta, isAbapLanguage, tokenizeAbap } from '../lib/abapHighlight';
 
 const ARTIFACT_ICON = {
   xlsx: <FileSpreadsheet className="w-4 h-4" aria-hidden="true" />,
@@ -174,7 +174,8 @@ const AttachmentChip = ({ item }) => {
  * Komponen blok kode dengan tombol salin mandiri.
  */
 const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
-  const { t } = useLanguage();
+  const { t, language: uiLanguage } = useLanguage();
+  const meta = getCodeBlockMeta(language, codeString, t, uiLanguage);
   // Kode pendek cukup dibaca di tempat; panel baru berguna untuk yang panjang.
   const layakDipanel = onBukaPanel && codeString.split('\n').length > 12;
   const [codeCopied, setCodeCopied] = useState(false);
@@ -196,7 +197,14 @@ const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
           <span className="ml-2 text-content-muted font-medium flex items-center gap-1">
-            <Terminal className="w-3 h-3 text-content-muted" /> {t('chat.codeTerminal')}
+            {meta.kind === 'sql' ? (
+              <Database className="w-3 h-3 text-content-muted" />
+            ) : meta.kind === 'text' ? (
+              <FileText className="w-3 h-3 text-content-muted" />
+            ) : (
+              <Terminal className="w-3 h-3 text-content-muted" />
+            )}
+            <span>{meta.title}</span>
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -204,10 +212,10 @@ const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
           <button
             type="button"
             onClick={() => onBukaPanel({
-              judul: 'Source Code',
+              judul: meta.title,
               keterangan: `${codeString.split('\n').length} lines`,
               teks: codeString,
-              namaBerkas: 'code.abap',
+              namaBerkas: meta.filename,
             })}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-content-muted hover:text-content hover:bg-surface-hover transition-colors text-[11px] cursor-pointer"
             title={t('chat.openInPanel')}
@@ -240,7 +248,7 @@ const CodeBlock = ({ codeString, language, onBukaPanel, ...props }) => {
       </div>
       <pre className="block bg-surface-raised text-content font-mono text-xs p-4 overflow-x-auto leading-relaxed">
         <code {...props}>
-          {isAbapLanguage(language)
+          {meta.isAbap
             ? tokenizeAbap(codeString).map((tok, i) => (
                 tok.type
                   ? <span key={i} className={ABAP_TOKEN_CLASS[tok.type]}>{tok.text}</span>
