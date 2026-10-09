@@ -1969,11 +1969,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     record_tool_evidence(_analysis_state, _text_ev)
 
                     source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
-                    sources.append(SourceReference(
-                        type=source_type,
-                        name=f"Tool: {actual_tool_name}",
-                        content=res_str[:500] if len(res_str) > 500 else res_str
-                    ))
+                    if server_name != "rag" or _text_ev.success:
+                        sources.append(SourceReference(
+                            type=source_type,
+                            name=f"Tool: {actual_tool_name}",
+                            content=res_str[:500] if len(res_str) > 500 else res_str
+                        ))
                     
                     sap_prompt_hint = ""
                     if server_name == "sap" and (tool_result.is_error or is_sap_credential_error(res_str) or "error" in res_str.lower() or "gagal" in res_str.lower()):
@@ -1985,8 +1986,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                             "Berikan panduan tindak lanjut yang tepat bagi pengguna (seperti mengecek kredensial di Settings)."
                         )
                     
+                    rag_hint = (
+                        "\n\n[SISTEM]: Akses isi dokumen ditolak. Jangan mengaku telah membaca dokumen atau merangkum isinya. Sampaikan keterbatasan akses secara jujur."
+                        if server_name == "rag" and not _text_ev.success else ""
+                    )
                     messages.append(HumanMessage(
-                        content=f"Hasil eksekusi {t_name}: {res_str}{sap_prompt_hint}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
+                        content=f"Hasil eksekusi {t_name}: {res_str}{sap_prompt_hint}{rag_hint}\n\nLanjutkan dengan menjawab pertanyaan pengguna dalam Bahasa Indonesia atau panggil tool berikutnya jika perlu."
                     ))
                     continue
                 except SapCredentialRejected as exc:
@@ -2234,11 +2239,16 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
                 if server_name == "rag":
                     rag_call_count += 1
-                    if rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str)):
+                    if evidence.success and (rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str))):
                         content_str += (
                             "\n\n[SISTEM]: Informasi dari dokumen SOP / basis pengetahuan RAG sudah memadai. "
                             "Segera susun jawaban akhir yang lengkap dan rapi dalam Bahasa Indonesia untuk pengguna sekarang "
                             "diawali '📚 **Data langsung dari Dokumen RAG: [Judul Dokumen]**' tanpa memanggil tool RAG tambahan atau tool sistem lain."
+                        )
+                    elif not evidence.success:
+                        content_str += (
+                            "\n\n[SISTEM]: Hasil RAG ini bukan bukti isi dokumen. Jangan mengaku telah membaca dokumen "
+                            "atau merangkum isinya; jelaskan penolakan akses atau kendala yang tertera."
                         )
                 elif server_name == "email":
                     if mcp_name in ("search_emails", "read_email", "get_email", "get_calendar") and any(k in content_str.lower() for k in ("subject", "from", "sender", "snippet", "body", "events", "calendar")):
@@ -2258,11 +2268,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 messages.append(ToolMessage(content=content_str, tool_call_id=tool_id))
                 
                 source_type = server_name.upper() if server_name in ("sap", "sql", "email", "rag") else f"MCP ({server_name.upper()})"
-                sources.append(SourceReference(
-                    type=source_type,
-                    name=f"Tool: {mcp_name}",
-                    content=content_str[:500] + ("..." if len(content_str) > 500 else "")
-                ))
+                if server_name != "rag" or evidence.success:
+                    sources.append(SourceReference(
+                        type=source_type,
+                        name=f"Tool: {mcp_name}",
+                        content=content_str[:500] + ("..." if len(content_str) > 500 else "")
+                    ))
             except SapCredentialRejected as exc:
                 raise _sap_credential_error(sap_target) from exc
             except Exception as e:

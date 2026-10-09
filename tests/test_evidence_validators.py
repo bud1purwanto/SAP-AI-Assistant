@@ -80,6 +80,14 @@ class TestRAGValidator:
         ev = validate_rag_evidence("rag_search", "Connection refused", is_error=True)
         assert ev.success is False
 
+    def test_access_denied_is_not_document_evidence(self):
+        ev = validate_rag_evidence(
+            "rag_answer",
+            json.dumps({"status": "found", "message": "RAG access denied"}),
+        )
+        assert ev.success is False
+        assert ev.error == "RAG access denied"
+
 
 class TestDispatcher:
 

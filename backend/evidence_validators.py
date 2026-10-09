@@ -90,6 +90,10 @@ def validate_sql_evidence(
 
 
 _RAG_FOUND = re.compile(r'"status"\s*:\s*"found"', re.I)
+_RAG_DENIED = re.compile(
+    r'\b(access denied|permission denied|forbidden|unauthorized|not authorized|'
+    r'akses ditolak|tidak memiliki izin|tidak diizinkan)\b', re.I
+)
 
 
 def validate_rag_evidence(
@@ -101,7 +105,8 @@ def validate_rag_evidence(
     error = ""
     if is_error:
         error = content[:300] if content else "Unknown RAG error"
-    found = bool(_RAG_FOUND.search(content or "")) if not is_error else False
+    denied = bool(_RAG_DENIED.search(content or ""))
+    found = bool(_RAG_FOUND.search(content or "")) if not is_error and not denied else False
     doc_count = None
     if not is_error and content:
         try:
@@ -115,10 +120,10 @@ def validate_rag_evidence(
     return EvidenceItem(
         server="rag",
         tool=tool,
-        success=not is_error and (found or bool((content or "").strip())),
+        success=not is_error and not denied and (found or bool((content or "").strip())),
         content=content or "",
         document_count=doc_count,
-        error=error,
+        error=error or ("RAG access denied" if denied else ""),
         signature=_build_sig(tool, args),
     )
 
