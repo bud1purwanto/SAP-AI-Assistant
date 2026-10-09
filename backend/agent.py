@@ -784,6 +784,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     m_sop = re.match(r'^/(?:sop|rag|doc|kb)\s+(.+)$', raw_message, re.IGNORECASE | re.DOTALL)
     if m_sop:
         sop_query = m_sop.group(1).strip()
+        # Pengguna kadang menempelkan perintah dua kali, misalnya
+        # "/sop /sop Nama Dokumen.doc". Kirim hanya nama/topik ke RAG.
+        while re.match(r'^/(?:sop|rag|doc|kb)\s+', sop_query, re.IGNORECASE):
+            sop_query = re.sub(r'^/(?:sop|rag|doc|kb)\s+', '', sop_query, count=1, flags=re.IGNORECASE).strip()
         chat_req.message = (
             "[INSTRUKSI SISTEM KHUSUS: Pengguna meminta pencarian khusus dokumen SOP & basis pengetahuan (RAG Knowledge Base) internal perusahaan. "
             "Prioritaskan penggunaan tool RAG / search_knowledge_base untuk mencari dokumen SOP resmi. "
@@ -1170,6 +1174,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     has_rag = any(item["server"] == "rag" for item in all_mcp_tools)
     has_sql = any(item["server"] in ("sql", "database") for item in all_mcp_tools)
     has_email = any(item["server"] == "email" for item in all_mcp_tools)
+    if m_sop and not has_rag:
+        await report("done", "Completed" if is_en else "Selesai")
+        return ChatResponse(reply=(
+            "I couldn't access RAG Knowledge for this request, so I can't verify the document list. Please check the RAG connector and your access, then try again."
+            if is_en else
+            "Saya tidak dapat mengakses RAG Knowledge untuk permintaan ini, sehingga daftar dokumen belum bisa diverifikasi. Periksa konektor RAG dan hak akses akun, lalu coba lagi."
+        ), sources=[])
     
     # 2. Konversi tools MCP ke format OpenAI tools
     openai_tools = []
@@ -1797,6 +1808,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         _analysis_intent.depth = "deep"
     _analysis_plan = build_investigation_plan(_analysis_intent, chat_req.message)
     _analysis_state = AnalysisState(intent=_analysis_intent, plan=_analysis_plan)
+    needs_rag_evidence = rag_requested or (
+        _analysis_intent.needs_live_data and "rag" in _analysis_intent.required_sources
+    )
     _evidence_gate_retries = 0
     _MAX_EVIDENCE_GATE_RETRIES = 2
     _require_evidence = (active_mode or {}).get("require_evidence") is not False
@@ -1806,7 +1820,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     if _analysis_intent.kind == "deep_analysis":
         _max_review_cycles = max(1, min(_max_review_cycles, 3))
     _configured_rag_budget = (active_mode or {}).get("rag_call_budget")
-    defer_response_stream = _analysis_intent.kind in ("grounded_lookup", "deep_analysis")
+    defer_response_stream = needs_rag_evidence or _analysis_intent.kind in ("grounded_lookup", "deep_analysis")
 
     def _current_rag_budget() -> int:
         if _configured_rag_budget is not None:
@@ -2313,6 +2327,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                 reply_text = "Maaf, data dari tool sudah terkumpul tetapi rangkuman jawaban tidak dapat diproses."
         except Exception as e:
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
+
+    if needs_rag_evidence and not any(e.server == "rag" and e.success for e in _analysis_state.evidence):
+        await reset_stream()
+        reply_text = (
+            "I couldn't verify a document from RAG Knowledge for this request. I can't answer from that document. Please check the RAG connector, access, and index, then try again."
+            if is_en else
+            "Saya belum dapat memverifikasi dokumen dari RAG Knowledge untuk permintaan ini, sehingga saya tidak bisa menjawab berdasarkan dokumen tersebut. Periksa konektor RAG, hak akses, dan indeks dokumen, lalu coba lagi."
+        )
+        sources = [source for source in sources if source.type.lower() != "rag"]
 
     # Normalisasi konsistensi header sumber data agar sesuai dengan output aktual
     used_servers = {s.type.lower() for s in sources}

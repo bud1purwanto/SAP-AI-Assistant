@@ -73,8 +73,15 @@ class TestRAGValidator:
 
     def test_not_found(self):
         ev = validate_rag_evidence("rag_answer", json.dumps({"status": "not_found"}))
-        # content tidak kosong tapi status not_found — masih success karena ada konten
-        assert ev.success is True
+        assert ev.success is False
+
+    def test_empty_document_list(self):
+        ev = validate_rag_evidence("rag_search", json.dumps({"status": "found", "documents": []}))
+        assert ev.success is False
+
+    def test_plain_text_no_documents(self):
+        ev = validate_rag_evidence("rag_search", "No matching documents found")
+        assert ev.success is False
 
     def test_error(self):
         ev = validate_rag_evidence("rag_search", "Connection refused", is_error=True)

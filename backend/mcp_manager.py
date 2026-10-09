@@ -415,10 +415,10 @@ class MCPManager:
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
         dedicated_token = gw_headers.pop("auth_token", None)
-        if name in ("sap", "sql"):
+        if name in ("sap", "sql", "rag", "email"):
             if not access_token:
                 raise PermissionError(f"Sesi OIDC pengguna tidak tersedia untuk MCP {name.upper()}.")
-            # Gateway memeriksa izin target dan kredensial dari JWT pengguna.
+            # Seluruh gateway inti memeriksa izin dari JWT pengguna yang sedang login.
             gw_headers["Authorization"] = f"Bearer {access_token}"
             dedicated_token = None
         elif dedicated_token:

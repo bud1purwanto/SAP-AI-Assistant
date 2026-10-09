@@ -94,6 +94,11 @@ _RAG_DENIED = re.compile(
     r'\b(access denied|permission denied|forbidden|unauthorized|not authorized|'
     r'akses ditolak|tidak memiliki izin|tidak diizinkan)\b', re.I
 )
+_RAG_EMPTY = re.compile(
+    r'\b(no (?:matching )?(?:documents?|results?|sources?) (?:found|available)|'
+    r'dokumen (?:tidak|belum) ditemukan|tidak ada (?:dokumen|hasil)|'
+    r'no relevant documents?)\b', re.I
+)
 
 
 def validate_rag_evidence(
@@ -106,12 +111,17 @@ def validate_rag_evidence(
     if is_error:
         error = content[:300] if content else "Unknown RAG error"
     denied = bool(_RAG_DENIED.search(content or ""))
+    empty = bool(_RAG_EMPTY.search(content or ""))
     found = bool(_RAG_FOUND.search(content or "")) if not is_error and not denied else False
     doc_count = None
     if not is_error and content:
         try:
             data = json.loads(content)
             if isinstance(data, dict):
+                status = str(data.get("status") or "").lower()
+                if status in ("not_found", "no_results", "empty", "error", "denied", "access_denied", "forbidden", "unauthorized"):
+                    is_error = True
+                    error = status
                 sources = data.get("sources") or data.get("results") or data.get("documents")
                 if isinstance(sources, list):
                     doc_count = len(sources)
@@ -120,7 +130,7 @@ def validate_rag_evidence(
     return EvidenceItem(
         server="rag",
         tool=tool,
-        success=not is_error and not denied and (found or bool((content or "").strip())),
+        success=not is_error and not denied and not empty and doc_count != 0 and (found or bool((content or "").strip())),
         content=content or "",
         document_count=doc_count,
         error=error or ("RAG access denied" if denied else ""),

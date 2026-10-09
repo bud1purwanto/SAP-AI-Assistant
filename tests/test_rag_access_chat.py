@@ -29,3 +29,22 @@ def test_rag_locked_message_supports_english():
     )))
     assert "request access" in response.reply.lower()
     assert "offline" not in response.reply.lower()
+
+
+def test_sop_without_rag_tools_does_not_guess_documents(monkeypatch):
+    async def no_tools(**kwargs):
+        return []
+
+    def unexpected_model(*args, **kwargs):
+        raise AssertionError("Model tidak boleh dipanggil tanpa tool RAG")
+
+    monkeypatch.setattr(agent.mcp_manager, "get_all_tools", no_tools)
+    monkeypatch.setattr(agent, "_buat_llm", unexpected_model)
+    response = asyncio.run(agent.process_chat(ChatRequest(
+        message="/sop cari list di folder IT/SAP/ABAP",
+        active_server="general",
+        enabled_connectors=["rag"],
+        language="id",
+    )))
+    assert "belum bisa diverifikasi" in response.reply
+    assert response.sources == []
