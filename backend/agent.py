@@ -1094,13 +1094,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             target_srv = "sap"
     # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
     # gunakan perilaku lama (fallback server_filter-based exclusivity).
-    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors else None
-    # Target yang aktif di header chat harus tersedia walau preferensi konektor
-    # lama di browser belum memasukkan SQL/SAP ke enabled_connectors.
-    if allowed_connectors is not None and target_srv.startswith("sql:"):
-        allowed_connectors.add("sql")
-    elif allowed_connectors is not None and target_srv.startswith("sap:"):
-        allowed_connectors.add("sap")
+    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors is not None else None
+    # Pilihan target tidak boleh mengaktifkan kembali konektor yang dimatikan.
+    if allowed_connectors is not None:
+        if target_srv.startswith("sql") and "sql" not in allowed_connectors:
+            target_srv = "general"
+        elif target_srv.startswith("sap") and "sap" not in allowed_connectors:
+            target_srv = "general"
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
@@ -1115,6 +1115,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         if ":" in target_srv and target_srv.startswith("sql:")
         else (chat_req.sql_target if chat_req.sql_target else None)
     )
+    if allowed_connectors is not None:
+        if "sap" not in allowed_connectors:
+            sap_target = None
+        if "sql" not in allowed_connectors:
+            sql_target = None
     # Kredensial SAP dimiliki OIDC dan dipakai gateway melalui sesi OIDC pengguna.
     sap_owner = str(oidc_sub or "").strip()
     if (target_srv.startswith("sap") or sap_target) and not sap_owner:
@@ -1921,6 +1926,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     logger.info(f"Fallback Text Parser mendeteksi tool call: {t_name} dengan argumen {t_args}")
                     
                     server_name, actual_tool_name = t_name.split("__", 1)
+                    if allowed_connectors is not None and server_name not in allowed_connectors:
+                        messages.append(HumanMessage(content=(
+                            f"SISTEM: Konektor {server_name.upper()} tidak aktif untuk permintaan ini. "
+                            "Jangan panggil gateway atau mengaku telah membaca datanya."
+                        )))
+                        continue
                     if server_name == "rag":
                         if rag_call_count >= 2:
                             messages.append(HumanMessage(content="SISTEM: Batas siklus penelusuran RAG tercapai. Dokumen yang terkumpul sudah memadai. Segera tuliskan jawaban akhir lengkap untuk pengguna sekarang."))

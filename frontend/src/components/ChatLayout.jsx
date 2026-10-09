@@ -164,6 +164,21 @@ const ChatLayout = () => {
   const [accessRequestModal, setAccessRequestModal] = useState({ isOpen: false, target: null });
   const [sapSubServers, setSapSubServers] = useState([]);
   const [sqlSubServers, setSqlSubServers] = useState([]);
+  const connectorAccess = useCallback((connectorId) => {
+    const serverTargets = connectorId === 'sql' ? sqlSubServers
+      : connectorId === 'sap' ? sapSubServers : [];
+    const accessTargets = serverTargets.length > 0
+      ? serverTargets.map((server) => lookupMcpAccessTarget(server)).filter(Boolean)
+      : mcpAccessTargets.filter((entry) => {
+        const serverType = String(entry.serverType || '').toLowerCase();
+        const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
+        return serverType === connectorId || resourceKey.startsWith(`${connectorId}:`);
+      });
+    return {
+      approvedTarget: accessTargets.find((entry) => entry.accessState === 'approved'),
+      requestableTarget: accessTargets.find((entry) => entry.canRequest) || accessTargets[0],
+    };
+  }, [sapSubServers, sqlSubServers, mcpAccessTargets, lookupMcpAccessTarget]);
   const [modesList, setModesList] = useState([]);
   const [chatModesEnabled, setChatModesEnabled] = useState(true);
   const [selectedMode, setSelectedMode] = useState(() => {
@@ -434,7 +449,6 @@ const ChatLayout = () => {
         const next = {
           ...prev,
           [system === 'sap' ? 'sapTarget' : 'sqlTarget']: target,
-          enabled: prev.enabled.includes(system) ? prev.enabled : [...prev.enabled, system],
         };
         localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
         return next;
@@ -1119,7 +1133,7 @@ const ChatLayout = () => {
         .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
       const [activeSystemForPayload, activeTargetForPayload] = activeServer.split(':', 2);
-      const initialConnectors = Array.isArray(connectorConfig.enabled) && connectorConfig.enabled.length > 0
+      const initialConnectors = Array.isArray(connectorConfig.enabled)
         ? connectorConfig.enabled
         : ['sap', 'rag'];
       let sapTarget = connectorConfig.sapTarget || (activeSystemForPayload === 'sap' ? activeTargetForPayload : undefined);
@@ -1140,22 +1154,19 @@ const ChatLayout = () => {
         if (activeSystemForPayload === 'sql') safeActiveServer = 'general';
       }
 
-      const isConnectorLocked = (connectorId) => {
-        const connectorTargets = mcpAccessTargets.filter((entry) => {
-          const serverType = String(entry.serverType || '').toLowerCase();
-          const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
-          return serverType === connectorId || resourceKey.startsWith(`${connectorId}:`);
-        });
-        return !connectorTargets.some((entry) => entry.accessState === 'approved');
-      };
+      const isConnectorLocked = (connectorId) => !connectorAccess(connectorId).approvedTarget;
       const requestedConnectors = new Set(initialConnectors);
-      if (activeSystemForPayload === 'sql' && sqlTarget) requestedConnectors.add('sql');
-      if (activeSystemForPayload === 'sap' && sapTarget) requestedConnectors.add('sap');
       const enabledConnectors = [...requestedConnectors].filter((c) => {
         if (c === 'sap' && isSapLocked) return false;
         if (c === 'sql' && isSqlLocked) return false;
         return !isConnectorLocked(c);
       });
+      if (!enabledConnectors.includes('sap')) sapTarget = undefined;
+      if (!enabledConnectors.includes('sql')) sqlTarget = undefined;
+      if ((activeSystemForPayload === 'sap' && !enabledConnectors.includes('sap'))
+        || (activeSystemForPayload === 'sql' && !enabledConnectors.includes('sql'))) {
+        safeActiveServer = 'general';
+      }
       const lockedConnectors = ['rag'].filter((connectorId) =>
         mcpAccessTargets.some((entry) => {
           const serverType = String(entry.serverType || '').toLowerCase();
@@ -2326,13 +2337,7 @@ const ChatLayout = () => {
                             { id: 'rag', label: t('mcp.enableRag'), icon: BookOpen, color: 'text-amber-400', allowed: mcpStatus?.rag?.allowed !== false },
                             { id: 'email', label: t('mcp.enableEmail'), icon: Mail, color: 'text-purple-400', allowed: mcpStatus?.email?.allowed !== false },
                           ].map(({ id, label, icon: Icon, color, allowed }) => {
-                            const accessTargets = mcpAccessTargets.filter((entry) => {
-                              const serverType = String(entry.serverType || '').toLowerCase();
-                              const resourceKey = String(entry.resourceKey || entry.resource_key || '').toLowerCase();
-                              return serverType === id || resourceKey.startsWith(`${id}:`);
-                            });
-                            const approvedTarget = accessTargets.find((entry) => entry.accessState === 'approved');
-                            const requestableTarget = accessTargets.find((entry) => entry.canRequest) || accessTargets[0];
+                            const { approvedTarget, requestableTarget } = connectorAccess(id);
                             const isAccessLocked = !approvedTarget;
                             const isAccessPending = requestableTarget?.accessState === 'pending';
                             const connectorAllowed = allowed && !isAccessLocked;
