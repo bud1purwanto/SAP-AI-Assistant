@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   BookOpen,
@@ -362,7 +362,9 @@ const ChatInput = ({
     setInput('');
     setDismissedSlash(false);
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
+      textareaRef.current.style.height = `${isNarrow ? 40 : 42}px`;
+      textareaRef.current.style.overflowY = 'hidden';
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 50);
@@ -484,12 +486,29 @@ const ChatInput = ({
   const fileInputRef = useRef(null);
   const dragDepth = useRef(0);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
+  const adjustTextareaHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
+    const minHeight = isNarrow ? 40 : 42;
+    const maxHeight = isNarrow ? 140 : 200;
+
+    if (!el.value) {
+      el.style.height = `${minHeight}px`;
+      el.style.overflowY = 'hidden';
+      return;
     }
-  }, [input]);
+
+    el.style.height = 'auto';
+    const scrollH = el.scrollHeight;
+    const nextHeight = Math.max(minHeight, Math.min(scrollH, maxHeight));
+    el.style.height = `${nextHeight}px`;
+    el.style.overflowY = scrollH > maxHeight ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input, isMobile, adjustTextareaHeight]);
 
   // Saat selesai loading jawaban (isLoading berubah jadi false), kembalikan fokus ke textarea
   useEffect(() => {
@@ -550,7 +569,9 @@ const ChatInput = ({
     setAttachments([]);
     setUploadError('');
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      const isNarrow = typeof window !== 'undefined' && window.innerWidth < 640;
+      textareaRef.current.style.height = `${isNarrow ? 40 : 42}px`;
+      textareaRef.current.style.overflowY = 'hidden';
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 50);
@@ -774,7 +795,7 @@ const ChatInput = ({
           </p>
         )}
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-1">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-1.5 sm:gap-1.5">
           <input
             ref={fileInputRef}
             type="file"
@@ -842,12 +863,12 @@ const ChatInput = ({
             }}
             placeholder={displayedPlaceholder}
             aria-label={activePlaceholder}
-            className="order-1 sm:order-2 no-focus-outline flex-1 w-full sm:w-auto max-h-[120px] sm:max-h-[180px] py-1.5 sm:py-2 px-2 sm:px-2 bg-transparent text-content placeholder:text-content-subtle placeholder:text-xs sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-sm sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-snug sm:leading-relaxed cursor-text"
+            className="order-1 sm:order-2 no-focus-outline w-full sm:w-auto sm:flex-1 min-h-[40px] sm:min-h-[42px] max-h-[140px] sm:max-h-[200px] py-2 sm:py-2.5 px-2.5 sm:px-2.5 bg-transparent text-content placeholder:text-content-subtle placeholder:text-[13px] sm:placeholder:text-sm placeholder:truncate placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis text-[15px] sm:text-[15px] border-none outline-none ring-0 shadow-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 resize-none leading-relaxed cursor-text"
             disabled={isLoading}
           />
 
           {/* Toolbar Actions: Baris bawah di HP (order-2), Sisi kiri di Desktop (order-1) */}
-          <div className="order-2 sm:order-1 flex items-center justify-between sm:justify-start gap-1 sm:gap-1.5 w-full sm:w-auto">
+          <div className="order-2 sm:order-1 flex items-center justify-between sm:justify-start gap-1 sm:gap-1.5 w-full sm:w-auto pt-1 sm:pt-0 sm:pb-0.5 border-t border-line/40 sm:border-t-0">
             <div className="flex items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
@@ -920,7 +941,7 @@ const ChatInput = ({
           </div>
 
           {/* Tombol Send khusus Desktop (Order 3) */}
-          <div className="order-3 hidden sm:flex items-center gap-1 sm:gap-1.5">
+          <div className="order-3 hidden sm:flex items-center gap-1 sm:gap-1.5 sm:pb-0.5">
             <button
               type="submit"
               disabled={busy || (!input.trim() && attachments.length === 0)}
