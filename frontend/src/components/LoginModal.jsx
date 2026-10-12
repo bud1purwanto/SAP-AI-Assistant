@@ -208,33 +208,57 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
 
   return (
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center overflow-y-auto p-4"
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center overflow-y-auto p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div className="bg-surface-raised rounded-2xl shadow-2xl w-full max-w-md my-auto border border-line relative p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200">
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 text-content-muted hover:text-content p-1.5 rounded-full transition-colors"
-            aria-label={t('login.closeAria')}
-          >
-            <X className="w-5 h-5" aria-hidden="true" />
-          </button>
-        )}
+      <div className="bg-surface-raised rounded-[32px] shadow-2xl w-full max-w-sm my-auto border border-line/80 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Curved Sky Blue Dome Top (Ref 1 Onboarding Style) */}
+        <div className="bg-gradient-to-b from-blue-50 to-indigo-50/60 dark:from-slate-800 dark:to-slate-900/80 p-6 pb-7 rounded-b-[36px] relative text-center border-b border-line/40">
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 text-content-muted hover:text-content p-1.5 rounded-full hover:bg-white/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label={t('login.closeAria')}
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
 
-        <div className="text-center mb-6">
-          <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center text-accent">
-            <LogIn className="w-6 h-6" aria-hidden="true" />
+          {/* Cute Friendly Bot Avatar Container */}
+          <div className="relative w-20 h-20 mx-auto mb-3 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-md border border-blue-100 dark:border-slate-700 flex flex-col items-center justify-center relative">
+              {/* Headphone Ears */}
+              <div className="absolute -left-2 top-4 w-2.5 h-6 rounded-full bg-blue-500 shadow-xs" />
+              <div className="absolute -right-2 top-4 w-2.5 h-6 rounded-full bg-blue-500 shadow-xs" />
+              {/* Visor Screen */}
+              <div className="w-10 h-7 bg-slate-900 rounded-xl flex items-center justify-center gap-1.5 shadow-inner">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              </div>
+              <div className="w-3 h-0.5 bg-slate-300 dark:bg-slate-600 rounded-full mt-1" />
+            </div>
+            {/* Status speech bubble dot */}
+            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white dark:bg-slate-800 shadow border border-line flex items-center justify-center text-xs">
+              ✨
+            </div>
           </div>
-          <h2 id="login-title" className="text-xl font-bold text-content">
-            {t('login.title') || 'Masuk Enterprise AI Assistant'}
+
+          <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full mb-1">
+            Enterprise AI
+          </span>
+          <h2 id="login-title" className="text-lg font-extrabold text-content tracking-tight">
+            {t('login.title') || 'Masuk ke Workspace'}
           </h2>
-          <p className="text-xs text-content-muted mt-1.5 leading-relaxed">
-            {customMessage || t('login.subtitle') || 'Masuk untuk mengakses layanan Enterprise SAP & basis dokumen.'}
+          <p className="text-xs text-content-muted mt-1 max-w-[240px] mx-auto leading-relaxed">
+            {customMessage || t('login.subtitle') || 'Akses instan ke SAP ERP, SOP Knowledge RAG, dan Analitik.'}
           </p>
         </div>
+
+        <div className="p-6 pt-5">
 
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs rounded-xl flex items-center gap-2">
@@ -331,7 +355,7 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-2 rounded-xl bg-accent text-accent-contrast font-semibold px-4 py-2.5 hover:bg-accent/90 transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-50 cursor-pointer"
+            className="w-full mt-3 rounded-full bg-accent text-accent-contrast font-bold px-4 py-3 hover:bg-accent-hover transition-all flex items-center justify-center gap-2 text-xs shadow-md shadow-accent/20 disabled:opacity-50 cursor-pointer active:scale-[0.99]"
           >
             {isLoading ? (
               <>
@@ -340,12 +364,13 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
               </>
             ) : (
               <>
-                <LogIn className="w-4 h-4" />
-                <span>{t('login.submit')}</span>
+                <span>{t('login.submit') || 'Masuk Sekarang'}</span>
+                <LogIn className="w-3.5 h-3.5" />
               </>
             )}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );

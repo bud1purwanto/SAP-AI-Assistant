@@ -2517,54 +2517,83 @@ const ChatLayout = () => {
             )}
 
             {currentMessages.length === 0 && !isCurrentLoading && (
-              <div className="pt-4 sm:pt-8 pb-3 sm:pb-4 relative">
-                <div className="text-center mb-4 sm:mb-6">
-                  {/* Clean Enterprise Hero Icon Badge */}
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-accent-soft text-accent border border-accent/20 flex items-center justify-center mx-auto mb-2.5 shadow-xs">
-                    <Cpu className="w-6 h-6 sm:w-7 sm:h-7" aria-hidden="true" />
-                  </div>
+              <div className="pt-2 sm:pt-6 pb-3 sm:pb-4 relative">
+                {/* Ref 1 Center Screen: Curved Dome Welcome Header with Friendly Peeking Robot */}
+                <div className="relative mb-5 sm:mb-7 overflow-hidden rounded-[28px] sm:rounded-[36px] bg-gradient-to-b from-blue-50/90 to-surface-sunken/40 dark:from-slate-800/60 dark:to-slate-900/40 border border-blue-100/80 dark:border-slate-800 p-5 sm:p-7 shadow-xs">
+                  {/* Subtle geometric circles */}
+                  <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full border-2 border-blue-200/40 dark:border-slate-700/40 pointer-events-none" />
+                  <div className="absolute -left-6 -bottom-6 w-24 h-24 rounded-full border-2 border-blue-200/30 dark:border-slate-700/30 pointer-events-none" />
 
-                  {/* Judul 100% Presisi di Tengah Tanpa Beban Elemen Kiri/Kanan */}
-                  <h3 className="text-base sm:text-xl font-bold text-content font-display tracking-tight text-center">
-                    {t('suggestions.heroTitle')}
-                  </h3>
+                  <div className="flex items-center justify-between gap-4 relative z-10">
+                    <div className="space-y-1 text-left min-w-0">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 border border-accent/20">
+                        <Sparkles className="w-2.5 h-2.5 text-accent" />
+                        Enterprise Assistant
+                      </span>
+                      <h3 className="text-lg sm:text-2xl font-black text-content font-display tracking-tight leading-tight truncate">
+                        {user?.full_name ? `Halo, ${String(user.full_name).trim().split(' ')[0]}!` : user?.username && user.username !== 'Guest' ? `Halo, ${user.username}!` : (t('suggestions.heroTitle') || 'Halo, Rekan!')}
+                      </h3>
+                      <p className="text-xs sm:text-sm text-content-muted leading-relaxed">
+                        {t('suggestions.heroSubtitle') || 'Ada dokumen SOP, modul SAP ERP, atau data yang ingin dicek hari ini?'}
+                      </p>
+                    </div>
 
-                  {/* Badge & Tombol Refresh Terpusat Simetris di Bawah Judul */}
-                  <div className="flex items-center justify-center mt-2 mb-1.5">
-                    {dynamicSuggestions && isDynamicSuggestions ? (
-                      <div className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/20 text-[10px] sm:text-[11px] font-semibold shadow-2xs">
-                        <span className="flex items-center gap-1">
-                          <Sparkles className="w-2.5 h-2.5 text-indigo-500" />
-                          {t('suggestions.personalized')}
-                        </span>
-                        <span className="w-px h-2.5 bg-indigo-500/25" />
-                        <button
-                          onClick={() => loadSuggestions(true)}
-                          disabled={isSuggestionsLoading}
-                          title={t('suggestions.refresh')}
-                          aria-label={t('suggestions.refresh')}
-                          className="p-0.5 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors cursor-pointer disabled:opacity-50 flex items-center"
-                        >
-                          <RefreshCw className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
-                        </button>
+                    {/* Peeking Cute 3D Bot Avatar (Ref 1 Style) */}
+                    <div className="shrink-0 relative w-14 h-14 sm:w-16 sm:h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-blue-100 dark:border-slate-700 flex flex-col items-center justify-center">
+                      <div className="absolute -left-1.5 top-3.5 w-1.5 h-5 rounded-full bg-blue-500" />
+                      <div className="absolute -right-1.5 top-3.5 w-1.5 h-5 rounded-full bg-blue-500" />
+                      <div className="w-9 h-6 sm:w-10 sm:h-7 bg-slate-900 rounded-xl flex items-center justify-center gap-1.5 shadow-inner">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                       </div>
-                    ) : (
-                      <button
-                        onClick={() => loadSuggestions(true)}
-                        disabled={isSuggestionsLoading}
-                        title={t('suggestions.refresh')}
-                        aria-label={t('suggestions.refresh')}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-surface-raised border border-line text-[10px] sm:text-[11px] font-medium text-content-muted hover:text-content hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-50 shadow-2xs"
-                      >
-                        <RefreshCw className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
-                        <span>{t('suggestions.refresh')}</span>
-                      </button>
-                    )}
+                      <div className="w-2.5 h-0.5 bg-slate-300 dark:bg-slate-600 rounded-full mt-1" />
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800 absolute -top-1 -right-1" title="Online" />
+                    </div>
                   </div>
 
-                  <p className="text-xs sm:text-sm text-content-muted mt-1 max-w-lg mx-auto">
-                    {t('suggestions.heroSubtitle')}
-                  </p>
+                  {/* Horizontal Category Chips (Ref 1: SAP ERP, SOP / RAG, SQL Data, Email) */}
+                  <div className="mt-4 pt-3.5 border-t border-line/60 flex items-center gap-1.5 overflow-x-auto pb-0.5 custom-scroll">
+                    <span className="text-[11px] font-bold text-content-subtle shrink-0 pr-1">
+                      {language === 'en' ? 'Quick Modules:' : 'Modul Pintas:'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage('/sap')}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
+                    >
+                      <span>📦 SAP ERP</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage('/sop')}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
+                    >
+                      <span>📚 SOP / RAG</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage('/sql')}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
+                    >
+                      <span>📊 SQL DB</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendMessage('/email')}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
+                    >
+                      <span>📬 Email</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadSuggestions(true)}
+                      disabled={isSuggestionsLoading}
+                      title={t('suggestions.refresh')}
+                      className="ml-auto p-1.5 rounded-full bg-white dark:bg-slate-800 text-content-muted hover:text-accent border border-line transition-all shrink-0 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
+                    </button>
+                  </div>
                 </div>
 
                 {isSuggestionsLoading ? (
@@ -2687,7 +2716,8 @@ const ChatLayout = () => {
           setUser(loggedInUser);
           setIsLoginModalOpen(false);
           setCustomLoginMsg('');
-          window.location.reload();
+          fetchServers();
+          fetchModes();
         }}
       />
 

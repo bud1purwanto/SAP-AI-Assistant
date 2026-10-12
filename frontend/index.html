@@ -49,9 +49,6 @@
               root.classList.add('is-pwa-standalone');
             }
           }
-          // Tinggi viewport nyata. Di PWA standalone iOS, 100dvh bisa menyisakan
-          // celah kosong di bawah karena area home-indicator ikut terhitung;
-          // visualViewport memberi angka yang benar-benar terlihat.
           var setAppHeight = function () {
             var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
             root.style.setProperty('--app-height', h + 'px');
@@ -78,14 +75,8 @@
     </script>
     <title>Enterprise AI Assistant</title>
   </head>
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <!--
-      Token sync via postMessage (SAVE_TOKENS / RESTORE_TOKENS) and
-      localStorage.setItem('sap_assistant_token', ...) were removed.
-      Authentication is now handled exclusively by the Dashboard OIDC BFF
-      using HTTP-only session cookies. No localStorage token is stored or
-      forwarded to the parent window.
-    -->
   </body>
 </html>

@@ -5,7 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const backendPort = process.env.VITE_BACKEND_PORT || '8005';
+  const backendPort = process.env.VITE_BACKEND_PORT || '8007';
   return {
     server: {
       host: '0.0.0.0', // Memungkinkan akses via Local IP / LAN (misal http://192.168.x.x:5173)
@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => {
           target: `http://127.0.0.1:${backendPort}`,
           changeOrigin: true,
         },
+      },
+      headers: {
+        'Access-Control-Allow-Origin': '*',
       },
     },
     preview: {

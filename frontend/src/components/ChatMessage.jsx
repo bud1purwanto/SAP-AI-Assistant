@@ -687,12 +687,16 @@ const ChatMessage = ({
 
   return (
     <div className="flex items-start gap-2.5 sm:gap-3.5 my-4 sm:my-5 group max-w-full overflow-hidden">
-      {/* AI Avatar with Glowing Gradient Ring */}
+      {/* Ref 1: Friendly Robot Avatar Container */}
       <div className="relative mt-1 shrink-0">
-        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-teal-500 via-emerald-500 to-indigo-500 p-[1.5px] shadow-sm shadow-emerald-500/20">
-          <div className="w-full h-full bg-slate-900 rounded-full flex items-center justify-center text-emerald-400">
-            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400 animate-pulse" />
+        <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 border border-blue-200/80 dark:border-slate-700 shadow-xs flex flex-col items-center justify-center relative">
+          <div className="absolute -left-1 top-2.5 w-1 h-3 rounded-full bg-blue-500" />
+          <div className="absolute -right-1 top-2.5 w-1 h-3 rounded-full bg-blue-500" />
+          <div className="w-5 h-3.5 bg-slate-900 rounded-md flex items-center justify-center gap-0.5 shadow-inner">
+            <span className="w-1 h-1 rounded-full bg-cyan-400" />
+            <span className="w-1 h-1 rounded-full bg-cyan-400" />
           </div>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-800 absolute -top-0.5 -right-0.5" />
         </div>
       </div>
       
@@ -703,8 +707,8 @@ const ChatMessage = ({
           {timeLabel && <span className="text-xs text-content-subtle">{timeLabel}</span>}
         </div>
 
-        {/* AI Card Bubble with Subtle Glass Effect & Left Border Accent */}
-        <div className="relative px-4 sm:px-6 py-4 sm:py-5 rounded-3xl rounded-tl-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-sm transition-all hover:border-slate-300 dark:hover:border-slate-700/80 select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
+        {/* AI Card Bubble with Soft Clean Pastel Styling */}
+        <div className="relative px-4 sm:px-6 py-4 sm:py-5 rounded-3xl rounded-tl-sm text-[14px] sm:text-[14.5px] leading-relaxed bg-surface-raised border border-line text-content shadow-xs transition-all select-text break-words [overflow-wrap:anywhere] max-w-full overflow-hidden">
           
           <div className={`prose prose-sm max-w-none text-content-secondary select-text break-words [overflow-wrap:anywhere] min-w-0 max-w-full ${isStreaming ? 'chat-streaming-active' : ''}`}>
             <ReactMarkdown 
@@ -722,14 +726,46 @@ const ChatMessage = ({
             )}
           </div>
 
+          {/* Ref 1 & 2: Action Suggestion Pills under Assistant Responses */}
+          {!isStreaming && onSendMessage && (
+            <div className="mt-3.5 pt-3 border-t border-line/60">
+              <span className="text-[10px] font-bold text-content-subtle uppercase tracking-wider block mb-1.5">
+                {language === 'en' ? 'Quick Actions:' : 'Pilihan Tindakan:'}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onSendMessage(language === 'en' ? 'Provide more details regarding this topic' : 'Tampilkan rincian lebih detail terkait ini')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-surface hover:bg-surface-hover text-content border border-line shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>🔍 {language === 'en' ? 'More Details' : 'Rincian Detail'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSendMessage(language === 'en' ? 'Check related SOP documentation' : 'Cek dokumen SOP terkait')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-surface hover:bg-surface-hover text-content border border-line shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>📄 {language === 'en' ? 'Related SOP' : 'Dokumen SOP'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSendMessage(language === 'en' ? 'Check live SAP status' : 'Cek status live di sistem SAP')}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-surface hover:bg-surface-hover text-content border border-line shadow-2xs transition-all cursor-pointer"
+                >
+                  <span>📦 {language === 'en' ? 'Check SAP' : 'Cek Status SAP'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Action Footer Bar — belum relevan selagi jawaban masih ditulis. */}
           {!isStreaming && (
-          <div className="mt-4 pt-3 border-t border-line flex items-center justify-between">
+          <div className="mt-3 pt-2.5 border-t border-line/60 flex items-center justify-between">
             {message.sources && message.sources.length > 0 ? (
               <button 
                 type="button"
                 onClick={() => setShowSources(!showSources)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:brightness-110 bg-accent-soft px-3 py-1.5 rounded-xl transition-all border border-accent/20 cursor-pointer"
+                className="flex items-center gap-1.5 text-xs font-semibold text-accent hover:brightness-110 bg-accent-soft px-3 py-1.5 rounded-full transition-all border border-accent/20 cursor-pointer"
               >
                 <Database className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>

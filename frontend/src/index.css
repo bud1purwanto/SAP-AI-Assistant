@@ -49,15 +49,15 @@
   --color-abap-number:      var(--abap-number);
 }
 
-/* --- Tema terang (default) --- */
+/* --- Tema terang (default - Ref 1 Soft Sky Blue & Minimalist) --- */
 :root,
 [data-theme="light"] {
   color-scheme: light;
 
-  --surface:           #f8fafc;
+  --surface:           #f4f7fc;
   --surface-raised:    #ffffff;
-  --surface-sunken:    #f1f5f9;
-  --surface-hover:     #e9eef5;
+  --surface-sunken:    #eaf1fb;
+  --surface-hover:     #e2ecf9;
 
   --line:              #e2e8f0;
   --line-strong:       #cbd5e1;
@@ -67,11 +67,11 @@
   --content-muted:     #64748b;
   --content-subtle:    #94a3b8;
 
-  --accent:            #4f46e5;
-  --accent-hover:      #4338ca;
+  --accent:            #2563eb;
+  --accent-hover:      #1d4ed8;
   --accent-fg:         #ffffff;
-  --accent-soft:       #eef2ff;
-  --accent-soft-fg:    #4338ca;
+  --accent-soft:       #eff6ff;
+  --accent-soft-fg:    #1d4ed8;
 
   --danger:            #e11d48;
   --danger-soft:       #fff1f2;
