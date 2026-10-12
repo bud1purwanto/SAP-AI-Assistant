@@ -82,12 +82,20 @@ _LOOKUP = re.compile(
     r"\b(berapa|tampilkan|lihat|cek|check|cari|query|ambil|status|isi tabel|"
     r"data|stok|stock|record|dokumen|purchase order|production order|invoice)\b", re.I
 )
-_RAG = re.compile(r"\b(rag|dokumen internal|sop|blueprint|manual|kebijakan|prosedur)\b", re.I)
+_RAG = re.compile(
+    r"\b(rag|dokumen(?:\s+internal)?|sop|blueprint|manual|kebijakan|prosedur|"
+    r"knowledge(?:\s*base)?|kb|basis\s*pengetahuan|panduan|pedoman|instruksi\s*kerja|ik|aturan|standar\s+operasional)\b",
+    re.I,
+)
 _SQL = re.compile(r"\b(sql|database|tabel sql|query)\b", re.I)
 _EMAIL = re.compile(r"\b(email|e-mail|surat|inbox|kotak masuk|pesan masuk|kalender|calendar|agenda|mail)\b", re.I)
 _SAP = re.compile(
     r"\b(sap|material|stok|stock|purchase order|production order|invoice|vendor|"
     r"bom|mrp|mara|marc|mard|aufk|ekko|ekpo|tcode)\b", re.I
+)
+_EXPLICIT_LIVE_SAP = re.compile(
+    r"\b(tabel\s+sap|isi\s+tabel|baca\s+tabel|read_table|cek\s+stok|stok\s+saat\s+ini|query\s+sap|data\s+live\s+sap|transaksi\s+live)\b",
+    re.I,
 )
 _ATTACHMENT = re.compile(r"\b(lampiran|dokumen yang saya lampirkan|file ini|teks berikut)\b", re.I)
 _EXPLICIT_LIVE_SOURCE = re.compile(
@@ -115,9 +123,32 @@ def _normalise_target(target_server: str) -> str:
 
 def _required_sources(message: str, target_server: str) -> list[str]:
     sources: list[str] = []
-    for source, pattern in (("email", _EMAIL), ("rag", _RAG), ("sql", _SQL), ("sap", _SAP)):
-        if pattern.search(message) and source not in sources:
-            sources.append(source)
+    has_rag = bool(_RAG.search(message))
+    has_email = bool(_EMAIL.search(message))
+    has_sql = bool(_SQL.search(message))
+    has_sap = bool(_SAP.search(message))
+
+    # Jika pengguna meminta dokumen RAG/SOP/Knowledge:
+    # Fokus HANYA pada RAG. Jangan sertakan SAP kecuali pengguna secara eksplisit meminta data live / query tabel SAP
+    if has_rag:
+        sources.append("rag")
+        if _EXPLICIT_LIVE_SAP.search(message) and "sap" not in sources:
+            sources.append("sap")
+
+    if has_email and "email" not in sources:
+        sources.append("email")
+        if _EXPLICIT_LIVE_SAP.search(message) and "sap" not in sources:
+            sources.append("sap")
+
+    if has_sql and "sql" not in sources:
+        sources.append("sql")
+        if _EXPLICIT_LIVE_SAP.search(message) and "sap" not in sources:
+            sources.append("sap")
+
+    # Jika bukan permintaan RAG/Email/SQL, baru evaluasi SAP
+    if has_sap and not has_rag and not has_email and not has_sql and "sap" not in sources:
+        sources.append("sap")
+
     if not sources:
         sources.append(_normalise_target(target_server))
     return sources
@@ -207,7 +238,7 @@ def build_retry_instruction(state: AnalysisState, result: QualityGateResult) -> 
         "SISTEM — EVIDENCE GATE: Jawaban belum boleh difinalkan karena belum ada "
         f"bukti data relevan yang berhasil dari: {sources}. Panggil tool {sources} "
         "yang sesuai dengan pertanyaan pengguna. Jangan menebak angka atau fakta. "
-        "Jika sumber gagal atau datanya kosong, laporkan keterbatasan tersebut secara eksplisit."
+        "Jika data atau dokumen tidak ditemukan atau sumber kosong, laporkan hal tersebut secara JUJUR dan eksplisit tanpa mengarang atau berpura-pura tahu."
     )
 
 
@@ -228,9 +259,10 @@ def get_rag_budget(state: AnalysisState) -> int:
 
 def build_final_answer_contract(intent: RequestIntent) -> str:
     if intent.kind != "deep_analysis":
-        return "Gunakan hanya fakta yang didukung hasil tool dan nyatakan keterbatasan data."
+        return "Gunakan hanya fakta yang didukung hasil tool dan nyatakan keterbatasan data secara jujur. Jangan berpura-pura tahu bila dokumen/data tidak ditemukan."
     return (
         "Susun jawaban dengan bagian: Ruang Lingkup & Filter; Temuan Berbasis Data; "
         "Interpretasi; Keterbatasan; Rekomendasi; dan Sumber. Pisahkan fakta dari "
-        "interpretasi dan jangan menyebut angka yang tidak terdapat dalam evidence."
+        "interpretasi, jangan menyebut angka yang tidak terdapat dalam evidence, dan "
+        "nyatakan dengan jujur jika dokumen/data tidak ditemukan."
     )

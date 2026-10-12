@@ -476,9 +476,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     is_en = getattr(chat_req, "language", "id") == "en"
 
     # Status terkunci berasal dari katalog akses dashboard yang sudah dilihat UI.
-    # Jangan meminta model menebak apakah penolakan izin berarti server offline.
     rag_requested = bool(re.match(r"^/(?:sop|rag|doc|kb)(?:\s|$)", raw_message, re.IGNORECASE))
     rag_requested = rag_requested or (chat_req.active_server or "").lower() == "rag"
+    rag_requested = rag_requested or bool(re.search(
+        r"\b(rag|sop|knowledge(?:\s*base)?|kb|dokumen(?:\s+internal)?|basis\s*pengetahuan|panduan|pedoman|blueprint|manual|kebijakan|prosedur)\b",
+        raw_message,
+        re.IGNORECASE
+    ))
     if rag_requested and "rag" in chat_req.locked_connectors:
         return ChatResponse(
             reply=(
@@ -1382,6 +1386,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"   - JIKA data diambil dari Database SQL: sertakan baris pertama: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
         "   - JIKA jawaban TIDAK mengambil data live dari sistem eksternal di atas (misal percakapan umum, analisis murni, kalkulasi, pembuatan draf, atau bantuan konseptual): JANGAN tampilkan baris indikator sumber data sama sekali.\n"
         f"   - ATURAN SANGAT KETAT: Dilarang keras menampilkan 'Data langsung dari sistem {sap_server_name}' jika Anda tidak mengambil data dari SAP! Misalnya, saat memeriksa email pengguna, Anda WAJIB menggunakan '📬 **Data langsung dari Layanan Email**' dan DILARANG menyebut atau mengecek status sistem SAP {sap_server_name}.\n"
+        f"   - ATURAN SANGAT KETAT UNTUK PERMINTAAN RAG / SOP / KNOWLEDGE: Jika pengguna menanyakan RAG, SOP, Knowledge Base, atau dokumen kebijakan/prosedur, FOKUSLAH PENUH pada dokumen RAG tersebut! DILARANG KERAS menyertakan header '📦 **Data langsung dari sistem {sap_server_name}**', DILARANG memanggil tool SAP, dan DILARANG menampilkan data server SAP terpilih!\n"
     )
 
     forbidden_instruction = ""
@@ -1404,13 +1409,18 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         f"## CARA MEMILIH PENDEKATAN\n"
         f"Tentukan dahulu jenis permintaan pengguna, lalu bertindak sesuai jenisnya:\n\n"
         f"{approach_a}"
-        f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal (RAG)**\n"
-        f"   -> Gunakan `rag__rag_answer` atau `rag__rag_search` bila jawabannya kemungkinan ada di dokumen internal (blueprint, SOP, manual).\n"
-        f"   -> Awali jawaban dengan indikator: 📚 **Data langsung dari Dokumen RAG: [Nama Dokumen / SOP]**\n"
+        f"**B. Pertanyaan konseptual, panduan, prosedur, atau isi dokumen internal (RAG / SOP / Knowledge)**\n"
+        f"   -> Gunakan `rag__rag_answer` atau `rag__rag_search` untuk mencari dokumen internal (blueprint, SOP, manual, panduan, kebijakan).\n"
+        f"   -> Jika dokumen ditemukan, awali jawaban dengan indikator: 📚 **Data langsung dari Dokumen RAG: [Nama Dokumen / SOP]**\n"
+        f"   -> DILARANG KERAS memanggil tool SAP atau menampilkan data/server SAP terpilih ketika melayani permintaan RAG/SOP/Knowledge!\n"
+        f"   -> ATURAN SANGAT KETAT KEJUJURAN DATA RAG (JANGAN PURA-PURA TAHU / HALU):\n"
+        f"      - Jika dokumen / SOP / knowledge yang dicari TIDAK DITEMUKAN di database RAG (hasil pencarian kosong atau tidak ada dokumen yang cocok), DILARANG KERAS berpura-pura tahu atau mengarang/berhalusinasi jawaban seolah-olah Anda mengetahui SOP internal perusahaan!\n"
+        f"      - WAJIB JAWAB DENGAN JUJUR DAN EKSPLISIT bahwa dokumen atau SOP tersebut tidak ditemukan di dalam basis pengetahuan (Knowledge Base RAG).\n"
+        f"      - Sebutkan topik atau kata kunci yang dicari, jelaskan bahwa saat ini belum ada dokumen terkait di sistem RAG, dan sarankan pengguna untuk mengunggah dokumen terkait atau menanyakan kata kunci lain.\n"
+        f"      - DILARANG menampilkan indikator '📚 **Data langsung dari Dokumen RAG**' atau '📦 **Data langsung dari sistem ...**' bila dokumen tidak ditemukan!\n"
         f"   -> ATURAN EFISIENSI RAG (PENTING):\n"
         f"      - Tool `rag_answer` sudah merangkum jawaban dokumen beserta kutipan halamannya secara komprehensif. Setelah mendapatkan hasil yang relevan, SEGERA tuliskan jawaban akhir lengkap untuk pengguna.\n"
-        f"      - DILARANG memanggil tool RAG berulang-ulang secara berantai (misal memanggil `rag_get_page_context` berkali-kali untuk setiap halaman berurutan). Maksimal pemanggilan konteks lanjutan hanya 1 kali bila benar-benar krusial.\n"
-        f"      - Bila dokumen tidak ditemukan, segera jelaskan dengan sopan dari pengetahuan umum Anda tanpa mencoba pencarian RAG berulang-ulang.\n\n"
+        f"      - DILARANG memanggil tool RAG berulang-ulang secara berantai. Maksimal pemanggilan konteks lanjutan hanya 1 kali bila benar-benar krusial.\n\n"
         f"**C. Permintaan terkait Email, Kalender, atau Kotak Masuk** (cek email terakhir, cari email, baca email, kirim/draf/forward email, agenda kalender):\n"
         f"   -> WAJIB panggil tool MCP Email (`email__search_emails`, `email__read_email`, `email__get_email`, `email__get_calendar`, dsb.) untuk membaca atau mengelola email.\n"
         f"   -> Awali jawaban dengan indikator: 📬 **Data langsung dari Layanan Email**\n"
@@ -1659,9 +1669,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     elif has_sap:
         konteks.append(
             f"- Target Sistem SAP Terhubung: **{sap_server_name}** (SID: {sap_sid})\n"
-            f"- PENTING: Header '📦 **Data langsung dari sistem {sap_server_name}**' HANYA dipakai jika pengguna meminta data SAP.\n"
+            f"- PENTING: Header '📦 **Data langsung dari sistem {sap_server_name}**' HANYA dipakai jika pengguna meminta data live dari sistem SAP.\n"
+            f"  Jika pengguna meminta dokumen RAG/SOP/Knowledge, FOKUSLAH PENUH PADA RAG, DILARANG MENYEBUTKAN SISTEM SAP ATAU SERVER TERPILIH, dan gunakan '📚 **Data langsung dari Dokumen RAG: ...**' (atau tanpa header bila dokumen tidak ditemukan).\n"
             f"  Jika pengguna meminta data Email, gunakan '📬 **Data langsung dari Layanan Email**' dan jangan sebutkan sistem SAP.\n"
-            f"  Jika pengguna meminta dokumen RAG, gunakan '📚 **Data langsung dari Dokumen RAG: ...**' dan jangan sebutkan sistem SAP.\n"
+            f"  Jika pengguna meminta data SQL, gunakan '📦 **Data langsung dari database SQL: {sql_server_name}**' dan jangan sebutkan sistem SAP.\n"
         )
     else:
         konteks.append(
@@ -2036,11 +2047,20 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             ):
                 logger.info("Model membocorkan proses berpikir alih-alih menjawab. Meminta jawaban akhir...")
                 await reset_stream()
+                if _analysis_intent.required_sources == ["rag"]:
+                    intent_hint = "Fokus pada pencarian dokumen/SOP/Knowledge di RAG. Jika tidak ditemukan, sampaikan secara jujur tanpa mengarang atau menyebut SAP."
+                elif _analysis_intent.required_sources == ["email"]:
+                    intent_hint = "Fokus pada data email. Panggil tool email bila belum, jangan sebut sistem SAP."
+                elif _analysis_intent.required_sources == ["sql"]:
+                    intent_hint = "Fokus pada database SQL. Panggil tool SQL bila belum, jangan sebut sistem SAP."
+                elif "sap" in _analysis_intent.required_sources:
+                    intent_hint = "Bila permintaan membutuhkan data live SAP, panggil tool SAP yang sesuai terlebih dahulu; bila tidak, jawab langsung."
+                else:
+                    intent_hint = "Jawab langsung pertanyaan pengguna secara spesifik tanpa memanggil tool yang tidak diperlukan."
                 messages.append(HumanMessage(
                     content=(
-                        "SISTEM: Jangan tampilkan analisis internal berbahasa Inggris. Tuliskan jawaban "
-                        "akhir untuk pengguna dalam Bahasa Indonesia. Bila permintaan membutuhkan data "
-                        "live SAP, panggil tool SAP yang sesuai terlebih dahulu; bila tidak, jawab langsung."
+                        f"SISTEM: Jangan tampilkan analisis internal berbahasa Inggris. Tuliskan jawaban "
+                        f"akhir untuk pengguna dalam Bahasa Indonesia secara spesifik sesuai permintaan. {intent_hint}"
                     )
                 ))
                 continue
@@ -2264,16 +2284,27 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
                 if server_name == "rag":
                     rag_call_count += 1
-                    if evidence.success and (rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str))):
+                    is_rag_not_found = (
+                        not evidence.success
+                        or any(k in content_str.lower() for k in (
+                            "not_found", "tidak ditemukan", "no matching", "no results",
+                            "tidak ada dokumen", "empty", "no relevant documents"
+                        ))
+                    )
+                    if evidence.success and not is_rag_not_found and (rag_call_count >= 2 or (mcp_name == "rag_answer" and ('"status": "found"' in content_str or '"status":"found"' in content_str))):
                         content_str += (
                             "\n\n[SISTEM]: Informasi dari dokumen SOP / basis pengetahuan RAG sudah memadai. "
                             "Segera susun jawaban akhir yang lengkap dan rapi dalam Bahasa Indonesia untuk pengguna sekarang "
-                            "diawali '📚 **Data langsung dari Dokumen RAG: [Judul Dokumen]**' tanpa memanggil tool RAG tambahan atau tool sistem lain."
+                            "diawali '📚 **Data langsung dari Dokumen RAG: [Judul Dokumen]**' tanpa memanggil tool RAG tambahan atau tool sistem lain. "
+                            "DILARANG menyertakan data SAP atau server SAP terpilih."
                         )
-                    elif not evidence.success:
+                    elif is_rag_not_found:
                         content_str += (
-                            "\n\n[SISTEM]: Hasil RAG ini bukan bukti isi dokumen. Jangan mengaku telah membaca dokumen "
-                            "atau merangkum isinya; jelaskan penolakan akses atau kendala yang tertera."
+                            "\n\n[SISTEM - ATURAN JUJUR RAG]: Dokumen atau SOP yang dicari TIDAK DITEMUKAN di database RAG. "
+                            "DILARANG KERAS berpura-pura tahu atau mengarang/berhalusinasi seolah-olah mengetahui isi SOP internal perusahaan! "
+                            "Jawab secara JUJUR dan eksplisit kepada pengguna bahwa dokumen/SOP tersebut tidak ditemukan di dalam basis pengetahuan (RAG Knowledge). "
+                            "DILARANG memanggil tool SAP atau menyebutkan sistem/server SAP! "
+                            "DILARANG menampilkan header '📚 **Data langsung dari Dokumen RAG**' atau '📦 **Data langsung dari sistem**'."
                         )
                 elif server_name == "email":
                     if mcp_name in ("search_emails", "read_email", "get_email", "get_calendar") and any(k in content_str.lower() for k in ("subject", "from", "sender", "snippet", "body", "events", "calendar")):
@@ -2315,8 +2346,15 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     else:
         try:
             await reset_stream()
+            rag_mode_prompt = ""
+            if needs_rag_evidence or any(e.server == "rag" for e in _analysis_state.evidence):
+                rag_mode_prompt = (
+                    " Catatan khusus RAG/SOP/Knowledge: Fokus hanya pada dokumen RAG. "
+                    "DILARANG memunculkan data SAP atau menyebut server SAP terpilih. "
+                    "Bila dokumen RAG tidak ditemukan, sampaikan secara JUJUR dan jelas bahwa dokumen tidak ditemukan, DILARANG berpura-pura tahu atau mengarang isi SOP."
+                )
             summary_messages = messages + [
-                HumanMessage(content="Berdasarkan seluruh hasil panggilan tool di atas, rangkum dan berikan jawaban akhir yang jelas dan lengkap dalam bahasa Indonesia diawali indikator sumber data yang sesuai (misal: 📬 **Data langsung dari Layanan Email** jika dari email, 📦 **Data langsung dari sistem ...** jika dari SAP, atau 📚 **Data langsung dari Dokumen RAG: ...** jika dari RAG).")
+                HumanMessage(content=f"Berdasarkan seluruh hasil panggilan tool di atas, rangkum dan berikan jawaban akhir yang jelas, spesifik sesuai permintaan, dan lengkap dalam bahasa Indonesia diawali indikator sumber data yang sesuai (misal: 📬 **Data langsung dari Layanan Email** jika dari email, 📦 **Data langsung dari sistem ...** jika dari SAP, atau 📚 **Data langsung dari Dokumen RAG: ...** jika dari RAG).{rag_mode_prompt}")
             ]
             try:
                 final_res = await call_model(llm_primary, summary_messages)
@@ -2328,12 +2366,22 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         except Exception as e:
             reply_text = "Proses pencarian selesai. Berikut sebagian informasi dari tool: " + (response.content or "")
 
-    if needs_rag_evidence and not any(e.server == "rag" and e.success for e in _analysis_state.evidence):
+    # KETIKA TIDAK MENDAPATKAN DATA RAG ATAU YANG LAINNYA, JANGAN PURA2 TAU, JAWAB JUJUR
+    has_valid_rag_evidence = any(
+        e.server == "rag" and e.success and e.document_count != 0
+        and not any(k in (e.content or "").lower() for k in ("not_found", "tidak ditemukan", "no matching", "no results", "tidak ada dokumen"))
+        for e in _analysis_state.evidence
+    )
+    if (needs_rag_evidence or any(e.server == "rag" for e in _analysis_state.evidence)) and not has_valid_rag_evidence:
         await reset_stream()
         reply_text = (
-            "I couldn't verify a document from RAG Knowledge for this request. I can't answer from that document. Please check the RAG connector, access, and index, then try again."
-            if is_en else
-            "Saya belum dapat memverifikasi dokumen dari RAG Knowledge untuk permintaan ini, sehingga saya tidak bisa menjawab berdasarkan dokumen tersebut. Periksa konektor RAG, hak akses, dan indeks dokumen, lalu coba lagi."
+            "Dokumen atau SOP yang Anda minta tidak ditemukan dalam basis pengetahuan (RAG Knowledge). "
+            "Sesuai standar akurasi, saya tidak dapat memberikan jawaban spekulatif atau mengarang isi dokumen resmi internal. "
+            "Silakan pastikan dokumen terkait sudah diunggah dan diindeks di sistem RAG, atau coba tanyakan dengan kata kunci yang lebih spesifik."
+            if not is_en else
+            "The requested document or SOP was not found in the RAG Knowledge base. "
+            "In accordance with accuracy standards, I cannot provide speculative answers or fabricate internal official documents. "
+            "Please ensure the document is uploaded and indexed in RAG, or try asking with more specific keywords."
         )
         sources = [source for source in sources if source.type.lower() != "rag"]
 
@@ -2345,8 +2393,33 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     has_sql_source = any("sql" in s for s in used_servers)
 
     if reply_text:
+        # Jika permintaan adalah RAG / SOP / Knowledge, tapi model masih menyertakan badge SAP
+        if needs_rag_evidence or any(e.server == "rag" for e in _analysis_state.evidence):
+            if "📦 **Data langsung dari sistem" in reply_text:
+                if has_rag_source and has_valid_rag_evidence:
+                    reply_text = re.sub(
+                        r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
+                        "📚 **Data langsung dari Dokumen RAG**\n\n",
+                        reply_text.strip(),
+                        count=1
+                    )
+                else:
+                    reply_text = re.sub(
+                        r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
+                        "",
+                        reply_text.strip(),
+                        count=1
+                    )
+            # Jika dokumen RAG tidak ditemukan, jangan tampilkan header RAG palsu
+            if not has_valid_rag_evidence:
+                reply_text = re.sub(
+                    r"^📚 \*\*Data langsung dari Dokumen RAG[^\n]*\*\*\n*",
+                    "",
+                    reply_text.strip(),
+                    count=1
+                )
         # Jika hasil HANYA dari Email (tanpa SAP), tapi model masih menyertakan badge SAP di baris pertama
-        if has_email_source and not has_sap_source:
+        elif has_email_source and not has_sap_source:
             if "📦 **Data langsung dari sistem" in reply_text:
                 reply_text = re.sub(
                     r"^📦 \*\*Data langsung dari sistem[^\n]+\*\*\n*",
