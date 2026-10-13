@@ -23,6 +23,15 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: '0.0.0.0',
       port: 5173,
+      proxy: {
+        '/api': {
+          target: `http://127.0.0.1:${backendPort}`,
+          changeOrigin: true,
+        },
+      },
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+      },
     },
   plugins: [
     react(),
