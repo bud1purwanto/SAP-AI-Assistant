@@ -686,7 +686,7 @@ const ChatMessage = ({
   }
 
   return (
-    <div className="flex items-start gap-2.5 sm:gap-3.5 my-4 sm:my-5 group max-w-full overflow-hidden">
+    <div className={`flex items-start gap-2.5 sm:gap-3.5 my-4 sm:my-5 group max-w-full overflow-hidden ${isStreaming ? 'animate-fadeIn transition-all duration-300' : ''}`}>
       {/* Ref 1: Friendly Robot Avatar Container */}
       <div className="relative mt-1 shrink-0">
         <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 border border-blue-200/80 dark:border-slate-700 shadow-xs flex flex-col items-center justify-center relative">

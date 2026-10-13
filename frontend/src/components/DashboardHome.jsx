@@ -104,8 +104,7 @@ export default function DashboardHome({
     ? sqlSubServers.find((s) => aliasOf(s) === activeInstanceAlias || s.name === activeInstanceAlias)
     : null;
 
-  const recentMobileList = Array.isArray(recentSessions) ? recentSessions.slice(0, 3) : [];
-  const recentDesktopList = Array.isArray(recentSessions) ? recentSessions.slice(0, 5) : [];
+  const recentChatList = Array.isArray(recentSessions) ? recentSessions.slice(0, 5) : [];
 
   const isSapEnabled = connectorConfig.enabled.includes('sap');
   const isRagEnabled = connectorConfig.enabled.includes('rag');
@@ -134,8 +133,11 @@ export default function DashboardHome({
   };
 
   return (
-    <div className="flex-1 w-full h-full overflow-y-auto bg-surface overscroll-contain">
-      <div className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pt-3 sm:pt-6 lg:pt-8 pb-12 px-3 sm:px-6 lg:px-8 animate-fadeIn">
+    <div className="flex-1 w-full h-full overflow-y-auto bg-surface overscroll-contain relative">
+      <div 
+        className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pb-28 sm:pb-24 lg:pb-12 px-3 sm:px-6 lg:px-8 animate-fadeIn"
+        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)' }}
+      >
         
         {/* 1. Header Dome Melengkung persis Mockup (Lebih luas & rapi di Desktop) */}
         <div className="relative overflow-hidden rounded-[32px] sm:rounded-[40px] bg-[#EEF5FF] dark:bg-slate-800/90 border border-blue-100 dark:border-slate-700/80 p-5 sm:p-7 lg:p-8 shadow-xs mb-5 sm:mb-6">
@@ -209,12 +211,14 @@ export default function DashboardHome({
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
             
             {/* Card 1: SAP ERP Live + Dropdown Server Terintegrasi */}
-            <div className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
+            <div className={`flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
+              isSapDropdownOpen ? 'relative z-30 shadow-md ring-2 ring-blue-400/30' : 'relative z-10'
+            } ${
               isSapLocked
-                ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                ? 'bg-slate-50/90 dark:bg-slate-800/60 border-amber-200/60 dark:border-amber-900/40'
                 : isSapEnabled
                 ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
-                : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
+                : 'bg-white dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60'
             }`}>
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -302,7 +306,7 @@ export default function DashboardHome({
                 </button>
 
                 {isSapDropdownOpen && sapSubServers.length > 0 && (
-                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[210px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
+                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[220px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-blue-200 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-56 overflow-y-auto ring-1 ring-black/5">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
                       <span>PILIH SERVER SAP</span>
                       {activeServer && activeServer.startsWith('sap:') && (
@@ -398,12 +402,12 @@ export default function DashboardHome({
                 }
                 if (onConnectorToggle) onConnectorToggle('rag');
               }}
-              className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
+              className={`relative z-10 flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
                 isRagLocked
-                  ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                  ? 'bg-slate-50/90 dark:bg-slate-800/60 border-amber-200/60 dark:border-amber-900/40'
                   : isRagEnabled
                   ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
-                  : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
+                  : 'bg-white dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60'
               }`}
             >
               <div>
@@ -465,12 +469,14 @@ export default function DashboardHome({
             </div>
 
             {/* Card 3: SQL Database + Dropdown Server Terintegrasi */}
-            <div className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
+            <div className={`flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
+              isSqlDropdownOpen ? 'relative z-30 shadow-md ring-2 ring-blue-400/30' : 'relative z-10'
+            } ${
               isSqlLocked
-                ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                ? 'bg-slate-50/90 dark:bg-slate-800/60 border-amber-200/60 dark:border-amber-900/40'
                 : isSqlEnabled
                 ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
-                : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
+                : 'bg-white dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60'
             }`}>
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -558,7 +564,7 @@ export default function DashboardHome({
                 </button>
 
                 {isSqlDropdownOpen && sqlSubServers.length > 0 && (
-                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[210px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
+                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[220px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-blue-200 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-56 overflow-y-auto ring-1 ring-black/5">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
                       <span>PILIH DATABASE SQL</span>
                       {activeServer && activeServer.startsWith('sql:') && (
@@ -654,12 +660,12 @@ export default function DashboardHome({
                 }
                 if (onConnectorToggle) onConnectorToggle('email');
               }}
-              className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
+              className={`relative z-10 flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
                 isEmailLocked
-                  ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                  ? 'bg-slate-50/90 dark:bg-slate-800/60 border-amber-200/60 dark:border-amber-900/40'
                   : isEmailEnabled
                   ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
-                  : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
+                  : 'bg-white dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60'
               }`}
             >
               <div>
@@ -747,14 +753,13 @@ export default function DashboardHome({
               </div>
 
               <div className="divide-y divide-slate-200/60 dark:divide-slate-700/60 flex-1 flex flex-col justify-between">
-                {recentDesktopList.length === 0 ? (
+                {recentChatList.length === 0 ? (
                   <div className="py-6 text-center text-xs text-slate-400 italic">
                     {language === 'en' ? 'No recent chat history yet' : 'Belum ada riwayat percakapan'}
                   </div>
                 ) : (
-                  recentDesktopList.map((item, idx) => {
+                  recentChatList.map((item, idx) => {
                     const sessionId = item.session_id || item.id;
-                    const isExtraDesktopOnly = idx >= 3;
                     return (
                       <div
                         key={sessionId || idx}
@@ -766,9 +771,7 @@ export default function DashboardHome({
                             onStartChat();
                           }
                         }}
-                        className={`py-3 items-center justify-between gap-3 group cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-700/40 rounded-xl px-2.5 -mx-1.5 transition-colors ${
-                          isExtraDesktopOnly ? 'hidden lg:flex' : 'flex'
-                        }`}
+                        className="py-3 flex items-center justify-between gap-3 group cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-700/40 rounded-xl px-2.5 -mx-1.5 transition-colors"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate">
@@ -785,8 +788,8 @@ export default function DashboardHome({
               </div>
             </div>
 
-            {/* 4. Tombol Aksi Utama: Mulai Chat Assistant 💬 (Menuju ke Chat Sekarang) */}
-            <div className="flex flex-col items-stretch gap-2">
+            {/* 4. Tombol Aksi Utama di Desktop: Mulai Chat Assistant 💬 (Menuju ke Chat Sekarang) */}
+            <div className="hidden lg:flex flex-col items-stretch gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -807,6 +810,20 @@ export default function DashboardHome({
 
         </div>
 
+      </div>
+
+      {/* Floating Action Button untuk Mobile: Start Chat Assistant 💬 */}
+      <div className="lg:hidden fixed bottom-4 inset-x-3 sm:inset-x-6 z-40 pb-safe pointer-events-none">
+        <button
+          type="button"
+          onClick={() => {
+            if (onStartChat) onStartChat();
+          }}
+          className="pointer-events-auto w-full inline-flex items-center justify-center gap-2.5 py-3.5 px-6 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.98] text-white font-bold text-sm shadow-xl shadow-blue-600/30 border border-white/20 transition-all cursor-pointer backdrop-blur-xs"
+        >
+          <span>{language === 'en' ? 'Start Chat Assistant' : 'Mulai Chat Assistant'}</span>
+          <span className="text-base">💬</span>
+        </button>
       </div>
     </div>
   );
