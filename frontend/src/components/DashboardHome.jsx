@@ -135,8 +135,11 @@ export default function DashboardHome({
   return (
     <div className="flex-1 w-full h-full overflow-y-auto bg-surface overscroll-contain relative">
       <div 
-        className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pb-28 sm:pb-24 lg:pb-12 px-3 sm:px-6 lg:px-8 animate-fadeIn"
-        style={{ paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)' }}
+        className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col lg:!pb-12 px-3 sm:px-6 lg:px-8 animate-fadeIn"
+        style={{
+          paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 0.75rem)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 4.75rem)',
+        }}
       >
         
         {/* 1. Header Dome Melengkung persis Mockup (Lebih luas & rapi di Desktop) */}
@@ -813,7 +816,10 @@ export default function DashboardHome({
       </div>
 
       {/* Floating Action Button untuk Mobile: Start Chat Assistant 💬 */}
-      <div className="lg:hidden fixed bottom-4 inset-x-3 sm:inset-x-6 z-40 pb-safe pointer-events-none">
+      <div 
+        className="lg:hidden fixed inset-x-3 sm:inset-x-6 z-40 pointer-events-none"
+        style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
+      >
         <button
           type="button"
           onClick={() => {
