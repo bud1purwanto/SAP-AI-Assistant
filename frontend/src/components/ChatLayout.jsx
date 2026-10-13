@@ -2049,8 +2049,8 @@ const ChatLayout = () => {
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
         {activeTab !== 'dashboard' && (
-        <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-20 shrink-0 max-w-full">
-          <div className="app-header-row h-12 sm:h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative">
+        <header className="app-header pt-safe bg-transparent z-20 shrink-0 max-w-full">
+          <div className="app-header-row mx-2 mt-2 sm:mx-4 sm:mt-3 h-12 sm:h-14 px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative rounded-full border border-blue-100/90 dark:border-indigo-900/70 bg-[#EAF3FF] dark:bg-slate-800/95 shadow-sm">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               <button
                 onClick={() => setIsSidebarOpen(true)}
@@ -2073,7 +2073,7 @@ const ChatLayout = () => {
                       setIsServerDropdownOpen(opening);
                       if (opening && !isGuest) refreshMcpAccessTargets();
                     }}
-                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-surface-sunken hover:bg-surface-hover active:scale-[0.98] ${
+                    className={`w-full flex items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full border text-xs sm:text-sm font-medium transition-all cursor-pointer bg-white/80 dark:bg-slate-900/80 hover:bg-white dark:hover:bg-slate-900 active:scale-[0.98] ${
                       isProductionTarget
                         ? 'border-danger/60 text-danger bg-danger-soft/20 shadow-xs shadow-danger/10'
                         : 'border-line text-content hover:border-line/80'
