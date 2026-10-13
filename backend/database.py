@@ -4864,6 +4864,17 @@ def terminate_session_logout(session_id: str) -> bool:
 def list_active_sessions(status_filter: str = "active", search: Optional[str] = None) -> dict:
     """Mengambil daftar sesi aktif beserta metrik ringkasan telemetri."""
     engine = get_engine()
+    with engine.begin() as conn:
+        # Otomatis tandai sesi yang sudah lewat masa berlaku atau tidak aktif > 24 jam sebagai non-aktif
+        conn.execute(text(f"""
+            UPDATE {DB_SCHEMA}.user_sessions
+            SET is_active = FALSE, status = 'expired'
+            WHERE is_active = TRUE AND (
+                (expires_at IS NOT NULL AND expires_at <= NOW()) OR
+                last_active_at < NOW() - INTERVAL '24 hours'
+            )
+        """))
+
     with engine.connect() as conn:
         now = datetime.now(timezone.utc)
         where_clauses = []

@@ -1337,6 +1337,7 @@ async def get_admin_user_sessions_endpoint(
             for u in directory_users
             if u.get("id")
         }
+        valid_sessions = []
         for sess in data.get("sessions", []):
             u_key = str(sess.get("username") or "").strip().lower()
             matched = users_by_sub.get(str(sess.get("oidc_sub") or "")) or users_by_uname.get(u_key)
@@ -1348,6 +1349,16 @@ async def get_admin_user_sessions_endpoint(
                 sess["division_name"] = matched.get("division_name") or matched.get("division_code") or None
                 sess["oidc_sub"] = matched.get("id")
                 sess["identity_source"] = "oidc"
+                valid_sessions.append(sess)
+        data["sessions"] = valid_sessions
+
+        # Sinkronkan summary count berdasarkan sesi OIDC yang valid
+        now_dt = datetime.now(timezone.utc)
+        active_valid = [s for s in valid_sessions if s.get("is_active")]
+        data["summary"]["total_active"] = len(active_valid)
+        data["summary"]["online_now"] = sum(1 for s in active_valid if s.get("is_online"))
+        data["summary"]["desktop_count"] = sum(1 for s in active_valid if s.get("device_type") == "desktop")
+        data["summary"]["mobile_count"] = sum(1 for s in active_valid if s.get("device_type") == "mobile")
     except Exception as exc:
         logger.warning(f"Gagal memperkaya identitas user-sessions dengan OIDC directory: {exc}")
     if q and q.strip():
