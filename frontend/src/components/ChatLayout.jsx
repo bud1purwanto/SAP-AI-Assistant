@@ -14,6 +14,7 @@ import QuotaBanner, { QuotaChip } from './QuotaBanner';
 import SidePanel from './SidePanel';
 import RequestAccessModal from './RequestAccessModal';
 import ThinkingIndicator from './ThinkingIndicator';
+import DashboardHome from './DashboardHome';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
@@ -193,7 +194,11 @@ const ChatLayout = () => {
   const [isDynamicSuggestions, setIsDynamicSuggestions] = useState(false);
   const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
 
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'chat'
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(() => {
+    const stored = getStoredUser();
+    return !stored || stored.role === 'guest' || stored.is_guest;
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('persona');
   const [sapCredentialIssue, setSapCredentialIssue] = useState(null);
@@ -477,6 +482,7 @@ const ChatLayout = () => {
   // --- Fungsi sentral reset tampilan & sesi ke Beranda (Home) secara bersih ---
   const resetToHome = useCallback((clearAuth = true) => {
     if (clearAuth) setUser(GUEST_USER);
+    setActiveTab('dashboard');
     setSessions([]);
     setCurrentSessionId(null);
     setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
@@ -572,14 +578,22 @@ const ChatLayout = () => {
         if (profile && !profile.is_guest && profile.authenticated !== false) {
           saveSession(profile);
           setUser(profile);
+          setActiveTab('dashboard');
+          setIsLoginModalOpen(false);
           api.quotaSaya().then(setKuota).catch(() => setKuota(null));
-        } else if (!isGuest) {
+        } else {
           clearSession();
           setUser(GUEST_USER);
+          setActiveTab('dashboard');
+          setIsLoginModalOpen(true);
         }
       })
       .catch(() => {
-        /* abaikan bila offline atau backend belum siap */
+        /* Bila gagal atau unauthenticated, tampilkan login modal */
+        const stored = getStoredUser();
+        if (!stored || stored.role === 'guest' || stored.is_guest) {
+          setIsLoginModalOpen(true);
+        }
       });
     return () => { active = false; };
   }, []);
@@ -684,6 +698,7 @@ const ChatLayout = () => {
   const loadSession = useCallback(async (sessionId) => {
     if (!sessionId) return;
     setCurrentSessionId(sessionId);
+    setActiveTab('chat');
     setIsSidebarOpen(false);
     setError(null);
 
@@ -921,6 +936,7 @@ const ChatLayout = () => {
     setError(null);
     setIsSidebarOpen(false);
     setCurrentSessionId(null);
+    setActiveTab('chat');
     setMessagesMap((prev) => ({
       ...prev,
       [DRAFT_SESSION_KEY]: [],
@@ -1080,6 +1096,8 @@ const ChatLayout = () => {
       setIsLoginModalOpen(true);
       return;
     }
+
+    setActiveTab('chat');
 
     let targetSessionId = currentSessionId;
     // Jika user terdaftar dan belum ada session aktif, buat session lebih dulu agar id-nya diketahui
@@ -1430,6 +1448,9 @@ const ChatLayout = () => {
     api.logout().catch(() => {});
     clearSession();
     setUser(GUEST_USER);
+    setActiveTab('dashboard');
+    setIsSidebarOpen(false);
+    setIsUserMenuOpen(false);
     setSessions([]);
     setCurrentSessionId(null);
     setMessagesMap({ [DRAFT_SESSION_KEY]: [] });
@@ -1438,6 +1459,8 @@ const ChatLayout = () => {
     setSessionErrorMap({});
     fetchServers();
     fetchModes();
+    // Langsung munculkan form login saat user logout
+    setIsLoginModalOpen(true);
   };
 
   // Target sistem (sap / sql) dan target server aktif
@@ -1518,14 +1541,35 @@ const ChatLayout = () => {
           </button>
         </div>
 
-        <div className="p-3 space-y-2.5">
+        <div className="p-3 space-y-2">
+          {/* Dashboard Hub Button */}
+          <button
+            onClick={() => {
+              setActiveTab('dashboard');
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeTab === 'dashboard'
+                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 shadow-2xs'
+                : 'text-content-muted hover:text-content hover:bg-surface-hover border border-transparent'
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="text-base">🏠</span>
+              <span>{t('sidebar.dashboard') || 'Dashboard Hub'}</span>
+            </div>
+            {activeTab === 'dashboard' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+            )}
+          </button>
+
           {/* New Chat Button matching mockup: Rounded-2xl vibrant sky blue button with pill (+) icon */}
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-sm font-bold shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 border border-white/20 transition-all active:scale-[0.98] cursor-pointer group"
+            className="w-full flex items-center justify-center gap-2.5 py-2.5 sm:py-3 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 border border-white/20 transition-all active:scale-[0.98] cursor-pointer group"
           >
-            <span className="w-6 h-6 rounded-full bg-white/25 group-hover:bg-white/35 flex items-center justify-center transition-colors shadow-2xs shrink-0">
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
+            <span className="w-5 h-5 rounded-full bg-white/25 group-hover:bg-white/35 flex items-center justify-center transition-colors shadow-2xs shrink-0">
+              <Plus className="w-3 h-3 stroke-[2.5]" aria-hidden="true" />
             </span>
             <span className="tracking-wide">{t('sidebar.newChat')}</span>
           </button>
@@ -2000,6 +2044,7 @@ const ChatLayout = () => {
       {/* ================= AREA CHAT UTAMA ================= */}
       <main className="flex-1 flex flex-col h-full bg-surface relative overflow-hidden min-w-0 max-w-full w-full">
 
+        {activeTab !== 'dashboard' && (
         <header className="app-header pt-safe bg-surface-raised/80 backdrop-blur-xl border-b border-line z-20 shrink-0 max-w-full">
           <div className="app-header-row h-12 sm:h-14 px-3 sm:px-6 flex items-center justify-between gap-2 sm:gap-3 max-w-full relative">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -2411,6 +2456,7 @@ const ChatLayout = () => {
             </div>
           </div>
         </header>
+        )}
 
         {/* Peringatan target produksi: query di sini menyentuh data SAP sungguhan. */}
         {isProductionTarget && (
@@ -2481,235 +2527,117 @@ const ChatLayout = () => {
 
         {!isGuest && <QuotaBanner quota={kuota} />}
 
-        <div ref={scrollContainerRef} className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
-          <div ref={messagesContentRef} className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
-            {currentMessages.map((msg, index) => (
-              <ChatMessage
-                key={msg.id || `msg-${index}`}
-                message={msg}
-                tts={tts}
-                onBukaPanel={bukaPanel}
-                onSendMessage={handleSendMessage}
-                onRegenerate={
-                  !isCurrentLoading &&
-                  msg.role === 'assistant' &&
-                  index === currentMessages.length - 1
-                    ? handleRegenerate
-                    : undefined
-                }
-                onEditMessage={
-                  !isCurrentLoading &&
-                  msg.role === 'user' &&
-                  index >= currentMessages.length - 2
-                    ? (msgId, text) => handleEditMessage(msg, text)
-                    : undefined
-                }
-              />
-            ))}
+        {activeTab === 'dashboard' ? (
+          <DashboardHome
+            user={user}
+            onOpenSidebar={() => setIsSidebarOpen(true)}
+            onStartChat={(prompt) => {
+              setActiveTab('chat');
+              if (prompt) {
+                handleSendMessage(prompt);
+              } else {
+                setTimeout(() => {
+                  const textarea = document.querySelector('textarea');
+                  if (textarea) textarea.focus();
+                }, 50);
+              }
+            }}
+            onSelectPrompt={(prompt) => {
+              setActiveTab('chat');
+              handleSendMessage(prompt);
+            }}
+            onLoadSession={(sessionId) => {
+              loadSession(sessionId);
+            }}
+            recentSessions={sessions}
+            connectorConfig={connectorConfig}
+            onConnectorToggle={handleConnectorToggle}
+            onServerChange={handleServerChange}
+            activeServer={activeServer}
+            sapSubServers={sapSubServers}
+            sqlSubServers={sqlSubServers}
+            mcpStatus={mcpStatus}
+            connectorAccess={connectorAccess}
+            onRequestAccess={(target) => setAccessRequestModal({ isOpen: true, target })}
+          />
+        ) : (
+          <>
+            <div ref={scrollContainerRef} className="app-chat-scroll flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-8 py-4 sm:py-8 overscroll-contain max-w-full w-full" style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
+              <div ref={messagesContentRef} className="max-w-3xl mx-auto space-y-4 sm:space-y-6 min-w-0 max-w-full w-full overflow-hidden">
+                {currentMessages.map((msg, index) => (
+                  <ChatMessage
+                    key={msg.id || `msg-${index}`}
+                    message={msg}
+                    tts={tts}
+                    onBukaPanel={bukaPanel}
+                    onSendMessage={handleSendMessage}
+                    onRegenerate={
+                      !isCurrentLoading &&
+                      msg.role === 'assistant' &&
+                      index === currentMessages.length - 1
+                        ? handleRegenerate
+                        : undefined
+                    }
+                    onEditMessage={
+                      !isCurrentLoading &&
+                      msg.role === 'user' &&
+                      index >= currentMessages.length - 2
+                        ? (msgId, text) => handleEditMessage(msg, text)
+                        : undefined
+                    }
+                  />
+                ))}
 
-            {/* Progres dan jawaban streaming tampil bersamaan. */}
-            {isCurrentLoading && (
-              <ThinkingIndicator
-                progress={currentProgress}
-                onStop={() => stopGeneration(activeSessionKey)}
-              />
-            )}
+                {/* Progres dan jawaban streaming tampil bersamaan. */}
+                {isCurrentLoading && (
+                  <ThinkingIndicator
+                    progress={currentProgress}
+                    onStop={() => stopGeneration(activeSessionKey)}
+                  />
+                )}
 
-            {isCurrentLoading && currentStream.trim() && (
-              <ChatMessage
-                message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
-                isStreaming
-                tts={tts}
-              />
-            )}
+                {isCurrentLoading && currentStream.trim() && (
+                  <ChatMessage
+                    message={{ role: 'assistant', content: hidePendingArtifact(currentStream) }}
+                    isStreaming
+                    tts={tts}
+                  />
+                )}
 
-            {currentMessages.length === 0 && !isCurrentLoading && (
-              <div className="pt-2 sm:pt-6 pb-3 sm:pb-4 relative">
-                {/* Ref 1 Center Screen: Curved Dome Welcome Header with Friendly Peeking Robot */}
-                <div className="relative mb-5 sm:mb-7 overflow-hidden rounded-[28px] sm:rounded-[36px] bg-gradient-to-b from-blue-50/90 to-surface-sunken/40 dark:from-slate-800/60 dark:to-slate-900/40 border border-blue-100/80 dark:border-slate-800 p-5 sm:p-7 shadow-xs">
-                  {/* Subtle geometric circles */}
-                  <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full border-2 border-blue-200/40 dark:border-slate-700/40 pointer-events-none" />
-                  <div className="absolute -left-6 -bottom-6 w-24 h-24 rounded-full border-2 border-blue-200/30 dark:border-slate-700/30 pointer-events-none" />
-
-                  <div className="flex items-center justify-between gap-4 relative z-10">
-                    <div className="space-y-1 text-left min-w-0">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 border border-accent/20">
-                        <Sparkles className="w-2.5 h-2.5 text-accent" />
-                        Enterprise Assistant
-                      </span>
-                      <h3 className="text-lg sm:text-2xl font-black text-content font-display tracking-tight leading-tight truncate">
-                        {user?.full_name ? `Halo, ${String(user.full_name).trim().split(' ')[0]}!` : user?.username && user.username !== 'Guest' ? `Halo, ${user.username}!` : (t('suggestions.heroTitle') || 'Halo, Rekan!')}
-                      </h3>
-                      <p className="text-xs sm:text-sm text-content-muted leading-relaxed">
-                        {t('suggestions.heroSubtitle') || 'Ada dokumen SOP, modul SAP ERP, atau data yang ingin dicek hari ini?'}
-                      </p>
-                    </div>
-
-                    {/* Peeking Cute 3D Bot Avatar (Ref 1 Style) */}
-                    <div className="shrink-0 relative w-14 h-14 sm:w-16 sm:h-16 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-blue-100 dark:border-slate-700 flex flex-col items-center justify-center">
-                      <div className="absolute -left-1.5 top-3.5 w-1.5 h-5 rounded-full bg-blue-500" />
-                      <div className="absolute -right-1.5 top-3.5 w-1.5 h-5 rounded-full bg-blue-500" />
-                      <div className="w-9 h-6 sm:w-10 sm:h-7 bg-slate-900 rounded-xl flex items-center justify-center gap-1.5 shadow-inner">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                      </div>
-                      <div className="w-2.5 h-0.5 bg-slate-300 dark:bg-slate-600 rounded-full mt-1" />
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800 absolute -top-1 -right-1" title="Online" />
-                    </div>
-                  </div>
-
-                  {/* Horizontal Category Chips (Ref 1: SAP ERP, SOP / RAG, SQL Data, Email) */}
-                  <div className="mt-4 pt-3.5 border-t border-line/60 flex items-center gap-1.5 overflow-x-auto pb-0.5 custom-scroll">
-                    <span className="text-[11px] font-bold text-content-subtle shrink-0 pr-1">
-                      {language === 'en' ? 'Quick Modules:' : 'Modul Pintas:'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleSendMessage('/sap')}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
-                    >
-                      <span>📦 SAP ERP</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSendMessage('/sop')}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
-                    >
-                      <span>📚 SOP / RAG</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSendMessage('/sql')}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
-                    >
-                      <span>📊 SQL DB</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSendMessage('/email')}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-700 text-content border border-line shadow-2xs transition-all shrink-0 cursor-pointer"
-                    >
-                      <span>📬 Email</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => loadSuggestions(true)}
-                      disabled={isSuggestionsLoading}
-                      title={t('suggestions.refresh')}
-                      className="ml-auto p-1.5 rounded-full bg-white dark:bg-slate-800 text-content-muted hover:text-accent border border-line transition-all shrink-0 cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isSuggestionsLoading ? 'animate-spin text-accent' : ''}`} />
-                    </button>
-                  </div>
-                </div>
-
-                {isSuggestionsLoading ? (
-                  <div>
-                    <div className="flex items-center justify-center gap-2 mb-3 text-xs text-indigo-500 font-medium">
-                      <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                      <span>{t('suggestions.loading')}</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-                      {[1, 2, 3].map((i) => (
-                        <div
-                          key={i}
-                          className="flex items-center sm:items-start sm:flex-col text-left p-3 sm:p-5 rounded-xl sm:rounded-2xl bg-surface-raised border border-line animate-pulse gap-3 sm:gap-0"
-                        >
-                          <div className="w-9 h-9 rounded-lg sm:rounded-xl bg-surface-sunken sm:mb-3.5 shrink-0" />
-                          <div className="min-w-0 flex-1 w-full space-y-2">
-                            <div className="h-4 bg-surface-sunken rounded-md w-3/4" />
-                            <div className="h-3 bg-surface-sunken rounded-md w-full" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 animate-fadeIn">
-                    {(dynamicSuggestions && dynamicSuggestions.length >= 3
-                      ? dynamicSuggestions
-                      : [
-                          {
-                            title: t('suggestions.stockCheck.title'),
-                            subtitle: t('suggestions.stockCheck.subtitle'),
-                            query: t('suggestions.stockCheck.query'),
-                            icon: 'Layers',
-                          },
-                          {
-                            title: t('suggestions.poStatus.title'),
-                            subtitle: t('suggestions.poStatus.subtitle'),
-                            query: t('suggestions.poStatus.query'),
-                            icon: 'Search',
-                          },
-                          {
-                            title: t('suggestions.abapHelper.title'),
-                            subtitle: t('suggestions.abapHelper.subtitle'),
-                            query: t('suggestions.abapHelper.query'),
-                            icon: 'FileSpreadsheet',
-                          },
-                        ]
-                    ).map((item, idx) => {
-                      const IconComp = (typeof item.icon === 'string' ? SUGGESTION_ICONS[item.icon] : item.icon) || Layers;
-                      return (
-                        <button
-                          key={item.title || idx}
-                          onClick={() => handleSendMessage(item.query)}
-                          className="relative overflow-hidden flex items-center sm:items-start sm:flex-col text-left p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl bg-surface-raised/90 backdrop-blur-sm hover:border-accent/70 border border-line/80 shadow-xs hover:shadow-lg hover:shadow-accent/5 transition-all duration-200 group active:scale-[0.99] gap-3 sm:gap-0 cursor-pointer"
-                        >
-                          {/* Top hairline accent on hover */}
-                          <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                          <div className="flex items-center justify-between w-auto sm:w-full sm:mb-3.5 shrink-0">
-                            <span className="p-2 sm:p-2.5 w-fit rounded-lg sm:rounded-xl bg-surface-sunken text-content-secondary group-hover:bg-accent-soft group-hover:text-accent-soft-fg transition-colors shrink-0">
-                              <IconComp className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
-                            </span>
-                            <span className="hidden sm:inline-flex p-1 rounded-md text-content-subtle group-hover:text-accent transition-colors">
-                              <ArrowUpRight className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                            </span>
-                          </div>
-                          <div className="min-w-0 flex-1 sm:w-full">
-                            <span className="text-xs sm:text-sm font-semibold sm:font-bold text-content group-hover:text-accent transition-colors block truncate sm:whitespace-normal">
-                              {item.title}
-                            </span>
-                            <span className="text-[11px] sm:text-xs text-content-muted mt-0.5 sm:mt-1.5 leading-snug sm:leading-relaxed block truncate sm:whitespace-normal">
-                              {item.subtitle}
-                            </span>
-                          </div>
-                          <span className="sm:hidden p-1.5 rounded-lg bg-surface-sunken text-content-muted group-hover:text-accent group-hover:bg-accent-soft transition-colors shrink-0">
-                            <ChevronRight className="w-4 h-4" />
-                          </span>
-                        </button>
-                      );
-                    })}
+                {currentMessages.length === 0 && !isCurrentLoading && (
+                  <div className="py-12 text-center text-content-muted">
+                    <p className="text-sm font-medium">{t('suggestions.heroTitle') || 'Mulai percakapan Anda'}</p>
+                    <p className="text-xs text-content-subtle mt-1">{t('suggestions.heroSubtitle') || 'Ketik pertanyaan di kolom bawah untuk memulai'}</p>
                   </div>
                 )}
+
+                <div ref={messagesEndRef} className="h-1" />
               </div>
-            )}
+            </div>
 
-            <div ref={messagesEndRef} className="h-1" />
-          </div>
-        </div>
-
-        <ChatInput
-          user={user}
-          isGuest={isGuest}
-          onRequireLogin={() => {
-            setCustomLoginMsg(t('login.requiredPrompt'));
-            setIsLoginModalOpen(true);
-          }}
-          onSendMessage={handleSendMessage}
-          isLoading={isCurrentLoading}
-          modes={chatModesEnabled ? modesList : []}
-          selectedMode={selectedMode}
-          suggestions={dynamicSuggestions}
-          onClearChat={createNewSession}
-          onOpenScheduledTasks={() => setIsScheduledTasksOpen(true)}
-          onSelectMode={(modeCode) => {
-            setSelectedMode(modeCode);
-            try {
-              localStorage.setItem('sap_chat_mode', modeCode);
-            } catch {}
-          }}
-        />
+            <ChatInput
+              user={user}
+              isGuest={isGuest}
+              onRequireLogin={() => {
+                setCustomLoginMsg(t('login.requiredPrompt'));
+                setIsLoginModalOpen(true);
+              }}
+              onSendMessage={handleSendMessage}
+              isLoading={isCurrentLoading}
+              modes={chatModesEnabled ? modesList : []}
+              selectedMode={selectedMode}
+              suggestions={dynamicSuggestions}
+              onClearChat={createNewSession}
+              onOpenScheduledTasks={() => setIsScheduledTasksOpen(true)}
+              onSelectMode={(modeCode) => {
+                setSelectedMode(modeCode);
+                try {
+                  localStorage.setItem('sap_chat_mode', modeCode);
+                } catch {}
+              }}
+            />
+          </>
+        )}
       </main>
 
       <SidePanel isi={isiPanel} onTutup={tutupPanel} />
@@ -2718,9 +2646,11 @@ const ChatLayout = () => {
       <LoginModal
         isOpen={isLoginModalOpen}
         customMessage={customLoginMsg}
-        onClose={() => setIsLoginModalOpen(false)}
+        onClose={!isGuest ? () => setIsLoginModalOpen(false) : undefined}
         onSuccess={(loggedInUser) => {
           setUser(loggedInUser);
+          setActiveTab('dashboard');
+          setIsSidebarOpen(false);
           setIsLoginModalOpen(false);
           setCustomLoginMsg('');
           fetchServers();

@@ -295,6 +295,7 @@ export const api = {
   mySapCredentials: () => apiFetch('/api/me/sap-credentials'),
   availableSapServers: () => apiFetch('/api/me/sap-credentials/available-servers'),
   saveMySapCredential: (payload) => apiFetch('/api/me/sap-credentials', { method: 'POST', body: payload }),
+  testSapCredential: (payload) => apiFetch('/api/me/sap-credentials/test', { method: 'POST', body: payload }),
   deleteMySapCredential: (target) =>
     apiFetch(`/api/me/sap-credentials/${encodeURIComponent(target)}`, { method: 'DELETE' }),
 

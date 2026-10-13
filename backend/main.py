@@ -881,6 +881,34 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
             "message": f"Kredensial SAP untuk '{target}' berhasil disimpan terenkripsi."}
 
 
+@app.post("/api/me/sap-credentials/test")
+async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
+    """Uji konektivitas live ke server SAP menggunakan endpoint test OIDC."""
+    from oidc_sap_credentials import list_status, resolve_connection_id, test_credential
+    _sap_subject(user)
+    target = (req.target or "").strip()
+    sap_user = (req.sap_user or "").strip()
+    if not target or not sap_user:
+        raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi untuk pengujian.")
+
+    rows = await list_status(user)
+    connection_id = resolve_connection_id(rows, target, req.connection_id or "")
+
+    password = (req.sap_password or "").strip()
+    try:
+        result = await test_credential(user, connection_id, sap_user, password or None)
+        return {
+            "success": True,
+            "message": f"Kredensial SAP untuk '{target}' valid dan berhasil terhubung!",
+            "result": result,
+        }
+    except HTTPException as exc:
+        raise exc
+    except Exception as exc:
+        logger.error(f"Gagal menguji koneksi SAP ke '{target}': {exc}")
+        return {"success": False, "message": f"Koneksi ke SAP gagal: {str(exc)}"}
+
+
 @app.delete("/api/me/sap-credentials/{target}")
 async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
     """Hapus kredensial SAP pribadi di Dashboard OIDC."""

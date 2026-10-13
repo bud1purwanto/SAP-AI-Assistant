@@ -102,15 +102,43 @@ async def _request(method: str, path: str, user: dict, body: dict | None = None)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Layanan kredensial SAP OIDC tidak merespons.") from exc
     if response.status_code in (401, 403):
-        raise HTTPException(status_code=response.status_code, detail="Akses kredensial SAP ditolak OIDC.")
+        err_msg = ""
+        try:
+            err_json = response.json()
+            err_msg = err_json.get("message") or err_json.get("detail") or ""
+            if isinstance(err_msg, list):
+                err_msg = ", ".join(err_msg)
+        except Exception:
+            err_msg = response.text
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=err_msg or "Akses kredensial SAP ditolak OIDC atau kredensial SAP tidak valid."
+        )
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail="Target atau kredensial SAP tidak ditemukan di OIDC.")
     if not response.is_success:
-        raise HTTPException(status_code=502, detail=f"Layanan kredensial SAP OIDC gagal (HTTP {response.status_code}).")
+        err_msg = ""
+        try:
+            err_json = response.json()
+            err_msg = err_json.get("message") or err_json.get("detail") or ""
+            if isinstance(err_msg, list):
+                err_msg = ", ".join(err_msg)
+        except Exception:
+            err_msg = response.text
+        raise HTTPException(
+            status_code=response.status_code if response.status_code < 500 else 502,
+            detail=err_msg or f"Layanan kredensial SAP OIDC gagal (HTTP {response.status_code})."
+        )
     if response.status_code == 204 or not response.content:
         return None
     try:
-        return response.json()
+        data = response.json()
+        if isinstance(data, dict):
+            # Cek jika payload mengembalikan status failure eksplisit
+            if data.get("success") is False or data.get("valid") is False or data.get("status") == "error":
+                reason = data.get("message") or data.get("error") or data.get("reason") or "Kredensial SAP salah atau tidak dapat terhubung."
+                raise HTTPException(status_code=400, detail=reason)
+        return data
     except ValueError as exc:
         raise HTTPException(status_code=502, detail="Respons kredensial SAP OIDC tidak valid.") from exc
 
@@ -168,6 +196,13 @@ async def save(user: dict, connection_id: str, username: str, password: str | No
     if password:
         payload["password"] = password
     return await _request("PUT", f"/v1/mcp/sap-credentials/{quote(connection_id, safe='')}", user, payload)
+
+
+async def test_credential(user: dict, connection_id: str, username: str, password: str | None = None):
+    payload = {"username": username}
+    if password:
+        payload["password"] = password
+    return await _request("POST", f"/v1/mcp/sap-credentials/{quote(connection_id, safe='')}/test", user, payload)
 
 
 async def delete(user: dict, connection_id: str):

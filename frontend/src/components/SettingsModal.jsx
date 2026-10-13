@@ -70,6 +70,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
   const [showSapPass, setShowSapPass] = useState(false);
   const [sapCredMsg, setSapCredMsg] = useState({ type: '', text: '' });
   const [savingSapCred, setSavingSapCred] = useState(false);
+  const [checkingSapCred, setCheckingSapCred] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState(null);
   const [deletingSapCred, setDeletingSapCred] = useState(false);
   const [sapDeleteError, setSapDeleteError] = useState('');
@@ -318,6 +319,33 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
       });
     } finally {
       setSavingSapCred(false);
+    }
+  };
+
+  const handleCheckSapCredential = async () => {
+    if (!sapTarget || !sapUser || checkingSapCred) return;
+    setCheckingSapCred(true);
+    setSapCredMsg({ type: '', text: '' });
+    try {
+      const selectedServer = availableSapServers.find(s => s.alias === sapTarget || s.name === sapTarget);
+      const res = await api.testSapCredential({
+        target: sapTarget,
+        sap_user: sapUser,
+        sap_password: sapPass || undefined,
+        connection_id: selectedServer?.connection_id || undefined,
+      });
+      const displayTarget = sapDisplayName(sapCreds.find(c => c.target === sapTarget) || { target: sapTarget });
+      setSapCredMsg({
+        type: 'success',
+        text: res?.message || t('settings.sapCheckSuccess') || `Kredensial SAP untuk '${displayTarget}' valid!`
+      });
+    } catch (err) {
+      setSapCredMsg({
+        type: 'error',
+        text: err.message || t('settings.sapCheckFailed') || 'Pemeriksaan kredensial SAP gagal.'
+      });
+    } finally {
+      setCheckingSapCred(false);
     }
   };
 
@@ -769,7 +797,7 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
                   <button
                     type="submit"
-                    disabled={savingSapCred || !sapTarget || !sapUser || (!isEditMode && !sapPass)}
+                    disabled={savingSapCred || checkingSapCred || !sapTarget || !sapUser || (!isEditMode && !sapPass)}
                     className="w-full sm:w-auto sm:flex-1 h-10 px-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer"
                   >
                     {savingSapCred ? (
@@ -781,6 +809,23 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                       {savingSapCred 
                         ? t('settings.sapSaving')
                         : (isEditMode ? t('settings.sapBtnUpdate') : t('settings.sapBtnSave'))}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCheckSapCredential}
+                    disabled={checkingSapCred || savingSapCred || !sapTarget || !sapUser}
+                    className="w-full sm:w-auto h-10 px-3.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-500/30 text-blue-600 dark:text-blue-400 rounded-xl text-xs font-bold transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer shrink-0"
+                    title={t('settings.sapBtnCheck')}
+                  >
+                    {checkingSapCred ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {checkingSapCred ? t('settings.sapChecking') : t('settings.sapBtnCheck')}
                     </span>
                   </button>
 

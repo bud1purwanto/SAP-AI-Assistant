@@ -30,6 +30,7 @@ export const TRANSLATIONS = {
     'nav.serverSelectAria': 'Select active SAP server',
 
     // Sidebar & Sessions
+    'sidebar.dashboard': 'Dashboard',
     'sidebar.newChat': 'New Chat',
     'sidebar.searchSessions': 'Search chats…',
     'sidebar.noSessions': 'No chat sessions found',
@@ -279,6 +280,10 @@ export const TRANSLATIONS = {
     'settings.sapBtnSave': 'Save SAP Credential',
     'settings.sapBtnUpdate': 'Update Credential',
     'settings.sapBtnCancel': 'Cancel Edit',
+    'settings.sapBtnCheck': 'Check Credential',
+    'settings.sapChecking': 'Checking...',
+    'settings.sapCheckSuccess': 'SAP credential is valid and verified!',
+    'settings.sapCheckFailed': 'SAP credential check failed.',
     'settings.sapSavedTargets': 'Saved SAP Targets',
     'settings.sapUnknownTarget': 'SAP target',
     'settings.sapNoCreds': 'No specific target SAP credentials saved yet.',
@@ -649,6 +654,7 @@ export const TRANSLATIONS = {
     'nav.serverSelectAria': 'Pilih server SAP aktif',
 
     // Sidebar & Sessions
+    'sidebar.dashboard': 'Beranda Hub',
     'sidebar.newChat': 'Percakapan Baru',
     'sidebar.searchSessions': 'Cari percakapan…',
     'sidebar.noSessions': 'Tidak ada sesi percakapan',
@@ -900,6 +906,10 @@ export const TRANSLATIONS = {
     'settings.sapBtnSave': 'Simpan Kredensial SAP',
     'settings.sapBtnUpdate': 'Perbarui Kredensial',
     'settings.sapBtnCancel': 'Batal Edit',
+    'settings.sapBtnCheck': 'Cek Kredensial',
+    'settings.sapChecking': 'Memeriksa...',
+    'settings.sapCheckSuccess': 'Kredensial SAP valid dan terverifikasi!',
+    'settings.sapCheckFailed': 'Pemeriksaan kredensial SAP gagal.',
     'settings.sapSavedTargets': 'Target SAP Tersimpan',
     'settings.sapUnknownTarget': 'Target SAP',
     'settings.sapNoCreds': 'Belum ada kredensial target SAP khusus yang disimpan.',

@@ -213,49 +213,66 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
       aria-modal="true"
       aria-labelledby="login-title"
     >
-      <div className="bg-surface-raised rounded-[32px] shadow-2xl w-full max-w-sm my-auto border border-line/80 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-surface-raised rounded-[36px] sm:rounded-[40px] shadow-2xl w-full max-w-sm my-auto border border-line/80 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Curved Sky Blue Dome Top (Ref 1 Onboarding Style) */}
-        <div className="bg-gradient-to-b from-blue-50 to-indigo-50/60 dark:from-slate-800 dark:to-slate-900/80 p-6 pb-7 rounded-b-[36px] relative text-center border-b border-line/40">
-          {/* Close button */}
+        {/* Curved Sky Blue Dome Top with Motif Pattern (Mockup Style) */}
+        <div className="bg-gradient-to-b from-[#EBF3FE] via-[#EEF5FF] to-[#F5F8FF] dark:from-slate-800/90 dark:via-slate-800/60 dark:to-slate-900 p-6 pt-8 pb-7 rounded-b-[40px] relative text-center border-b border-blue-100/60 dark:border-slate-700/50 overflow-hidden">
+          
+          {/* Circular Motif Rings (Motif-motif di header seperti mockup) */}
+          <div className="absolute -top-16 -left-12 w-48 h-48 rounded-full border border-blue-200/50 dark:border-blue-400/10 pointer-events-none" />
+          <div className="absolute -top-8 -left-4 w-36 h-36 rounded-full border border-blue-200/40 dark:border-blue-400/10 pointer-events-none" />
+          <div className="absolute -top-12 -right-12 w-52 h-52 rounded-full border border-blue-200/50 dark:border-blue-400/10 pointer-events-none" />
+          <div className="absolute -top-4 -right-4 w-40 h-40 rounded-full border border-blue-200/40 dark:border-blue-400/10 pointer-events-none" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full border border-blue-200/30 dark:border-blue-400/5 pointer-events-none" />
+
+          {/* Close button - only shown if onClose allowed (not forced) */}
           {onClose && (
             <button
+              type="button"
               onClick={onClose}
-              className="absolute top-4 right-4 text-content-muted hover:text-content p-1.5 rounded-full hover:bg-white/80 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 dark:hover:text-white p-1.5 rounded-full hover:bg-white/80 dark:hover:bg-slate-700/50 transition-colors cursor-pointer z-10"
               aria-label={t('login.closeAria')}
             >
               <X className="w-4 h-4" aria-hidden="true" />
             </button>
           )}
 
-          {/* Cute Friendly Bot Avatar Container */}
-          <div className="relative w-20 h-20 mx-auto mb-3 flex items-center justify-center">
-            <div className="w-16 h-16 rounded-2xl bg-white dark:bg-slate-800 shadow-md border border-blue-100 dark:border-slate-700 flex flex-col items-center justify-center relative">
-              {/* Headphone Ears */}
-              <div className="absolute -left-2 top-4 w-2.5 h-6 rounded-full bg-blue-500 shadow-xs" />
-              <div className="absolute -right-2 top-4 w-2.5 h-6 rounded-full bg-blue-500 shadow-xs" />
-              {/* Visor Screen */}
-              <div className="w-10 h-7 bg-slate-900 rounded-xl flex items-center justify-center gap-1.5 shadow-inner">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          {/* 3D Cute Robot Mascot Avatar Container (Mockup Aligned) */}
+          <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center z-10">
+            {/* White Robot Head Container */}
+            <div className="w-20 h-20 rounded-[26px] bg-white dark:bg-slate-800 shadow-lg shadow-blue-500/10 border border-white/80 dark:border-slate-700 flex flex-col items-center justify-center relative">
+              {/* Headphone Ears (Vibrant Blue Pill) */}
+              <div className="absolute -left-2.5 top-5 w-3 h-8 rounded-full bg-[#2563EB] shadow-xs" />
+              <div className="absolute -right-2.5 top-5 w-3 h-8 rounded-full bg-[#2563EB] shadow-xs" />
+              
+              {/* Dark Visor Screen */}
+              <div className="w-13 h-9 bg-[#111827] rounded-2xl flex items-center justify-center gap-2 shadow-inner">
+                {/* Glowing Cyan Eyes */}
+                <span className="w-2 h-2 rounded-full bg-[#06B6D4] shadow-[0_0_8px_#06B6D4] animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-[#06B6D4] shadow-[0_0_8px_#06B6D4] animate-pulse" />
               </div>
-              <div className="w-3 h-0.5 bg-slate-300 dark:bg-slate-600 rounded-full mt-1" />
+              
+              {/* Robot Smile / Chin Accent */}
+              <div className="w-4 h-1 bg-slate-300 dark:bg-slate-600 rounded-full mt-1.5" />
             </div>
-            {/* Status speech bubble dot */}
-            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white dark:bg-slate-800 shadow border border-line flex items-center justify-center text-xs">
-              ✨
+
+            {/* Floating Speech Bubble with icon at top right */}
+            <div className="absolute -top-1 right-0 w-7 h-7 rounded-full bg-white dark:bg-slate-800 shadow-md border border-blue-100/80 dark:border-slate-700 flex items-center justify-center text-xs animate-bounce">
+              <span className="text-[11px] text-purple-400">💬</span>
             </div>
           </div>
 
-          <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2.5 py-0.5 rounded-full mb-1">
-            Enterprise AI
-          </span>
-          <h2 id="login-title" className="text-lg font-extrabold text-content tracking-tight">
-            {t('login.title') || 'Masuk ke Workspace'}
-          </h2>
-          <p className="text-xs text-content-muted mt-1 max-w-[240px] mx-auto leading-relaxed">
-            {customMessage || t('login.subtitle') || 'Akses instan ke SAP ERP, SOP Knowledge RAG, dan Analitik.'}
-          </p>
+          <div className="relative z-10 space-y-1">
+            <span className="inline-block text-[11px] font-bold tracking-wider text-slate-500 dark:text-slate-400 uppercase">
+              ENTERPRISE EDITION
+            </span>
+            <h2 id="login-title" className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Enterprise.Ai
+            </h2>
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1.5 max-w-[260px] mx-auto leading-relaxed">
+              {customMessage || t('login.subtitle') || 'Asisten kerja cerdas untuk akses instan SAP ERP, RAG SOP, dan Analitik.'}
+            </p>
+          </div>
         </div>
 
         <div className="p-6 pt-5">
