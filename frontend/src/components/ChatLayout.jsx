@@ -2751,6 +2751,24 @@ const ChatLayout = () => {
         cancelText={t('common.cancel')}
       />
 
+      {/* Alert Modal - Sesi Diputuskan (Kick / Force Logout) */}
+      <ConfirmModal
+        isOpen={kickedModalInfo.isOpen}
+        onClose={() => {
+          setKickedModalInfo({ isOpen: false, reason: '' });
+          setIsLoginModalOpen(true);
+        }}
+        onConfirm={() => {
+          setKickedModalInfo({ isOpen: false, reason: '' });
+          setIsLoginModalOpen(true);
+        }}
+        variant="warning"
+        title={isEn ? 'Session Terminated' : 'Sesi Diputuskan'}
+        message={kickedModalInfo.reason || (isEn ? 'Your session has been terminated by an Administrator.' : 'Sesi Anda telah diputuskan oleh Administrator.')}
+        confirmText={isEn ? 'Sign In Again' : 'Login Kembali'}
+        cancelText={t('common.close')}
+      />
+
       {/* Toast Notification */}
       {toast && (
         <div

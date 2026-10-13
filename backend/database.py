@@ -540,8 +540,7 @@ def get_user_by_username(username: str):
         with engine.connect() as conn:
             row = conn.execute(text("""
                 SELECT u.username, u.full_name, u.role, u.assistant_persona,
-                       u.division_code, d.name AS division_name, u.job_level,
-                       u.password_hash, u.password
+                       u.division_code, d.name AS division_name, u.job_level
                 FROM {DB_SCHEMA}.users u
                 LEFT JOIN {DB_SCHEMA}.divisions d ON LOWER(u.division_code) = LOWER(d.code)
                 WHERE LOWER(u.username) = LOWER(:u)
@@ -580,8 +579,8 @@ def get_user_by_username(username: str):
                     "division_code": row.division_code or None,
                     "division_name": getattr(row, "division_name", None) or None,
                     "job_level": getattr(row, "job_level", None) or "staff",
-                    "password_hash": getattr(row, "password_hash", None),
-                    "password": getattr(row, "password", None),
+                    "password_hash": None,
+                    "password": None,
                 }
     except Exception as e:
         logger.error(f"Error get_user_by_username: {e}")
@@ -1886,13 +1885,10 @@ def create_new_user(username: str, password: str = None, role: str = "user", per
             if jl_clean not in ("staff", "leader", "manager"):
                 jl_clean = "staff"
 
-            from auth import hash_password
-            pwd_hash = hash_password(password) if password and password.strip() else None
-
             conn.execute(text("""
-                INSERT INTO {DB_SCHEMA}.users (username, password_hash, full_name, role, assistant_persona, division_code, job_level)
-                VALUES (:u, :p, :fn, :r, :persona, :dc, :jl)
-            """), {"u": uname_clean, "p": pwd_hash, "fn": (full_name or "").strip(),
+                INSERT INTO {DB_SCHEMA}.users (username, full_name, role, assistant_persona, division_code, job_level)
+                VALUES (:u, :fn, :r, :persona, :dc, :jl)
+            """), {"u": uname_clean, "fn": (full_name or "").strip(),
                    "r": primary_role, "persona": persona or "",
                    "dc": div_clean, "jl": jl_clean})
             for r in clean_roles:
@@ -2029,10 +2025,6 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
                     jl_clean = "staff"
                 updates.append("job_level = :jl")
                 params["jl"] = jl_clean
-            if password is not None and password.strip():
-                from auth import hash_password
-                updates.append("password_hash = :pwd, password = NULL")
-                params["pwd"] = hash_password(password.strip())
             if updates:
                 sql = f"UPDATE {DB_SCHEMA}.users SET {', '.join(updates)} WHERE LOWER(username) = LOWER(:u)"
                 conn.execute(text(sql), params)
@@ -2044,33 +2036,11 @@ def update_user_by_admin(username: str, password: str = None, role: str = None, 
 
 
 def reset_user_password_by_admin(username: str, new_password: str) -> dict:
-    """Set atau reset password user langsung di database lokal."""
-    if not new_password or len(new_password) < 6:
-        return {"success": False, "message": "Password minimal 6 karakter."}
-    uname_clean = (username or "").strip()
-    try:
-        from auth import hash_password
-        engine = get_engine()
-        with engine.connect() as conn:
-            existing = conn.execute(
-                text("SELECT username FROM {DB_SCHEMA}.users WHERE LOWER(username) = LOWER(:u)"),
-                {"u": uname_clean},
-            ).fetchone()
-            if not existing:
-                return {"success": False, "message": "User tidak ditemukan."}
-            conn.execute(text("""
-                UPDATE {DB_SCHEMA}.users
-                SET password_hash = :p, password = NULL
-                WHERE LOWER(username) = LOWER(:u)
-            """), {
-                "u": uname_clean,
-                "p": hash_password(new_password),
-            })
-            conn.commit()
-            return {"success": True, "message": f"Password user '{uname_clean}' berhasil diperbarui."}
-    except Exception as e:
-        logger.error(f"Error reset_user_password_by_admin: {e}")
-        return {"success": False, "message": str(e)}
+    """Password akun dikelola sepenuhnya melalui Dashboard OIDC."""
+    return {
+        "success": True,
+        "message": "Autentikasi akun dikelola oleh Dashboard OIDC Central. Silakan ubah password langsung melalui Dashboard OIDC.",
+    }
 
 
 # --- MASTER DATA DIVISIONS ---
@@ -4771,6 +4741,11 @@ def kick_user_session(session_id: str, admin_username: str, reason: Optional[str
             status="WARNING",
             details=f"Admin {admin_username} memutuskan sesi {session_id}. Alasan: {effective_reason}",
         )
+        try:
+            from auth import _dashboard_tokens
+            _dashboard_tokens.pop(session_id, None)
+        except Exception:
+            pass
     return True
 
 
@@ -4802,6 +4777,12 @@ def kick_all_user_sessions(username: str, admin_username: str, reason: Optional[
             status="WARNING",
             details=f"Admin {admin_username} memutuskan {len(rows)} sesi aktif milik {username}. Alasan: {effective_reason}",
         )
+        try:
+            from auth import _dashboard_tokens
+            for r in rows:
+                _dashboard_tokens.pop(str(r[0]), None)
+        except Exception:
+            pass
     return len(rows)
 
 

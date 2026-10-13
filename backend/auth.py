@@ -167,17 +167,19 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
 
 
 def _session_dashboard_token(session_id: Optional[str]) -> Optional[str]:
-    """Pulihkan token OIDC; izinkan sesi BFF aktif saat token upstream tidak ada."""
+    """Pulihkan token OIDC; tolak segera bila sesi telah di-kick atau tidak aktif di database."""
     if not session_id:
         raise _credentials_exception("Sesi tidak valid. Silakan login kembali.")
     try:
-        token = _resolve_dashboard_token(session_id)
-        if token:
-            return token
         from database import get_user_session
         session = get_user_session(session_id)
         if not session or not session.get("is_active"):
-            raise _credentials_exception("Sesi telah dihentikan. Silakan login kembali.")
+            _dashboard_tokens.pop(session_id, None)
+            kick_reason = (session.get("kick_reason") if session else None) or "Sesi Anda telah dihentikan oleh Administrator."
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "SESSION_KICKED", "reason": kick_reason},
+            )
         expires_at = session.get("expires_at")
         if expires_at:
             if isinstance(expires_at, str):
@@ -185,7 +187,12 @@ def _session_dashboard_token(session_id: Optional[str]) -> Optional[str]:
             if expires_at.tzinfo is None:
                 expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at <= datetime.now(timezone.utc):
+                _dashboard_tokens.pop(session_id, None)
                 raise _credentials_exception("Sesi telah kedaluwarsa. Silakan login kembali.")
+
+        token = _resolve_dashboard_token(session_id)
+        if token:
+            return token
         return None
     except HTTPException:
         raise

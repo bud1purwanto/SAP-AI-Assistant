@@ -747,9 +747,9 @@ export default function DashboardHome({
           </div>
 
           {/* SISI KANAN (Col 5 di Desktop): Recent Chat History & Start Chat Assistant */}
-          <div className="lg:col-span-5 flex flex-col gap-5">
+          <div className="lg:col-span-5 flex flex-col gap-5 lg:self-center lg:my-auto">
             {/* 3. Riwayat Chat Terkini (Recent Chat History Card) */}
-            <div className="rounded-[24px] sm:rounded-[28px] bg-[#F8FAFC] dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 p-4 sm:p-5 h-full flex flex-col">
+            <div className="rounded-[24px] sm:rounded-[28px] bg-[#F8FAFC] dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 p-4 sm:p-5 flex flex-col">
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 px-0.5 flex items-center justify-between">
                 <span>{language === 'en' ? 'RECENT CHAT HISTORY' : 'RIWAYAT CHAT TERAKHIR'}</span>
                 <Clock className="w-3.5 h-3.5 text-slate-400" />

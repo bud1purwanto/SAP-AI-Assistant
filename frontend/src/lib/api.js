@@ -106,10 +106,19 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
   }
 
   if (res.status === 401) {
-    if (auth) {
+    let errData = null;
+    try {
+      const text = await res.text();
+      errData = text ? JSON.parse(text) : null;
+    } catch {}
+    const detailObj = errData?.detail || errData;
+    const isKicked = detailObj?.code === 'SESSION_KICKED' || (typeof detailObj === 'string' && detailObj.includes('SESSION_KICKED'));
+    const kickReason = detailObj?.reason || (typeof detailObj === 'string' ? detailObj : null);
+
+    if (auth && path !== '/api/auth/login') {
       clearSession();
-      onUnauthorized();
-      throw new ApiError(isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.', 401);
+      onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
+      throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401, detailObj);
     }
     return null;
   }
@@ -124,14 +133,6 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     } catch {
       data = text;
     }
-  }
-
-  if (res.status === 401 && path !== '/api/login') {
-    clearSession();
-    const isKicked = data?.detail?.code === 'SESSION_KICKED' || (typeof data?.detail === 'string' && data.detail.includes('SESSION_KICKED'));
-    const kickReason = data?.detail?.reason || (typeof data?.detail === 'string' ? data.detail : null);
-    onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
-    throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401);
   }
 
   if (!res.ok) {
@@ -175,6 +176,7 @@ export const api = {
   changeOidcPassword: (username, currentPassword, newPassword) =>
     apiFetch('/api/auth/change-password', { method: 'POST', body: { username, current_password: currentPassword, new_password: newPassword }, auth: false }),
   authSession: () => apiFetch('/api/auth/session', { auth: false }),
+  heartbeat: (payload) => apiFetch('/api/auth/heartbeat', { method: 'POST', body: payload }),
   logout: () => apiFetch('/api/auth/logout', { method: 'POST', auth: false }),
   me: () => apiFetch('/api/me'),
   getConfig: () => apiFetch('/api/config'),
