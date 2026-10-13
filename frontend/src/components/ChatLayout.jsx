@@ -136,9 +136,9 @@ const ChatLayout = () => {
   const [editingTitle, setEditingTitle] = useState('');
   const [activeServer, setActiveServer] = useState(() => {
     try {
-      return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || 'sap:sandbox-new';
+      return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || '';
     } catch {
-      return 'sap:sandbox-new';
+      return '';
     }
   });
   // Konfigurasi multi-konektor milik pengguna (self-service): konektor SAP / SQL /
@@ -245,6 +245,7 @@ const ChatLayout = () => {
 
   // State dan ref untuk custom server selector dropdown
   const [isServerDropdownOpen, setIsServerDropdownOpen] = useState(false);
+  const [activeDropdownTab, setActiveDropdownTab] = useState('sap'); // 'sap' | 'sql'
   const serverDropdownRef = useRef(null);
 
   useEffect(() => {
@@ -392,29 +393,23 @@ const ChatLayout = () => {
       setActiveServer((prevActive) => {
         const savedServer = localStorage.getItem(SAP_SERVER_STORAGE_KEY);
         const targetServer = prevActive || savedServer;
-        const isSql = targetServer?.startsWith('sql:');
-        const alias = targetServer?.includes(':') ? targetServer.split(':')[1] : targetServer;
+        if (!targetServer) {
+          // Belum memilih server, biarkan kosong agar dropdown menampilkan 'Pilih Server'
+          return '';
+        }
+        const isSql = targetServer.startsWith('sql:');
+        const alias = targetServer.includes(':') ? targetServer.split(':')[1] : targetServer;
         const exists = isSql
           ? sqlSubs.some((s) => aliasOf(s) === alias || s.name === alias)
           : subs.some((s) => aliasOf(s) === alias);
 
-        if (exists && targetServer) {
+        if (exists) {
           return targetServer;
         }
 
-        if (subs.length > 0) {
-          const activeOne = subs.find((s) => s.active) || subs[0];
-          const defaultKey = `sap:${aliasOf(activeOne)}`;
-          localStorage.setItem(SAP_SERVER_STORAGE_KEY, defaultKey);
-          return defaultKey;
-        } else if (sqlSubs.length > 0) {
-          const defaultKey = `sql:${sqlSubs[0].name}`;
-          localStorage.setItem(SAP_SERVER_STORAGE_KEY, defaultKey);
-          return defaultKey;
-        } else {
-          localStorage.removeItem(SAP_SERVER_STORAGE_KEY);
-          return '';
-        }
+        // Jika server tersimpan sebelumnya sudah tidak ada lagi
+        localStorage.removeItem(SAP_SERVER_STORAGE_KEY);
+        return '';
       });
     } catch (e) {
       console.error('Gagal mengambil data server MCP:', e);
@@ -442,11 +437,25 @@ const ChatLayout = () => {
   }, []);
 
   const handleServerChange = (newServer) => {
-    setActiveServer(newServer);
+    setActiveServer(newServer || '');
     try {
-      localStorage.setItem(SAP_SERVER_STORAGE_KEY, newServer);
+      if (newServer) {
+        localStorage.setItem(SAP_SERVER_STORAGE_KEY, newServer);
+      } else {
+        localStorage.removeItem(SAP_SERVER_STORAGE_KEY);
+      }
     } catch (e) {
       console.error('Gagal menyimpan target server ke localStorage:', e);
+    }
+    if (!newServer) {
+      setConnectorConfig((prev) => {
+        const next = { ...prev, sapTarget: null, sqlTarget: null };
+        try {
+          localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      return;
     }
     const [system, target] = newServer.split(':', 2);
     if ((system === 'sap' || system === 'sql') && target) {
@@ -455,7 +464,9 @@ const ChatLayout = () => {
           ...prev,
           [system === 'sap' ? 'sapTarget' : 'sqlTarget']: target,
         };
-        localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
+        try {
+          localStorage.setItem(CONNECTOR_CONFIG_STORAGE_KEY, JSON.stringify(next));
+        } catch {}
         return next;
       });
     }
@@ -1464,12 +1475,12 @@ const ChatLayout = () => {
   };
 
   // Target sistem (sap / sql) dan target server aktif
-  const activeSystem = activeServer.startsWith('sql:') ? 'sql' : 'sap';
+  const activeSystem = activeServer.startsWith('sql:') ? 'sql' : activeServer.startsWith('sap:') ? 'sap' : '';
   const activeInstanceAlias = activeServer.includes(':') ? activeServer.split(':')[1] : activeServer;
 
-  const selectedServer = activeSystem === 'sql'
-    ? (sqlSubServers.find((s) => aliasOf(s) === activeInstanceAlias || s.name === activeInstanceAlias) || sqlSubServers[0])
-    : (sapSubServers.find((s) => aliasOf(s) === activeInstanceAlias) || sapSubServers[0]);
+  const selectedServer = !activeServer ? null : activeSystem === 'sql'
+    ? sqlSubServers.find((s) => aliasOf(s) === activeInstanceAlias || s.name === activeInstanceAlias)
+    : sapSubServers.find((s) => aliasOf(s) === activeInstanceAlias);
 
   const isProductionTarget = Boolean(
     selectedServer?.production_warning ||
@@ -2079,15 +2090,26 @@ const ChatLayout = () => {
                     aria-haspopup="listbox"
                   >
                     <div className="flex items-center gap-1.5 min-w-0 truncate">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
-                      <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
-                        activeSystem === 'sql'
-                          ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                          : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                      }`}>
-                        {activeSystem.toUpperCase()}
-                      </span>
-                      <span className="truncate">{selectedServer?.name || t('nav.connecting')}</span>
+                      {selectedServer ? (
+                        <>
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${isProductionTarget ? 'bg-danger animate-pulse' : 'bg-emerald-500'}`} />
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                            activeSystem === 'sql'
+                              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                              : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                          }`}>
+                            {activeSystem.toUpperCase()}
+                          </span>
+                          <span className="truncate">{selectedServer.name}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-2 h-2 rounded-full shrink-0 bg-amber-400/80 animate-pulse" />
+                          <span className="truncate text-content-muted font-medium italic">
+                            {t('nav.selectServer') || (language === 'en' ? 'Select Server' : 'Pilih Server')}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {isProductionTarget && (
@@ -2121,15 +2143,11 @@ const ChatLayout = () => {
                         <button
                           type="button"
                           disabled={sapSubServers.length === 0}
-                          onClick={() => {
-                            if (sapSubServers.length === 0) return;
-                            const defaultSap = sapSubServers[0] ? aliasOf(sapSubServers[0]) : 'sandbox-new';
-                            handleServerChange(`sap:${defaultSap}`);
-                          }}
+                          onClick={() => setActiveDropdownTab('sap')}
                           className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
                             sapSubServers.length === 0
                               ? 'opacity-40 cursor-not-allowed text-content-subtle bg-transparent'
-                              : activeSystem === 'sap'
+                              : (activeDropdownTab || activeSystem || 'sap') === 'sap'
                               ? 'bg-surface text-accent shadow-xs border border-accent/30 cursor-pointer'
                               : 'text-content-muted hover:text-content cursor-pointer'
                           }`}
@@ -2142,15 +2160,11 @@ const ChatLayout = () => {
                         <button
                           type="button"
                           disabled={sqlSubServers.length === 0}
-                          onClick={() => {
-                            if (sqlSubServers.length === 0) return;
-                            const defaultSql = sqlSubServers[0] ? (sqlSubServers[0].name || aliasOf(sqlSubServers[0])) : 'dev-224';
-                            handleServerChange(`sql:${defaultSql}`);
-                          }}
+                          onClick={() => setActiveDropdownTab('sql')}
                           className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
                             sqlSubServers.length === 0
                               ? 'opacity-40 cursor-not-allowed text-content-subtle bg-transparent'
-                              : activeSystem === 'sql'
+                              : activeDropdownTab === 'sql'
                               ? 'bg-surface text-blue-400 shadow-xs border border-blue-500/30 cursor-pointer'
                               : 'text-content-muted hover:text-content cursor-pointer'
                           }`}
@@ -2166,22 +2180,38 @@ const ChatLayout = () => {
                       <div className="mb-2">
                         <div className="px-1.5 py-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-content-subtle">
                           <span className="flex items-center gap-1">
-                            {activeSystem === 'sql' ? (
+                            {(activeDropdownTab || activeSystem || 'sap') === 'sql' ? (
                               <Database className="w-3 h-3 text-blue-400" />
                             ) : (
                               <Server className="w-3 h-3 text-indigo-400" />
                             )}
                             {language === 'en'
-                              ? `Select ${activeSystem.toUpperCase()} Server`
-                              : `Pilih Server ${activeSystem.toUpperCase()}`}
+                              ? `Select ${((activeDropdownTab || activeSystem || 'sap')).toUpperCase()} Server`
+                              : `Pilih Server ${((activeDropdownTab || activeSystem || 'sap')).toUpperCase()}`}
                           </span>
                           <span className="text-[9px] font-mono text-content-muted">
-                            {activeSystem === 'sql' ? `${sqlSubServers.length} Database` : `${sapSubServers.length} Server`}
+                            {(activeDropdownTab || activeSystem || 'sap') === 'sql' ? `${sqlSubServers.length} Database` : `${sapSubServers.length} Server`}
                           </span>
                         </div>
                         
                         <div className="max-h-52 overflow-y-auto space-y-1 overscroll-contain pr-0.5">
-                          {activeSystem === 'sql' ? (
+                          {/* Opsi Kosongkan / Lepas Server */}
+                          {activeServer && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleServerChange('');
+                                setIsServerDropdownOpen(false);
+                              }}
+                              className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left bg-surface-sunken/50 hover:bg-rose-500/10 text-rose-500 hover:text-rose-600 border border-transparent hover:border-rose-500/30 cursor-pointer mb-1"
+                            >
+                              <span className="truncate italic flex items-center gap-1.5 font-semibold">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                                {language === 'en' ? 'None (No specific server)' : 'Tanpa Server (Hanya Chat Biasa)'}
+                              </span>
+                            </button>
+                          )}
+                          {(activeDropdownTab || activeSystem || 'sap') === 'sql' ? (
                             sqlSubServers.length > 0 ? (
                               sqlSubServers.map((srv) => {
                                 const srvKey = srv.name || aliasOf(srv);
@@ -2315,7 +2345,7 @@ const ChatLayout = () => {
                                         }
                                         return;
                                       }
-                                      handleServerChange(`${activeSystem}:${srvAlias}`);
+                                      handleServerChange(`sap:${srvAlias}`);
                                       setIsServerDropdownOpen(false);
                                     }}
                                     className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all text-left cursor-pointer ${

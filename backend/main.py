@@ -1314,8 +1314,32 @@ async def get_admin_user_sessions_endpoint(
     q: Optional[str] = None,
     admin: dict = Depends(require_superadmin),
 ):
-    """Mengambil daftar sesi aktif dan metrik telemetri pengguna."""
-    return list_active_sessions(status_filter=status, search=q)
+    """Mengambil daftar sesi aktif dan metrik telemetri pengguna dengan identitas OIDC."""
+    data = list_active_sessions(status_filter=status, search=q)
+    try:
+        directory_users = await fetch_directory("users", admin.get("dashboard_token"))
+        users_by_uname = {
+            str(u.get("username") or "").strip().lower(): u
+            for u in directory_users
+            if u.get("username")
+        }
+        for sess in data.get("sessions", []):
+            u_key = str(sess.get("username") or "").strip().lower()
+            matched = users_by_uname.get(u_key)
+            if matched:
+                if matched.get("full_name"):
+                    sess["full_name"] = matched["full_name"]
+                if matched.get("role"):
+                    sess["role"] = matched["role"]
+                if matched.get("roles"):
+                    sess["roles"] = matched["roles"]
+                if matched.get("division_name"):
+                    sess["division_name"] = matched["division_name"]
+                elif matched.get("division_code"):
+                    sess["division_name"] = matched["division_code"]
+    except Exception as exc:
+        logger.warning(f"Gagal memperkaya identitas user-sessions dengan OIDC directory: {exc}")
+    return data
 
 
 class AdminKickSessionRequest(BaseModel):
@@ -1360,10 +1384,25 @@ async def get_admin_security_logs_endpoint(
     offset: int = 0,
     admin: dict = Depends(require_superadmin),
 ):
-    """Mengambil riwayat log audit autentikasi sistem."""
-    return list_auth_audit_logs(
+    """Mengambil riwayat log audit autentikasi sistem dengan identitas OIDC."""
+    data = list_auth_audit_logs(
         username=username, event_type=event_type, limit=limit, offset=offset
     )
+    try:
+        directory_users = await fetch_directory("users", admin.get("dashboard_token"))
+        users_by_uname = {
+            str(u.get("username") or "").strip().lower(): u
+            for u in directory_users
+            if u.get("username")
+        }
+        for item in data.get("logs", []):
+            u_key = str(item.get("username") or "").strip().lower()
+            matched = users_by_uname.get(u_key)
+            if matched and matched.get("full_name"):
+                item["full_name"] = matched["full_name"]
+    except Exception as exc:
+        logger.warning(f"Gagal memperkaya identitas security-logs dengan OIDC directory: {exc}")
+    return data
 
 
 # --- PERAN ---

@@ -28,6 +28,7 @@ export const TRANSLATIONS = {
     'nav.productionWarning': 'PRODUCTION',
     'nav.appTitle': 'Enterprise AI Assistant',
     'nav.serverSelectAria': 'Select active SAP server',
+    'nav.selectServer': 'Select Server',
 
     // Sidebar & Sessions
     'sidebar.dashboard': 'Dashboard',
@@ -652,6 +653,7 @@ export const TRANSLATIONS = {
     'nav.productionWarning': 'PRODUKSI',
     'nav.appTitle': 'Enterprise AI Assistant',
     'nav.serverSelectAria': 'Pilih server SAP aktif',
+    'nav.selectServer': 'Pilih Server',
 
     // Sidebar & Sessions
     'sidebar.dashboard': 'Beranda Hub',

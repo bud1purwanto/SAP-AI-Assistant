@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   Server,
@@ -26,7 +26,7 @@ export default function DashboardHome({
   connectorConfig = { enabled: ['sap', 'rag'] },
   onConnectorToggle,
   onServerChange,
-  activeServer = 'sap:sandbox-new',
+  activeServer = '',
   sapSubServers = [],
   sqlSubServers = [],
   mcpStatus = null,
@@ -38,6 +38,27 @@ export default function DashboardHome({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSapDropdownOpen, setIsSapDropdownOpen] = useState(false);
   const [isSqlDropdownOpen, setIsSqlDropdownOpen] = useState(false);
+
+  const sapDropdownRef = useRef(null);
+  const sqlDropdownRef = useRef(null);
+
+  // Tutup dropdown jika pengguna mengklik di luar area dropdown (click-outside)
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (sapDropdownRef.current && !sapDropdownRef.current.contains(e.target)) {
+        setIsSapDropdownOpen(false);
+      }
+      if (sqlDropdownRef.current && !sqlDropdownRef.current.contains(e.target)) {
+        setIsSqlDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
 
   const firstName = user?.full_name
     ? String(user.full_name).trim().split(' ')[0]
@@ -71,11 +92,15 @@ export default function DashboardHome({
   };
 
   // Target Server Aktif
-  const activeSystem = activeServer.startsWith('sql:') ? 'sql' : 'sap';
+  const activeSystem = activeServer.startsWith('sql:') ? 'sql' : activeServer.startsWith('sap:') ? 'sap' : '';
   const activeInstanceAlias = activeServer.includes(':') ? activeServer.split(':')[1] : activeServer;
 
-  const currentSapServer = sapSubServers.find((s) => aliasOf(s) === activeInstanceAlias) || sapSubServers[0];
-  const currentSqlServer = sqlSubServers.find((s) => aliasOf(s) === activeInstanceAlias || s.name === activeInstanceAlias) || sqlSubServers[0];
+  const currentSapServer = activeSystem === 'sap'
+    ? sapSubServers.find((s) => aliasOf(s) === activeInstanceAlias)
+    : null;
+  const currentSqlServer = activeSystem === 'sql'
+    ? sqlSubServers.find((s) => aliasOf(s) === activeInstanceAlias || s.name === activeInstanceAlias)
+    : null;
 
   const recentMobileList = Array.isArray(recentSessions) ? recentSessions.slice(0, 3) : [];
   const recentDesktopList = Array.isArray(recentSessions) ? recentSessions.slice(0, 5) : [];
@@ -196,27 +221,73 @@ export default function DashboardHome({
               </div>
 
               {/* Selector Server SAP dengan Dropdown Langsung Terhubung ke Chat */}
-              <div className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 relative">
+              <div ref={sapDropdownRef} className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 relative">
                 <button
                   type="button"
                   onClick={() => {
                     setIsSapDropdownOpen(!isSapDropdownOpen);
                     setIsSqlDropdownOpen(false);
                   }}
-                  className="w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-100 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-300 transition-all cursor-pointer"
+                  className={`w-full flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                    currentSapServer
+                      ? 'bg-white dark:bg-slate-900 border-blue-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                      : 'bg-white/90 dark:bg-slate-900/90 border-dashed border-blue-300 dark:border-blue-600/60 text-slate-500 dark:text-slate-400 hover:border-blue-400'
+                  }`}
                 >
                   <span className="truncate flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                    <span className="truncate">{currentSapServer?.name || 'SANDBOX'}</span>
+                    {currentSapServer ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span className="truncate">{currentSapServer.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-amber-400/80 shrink-0 animate-pulse" />
+                        <span className="truncate italic font-medium">
+                          {language === 'en' ? 'Select SAP Server' : 'Pilih Server SAP'}
+                        </span>
+                      </>
+                    )}
                   </span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSapDropdownOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSapDropdownOpen ? 'rotate-180 text-blue-500' : ''}`} />
                 </button>
 
                 {isSapDropdownOpen && sapSubServers.length > 0 && (
                   <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[200px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
-                      PILIH SERVER SAP
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
+                      <span>PILIH SERVER SAP</span>
+                      {activeServer && activeServer.startsWith('sap:') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onServerChange) onServerChange('');
+                            setIsSapDropdownOpen(false);
+                          }}
+                          className="text-[9px] font-bold text-rose-500 hover:text-rose-600 transition-colors lowercase cursor-pointer"
+                        >
+                          {language === 'en' ? 'unselect' : 'lepas'}
+                        </button>
+                      )}
                     </div>
+                    {/* Opsi Tanpa Server */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onServerChange) onServerChange('');
+                        setIsSapDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left text-[11px] font-medium transition-colors cursor-pointer mb-1 border-b border-slate-100 dark:border-slate-700/50 pb-1.5 ${
+                        !currentSapServer
+                          ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 font-bold'
+                          : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span className="truncate italic flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        <span>{language === 'en' ? 'None (Select SAP Server)' : 'Belum Dipilih (Pilih Server SAP)'}</span>
+                      </span>
+                      {!currentSapServer && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
                     {sapSubServers.map((srv) => {
                       const srvAlias = aliasOf(srv);
                       const isSelected = activeServer === `sap:${srvAlias}`;
@@ -323,27 +394,73 @@ export default function DashboardHome({
               </div>
 
               {/* Selector Server SQL dengan Dropdown Langsung Terhubung ke Chat */}
-              <div className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 relative">
+              <div ref={sqlDropdownRef} className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 relative">
                 <button
                   type="button"
                   onClick={() => {
                     setIsSqlDropdownOpen(!isSqlDropdownOpen);
                     setIsSapDropdownOpen(false);
                   }}
-                  className="w-full flex items-center justify-between gap-1 px-2 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-blue-100 dark:border-slate-700 text-[11px] font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-300 transition-all cursor-pointer"
+                  className={`w-full flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                    currentSqlServer
+                      ? 'bg-white dark:bg-slate-900 border-blue-200 dark:border-slate-700 text-slate-800 dark:text-slate-200'
+                      : 'bg-white/90 dark:bg-slate-900/90 border-dashed border-blue-300 dark:border-blue-600/60 text-slate-500 dark:text-slate-400 hover:border-blue-400'
+                  }`}
                 >
                   <span className="truncate flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                    <span className="truncate">{currentSqlServer?.name || 'dev-224'}</span>
+                    {currentSqlServer ? (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                        <span className="truncate">{currentSqlServer.name}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="w-2 h-2 rounded-full bg-blue-400/80 shrink-0 animate-pulse" />
+                        <span className="truncate italic font-medium">
+                          {language === 'en' ? 'Select SQL Database' : 'Pilih Database SQL'}
+                        </span>
+                      </>
+                    )}
                   </span>
-                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSqlDropdownOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform ${isSqlDropdownOpen ? 'rotate-180 text-blue-500' : ''}`} />
                 </button>
 
                 {isSqlDropdownOpen && sqlSubServers.length > 0 && (
                   <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[200px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
-                      PILIH DATABASE SQL
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
+                      <span>PILIH DATABASE SQL</span>
+                      {activeServer && activeServer.startsWith('sql:') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onServerChange) onServerChange('');
+                            setIsSqlDropdownOpen(false);
+                          }}
+                          className="text-[9px] font-bold text-rose-500 hover:text-rose-600 transition-colors lowercase cursor-pointer"
+                        >
+                          {language === 'en' ? 'unselect' : 'lepas'}
+                        </button>
+                      )}
                     </div>
+                    {/* Opsi Tanpa Database */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onServerChange) onServerChange('');
+                        setIsSqlDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left text-[11px] font-medium transition-colors cursor-pointer mb-1 border-b border-slate-100 dark:border-slate-700/50 pb-1.5 ${
+                        !currentSqlServer
+                          ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 font-bold'
+                          : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span className="truncate italic flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                        <span>{language === 'en' ? 'None (Select SQL Database)' : 'Belum Dipilih (Pilih Database SQL)'}</span>
+                      </span>
+                      {!currentSqlServer && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
                     {sqlSubServers.map((srv) => {
                       const srvName = srv.name || aliasOf(srv);
                       const isSelected = activeServer === `sql:${srvName}`;

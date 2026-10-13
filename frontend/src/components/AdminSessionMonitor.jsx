@@ -313,8 +313,14 @@ export default function AdminSessionMonitor({ masterRoles = [] }) {
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-content truncate">{sess.full_name || sess.username}</span>
-                              <span className="text-[10px] text-content-muted">(@{sess.username})</span>
+                              <span className="font-bold text-content truncate">
+                                {sess.full_name && sess.full_name.trim().toLowerCase() !== sess.username.trim().toLowerCase()
+                                  ? sess.full_name
+                                  : sess.username}
+                              </span>
+                              {sess.full_name && sess.full_name.trim().toLowerCase() !== sess.username.trim().toLowerCase() && (
+                                <span className="text-[10px] text-content-muted">(@{sess.username})</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5">
                               <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold ${getRoleBadgeStyle(sess.role)}`}>
