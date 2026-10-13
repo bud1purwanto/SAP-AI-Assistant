@@ -1315,7 +1315,16 @@ async def get_admin_user_sessions_endpoint(
     admin: dict = Depends(require_superadmin),
 ):
     """Mengambil daftar sesi aktif dan metrik telemetri pengguna dengan identitas OIDC."""
-    data = list_active_sessions(status_filter=status, search=q)
+    # Sesi dan perangkat berasal dari telemetri aplikasi; identitas pengguna
+    # selalu diambil dari direktori OIDC, tidak dari tabel profil lokal.
+    data = list_active_sessions(status_filter=status, search=None)
+    for sess in data.get("sessions", []):
+        sess["full_name"] = None
+        sess["role"] = None
+        sess["roles"] = []
+        sess["division_name"] = None
+        sess["oidc_sub"] = None
+        sess["identity_source"] = "oidc_unavailable"
     try:
         directory_users = await fetch_directory("users", admin.get("dashboard_token"))
         users_by_uname = {
@@ -1323,22 +1332,32 @@ async def get_admin_user_sessions_endpoint(
             for u in directory_users
             if u.get("username")
         }
+        users_by_sub = {
+            str(u.get("id")): u
+            for u in directory_users
+            if u.get("id")
+        }
         for sess in data.get("sessions", []):
             u_key = str(sess.get("username") or "").strip().lower()
-            matched = users_by_uname.get(u_key)
+            matched = users_by_sub.get(str(sess.get("oidc_sub") or "")) or users_by_uname.get(u_key)
             if matched:
-                if matched.get("full_name"):
-                    sess["full_name"] = matched["full_name"]
-                if matched.get("role"):
-                    sess["role"] = matched["role"]
-                if matched.get("roles"):
-                    sess["roles"] = matched["roles"]
-                if matched.get("division_name"):
-                    sess["division_name"] = matched["division_name"]
-                elif matched.get("division_code"):
-                    sess["division_name"] = matched["division_code"]
+                sess["username"] = matched.get("username") or sess.get("username")
+                sess["full_name"] = matched.get("full_name") or None
+                sess["role"] = matched.get("role") or None
+                sess["roles"] = matched.get("roles") or []
+                sess["division_name"] = matched.get("division_name") or matched.get("division_code") or None
+                sess["oidc_sub"] = matched.get("id")
+                sess["identity_source"] = "oidc"
     except Exception as exc:
         logger.warning(f"Gagal memperkaya identitas user-sessions dengan OIDC directory: {exc}")
+    if q and q.strip():
+        term = q.strip().lower()
+        data["sessions"] = [
+            sess for sess in data.get("sessions", [])
+            if any(term in str(sess.get(field) or "").lower() for field in (
+                "username", "full_name", "device_name", "ip_address"
+            ))
+        ]
     return data
 
 

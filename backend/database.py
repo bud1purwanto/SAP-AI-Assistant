@@ -4877,16 +4877,14 @@ def list_active_sessions(status_filter: str = "active", search: Optional[str] = 
             pass
 
         if search:
-            where_clauses.append("(LOWER(s.username) LIKE :s OR LOWER(s.device_name) LIKE :s OR LOWER(s.ip_address) LIKE :s OR LOWER(COALESCE(u.full_name, '')) LIKE :s)")
+            where_clauses.append("(LOWER(s.username) LIKE :s OR LOWER(s.device_name) LIKE :s OR LOWER(s.ip_address) LIKE :s)")
             params["s"] = f"%{search.strip().lower()}%"
 
         where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         rows = conn.execute(text(f"""
-            SELECT s.*, u.full_name, u.role, u.division_code, d.name AS division_name
+            SELECT s.*
             FROM {DB_SCHEMA}.user_sessions s
-            LEFT JOIN {DB_SCHEMA}.users u ON LOWER(s.username) = LOWER(u.username)
-            LEFT JOIN {DB_SCHEMA}.divisions d ON LOWER(u.division_code) = LOWER(d.code)
             {where_sql}
             ORDER BY s.is_active DESC, s.last_active_at DESC
             LIMIT 150

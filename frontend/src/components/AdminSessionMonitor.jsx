@@ -323,9 +323,11 @@ export default function AdminSessionMonitor({ masterRoles = [] }) {
                               )}
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold ${getRoleBadgeStyle(sess.role)}`}>
-                                {formatRoleLabel(sess.role, masterRoles, language)}
-                              </span>
+                              {sess.role && (
+                                <span className={`inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold ${getRoleBadgeStyle(sess.role)}`}>
+                                  {formatRoleLabel(sess.role, masterRoles, language)}
+                                </span>
+                              )}
                               {sess.division_name && (
                                 <span className="text-[10px] text-content-muted truncate">
                                   • {sess.division_name}
