@@ -15,6 +15,7 @@ import SidePanel from './SidePanel';
 import RequestAccessModal from './RequestAccessModal';
 import ThinkingIndicator from './ThinkingIndicator';
 import DashboardHome from './DashboardHome';
+import ChatStarterHero from './ChatStarterHero';
 import { useTheme } from '../hooks/useTheme';
 import { useCompactLandscape } from '../hooks/useViewport';
 import { useLanguage } from '../hooks/useLanguage';
@@ -2631,10 +2632,10 @@ const ChatLayout = () => {
                 )}
 
                 {currentMessages.length === 0 && !isCurrentLoading && (
-                  <div className="py-12 text-center text-content-muted">
-                    <p className="text-sm font-medium">{t('suggestions.heroTitle') || 'Mulai percakapan Anda'}</p>
-                    <p className="text-xs text-content-subtle mt-1">{t('suggestions.heroSubtitle') || 'Ketik pertanyaan di kolom bawah untuk memulai'}</p>
-                  </div>
+                  <ChatStarterHero
+                    user={user}
+                    onSelectPrompt={(promptText) => handleSendMessage(promptText)}
+                  />
                 )}
 
                 <div ref={messagesEndRef} className="h-1" />

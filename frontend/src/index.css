@@ -101,11 +101,11 @@
   --content-muted:     #a1a1aa;
   --content-subtle:    #71717a;
 
-  --accent:            #818cf8;
-  --accent-hover:      #a5b4fc;
+  --accent:            #3b82f6;
+  --accent-hover:      #60a5fa;
   --accent-fg:         #ffffff;
-  --accent-soft:       #1e1b4b;
-  --accent-soft-fg:    #c7d2fe;
+  --accent-soft:       #1e293b;
+  --accent-soft-fg:    #93c5fd;
 
   --danger:            #fb7185;
   --danger-soft:       #4c0519;
@@ -137,11 +137,11 @@
     --content-muted:     #a1a1aa;
     --content-subtle:    #71717a;
 
-    --accent:            #818cf8;
-    --accent-hover:      #a5b4fc;
+    --accent:            #3b82f6;
+    --accent-hover:      #60a5fa;
     --accent-fg:         #ffffff;
-    --accent-soft:       #1e1b4b;
-    --accent-soft-fg:    #c7d2fe;
+    --accent-soft:       #1e293b;
+    --accent-soft-fg:    #93c5fd;
 
     --danger:            #fb7185;
     --danger-soft:       #4c0519;
@@ -444,7 +444,7 @@ input::-webkit-list-button {
 .progress-bar-indeterminate {
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), #818cf8, var(--accent));
+  background: linear-gradient(90deg, var(--accent), #60a5fa, var(--accent));
   animation: indeterminate-progress 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
   transform-origin: left center;
 }

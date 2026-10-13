@@ -258,7 +258,7 @@ const LoginModal = ({ isOpen, customMessage, onClose, onSuccess }) => {
 
             {/* Floating Speech Bubble with icon at top right */}
             <div className="absolute -top-1 right-0 w-7 h-7 rounded-full bg-white dark:bg-slate-800 shadow-md border border-blue-100/80 dark:border-slate-700 flex items-center justify-center text-xs animate-bounce">
-              <span className="text-[11px] text-purple-400">💬</span>
+              <span className="text-[11px] text-blue-500 dark:text-blue-400">💬</span>
             </div>
           </div>
 
