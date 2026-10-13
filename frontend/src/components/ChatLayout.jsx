@@ -134,13 +134,7 @@ const ChatLayout = () => {
   const [error, setError] = useState(null);
   const [editingSessionId, setEditingSessionId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
-  const [activeServer, setActiveServer] = useState(() => {
-    try {
-      return localStorage.getItem(SAP_SERVER_STORAGE_KEY) || '';
-    } catch {
-      return '';
-    }
-  });
+  const [activeServer, setActiveServer] = useState('');
   // Konfigurasi multi-konektor milik pengguna (self-service): konektor SAP / SQL /
   // RAG / Email mana yang diaktifkan per sesi + target instance masing-masing.
   const [connectorConfig, setConnectorConfig] = useState(() => {
@@ -391,20 +385,18 @@ const ChatLayout = () => {
       setSqlSubServers(sqlSubs);
 
       setActiveServer((prevActive) => {
-        const savedServer = localStorage.getItem(SAP_SERVER_STORAGE_KEY);
-        const targetServer = prevActive || savedServer;
-        if (!targetServer) {
-          // Belum memilih server, biarkan kosong agar dropdown menampilkan 'Pilih Server'
+        // Jika belum ada server yang dipilih, default tetap kosong ('Select Server')
+        if (!prevActive) {
           return '';
         }
-        const isSql = targetServer.startsWith('sql:');
-        const alias = targetServer.includes(':') ? targetServer.split(':')[1] : targetServer;
+        const isSql = prevActive.startsWith('sql:');
+        const alias = prevActive.includes(':') ? prevActive.split(':')[1] : prevActive;
         const exists = isSql
           ? sqlSubs.some((s) => aliasOf(s) === alias || s.name === alias)
           : subs.some((s) => aliasOf(s) === alias);
 
         if (exists) {
-          return targetServer;
+          return prevActive;
         }
 
         // Jika server tersimpan sebelumnya sudah tidak ada lagi
@@ -2588,6 +2580,9 @@ const ChatLayout = () => {
             sqlSubServers={sqlSubServers}
             mcpStatus={mcpStatus}
             connectorAccess={connectorAccess}
+            lookupMcpAccessTarget={lookupMcpAccessTarget}
+            mcpAccessTargets={mcpAccessTargets}
+            onRefreshMcpAccessTargets={refreshMcpAccessTargets}
             onRequestAccess={(target) => setAccessRequestModal({ isOpen: true, target })}
           />
         ) : (
@@ -2618,8 +2613,8 @@ const ChatLayout = () => {
                   />
                 ))}
 
-                {/* Progres dan jawaban streaming tampil bersamaan. */}
-                {isCurrentLoading && (
+                {/* Tampilkan indikator proses selama AI berpikir/memanggil tool; begitu teks jawaban mulai mengalir, sembunyikan loading agar rapi */}
+                {isCurrentLoading && !currentStream.trim() && (
                   <ThinkingIndicator
                     progress={currentProgress}
                     onStop={() => stopGeneration(activeSessionKey)}

@@ -31,6 +31,8 @@ export default function DashboardHome({
   sqlSubServers = [],
   mcpStatus = null,
   connectorAccess,
+  lookupMcpAccessTarget,
+  mcpAccessTargets = [],
   onRequestAccess,
   onLoadSession,
 }) {
@@ -110,6 +112,27 @@ export default function DashboardHome({
   const isSqlEnabled = connectorConfig.enabled.includes('sql');
   const isEmailEnabled = connectorConfig.enabled.includes('email');
 
+  // Cek otorisasi akses per konektor
+  const sapAccess = connectorAccess ? connectorAccess('sap') : { approvedTarget: true };
+  const ragAccess = connectorAccess ? connectorAccess('rag') : { approvedTarget: true };
+  const sqlAccess = connectorAccess ? connectorAccess('sql') : { approvedTarget: true };
+  const emailAccess = connectorAccess ? connectorAccess('email') : { approvedTarget: true };
+
+  const isSapLocked = !sapAccess?.approvedTarget;
+  const isRagLocked = !ragAccess?.approvedTarget;
+  const isSqlLocked = !sqlAccess?.approvedTarget;
+  const isEmailLocked = !emailAccess?.approvedTarget;
+
+  // Helper untuk mengecek apakah server tertentu di-approve
+  const getServerAccess = (srv) => {
+    if (!lookupMcpAccessTarget) return { isLocked: false, isPending: false, isRejected: false, target: null };
+    const entry = lookupMcpAccessTarget(srv);
+    const isLocked = !entry || entry.accessState !== 'approved';
+    const isPending = entry?.accessState === 'pending';
+    const isRejected = entry?.accessState === 'rejected';
+    return { isLocked, isPending, isRejected, target: entry };
+  };
+
   return (
     <div className="flex-1 w-full h-full overflow-y-auto bg-surface overscroll-contain">
       <div className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pt-3 sm:pt-6 lg:pt-8 pb-12 px-3 sm:px-6 lg:px-8 animate-fadeIn">
@@ -187,34 +210,60 @@ export default function DashboardHome({
             
             {/* Card 1: SAP ERP Live + Dropdown Server Terintegrasi */}
             <div className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
-              isSapEnabled
+              isSapLocked
+                ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                : isSapEnabled
                 ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
                 : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
             }`}>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
+                  <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
                     <span className="text-lg">📦</span>
+                    {isSapLocked && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-xs" title={t('mcp.statusLocked')}>
+                        <Lock className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
                   
-                  {/* Toggle Aktifkan SAP */}
-                  <button
-                    type="button"
-                    onClick={() => onConnectorToggle && onConnectorToggle('sap')}
-                    className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                      isSapEnabled
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                    title={isSapEnabled ? 'Nonaktifkan SAP' : 'Aktifkan SAP'}
-                  >
-                    {isSapEnabled && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
+                  {/* Toggle Aktifkan SAP / Request Access */}
+                  {isSapLocked ? (
+                    <button
+                      type="button"
+                      onClick={() => onRequestAccess && onRequestAccess(sapAccess?.requestableTarget || { serverType: 'sap', name: 'SAP ERP' })}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-all cursor-pointer"
+                      title={t('mcp.requestAccess')}
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{t('mcp.statusLocked')}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onConnectorToggle && onConnectorToggle('sap')}
+                      className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                        isSapEnabled
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'border-2 border-slate-300 dark:border-slate-600'
+                      }`}
+                      title={isSapEnabled ? 'Nonaktifkan SAP' : 'Aktifkan SAP'}
+                    >
+                      {isSapEnabled && <Check className="w-3 h-3 stroke-[3]" />}
+                    </button>
+                  )}
                 </div>
 
-                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                  SAP ERP Live
-                </h4>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    SAP ERP Live
+                  </h4>
+                  {isSapLocked && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-500/10 text-amber-600 border border-amber-500/20 leading-none">
+                      {t('mcp.statusLocked')}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
                   {language === 'en' ? 'Stock, PR/PO, Vendor' : 'Stok Plant, PR/PO, Vendor'}
                 </p>
@@ -253,7 +302,7 @@ export default function DashboardHome({
                 </button>
 
                 {isSapDropdownOpen && sapSubServers.length > 0 && (
-                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[200px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
+                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[210px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
                       <span>PILIH SERVER SAP</span>
                       {activeServer && activeServer.startsWith('sap:') && (
@@ -291,22 +340,45 @@ export default function DashboardHome({
                     {sapSubServers.map((srv) => {
                       const srvAlias = aliasOf(srv);
                       const isSelected = activeServer === `sap:${srvAlias}`;
+                      const { isLocked: srvLocked, isPending: srvPending, target: srvTarget } = getServerAccess(srv);
                       return (
                         <button
                           key={srv.number || srvAlias}
                           type="button"
                           onClick={() => {
+                            if (srvLocked) {
+                              if (onRequestAccess && srvTarget) {
+                                onRequestAccess({
+                                  connectionId: srvTarget.connectionId,
+                                  name: srv.name,
+                                  serverType: 'sap',
+                                });
+                              }
+                              return;
+                            }
                             if (onServerChange) onServerChange(`sap:${srvAlias}`);
                             setIsSapDropdownOpen(false);
                           }}
                           className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left text-[11px] font-medium transition-colors cursor-pointer ${
-                            isSelected
+                            srvLocked
+                              ? 'opacity-70 text-slate-400 hover:bg-amber-500/10'
+                              : isSelected
                               ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 font-bold'
                               : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                           }`}
                         >
-                          <span className="truncate">{srv.name}</span>
-                          {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                          <span className="truncate flex items-center gap-1.5">
+                            <span className="truncate">{srv.name}</span>
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {srvLocked && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1 py-0.2 rounded">
+                                <Lock className="w-2.5 h-2.5" />
+                                {srvPending ? t('mcp.statusPending') : t('mcp.statusLocked')}
+                              </span>
+                            )}
+                            {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                          </div>
                         </button>
                       );
                     })}
@@ -317,77 +389,137 @@ export default function DashboardHome({
 
             {/* Card 2: Dokumen SOP (RAG Knowledge) */}
             <div
-              onClick={() => onConnectorToggle && onConnectorToggle('rag')}
+              onClick={() => {
+                if (isRagLocked) {
+                  if (onRequestAccess) {
+                    onRequestAccess(ragAccess?.requestableTarget || { serverType: 'rag', name: 'RAG Knowledge' });
+                  }
+                  return;
+                }
+                if (onConnectorToggle) onConnectorToggle('rag');
+              }}
               className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
-                isRagEnabled
+                isRagLocked
+                  ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                  : isRagEnabled
                   ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
                   : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
               }`}
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
+                  <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
                     <span className="text-lg">📑</span>
+                    {isRagLocked && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-xs" title={t('mcp.statusLocked')}>
+                        <Lock className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
                   
-                  <span
-                    className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors ${
-                      isRagEnabled
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                  >
-                    {isRagEnabled && <Check className="w-3 h-3 stroke-[3]" />}
-                  </span>
+                  {isRagLocked ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{t('mcp.statusLocked')}</span>
+                    </span>
+                  ) : (
+                    <span
+                      className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors ${
+                        isRagEnabled
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'border-2 border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      {isRagEnabled && <Check className="w-3 h-3 stroke-[3]" />}
+                    </span>
+                  )}
                 </div>
 
-                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                  {language === 'en' ? 'SOP Documents' : 'Dokumen SOP'}
-                </h4>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    {language === 'en' ? 'SOP Documents' : 'Dokumen SOP'}
+                  </h4>
+                  {isRagLocked && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-500/10 text-amber-600 border border-amber-500/20 leading-none">
+                      {t('mcp.statusLocked')}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
                   {language === 'en' ? 'RAG Knowledge Base' : 'RAG Knowledge Base & Kebijakan'}
                 </p>
               </div>
 
               <div className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 flex items-center justify-between">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  isRagLocked
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                }`}>
                   {language === 'en' ? 'Knowledge Base' : 'Basis Pengetahuan'}
                 </span>
                 <span className="text-[10px] font-mono text-slate-400">
-                  {language === 'en' ? 'Active' : 'Aktif'}
+                  {isRagLocked ? (language === 'en' ? 'Locked' : 'Terkunci') : (language === 'en' ? 'Active' : 'Aktif')}
                 </span>
               </div>
             </div>
 
             {/* Card 3: SQL Database + Dropdown Server Terintegrasi */}
             <div className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all ${
-              isSqlEnabled
+              isSqlLocked
+                ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                : isSqlEnabled
                 ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
                 : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
             }`}>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
+                  <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
                     <span className="text-lg">📊</span>
+                    {isSqlLocked && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-xs" title={t('mcp.statusLocked')}>
+                        <Lock className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
                   
-                  <button
-                    type="button"
-                    onClick={() => onConnectorToggle && onConnectorToggle('sql')}
-                    className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                      isSqlEnabled
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                    title={isSqlEnabled ? 'Nonaktifkan SQL' : 'Aktifkan SQL'}
-                  >
-                    {isSqlEnabled && <Check className="w-3 h-3 stroke-[3]" />}
-                  </button>
+                  {/* Toggle Aktifkan SQL / Request Access */}
+                  {isSqlLocked ? (
+                    <button
+                      type="button"
+                      onClick={() => onRequestAccess && onRequestAccess(sqlAccess?.requestableTarget || { serverType: 'sql', name: 'SQL Database' })}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-all cursor-pointer"
+                      title={t('mcp.requestAccess')}
+                    >
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{t('mcp.statusLocked')}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onConnectorToggle && onConnectorToggle('sql')}
+                      className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                        isSqlEnabled
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'border-2 border-slate-300 dark:border-slate-600'
+                      }`}
+                      title={isSqlEnabled ? 'Nonaktifkan SQL' : 'Aktifkan SQL'}
+                    >
+                      {isSqlEnabled && <Check className="w-3 h-3 stroke-[3]" />}
+                    </button>
+                  )}
                 </div>
 
-                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                  SQL Database
-                </h4>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    SQL Database
+                  </h4>
+                  {isSqlLocked && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-500/10 text-amber-600 border border-amber-500/20 leading-none">
+                      {t('mcp.statusLocked')}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
                   {language === 'en' ? 'Live Analytics Engine' : 'Analisis Data & Query SQL'}
                 </p>
@@ -426,7 +558,7 @@ export default function DashboardHome({
                 </button>
 
                 {isSqlDropdownOpen && sqlSubServers.length > 0 && (
-                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[200px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
+                  <div className="absolute left-0 bottom-full mb-1.5 w-full min-w-[210px] bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-blue-100 dark:border-slate-700 p-1.5 z-50 animate-fadeIn max-h-48 overflow-y-auto">
                     <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1 flex items-center justify-between">
                       <span>PILIH DATABASE SQL</span>
                       {activeServer && activeServer.startsWith('sql:') && (
@@ -464,22 +596,45 @@ export default function DashboardHome({
                     {sqlSubServers.map((srv) => {
                       const srvName = srv.name || aliasOf(srv);
                       const isSelected = activeServer === `sql:${srvName}`;
+                      const { isLocked: srvLocked, isPending: srvPending, target: srvTarget } = getServerAccess(srv);
                       return (
                         <button
                           key={srv.number || srvName}
                           type="button"
                           onClick={() => {
+                            if (srvLocked) {
+                              if (onRequestAccess && srvTarget) {
+                                onRequestAccess({
+                                  connectionId: srvTarget.connectionId,
+                                  name: srv.name,
+                                  serverType: 'sql',
+                                });
+                              }
+                              return;
+                            }
                             if (onServerChange) onServerChange(`sql:${srvName}`);
                             setIsSqlDropdownOpen(false);
                           }}
                           className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-left text-[11px] font-medium transition-colors cursor-pointer ${
-                            isSelected
+                            srvLocked
+                              ? 'opacity-70 text-slate-400 hover:bg-amber-500/10'
+                              : isSelected
                               ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 font-bold'
                               : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
                           }`}
                         >
-                          <span className="truncate">{srv.name}</span>
-                          {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                          <span className="truncate flex items-center gap-1.5">
+                            <span className="truncate">{srv.name}</span>
+                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {srvLocked && (
+                              <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1 py-0.2 rounded">
+                                <Lock className="w-2.5 h-2.5" />
+                                {srvPending ? t('mcp.statusPending') : t('mcp.statusLocked')}
+                              </span>
+                            )}
+                            {isSelected && <Check className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />}
+                          </div>
                         </button>
                       );
                     })}
@@ -490,44 +645,77 @@ export default function DashboardHome({
 
             {/* Card 4: Email Assistant */}
             <div
-              onClick={() => onConnectorToggle && onConnectorToggle('email')}
+              onClick={() => {
+                if (isEmailLocked) {
+                  if (onRequestAccess) {
+                    onRequestAccess(emailAccess?.requestableTarget || { serverType: 'email', name: 'Email Gateway' });
+                  }
+                  return;
+                }
+                if (onConnectorToggle) onConnectorToggle('email');
+              }}
               className={`relative flex flex-col justify-between p-3.5 sm:p-4 rounded-[22px] sm:rounded-[26px] border transition-all cursor-pointer ${
-                isEmailEnabled
+                isEmailLocked
+                  ? 'bg-slate-50/80 dark:bg-slate-800/40 border-amber-200/60 dark:border-amber-900/40 opacity-85'
+                  : isEmailEnabled
                   ? 'bg-[#F2F7FF] dark:bg-slate-800/90 border-blue-200 dark:border-blue-700/60 shadow-xs'
                   : 'bg-white dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-700/50 opacity-75'
               }`}
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
+                  <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-slate-900 shadow-2xs border border-blue-100/60 dark:border-slate-700 flex items-center justify-center">
                     <span className="text-lg">📬</span>
+                    {isEmailLocked && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-xs" title={t('mcp.statusLocked')}>
+                        <Lock className="w-2.5 h-2.5" />
+                      </span>
+                    )}
                   </div>
                   
-                  <span
-                    className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors ${
-                      isEmailEnabled
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                  >
-                    {isEmailEnabled && <Check className="w-3 h-3 stroke-[3]" />}
-                  </span>
+                  {isEmailLocked ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>{t('mcp.statusLocked')}</span>
+                    </span>
+                  ) : (
+                    <span
+                      className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center transition-colors ${
+                        isEmailEnabled
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'border-2 border-slate-300 dark:border-slate-600'
+                      }`}
+                    >
+                      {isEmailEnabled && <Check className="w-3 h-3 stroke-[3]" />}
+                    </span>
+                  )}
                 </div>
 
-                <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
-                  Email Assistant
-                </h4>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-tight">
+                    Email Assistant
+                  </h4>
+                  {isEmailLocked && (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-amber-500/10 text-amber-600 border border-amber-500/20 leading-none">
+                      {t('mcp.statusLocked')}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
                   {language === 'en' ? 'Enterprise Mail Services' : 'Layanan Surel & Notifikasi'}
                 </p>
               </div>
 
               <div className="mt-3 pt-2 border-t border-blue-100/60 dark:border-slate-700/60 flex items-center justify-between">
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  isEmailLocked
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                    : 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
+                }`}>
                   IMAP/SMTP
                 </span>
                 <span className="text-[10px] font-mono text-slate-400">
-                  {language === 'en' ? 'Ready' : 'Siap Pakai'}
+                  {isEmailLocked ? (language === 'en' ? 'Locked' : 'Terkunci') : (language === 'en' ? 'Ready' : 'Siap Pakai')}
                 </span>
               </div>
             </div>
