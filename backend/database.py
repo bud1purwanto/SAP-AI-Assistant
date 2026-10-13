@@ -117,38 +117,20 @@ def init_db():
                 );
             """))
 
-            # 2b. Buat Tabel {DB_SCHEMA}.users
+            # 2b. Buat Tabel {DB_SCHEMA}.users (hanya menyimpan profil/persona aplikasi; autentikasi dikelola OIDC)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS {DB_SCHEMA}.users (
                     username VARCHAR(50) PRIMARY KEY,
-                    password VARCHAR(100),
-                    password_hash VARCHAR(255),
                     full_name VARCHAR(120),
                     role VARCHAR(40) NOT NULL,
                     assistant_persona TEXT,
-                    force_change_password BOOLEAN DEFAULT FALSE,
                     division_code VARCHAR(40),
                     job_level VARCHAR(20) DEFAULT 'staff'
                 );
             """))
             
-            # 2b. Migrasi instalasi lama.
-            # DDL di bawah harus idempoten, bukan dibungkus try/except: di
-            # PostgreSQL satu pernyataan yang gagal membatalkan SELURUH
-            # transaksi, sehingga semua perintah berikutnya ikut gagal.
-            conn.execute(text(
-                "ALTER TABLE {DB_SCHEMA}.users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)"
-            ))
             conn.execute(text(
                 "ALTER TABLE {DB_SCHEMA}.users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120)"
-            ))
-            conn.execute(text(
-                "ALTER TABLE {DB_SCHEMA}.users ADD COLUMN IF NOT EXISTS force_change_password BOOLEAN DEFAULT FALSE"
-            ))
-            # Kolom password plaintext dipensiunkan; DROP NOT NULL bersifat
-            # idempoten sehingga aman dijalankan berulang.
-            conn.execute(text(
-                "ALTER TABLE {DB_SCHEMA}.users ALTER COLUMN password DROP NOT NULL"
             ))
             conn.execute(text(
                 "ALTER TABLE {DB_SCHEMA}.users ADD COLUMN IF NOT EXISTS division_code VARCHAR(40)"
@@ -320,15 +302,6 @@ def init_db():
                 ON {DB_SCHEMA}.chat_uploads (expires_at);
             """))
 
-            # 5d. Catatan percobaan login gagal, untuk pembatasan brute force.
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS {DB_SCHEMA}.login_attempts (
-                    client_key VARCHAR(120) PRIMARY KEY,
-                    failures INTEGER NOT NULL DEFAULT 0,
-                    first_failure_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    locked_until TIMESTAMPTZ
-                );
-            """))
 
             # 5e. Katalog Skill Asisten (Panduan & SOP Modul SAP)
             conn.execute(text("""

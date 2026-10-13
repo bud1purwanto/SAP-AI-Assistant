@@ -1158,6 +1158,28 @@ def _m0029_pemakaian_kuota_pakai_sub_oidc(conn):
     """))
 
 
+def _m0034_pembersihan_skema_redundant_oidc(conn):
+    """Pembersihan tabel dan kolom kredensial lokal yang sudah redundan karena OIDC.
+
+    Autentikasi akun dan proteksi brute-force kini dikelola sepenuhnya
+    oleh OIDC Central BFF. Tabel login_attempts, user_sap_mcp_tokens, serta
+    kolom kredensial lokal pada users dipensiunkan secara idempoten dan aman.
+    """
+    # 1. Hapus kolom-kolom password lokal yang tidak lagi dipakai di tabel users
+    for col in ("password", "password_hash", "force_change_password"):
+        try:
+            conn.execute(text(f"ALTER TABLE {DB_SCHEMA}.users DROP COLUMN IF EXISTS {col}"))
+        except Exception as e:
+            logger.warning(f"Gagal drop column users.{col}: {e}")
+
+    # 2. Hapus tabel-tabel lokal yang fungsinya sudah sepenuhnya diambil alih oleh OIDC
+    for tbl in ("login_attempts", "user_sap_mcp_tokens"):
+        try:
+            conn.execute(text(f"DROP TABLE IF EXISTS {DB_SCHEMA}.{tbl} CASCADE"))
+        except Exception as e:
+            logger.warning(f"Gagal drop table {tbl}: {e}")
+
+
 MIGRATIONS = [
     ("0001_waktu_percakapan_pakai_zona_waktu", _m0001_waktu_percakapan_pakai_zona_waktu),
     ("0002_indeks_pencarian_riwayat", _m0002_indeks_pencarian_riwayat),
@@ -1190,6 +1212,7 @@ MIGRATIONS = [
     ("0029_pemakaian_kuota_pakai_sub_oidc", _m0029_pemakaian_kuota_pakai_sub_oidc),
     ("0030_riwayat_chat_pakai_sub_oidc", _m0030_riwayat_chat_pakai_sub_oidc),
     ("0031_chat_sessions_is_title_custom", _m0031_chat_sessions_is_title_custom),
+    ("0034_pembersihan_skema_redundant_oidc", _m0034_pembersihan_skema_redundant_oidc),
 ]
 
 
