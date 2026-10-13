@@ -1485,25 +1485,27 @@ const ChatLayout = () => {
       >
         <div className="p-3.5 sm:p-4 border-b border-line/70 flex items-center justify-between bg-surface-raised/50 backdrop-blur-md">
           <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 flex items-center justify-start pl-2 shadow-lg shadow-indigo-500/20 border border-white/20 shrink-0 overflow-hidden ring-1 ring-white/10">
-              <span className="font-black text-[15px] text-white tracking-tight">
+            {/* Logo matching mockup: Rounded-2xl vibrant blue/indigo square with overlapping cyan/sky AI badge */}
+            <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-700 shadow-md shadow-indigo-500/25 border border-white/20 shrink-0 overflow-hidden flex items-center justify-center">
+              <span className="font-extrabold text-[17px] text-white tracking-tight -translate-x-1.5 -translate-y-0.5 select-none">
                 E
               </span>
-              <div className="absolute -bottom-0.5 -right-0.5 bg-gradient-to-r from-sky-400 to-indigo-500 rounded-tl-md px-1 py-0.2 shadow-xs">
-                <span className="text-[8px] font-black text-white leading-none tracking-tight">AI</span>
+              <div className="absolute bottom-0 right-0 w-5 h-5 bg-gradient-to-br from-sky-400 to-blue-500 rounded-tl-xl flex items-center justify-center shadow-xs">
+                <span className="text-[9px] font-black text-white leading-none tracking-tight">AI</span>
               </div>
             </div>
             <div>
-              <h1 className="text-xs sm:text-sm font-extrabold tracking-tight font-display text-content flex items-center gap-1.5">
-                <span>Enterprise AI</span>
-                <span className="text-[9px] uppercase font-bold text-accent px-1.5 py-0.5 bg-accent-soft rounded-md tracking-wider border border-accent/20">Assistant</span>
-              </h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-extrabold tracking-tight font-display text-content">
+                  Enterprise AI
                 </span>
-                <span className="text-[11px] text-content-muted font-medium">{t('common.online')}</span>
+                <span className="text-[10px] uppercase font-bold text-blue-600 dark:text-blue-400 px-2 py-0.5 bg-blue-50 dark:bg-blue-950/60 rounded-full tracking-wider border border-blue-200/60 dark:border-blue-800/60 shadow-2xs">
+                  ASSISTANT
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-xs"></span>
+                <span className="text-[11px] text-content-muted font-medium">Online</span>
               </div>
             </div>
           </div>
@@ -1517,12 +1519,13 @@ const ChatLayout = () => {
         </div>
 
         <div className="p-3 space-y-2.5">
+          {/* New Chat Button matching mockup: Rounded-2xl vibrant sky blue button with pill (+) icon */}
           <button
             onClick={createNewSession}
-            className="w-full flex items-center justify-center gap-2.5 py-2.5 px-3.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 border border-white/15 transition-all active:scale-[0.98] cursor-pointer group"
+            className="w-full flex items-center justify-center gap-2.5 py-3 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 hover:from-blue-500 hover:to-sky-400 text-white rounded-2xl text-sm font-bold shadow-md shadow-blue-500/25 hover:shadow-blue-500/40 border border-white/20 transition-all active:scale-[0.98] cursor-pointer group"
           >
-            <span className="p-1 rounded-lg bg-white/20 group-hover:bg-white/30 transition-colors shadow-2xs">
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            <span className="w-6 h-6 rounded-full bg-white/25 group-hover:bg-white/35 flex items-center justify-center transition-colors shadow-2xs shrink-0">
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" aria-hidden="true" />
             </span>
             <span className="tracking-wide">{t('sidebar.newChat')}</span>
           </button>
@@ -1784,24 +1787,24 @@ const ChatLayout = () => {
               </div>
             </div>
           ) : (
-            /* Tampilan User Terdaftar: Profil Card + Dropup Menu (...) */
-            <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-sunken/60 hover:bg-surface-sunken/90 border border-line/70 transition-all">
-              <div className="flex items-center gap-2.5 min-w-0 pr-1">
+            /* Tampilan User Terdaftar: Profil Card + Dropup Menu (...) sesuai Mockup */
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-surface-sunken/60 hover:bg-surface-sunken border border-line/80 shadow-xs transition-all">
+              <div className="flex items-center gap-3 min-w-0 pr-1">
                 <div className="relative shrink-0">
                   <div
-                    className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-1 ring-white/20 select-none"
+                    className="w-9 h-9 rounded-2xl bg-gradient-to-br from-blue-600 via-blue-600 to-sky-500 text-white flex items-center justify-center font-bold text-xs shadow-sm ring-2 ring-white dark:ring-slate-850 select-none"
                     title={user.full_name || user.username}
                   >
                     {getUserInitials(user)}
                   </div>
                   <span
-                    className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-surface-sunken"
+                    className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-surface-raised shadow-xs"
                     title={t('common.online')}
                   />
                 </div>
                 <div className="min-w-0">
                   <div
-                    className="text-xs font-semibold truncate text-content leading-tight"
+                    className="text-xs font-bold truncate text-content tracking-tight leading-tight"
                     title={user.full_name ? `${user.full_name} (${user.username})` : user.username}
                   >
                     {user.full_name || user.username}
@@ -1809,19 +1812,20 @@ const ChatLayout = () => {
                   <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                     {(() => {
                       const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                      if (displayRole === 'user') return null;
                       return (
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${getRoleBadgeStyle(displayRole)}`}>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-300/80 dark:border-slate-700 shadow-2xs">
                           {getUserRoleLabel(displayRole, isEn)}
                         </span>
                       );
                     })()}
                     {(user.department_code || user.department_name) && (
                       <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/80 dark:border-sky-800/80 shadow-2xs"
                         title={user.department_name || user.department_code}
                       >
-                        <Building2 className="w-2.5 h-2.5 shrink-0 opacity-70" />
-                        <span className="truncate max-w-[9rem] sm:max-w-[12rem]">{user.department_name || user.department_code}</span>
+                        <Building2 className="w-2.5 h-2.5 shrink-0 opacity-80" />
+                        <span className="truncate max-w-[8rem] sm:max-w-[10rem]">{user.department_name || user.department_code}</span>
                       </span>
                     )}
                   </div>
@@ -1863,11 +1867,14 @@ const ChatLayout = () => {
                             {user.full_name || user.username}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-content-secondary bg-surface border border-line/70 tracking-wide font-sans leading-none">
-                              {user.username}
-                            </span>
+                            {(user.username && user.full_name && user.username !== user.full_name) && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold text-content-secondary bg-surface border border-line/70 tracking-wide font-sans leading-none">
+                                {user.username}
+                              </span>
+                            )}
                             {(() => {
                               const displayRole = (user.roles && user.roles.length > 0) ? user.roles[0] : (user.role || 'user');
+                              if (displayRole === 'user') return null;
                               return (
                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border leading-none ${getRoleBadgeStyle(displayRole)}`}>
                                   {getUserRoleLabel(displayRole, isEn)}
