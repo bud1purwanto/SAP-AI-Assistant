@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Layers, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Layers, LayoutDashboard, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -1544,28 +1544,7 @@ const ChatLayout = () => {
           </button>
         </div>
 
-        <div className="p-3 space-y-2">
-          {/* Dashboard Hub Button */}
-          <button
-            onClick={() => {
-              setActiveTab('dashboard');
-              setIsSidebarOpen(false);
-            }}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              activeTab === 'dashboard'
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/60 shadow-2xs'
-                : 'text-content-muted hover:text-content hover:bg-surface-hover border border-transparent'
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <span className="text-base">🏠</span>
-              <span>{t('sidebar.dashboard') || 'Dashboard Hub'}</span>
-            </div>
-            {activeTab === 'dashboard' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-            )}
-          </button>
-
+        <div className="p-3 pb-2 space-y-2">
           {/* New Chat Button matching mockup: Rounded-2xl vibrant sky blue button with pill (+) icon */}
           <button
             onClick={createNewSession}
@@ -1763,6 +1742,28 @@ const ChatLayout = () => {
         </nav>
 
         <div className="pwa-sidebar-footer p-3 border-t border-line/70 bg-surface-raised/95 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] shrink-0 space-y-2">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('dashboard');
+              setIsSidebarOpen(false);
+            }}
+            aria-current={activeTab === 'dashboard' ? 'page' : undefined}
+            className={`group w-full flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-all cursor-pointer ${
+              activeTab === 'dashboard'
+                ? 'border-accent/30 bg-accent/10 text-accent shadow-xs'
+                : 'border-line/70 bg-surface-raised text-content-muted hover:border-accent/30 hover:bg-accent/5 hover:text-accent'
+            }`}
+          >
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+              activeTab === 'dashboard' ? 'bg-accent/15' : 'bg-surface-sunken group-hover:bg-accent/10'
+            }`}>
+              <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{t('sidebar.dashboard')}</span>
+            {activeTab === 'dashboard' && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
+          </button>
+
           {user.role === 'superadmin' && (
             <button
               onClick={() => setIsAdminOpen(true)}

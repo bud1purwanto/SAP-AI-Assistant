@@ -1099,10 +1099,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         elif chat_req.sql_target:
             target_srv = f"sql:{chat_req.sql_target}"
         else:
-            target_srv = "sap"
-    # Daftar konektor yang dipilih user (multi-select independen) — bila tidak diisi,
-    # gunakan perilaku lama (fallback server_filter-based exclusivity).
-    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors is not None else None
+            # Server dipilih hanya bila pengguna menentukan target tertentu.
+            # Mode umum tetap menyediakan konektor non-SAP tanpa mewajibkan
+            # pilihan server SAP pada setiap percakapan.
+            target_srv = "all"
+    # Daftar konektor yang dipilih user (multi-select independen). Default chat
+    # tidak mengasumsikan SAP aktif karena SAP membutuhkan target khusus.
+    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors is not None else {"sql", "rag", "email"}
     # Pilihan target tidak boleh mengaktifkan kembali konektor yang dimatikan.
     if allowed_connectors is not None:
         if target_srv.startswith("sql") and "sql" not in allowed_connectors:
@@ -1112,7 +1115,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # Target SAP/SQL dibawa per-request dan diterapkan ulang di setiap pemanggilan
     # tool (lihat mcp_manager.call_tool). Menetapkannya sekali di awal tidak
     # aman: user lain dapat menggesernya sebelum tool ini benar-benar dijalankan.
-    target_system = "sql" if target_srv.startswith("sql:") else "sap"
+    target_system = "sql" if target_srv.startswith("sql:") else ("sap" if target_srv.startswith("sap:") else "general")
     sap_target = (
         target_srv.split(":", 1)[1]
         if ":" in target_srv and target_srv.startswith("sap:")
@@ -1128,12 +1131,16 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             sap_target = None
         if "sql" not in allowed_connectors:
             sql_target = None
+        # SAP tools require an explicit per-request target. Leaving the
+        # connector enabled without one exposes tools that cannot be called.
+        if not sap_target:
+            allowed_connectors.discard("sap")
+        elif chat_req.enabled_connectors is None:
+            allowed_connectors.add("sap")
     # Kredensial SAP dimiliki OIDC dan dipakai gateway melalui sesi OIDC pengguna.
     sap_owner = str(oidc_sub or "").strip()
     if (target_srv.startswith("sap") or sap_target) and not sap_owner:
         raise HTTPException(status_code=401, detail="Subjek OIDC tidak tersedia pada sesi.")
-    if target_srv == "sap" and not sap_target:
-        raise HTTPException(status_code=400, detail="Target SAP wajib dipilih.")
     user_sap_credentials = None
     has_sap_credential = False
     # Normalisasi user_role ke list roles
@@ -1141,7 +1148,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     roles_str_primary = roles_list[0] if roles_list else "user"
 
     # Periksa status kredensial pada sumber OIDC yang sama dengan form SAP Login.
-    if target_srv.startswith("sap") or (sap_target and target_system == "sap"):
+    if sap_target and (target_srv.startswith("sap") or target_system == "sap"):
         from auth import get_dashboard_access_token
         from oidc_sap_credentials import _connection_id, _target_names, list_status, saved_credentials
         oidc_rows = await list_status({"dashboard_token": get_dashboard_access_token()})
@@ -1293,7 +1300,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         "new-company": ("Sandbox New Company", "TRS")
     }
 
-    sap_server_name = "Sandbox New Company"
+    sap_server_name = "SAP"
     sap_sid = "TRS"
     sql_server_name = "SQL Database"
     
@@ -1313,7 +1320,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     # SYSTEM PROMPT
     # ------------------------------------------------------------------
     tool_inventory = []
-    if target_system == "sql":
+    if target_srv.startswith("sql:"):
         if has_sql:
             tool_inventory.append(f"layanan MCP SQL Database (target server: **{sql_server_name}**)")
         if has_rag:
@@ -1357,7 +1364,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"{len(tool_ditolak)} tool disembunyikan: {', '.join(tool_ditolak[:6])}"
         )
 
-    if target_system == "sql":
+    if target_srv.startswith("sql:"):
         approach_a = (
             f"**A. Permintaan data / investigasi SQL Database** (cek database, tabel, kolom, view, record, atau query SQL pada server **{sql_server_name}**)\n"
             f"   -> WAJIB panggil tool MCP SQL (`sql__sql_list_databases`, `sql__sql_list_tables`, `sql__sql_describe_table`, `sql__sql_run_query`, dsb.) untuk mengambil data LIVE dari database SQL.\n"
@@ -1365,7 +1372,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"   -> Awali jawaban dengan indikator: 📦 **Data langsung dari database SQL: {sql_server_name}**\n"
             f"   -> JANGAN mencari ke SAP atau menyebut sistem SAP, karena pengguna secara spesifik memilih koneksi ke SQL Database ({sql_server_name}).\n\n"
         )
-    else:
+    elif sap_target:
         approach_a = (
             f"**A. Permintaan data SAP nyata** (stock material, plant, PO/SO, vendor, isi tabel "
             f"MARA/MARC/MARD/T001W/EKKO/VBAK, kode ABAP, status dokumen, dsb.)\n"
@@ -1375,6 +1382,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"   -> Awali jawaban dengan indikator: 📦 **Data langsung dari sistem {sap_server_name}**\n"
             f"   -> Server SAP aktif SUDAH dipilih pengguna lewat antarmuka. Jangan bertanya ulang "
             f"soal pilihan server dan jangan menolak permintaan data.\n\n"
+        )
+    else:
+        approach_a = (
+            "**A. Permintaan data live dari SAP**\n"
+            "   -> Pengguna tidak wajib memilih server untuk percakapan umum. "
+            "Jika pertanyaan memerlukan data SAP, jelaskan bahwa target SAP perlu dipilih "
+            "sebelum data live dapat diakses. Jangan memanggil tool SAP tanpa target.\n\n"
         )
 
     format_source_rule = (
@@ -1658,7 +1672,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         ),
         f"- Sumber data yang tersedia: {inventory_line}\n",
     ]
-    if target_system == "sql":
+    if target_srv.startswith("sql:"):
         konteks.append(
             f"- Target Sistem Aktif yang Dipilih Pengguna: **SQL DATABASE**\n"
             f"- Server SQL Target Aktif: **{sql_server_name}**\n"
@@ -1673,6 +1687,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             f"  Jika pengguna meminta dokumen RAG/SOP/Knowledge, FOKUSLAH PENUH PADA RAG, DILARANG MENYEBUTKAN SISTEM SAP ATAU SERVER TERPILIH, dan gunakan '📚 **Data langsung dari Dokumen RAG: ...**' (atau tanpa header bila dokumen tidak ditemukan).\n"
             f"  Jika pengguna meminta data Email, gunakan '📬 **Data langsung dari Layanan Email**' dan jangan sebutkan sistem SAP.\n"
             f"  Jika pengguna meminta data SQL, gunakan '📦 **Data langsung dari database SQL: {sql_server_name}**' dan jangan sebutkan sistem SAP.\n"
+        )
+    elif not sap_target:
+        konteks.append(
+            "- Tidak ada target SAP yang dipilih untuk permintaan ini. Percakapan umum dan "
+            "konektor lain tetap dapat digunakan. Untuk data live SAP, minta pengguna "
+            "memilih target SAP terlebih dahulu.\n"
         )
     else:
         konteks.append(

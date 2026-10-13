@@ -66,3 +66,21 @@ def test_empty_connector_selection_does_not_enable_all_tools():
         asyncio.run(process_chat(chat_req=req, user_role="user", username="test-user", oidc_sub="oidc-test-user"))
 
     assert captured["args"] == ("general", set())
+
+
+def test_chat_without_server_does_not_require_or_enable_sap():
+    req = ChatRequest(message="halo")
+    captured = {}
+
+    async def fake_get_all_tools(server_filter="all", allowed_connectors=None):
+        captured["args"] = (server_filter, allowed_connectors)
+        return []
+
+    with patch("mcp_manager.mcp_manager.get_all_tools", side_effect=fake_get_all_tools), \
+         patch("agent._buat_llm", return_value=None):
+        asyncio.run(process_chat(chat_req=req, user_role="user", username="test-user", oidc_sub="oidc-test-user"))
+
+    server_filter, enabled = captured["args"]
+    assert server_filter == "all"
+    assert "sap" not in enabled
+    assert {"rag", "sql", "email"}.issubset(enabled)
