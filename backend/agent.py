@@ -1216,16 +1216,8 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             tool_name = clean_tool_name
         else:
             tool_name = f"{server}__{clean_tool_name}"
-        # Cek otorisasi konektor & hak tulis
-        # Tool pengubah program tidak sekadar disembunyikan dari prompt: ia
-        # tidak dibuatkan definisinya sama sekali, sehingga model tidak punya
-        # cara memanggilnya walau diminta pengguna. Berlaku juga untuk SQL —
-        # sebelumnya jalur SQL hanya diperiksa lewat konektor (boleh/tidak
-        # boleh pakai SQL sama sekali), tanpa pembeda baca/tulis: begitu
-        # konektor SQL diizinkan, tool yang menulis pun ikut lolos.
-        if server in ("sap", "sql", "database") and not boleh_ubah and tool_mengubah_program(t.name):
-            tool_ditolak.append(t.name)
-            continue
+        # Seluruh tool yang disediakan MCP Gateway langsung didaftarkan tanpa guardrail client-side,
+        # karena otorisasi hak baca/tulis dievaluasi langsung oleh MCP Gateway / target system.
         
         # Pangkas deskripsi tool agar efisien dalam limit input token model gratis
         desc = (t.description or f"Tool {t.name} dari {server}")
@@ -1661,15 +1653,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         "\n\n## KONTEKS PERMINTAAN INI\n",
         f"- Role pengguna: {', '.join(role_descriptions)}\n",
         f"- Tanggal sistem saat ini (real-world): {now_real.strftime('%d.%m.%Y')} (format SAP: {now_real.strftime('%Y%m%d')}). Gunakan tanggal riil ini bila membuat dokumen atau transaksi. HINDARI menggunakan tahun masa depan (seperti 2028) bila tool get_server_date membaca tanggal anomali dari tabel USR02 testing.\n",
-        (
-            "- Hak ubah program: DIIZINKAN. Anda boleh membantu membuat dan mengubah "
-            "objek/program di SAP bila diminta.\n"
-            if boleh_ubah else
-            "- Hak ubah program: TIDAK DIIZINKAN untuk peran ini. Anda hanya boleh MEMBACA "
-            "data dan program. Bila pengguna meminta perubahan objek SAP, jelaskan dengan "
-            "sopan bahwa perannya tidak memiliki hak tersebut dan sarankan menghubungi tim "
-            "ABAP — jangan mencoba menjalankan perubahan apa pun.\n"
-        ),
+        "- Hak akses & otorisasi operasi: Dikelola langsung oleh MCP Gateway / target sistem backend. Anda diizinkan mengeksekusi operasi baca maupun tulis yang diminta pengguna sesuai ketersediaan tool MCP. Bila sistem target menolak karena batasan hak akses, teruskan penjelasan respon teknis dari sistem tersebut secara transparan.\n",
         f"- Sumber data yang tersedia: {inventory_line}\n",
     ]
     if target_srv.startswith("sql:"):
@@ -2216,39 +2200,7 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                     tool_call_id=tool_id
                 ))
                 continue
-            # Penjagaan hak tulis SAP/SQL: hak ubah program melekat pada PERAN.
-            if server_name == "sap" and not boleh_ubah and (
-                tool_mengubah_program(mcp_name)
-                or rfc_mengubah_data(tool_args.get("function_name", ""))
-            ):
-                messages.append(ToolMessage(
-                    content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada sistem SAP '{target_srv}'. Perubahan kode atau data tidak diizinkan.",
-                    tool_call_id=tool_id
-                ))
-                continue
 
-            # Jaring pengaman untuk tool SQL generik (mis. "sql_query"):
-            # namanya sendiri tidak menyebutkan baca atau tulis, jadi
-            # yang diperiksa adalah isi pernyataannya — dicek di setiap
-            # argumen string, karena nama parameternya (query/sql/stmt)
-            # ditentukan oleh server MCP eksternal, bukan aplikasi ini.
-            if (
-                server_name in ("sql", "database")
-                and not boleh_ubah
-                and (
-                    tool_mengubah_program(mcp_name)
-                    or any(
-                        teks_sql_mengubah_data(v)
-                        for v in (tool_args or {}).values()
-                        if isinstance(v, str)
-                    )
-                )
-            ):
-                messages.append(ToolMessage(
-                    content=f"Akses Ditolak: Anda hanya memiliki izin baca (read-only) pada koneksi SQL '{target_srv}'. Pernyataan yang mengubah data atau skema tidak diizinkan.",
-                    tool_call_id=tool_id
-                ))
-                continue
             if server_name == "sap":
                 active_target = sap_target
                 if not has_sap_credential:

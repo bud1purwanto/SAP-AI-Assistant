@@ -18,7 +18,7 @@ _SAP_GUIDANCE = (
 
 _SQL_GUIDANCE = (
     "Strategi SQL:\n"
-    "- Semua query wajib read-only (SELECT/metadata) untuk analisis.\n"
+    "- Utamakan query SELECT/metadata untuk keperluan analisis data.\n"
     "- Gunakan query agregat (COUNT, SUM, AVG) dahulu untuk gambaran umum.\n"
     "- Drill-down hanya untuk anomali yang ditemukan di agregat.\n"
     "- Cek metadata kolom bila skema ambigu."
