@@ -1181,14 +1181,14 @@ class MCPManager:
         if clean_tool != "call_function" or res.is_error or not res.content:
             return res
 
-        func_name = str(final_args.get("function_name", ""))
+        func_name = str(final_args.get("function_name") or final_args.get("function") or final_args.get("name") or "")
         auto_commit_requested = final_args.get("commit") is True or final_args.get("auto_commit") is True
         if self._is_mutation_bapi(func_name) or auto_commit_requested:
             try:
                 raw_text = res.content[0].text
                 data = json.loads(raw_text)
-                res_data = data.get("result", {})
-                returns = res_data.get("RETURN", [])
+                res_data = data.get("result", {}) if isinstance(data.get("result"), dict) else data
+                returns = res_data.get("RETURN", []) or res_data.get("return", []) or data.get("RETURN", []) or []
                 if isinstance(returns, dict):
                     returns = [returns]
                 has_error = any(
@@ -1198,21 +1198,30 @@ class MCPManager:
 
                 if not has_error:
                     logger.info(f"Menjalankan Atomic Auto-Commit untuk {func_name} pada sesi koneksi SAP aktif...")
-                    await client.call_tool(http_client, "call_function", {
+                    commit_args = {
                         "function_name": "BAPI_TRANSACTION_COMMIT",
                         "parameters": {"WAIT": "X"}
-                    }, extra_headers=extra_headers)
+                    }
+                    for k in ("server_ref", "resource_key", "server"):
+                        if k in final_args:
+                            commit_args[k] = final_args[k]
+                    commit_res = await client.call_tool(http_client, "call_function", commit_args, extra_headers=extra_headers)
+                    logger.info(f"Hasil eksekusi commit BAPI {func_name}: is_error={commit_res.is_error}")
                     data["auto_commit"] = {
                         "status": "SUCCESS",
-                        "message": "Dokumen berhasil di-commit secara permanen ke database SAP (Single LUW)."
+                        "message": "BAPI_TRANSACTION_COMMIT dieksekusi dengan parameter WAIT='X'."
                     }
                     res.content[0].text = json.dumps(data, indent=2)
                 else:
                     logger.warning(f"BAPI {func_name} memiliki pesan error, menjalankan rollback otomatis...")
-                    await client.call_tool(http_client, "call_function", {
+                    rollback_args = {
                         "function_name": "BAPI_TRANSACTION_ROLLBACK",
                         "parameters": {}
-                    }, extra_headers=extra_headers)
+                    }
+                    for k in ("server_ref", "resource_key", "server"):
+                        if k in final_args:
+                            rollback_args[k] = final_args[k]
+                    await client.call_tool(http_client, "call_function", rollback_args, extra_headers=extra_headers)
                     data["auto_commit"] = {
                         "status": "ROLLED_BACK",
                         "message": "BAPI dibatalkan karena terdapat pesan error Type E/A."
