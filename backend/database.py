@@ -3041,9 +3041,42 @@ def delete_skill(skill_id: int) -> bool:
 
 # --- CHAT MODES & ROLE ACCESS ---
 
+def resolve_dynamic_default_mode(mode_dict: dict, sys_cfg: Optional[dict] = None) -> dict:
+    """Jika mode_dict adalah mode default (is_default == True), selaraskan provider & model
+    secara dinamis dari AI Model Provider Gateways yang sedang aktif.
+    Mode non-default (medium, expert, dll.) tetap menggunakan konfigurasi model khusus miliknya.
+    """
+    if not mode_dict or not mode_dict.get("is_default"):
+        return mode_dict
+
+    res = dict(mode_dict)
+    if sys_cfg is None:
+        try:
+            sys_cfg = get_system_config()
+        except Exception:
+            sys_cfg = {}
+
+    nine_enabled = sys_cfg.get("nine_router_enabled", True)
+    if nine_enabled:
+        res["provider"] = "nine_router"
+        res["model"] = sys_cfg.get("nine_router_model") or res.get("model") or "ag/gemini-3.7-flash-medium"
+        res["fallback_provider"] = "openrouter"
+        res["fallback_model"] = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+    else:
+        res["provider"] = "openrouter"
+        res["model"] = sys_cfg.get("openrouter_model") or "openrouter/auto"
+        res["fallback_provider"] = "openrouter"
+        res["fallback_model"] = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+
+    return res
+
+
 def get_chat_modes(enabled_only: bool = False) -> list[dict]:
-    """Mengambil daftar seluruh mode chat, diurutkan berdasarkan sort_order lalu id."""
+    """Mengambil daftar seluruh mode chat, diurutkan berdasarkan sort_order lalu id.
+    Mode default secara dinamis mewarisi provider & model dari AI Model Provider Gateways.
+    """
     try:
+        cfg = get_system_config()
         engine = get_engine()
         with engine.connect() as conn:
             query = "SELECT * FROM {DB_SCHEMA}.chat_modes"
@@ -3051,7 +3084,7 @@ def get_chat_modes(enabled_only: bool = False) -> list[dict]:
                 query += " WHERE enabled = TRUE"
             query += " ORDER BY sort_order ASC, id ASC"
             rows = conn.execute(text(query)).fetchall()
-            return [dict(r._mapping) for r in rows]
+            return [resolve_dynamic_default_mode(dict(r._mapping), cfg) for r in rows]
     except Exception as e:
         logger.error(f"Error get_chat_modes: {e}")
         return []
@@ -3066,7 +3099,7 @@ def get_chat_mode_by_id(mode_id: int) -> dict | None:
                 text("SELECT * FROM {DB_SCHEMA}.chat_modes WHERE id = :id"),
                 {"id": mode_id}
             ).fetchone()
-            return dict(row._mapping) if row else None
+            return resolve_dynamic_default_mode(dict(row._mapping)) if row else None
     except Exception as e:
         logger.error(f"Error get_chat_mode_by_id: {e}")
         return None
@@ -3081,7 +3114,7 @@ def get_chat_mode_by_code(code: str) -> dict | None:
                 text("SELECT * FROM {DB_SCHEMA}.chat_modes WHERE code = :code"),
                 {"code": code}
             ).fetchone()
-            return dict(row._mapping) if row else None
+            return resolve_dynamic_default_mode(dict(row._mapping)) if row else None
     except Exception as e:
         logger.error(f"Error get_chat_mode_by_code: {e}")
         return None
@@ -3099,7 +3132,7 @@ def get_default_chat_mode() -> dict | None:
                 row = conn.execute(
                     text("SELECT * FROM {DB_SCHEMA}.chat_modes WHERE enabled = TRUE ORDER BY sort_order ASC, id ASC LIMIT 1")
                 ).fetchone()
-            return dict(row._mapping) if row else None
+            return resolve_dynamic_default_mode(dict(row._mapping)) if row else None
     except Exception as e:
         logger.error(f"Error get_default_chat_mode: {e}")
         return None
@@ -3365,7 +3398,7 @@ def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
             role_is_enabled = not role_meta.suspended if role_meta is not None else True
 
             modes = conn.execute(
-                text("SELECT id, code, name, description, icon, is_default, enabled, sort_order, max_iterations FROM {DB_SCHEMA}.chat_modes ORDER BY sort_order ASC, id ASC")
+                text("SELECT id, code, name, description, icon, provider, model, fallback_provider, fallback_model, is_default, enabled, sort_order, max_iterations FROM {DB_SCHEMA}.chat_modes ORDER BY sort_order ASC, id ASC")
             ).fetchall()
 
             role_rows = conn.execute(
@@ -3376,7 +3409,7 @@ def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
 
             result = []
             for m in modes:
-                mode_dict = dict(m._mapping)
+                mode_dict = resolve_dynamic_default_mode(dict(m._mapping), cfg)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
                 is_role_allowed = (role_map.get(mode_dict["code"], True if str(role).lower() == "superadmin" else False)) if role_is_enabled else False
@@ -3508,6 +3541,7 @@ def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None)
 
             user_overrides = get_user_mode_overrides(clean_u)
 
+            cfg = get_system_config()
             modes_res = []
             for m in all_modes:
                 code = m.code
@@ -3529,7 +3563,7 @@ def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None)
                     effective_allowed = is_role_allowed
                     source = "role"
 
-                modes_res.append({
+                mode_entry = resolve_dynamic_default_mode({
                     "id": m.id,
                     "code": code,
                     "name": m.name,
@@ -3544,7 +3578,8 @@ def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None)
                     "override": ovr_val if has_override else None,
                     "effective_allowed": bool(effective_allowed) and bool(m.enabled),
                     "source": source,
-                })
+                }, cfg)
+                modes_res.append(mode_entry)
 
             return {
                 "username": user_row.get("username", clean_u),

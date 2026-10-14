@@ -299,6 +299,7 @@ export default function AdminChatModes({
         openrouter_model: openrouterModel,
         openrouter_fallback_model: openrouterFallbackModel,
       });
+      await fetchData();
       if (setActionSuccess) {
         setActionSuccess(
           language === 'en'
@@ -1057,7 +1058,7 @@ export default function AdminChatModes({
                               ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25'
                               : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
                           }`}
-                          title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}`}
+                          title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}${mode.is_default ? (language === 'en' ? ' (Dynamic Gateway Sync)' : ' (Sinkronisasi Gateway Dinamis)') : ''}`}
                         >
                           <Server className="w-3 h-3 shrink-0" />
                           <span className="font-bold">{formatProviderLabel(mode.provider)}</span>
@@ -1066,6 +1067,16 @@ export default function AdminChatModes({
                             {mode.model || 'auto'}
                           </span>
                         </span>
+
+                        {mode.is_default && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                            title={language === 'en' ? 'Dynamically inherits provider & model from Gateway Settings above' : 'Secara dinamis mewarisi provider & model dari Pengaturan Gateway di atas'}
+                          >
+                            <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
+                            <span>{language === 'en' ? 'Gateway Sync' : 'Sync Gateway'}</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Fallback info if configured */}
@@ -2148,6 +2159,17 @@ export default function AdminChatModes({
                 </div>
               </div>
 
+              {newForm.is_default && (
+                <div className="px-3.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center gap-2 text-[11px] text-indigo-400">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                  <span>
+                    {language === 'en'
+                      ? 'As the Default mode, model & provider are dynamically resolved from AI Model Provider Gateways.'
+                      : 'Sebagai mode Default, model & provider secara dinamis mewarisi konfigurasi dari Gateway Provider AI.'}
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center gap-4 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-content">
                   <input
@@ -2329,6 +2351,17 @@ export default function AdminChatModes({
                   />
                 </div>
               </div>
+
+              {editForm.is_default && (
+                <div className="px-3.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center gap-2 text-[11px] text-indigo-400">
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                  <span>
+                    {language === 'en'
+                      ? 'As the Default mode, model & provider are dynamically resolved from AI Model Provider Gateways.'
+                      : 'Sebagai mode Default, model & provider secara dinamis mewarisi konfigurasi dari Gateway Provider AI.'}
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-4 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-content">

@@ -871,14 +871,23 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
 
     if active_mode:
         MAX_ITERATIONS = int(active_mode.get("max_iterations") or 15)
-        primary_provider = active_mode.get("provider") or "nine_router"
-        mode_model = active_mode.get("model")
-        if not mode_model or (primary_provider == "nine_router" and sys_cfg.get("nine_router_model") and not chat_req.mode):
-            primary_model_name = sys_cfg.get("nine_router_model") or mode_model or "ag/gemini-3.7-flash-medium"
+        if active_mode.get("is_default"):
+            nine_enabled = sys_cfg.get("nine_router_enabled", True)
+            if nine_enabled:
+                primary_provider = "nine_router"
+                primary_model_name = sys_cfg.get("nine_router_model") or active_mode.get("model") or "ag/gemini-3.7-flash-medium"
+                fallback_provider = "openrouter"
+                fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+            else:
+                primary_provider = "openrouter"
+                primary_model_name = sys_cfg.get("openrouter_model") or "openrouter/auto"
+                fallback_provider = "openrouter"
+                fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
         else:
-            primary_model_name = mode_model or "ag/gemini-3.7-flash-medium"
-        fallback_provider = active_mode.get("fallback_provider") or "openrouter"
-        fallback_model_name = active_mode.get("fallback_model") or sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+            primary_provider = active_mode.get("provider") or "nine_router"
+            primary_model_name = active_mode.get("model") or "ag/gemini-3.7-flash-medium"
+            fallback_provider = active_mode.get("fallback_provider") or "openrouter"
+            fallback_model_name = active_mode.get("fallback_model") or sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
     else:
         MAX_ITERATIONS = 15
         nine_router_enabled = sys_cfg.get("nine_router_enabled", True)
