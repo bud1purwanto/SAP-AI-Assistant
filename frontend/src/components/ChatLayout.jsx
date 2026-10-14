@@ -2549,7 +2549,7 @@ const ChatLayout = () => {
           </div>
         )}
 
-        {!isGuest && <QuotaBanner quota={kuota} />}
+        {!isGuest && <QuotaBanner quota={kuota} isDashboard={activeTab === 'dashboard'} />}
 
         {activeTab === 'dashboard' ? (
           <DashboardHome

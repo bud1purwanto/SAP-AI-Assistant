@@ -135,10 +135,10 @@ export default function DashboardHome({
   return (
     <div className="flex-1 w-full h-full overflow-y-auto bg-surface overscroll-contain relative flex flex-col">
       {/* Spacer atas di desktop untuk perataan tengah vertikal yang seimbang */}
-      <div className="hidden lg:block lg:flex-1 min-h-0 shrink-0" aria-hidden="true" />
+      <div className="hidden md:block md:flex-1 min-h-0 shrink-0" aria-hidden="true" />
 
       <div 
-        className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pt-[calc(var(--sat,env(safe-area-inset-top,0px))+0.75rem)] pb-[calc(env(safe-area-inset-bottom,0px)+4.75rem)] lg:py-6 px-3 sm:px-6 lg:px-8 animate-fadeIn shrink-0"
+        className="w-full max-w-xl lg:max-w-5xl mx-auto flex flex-col pt-[calc(var(--sat,env(safe-area-inset-top,0px))+0.75rem)] pb-[calc(env(safe-area-inset-bottom,0px)+4.75rem)] md:py-4 lg:py-6 px-3 sm:px-6 lg:px-8 animate-fadeIn shrink-0"
       >
         
         {/* 1. Header Dome Melengkung persis Mockup (Lebih luas & rapi di Desktop) */}
@@ -815,7 +815,7 @@ export default function DashboardHome({
       </div>
 
       {/* Spacer bawah di desktop untuk perataan tengah vertikal yang seimbang */}
-      <div className="hidden lg:block lg:flex-1 min-h-0 shrink-0" aria-hidden="true" />
+      <div className="hidden md:block md:flex-1 min-h-0 shrink-0" aria-hidden="true" />
 
       {/* Floating Action Button untuk Mobile: Start Chat Assistant 💬 */}
       <div 

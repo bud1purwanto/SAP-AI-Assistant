@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, Infinity as InfinityIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertTriangle, Infinity as InfinityIcon, X } from 'lucide-react';
 import { useLanguage } from '../hooks/useLanguage';
 
 /**
@@ -17,8 +17,11 @@ const AMBANG_PERINGATAN = 70;   // persen terpakai (muncul saat sisa <= 30%)
 
 const angka = (n, lang = 'id') => (n ?? 0).toLocaleString(lang === 'en' ? 'en-US' : 'id-ID');
 
-const QuotaBanner = ({ quota }) => {
+const QuotaBanner = ({ quota, isDashboard = false }) => {
   const { t, language } = useLanguage();
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
   if (!quota || !quota.enforced || quota.unlimited) return null;
 
   const persenTerpakai = quota.used_percent ?? 0;
@@ -30,23 +33,27 @@ const QuotaBanner = ({ quota }) => {
   const habis = sisa <= 0;
   const hampirHabis = sisaPersen <= 15;
 
+  const containerClasses = isDashboard
+    ? 'relative mt-3.5 sm:mt-4 mx-3 sm:mx-6 mb-2 md:mt-0 md:mb-0 md:absolute md:top-5 md:left-1/2 md:-translate-x-1/2 md:w-[calc(100%-3rem)] md:max-w-5xl md:mx-auto md:z-30 md:shadow-lg md:backdrop-blur-md'
+    : 'relative mt-2 mx-3 sm:mx-8 mb-2';
+
+  const themeClasses = habis || hampirHabis
+    ? 'border-rose-500/40 bg-rose-500/10 md:bg-rose-50/95 dark:md:bg-rose-950/85 text-rose-600 dark:text-rose-400'
+    : 'border-amber-500/40 bg-amber-500/10 md:bg-amber-50/95 dark:md:bg-amber-950/85 text-amber-600 dark:text-amber-400';
+
   return (
     <div
       role="status"
-      className={`mx-3 mb-2 flex items-start gap-2.5 rounded-2xl border px-3.5 py-2.5 text-xs sm:mx-8 transition-colors ${
-        habis || hampirHabis
-          ? 'border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400'
-          : 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
-      }`}
+      className={`${containerClasses} flex items-start gap-2.5 rounded-2xl border px-3.5 py-2.5 text-xs transition-all ${themeClasses}`}
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="font-semibold">
           {habis
             ? t('quota.exhausted')
             : t('quota.remainingNotice', { percent: sisaPersen, remaining: ringkas(sisa, language) })}
         </p>
-        <p className="mt-0.5 opacity-90">
+        <p className="mt-0.5 opacity-90 leading-relaxed">
           {t('quota.usedDetail', {
             used: angka(quota.used_tokens, language),
             limit: angka(batas, language),
@@ -56,6 +63,15 @@ const QuotaBanner = ({ quota }) => {
           {habis && `; ${t('quota.adminContact')}`}.
         </p>
       </div>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        className="p-1 rounded-lg opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer shrink-0 ml-auto"
+        aria-label={language === 'en' ? 'Close' : 'Tutup'}
+        title={language === 'en' ? 'Close' : 'Tutup'}
+      >
+        <X className="w-3.5 h-3.5" aria-hidden="true" />
+      </button>
     </div>
   );
 };
