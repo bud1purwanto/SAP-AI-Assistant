@@ -1339,7 +1339,7 @@ async def get_admin_stats_endpoint(
 
     mcp_st = await mcp_manager.check_servers_status()
     stats["mcp_status"] = mcp_st
-    stats["mcp_servers"] = list(mcp_st.values()) if isinstance(mcp_st, dict) else []
+    stats["mcp_servers"] = database.list_mcp_servers()
     return stats
 
 

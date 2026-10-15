@@ -4,17 +4,10 @@ import { useLanguage } from '../hooks/useLanguage';
 import { api } from '../lib/api';
 import ConfirmModal from './ConfirmModal';
 import AdminChatModes from './AdminChatModes';
-import AdminRoles from './AdminRoles';
-import AdminDivisions from './AdminDivisions';
 import AdminChatAudit from './AdminChatAudit';
 import AdminMcpConfig from './AdminMcpConfig';
 import AdminSessionMonitor from './AdminSessionMonitor';
 import AdminSecurityLogs from './AdminSecurityLogs';
-import {
-  formatRoleLabel as formatRoleLabelFallback,
-  getRoleBadgeStyle as getRoleBadgeStyleByColor,
-  getRoleIconComponent,
-} from '../lib/roles';
 
 export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServers, onRefreshModes }) {
   const { t, language } = useLanguage();
@@ -127,28 +120,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const [feedbackData, setFeedbackData] = useState(null);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
 
-  // Users State
-  const [usersList, setUsersList] = useState([]);
-  const [userSearch, setUserSearch] = useState('');
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState(null);
-  const [newUserForm, setNewUserForm] = useState({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff', force_change_password: true, showPassword: false });
-  const [editUserForm, setEditUserForm] = useState({ role: 'user', roles: ['user'], assistant_persona: '', password: '', full_name: '', division_code: '', job_level: 'staff' });
+  // Master Roles (for Chat Modes)
   const [masterRoles, setMasterRoles] = useState([]);
-  const [masterDivisions, setMasterDivisions] = useState([]);
-
-  // Label & warna badge role diambil dari master roles (bukan hardcode per-kode),
-  // agar role kustom yang admin buat lewat tab Roles ikut tampil dengan label dan
-  // warna yang benar, bukan default abu-abu. formatRoleLabelFallback/getRoleBadgeStyleByColor
-  // (dari lib/roles.js) dipakai hanya saat master roles belum termuat.
-  const formatRoleLabel = (roleCode) => {
-    const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (roleCode || '').toLowerCase());
-    return meta?.label || formatRoleLabelFallback(roleCode);
-  };
-  const getRoleBadgeStyle = (roleCode) => {
-    const meta = masterRoles.find((r) => (r.code || '').toLowerCase() === (roleCode || '').toLowerCase());
-    return getRoleBadgeStyleByColor(meta?.color || roleCode);
-  };
 
   // Skills State
   const [skillsList, setSkillsList] = useState([]);
@@ -178,9 +151,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   // Stats State
   const [statsLoading, setStatsLoading] = useState(false);
-
-  // Users State
-  const [usersLoading, setUsersLoading] = useState(false);
 
   // Skills Loading State
   const [skillsLoading, setSkillsLoading] = useState(false);
@@ -259,19 +229,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const fetchUsers = async () => {
-    setUsersLoading(true);
-    try {
-      setUsersList(await api.adminUsers());
-    } catch (err) {
-      setUsersList([]);
-      setActionError(err.message || t('admin.loadUsersFailed'));
-      console.error("Gagal load users:", err);
-    } finally {
-      setUsersLoading(false);
-    }
-  };
-
   const fetchConfig = async () => {
     setConfigLoading(true);
     try {
@@ -317,28 +274,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     }
   };
 
-  const fetchMasterDivisions = async () => {
-    try {
-      const data = await api.getAvailableDivisions();
-      if (Array.isArray(data)) {
-        setMasterDivisions(data);
-      }
-    } catch (err) {
-      setMasterDivisions([]);
-      setActionError(err.message || t('admin.loadDivisionsFailed'));
-      console.warn("Gagal memuat master divisi:", err);
-    }
-  };
-
   useEffect(() => {
     if (isOpen && user?.role === 'superadmin') {
       setActionSuccess('');
       setActionError('');
-      fetchUsers();
       fetchSkills();
       fetchConfig();
       fetchMasterRoles();
-      fetchMasterDivisions();
     }
   }, [isOpen, user?.role]);
 
@@ -389,7 +331,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
           };
         }
       });
-      setUsersList(directoryUsers);
       setKuota(data);
       setBatasDraft(draft);
     } catch (err) {
@@ -600,145 +541,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     });
   };
 
-  const handleOpenAddUser = () => {
-    setNewUserForm({
-      username: '',
-      password: '',
-      full_name: '',
-      role: 'user',
-      roles: ['user'],
-      assistant_persona: '',
-      division_code: '',
-      job_level: 'staff',
-      force_change_password: true,
-      showPassword: false,
-    });
-    setActionError('');
-    setIsAddUserOpen(true);
-  };
-
-  const makeRandomPasswordString = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*';
-    let res = '';
-    for (let i = 0; i < 10; i++) {
-      res += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return res;
-  };
-
-  const generateRandomPasswordForNewUser = () => {
-    const res = makeRandomPasswordString();
-    setNewUserForm((prev) => ({ ...prev, password: res, showPassword: true }));
-  };
-
-  const handleCreateUser = async (e) => {
-    e.preventDefault();
-    setActionError('');
-    setActionSuccess('');
-    try {
-      const selectedRoles = (newUserForm.roles && newUserForm.roles.length > 0) ? newUserForm.roles : [newUserForm.role || 'user'];
-      const payload = {
-        ...newUserForm,
-        roles: selectedRoles,
-        role: selectedRoles[0] || 'user',
-        division_code: newUserForm.division_code || null,
-        job_level: newUserForm.job_level || 'staff',
-        force_change_password: Boolean(newUserForm.force_change_password),
-      };
-      await api.adminCreateUser(payload);
-      
-      setActionSuccess(language === 'en' ? `User '${newUserForm.username}' created successfully!` : `User '${newUserForm.username}' berhasil dibuat!`);
-      setNewUserForm({ username: '', password: '', full_name: '', role: 'user', roles: ['user'], assistant_persona: '', division_code: '', job_level: 'staff', force_change_password: true, showPassword: false });
-      setIsAddUserOpen(false);
-      fetchUsers();
-      fetchStats();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  };
-
-  const handleUpdateUser = async (e, username = editingUser?.username) => {
-    if (e && e.preventDefault) e.preventDefault();
-    const targetUsername = typeof username === 'string' ? username : editingUser?.username;
-    if (!targetUsername) return;
-    setActionError('');
-    setActionSuccess('');
-    try {
-      const selectedRoles = (editUserForm.roles && editUserForm.roles.length > 0) ? editUserForm.roles : [editUserForm.role || 'user'];
-      const payload = {
-        ...editUserForm,
-        roles: selectedRoles,
-        role: selectedRoles[0] || 'user',
-        division_code: editUserForm.division_code || null,
-        job_level: editUserForm.job_level || 'staff',
-      };
-      await api.adminUpdateUser(targetUsername, payload);
-      setActionSuccess(language === 'en' ? `User '${targetUsername}' updated successfully!` : `User '${targetUsername}' berhasil diupdate!`);
-      setEditingUser(null);
-      fetchUsers();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  };
-
-
-  const handleKickUserSessions = (targetUsername) => {
-    setConfirmModal({
-      isOpen: true,
-      variant: 'danger',
-      title: language === 'en' ? 'Kick User Sessions' : 'Putuskan Sesi Pengguna',
-      message: language === 'en'
-        ? `Are you sure you want to forcibly terminate all active login sessions for @${targetUsername}?`
-        : `Apakah Anda yakin ingin memutuskan paksa semua sesi aktif login untuk @${targetUsername}?`,
-      confirmText: language === 'en' ? 'Terminate All' : 'Putuskan Semua',
-      cancelText: language === 'en' ? 'Cancel' : 'Batal',
-      isLoading: false,
-      onConfirm: async () => {
-        setConfirmModal((m) => ({ ...m, isLoading: true }));
-        setActionError('');
-        setActionSuccess('');
-        try {
-          const res = await api.adminKickAllUserSessions(targetUsername);
-          setActionSuccess(res?.message || (language === 'en' ? 'Sessions terminated successfully.' : 'Semua sesi berhasil diputuskan.'));
-          setTimeout(() => setActionSuccess(''), 4000);
-          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
-        } catch (err) {
-          setActionError(err.message || 'Gagal memutuskan sesi.');
-          setConfirmModal((m) => ({ ...m, isLoading: false }));
-        }
-      },
-    });
-  };
-
-  const handleDeleteUser = (username) => {
-    setConfirmModal({
-      isOpen: true,
-      variant: 'danger',
-      title: language === 'en' ? 'Delete User' : 'Hapus User',
-      message: language === 'en' 
-        ? `Are you sure you want to permanently delete user "${username}"? This action cannot be undone.`
-        : `Apakah Anda yakin ingin menghapus user "${username}" secara permanen? Tindakan ini tidak dapat dibatalkan.`,
-      confirmText: language === 'en' ? 'Delete' : 'Hapus',
-      cancelText: language === 'en' ? 'Cancel' : 'Batal',
-      isLoading: false,
-      onConfirm: async () => {
-        setConfirmModal((m) => ({ ...m, isLoading: true }));
-        setActionError('');
-        setActionSuccess('');
-        try {
-          await api.adminDeleteUser(username);
-          setActionSuccess(language === 'en' ? `User '${username}' deleted!` : `User '${username}' berhasil dihapus!`);
-          fetchUsers();
-          fetchStats();
-          setConfirmModal((m) => ({ ...m, isOpen: false, isLoading: false }));
-        } catch (err) {
-          setActionError(err.message);
-          setConfirmModal((m) => ({ ...m, isLoading: false }));
-        }
-      },
-    });
-  };
-
   const handleSaveGlobalPersona = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     setPersonaSaving(true);
@@ -856,11 +658,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   if (!isOpen) return null;
 
-  const filteredUsers = usersList.filter(u => 
-    u.username.toLowerCase().includes(userSearch.toLowerCase()) || 
-    u.role.toLowerCase().includes(userSearch.toLowerCase())
-  );
-
   const filteredSkills = skillsList.filter(s =>
     s.name.toLowerCase().includes(skillSearch.toLowerCase()) ||
     s.description.toLowerCase().includes(skillSearch.toLowerCase()) ||
@@ -881,9 +678,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
     {
       groupName: language === 'en' ? 'Users & Quotas' : 'Pengguna & Kuota',
       tabs: [
-        { id: 'users', icon: Users, label: t('admin.tabUsers') },
-        { id: 'divisions', icon: Building2, label: t('admin.tabDivisions') || (language === 'en' ? 'Divisions' : 'Divisi') },
-        { id: 'roles', icon: UserCog, label: language === 'en' ? 'Roles' : 'Peran' },
         { id: 'kuota', icon: Gauge, label: t('admin.tabTokenQuota') },
       ],
     },
@@ -902,29 +696,8 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
   const currentTab = allTabs.find(tab => tab.id === activeTab) || allTabs[0];
   const CurrentTabIcon = currentTab?.icon || Activity;
 
-  // Bisa ditetapkan ke user baru hanya jika enabled DAN tidak suspended (samakan
-  // dengan validasi backend di get_role_codes(enabled_only=True)).
-  const activeRoleOptions = masterRoles.filter(r => r.enabled && !r.suspended)
-    .map(r => ({ value: r.code, label: r.label, enabled: true }));
-
-  const editRoleOptions = masterRoles
-        .filter(r => (r.enabled && !r.suspended) || (editUserForm.roles || [editUserForm.role]).includes(r.code))
-        .map(r => ({
-          value: r.code,
-          label:
-            r.label +
-            (r.suspended
-              ? (language === 'en' ? ' (Suspended)' : ' (Disuspend)')
-              : !r.enabled
-              ? (language === 'en' ? ' (Not assignable)' : ' (Tak bisa dipilih)')
-              : ''),
-          enabled: r.enabled,
-          suspended: r.suspended,
-        }));
-
   const isCurrentTabLoading =
     (activeTab === 'overview' && statsLoading) ||
-    (activeTab === 'users' && usersLoading) ||
     (activeTab === 'feedback' && feedbackLoading) ||
     (activeTab === 'kuota' && kuotaLoading) ||
     (activeTab === 'skills' && skillsLoading) ||
@@ -1416,602 +1189,6 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
                 </div>
               </div>
             )}
-
-            {/* TAB 2: USER DIRECTORY (OIDC READ-ONLY) */}
-            {activeTab === 'users' && (
-              <div className="space-y-6 animate-fadeIn">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-line">
-                  <div className="hidden sm:block">
-                    <h3 className="text-base sm:text-lg font-bold text-content font-display tracking-tight">
-                      {language === 'en' ? `OIDC User Directory (${usersLoading && usersList.length === 0 ? '…' : usersList.length})` : `Direktori Pengguna OIDC (${usersLoading && usersList.length === 0 ? '…' : usersList.length})`}
-                    </h3>
-                    <p className="text-xs text-content-muted mt-0.5">
-                      {language === 'en' ? 'User, division, and role data are managed in OIDC and shown here as read-only.' : 'Data pengguna, divisi, dan role dikelola di OIDC dan hanya dibaca di sini.'}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 w-full sm:w-auto">
-                    <div className="relative flex-1 sm:w-60 sm:flex-initial">
-                      <Search className="w-4 h-4 absolute left-3 top-2.5 text-content-subtle" />
-                      <input 
-                        type="text"
-                        placeholder={language === 'en' ? 'Search user...' : 'Cari user...'}
-                        value={userSearch}
-                        onChange={(e) => setUserSearch(e.target.value)}
-                        className="pl-9 pr-3 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-accent/30 w-full text-content placeholder:text-content-subtle transition-all"
-                      />
-                    </div>
-                    <button
-                      onClick={handleOpenAddUser}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all shrink-0 cursor-pointer active:scale-95"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span className="hidden sm:inline">{language === 'en' ? 'New User' : 'User Baru'}</span>
-                      <span className="sm:hidden">{language === 'en' ? 'New' : 'Baru'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Users Table: Responsive Scroll on Mobile */}
-                <div className="border border-line/80 rounded-2xl overflow-hidden shadow-xs bg-surface">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs sm:text-sm">
-                      <thead className="bg-surface-sunken/70 border-b border-line/80 text-content-muted text-[10px] sm:text-[11px] uppercase tracking-wider font-bold whitespace-nowrap">
-                        <tr>
-                          <th className="px-4 py-3">{t('common.username')}</th>
-                          <th className="px-4 py-3">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</th>
-                          <th className="px-4 py-3">{language === 'en' ? 'Division' : 'Divisi'}</th>
-                          <th className="px-4 py-3">{t('admin.jobLevel')}</th>
-                          <th className="px-4 py-3">Role</th>
-                          <th className="px-4 py-3">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</th>
-                          <th className="px-4 py-3 text-right">{language === 'en' ? 'Actions' : 'Aksi'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-line/60 text-content-secondary">
-                        {usersLoading && usersList.length === 0 ? (
-                          [...Array(6)].map((_, i) => (
-                            <tr key={i} className="animate-pulse">
-                              <td className="px-4 py-3.5"><div className="h-4 w-28 bg-surface-sunken rounded-md" /></td>
-                              <td className="px-4 py-3.5"><div className="h-4 w-36 bg-surface-sunken/80 rounded-md" /></td>
-                              <td className="px-4 py-3.5"><div className="h-5 w-16 bg-surface-sunken/60 rounded-md" /></td>
-                              <td className="px-4 py-3.5"><div className="h-5 w-14 bg-surface-sunken/60 rounded-md" /></td>
-                              <td className="px-4 py-3.5"><div className="h-5 w-20 bg-surface-sunken/60 rounded-md" /></td>
-                              <td className="px-4 py-3.5"><div className="h-4 w-40 bg-surface-sunken/60 rounded-md" /></td>
-                              <td className="px-4 py-3.5 text-right"><div className="h-6 w-16 bg-surface-sunken/50 rounded-md ml-auto" /></td>
-                            </tr>
-                          ))
-                        ) : filteredUsers.length > 0 ? (
-                          filteredUsers.map((u) => (
-                            <tr key={u.username} className="hover:bg-surface-hover/70 transition-colors">
-                              <td className="px-4 py-3 font-semibold text-content whitespace-nowrap">
-                                <div className="flex items-center gap-2.5">
-                                  <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-600/20 border border-indigo-500/30 flex items-center justify-center text-xs font-bold text-accent shrink-0">
-                                    {u.username.substring(0, 2).toUpperCase()}
-                                  </div>
-                                  <span className="font-semibold text-xs text-content">{u.username}</span>
-                                  {u.username === user.username && (
-                                    <span className="text-[9px] bg-accent-soft text-accent px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">{language === 'en' ? 'You' : 'Anda'}</span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-content-secondary whitespace-nowrap sm:whitespace-normal text-xs">
-                                {u.full_name || <span className="italic text-content-subtle">—</span>}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                {u.division_code ? (
-                                  <span
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/25 font-mono"
-                                    title={u.division_name ? `${u.division_code} - ${u.division_name}` : u.division_code}
-                                  >
-                                    <Building2 className="w-3 h-3 shrink-0 opacity-70" />
-                                    <span>{u.division_code}</span>
-                                  </span>
-                                ) : (
-                                  <span className="italic text-content-subtle text-xs">—</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                {(() => {
-                                  const lvl = (u.job_level || 'staff').toLowerCase();
-                                  const styleMap = {
-                                    staff: 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/25',
-                                    leader: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/25',
-                                    manager: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/25',
-                                  };
-                                  const labelMap = {
-                                    staff: t('admin.levelStaff'),
-                                    leader: t('admin.levelLeader'),
-                                    manager: t('admin.levelManager'),
-                                  };
-                                  return (
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border ${styleMap[lvl] || styleMap.staff}`}>
-                                      {labelMap[lvl] || lvl.toUpperCase()}
-                                    </span>
-                                  );
-                                })()}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                  <div className="flex flex-wrap items-center gap-1 max-w-xs">
-                                    {(u.roles && u.roles.length > 0 ? u.roles : [u.role]).map((r) => {
-                                      const roleMeta = masterRoles.find((mr) => mr.code.toLowerCase() === r.toLowerCase());
-                                      // 'suspended' adalah satu-satunya kondisi yang benar-benar mencabut
-                                      // akses pemegangnya; 'enabled=false' saja tidak berdampak ke user ini.
-                                      const isSuspended = roleMeta && roleMeta.suspended;
-                                      return (
-                                        <span
-                                          key={r}
-                                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold border whitespace-nowrap ${
-                                            isSuspended
-                                              ? 'bg-surface-sunken text-content-subtle border-line/70 opacity-70 line-through'
-                                              : getRoleBadgeStyle(r)
-                                          }`}
-                                          title={
-                                            isSuspended
-                                              ? (language === 'en'
-                                                  ? `${formatRoleLabel(r)} is suspended — this user's effective permissions fall back to Standard User, not blocked entirely.`
-                                                  : `${formatRoleLabel(r)} disuspend — hak akses efektif user ini turun ke Standard User, bukan diblokir total.`)
-                                              : formatRoleLabel(r)
-                                          }
-                                        >
-                                          <span>{formatRoleLabel(r)}</span>
-                                          {isSuspended && (
-                                            <span className="text-[9px] no-underline font-normal text-rose-400">
-                                              ({language === 'en' ? 'downgraded' : 'diturunkan'})
-                                            </span>
-                                          )}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                              </td>
-                              <td className="px-4 py-3 text-xs text-content-muted max-w-xs truncate">
-                                {u.assistant_persona || <span className="italic text-content-subtle text-[11px]">{language === 'en' ? 'Follows organization persona' : 'Mengikuti persona organisasi'}</span>}
-                              </td>
-                              <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-                                <button
-                                  onClick={() => {
-                                    const userRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role];
-                                    setEditingUser(u);
-                                    setEditUserForm({
-                                      role: u.role,
-                                      roles: userRoles,
-                                      full_name: u.full_name || '',
-                                      assistant_persona: u.assistant_persona || '',
-                                      password: '',
-                                      division_code: u.division_code || '',
-                                      job_level: u.job_level || 'staff',
-                                    });
-                                  }}
-                                  className="p-1.5 text-content-subtle hover:text-accent hover:bg-surface-raised rounded-lg transition-colors cursor-pointer"
-                                  title={language === 'en' ? 'Edit user' : 'Edit user'}
-                                  aria-label={`Edit user ${u.username}`}
-                                >
-                                  <Edit3 className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteUser(u.username)}
-                                  disabled={u.username === user.username}
-                                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                                    u.username === user.username 
-                                      ? 'text-content-subtle cursor-not-allowed opacity-30' 
-                                      : 'text-content-subtle hover:text-rose-500 hover:bg-surface-raised'
-                                  }`}
-                                  title={language === 'en' ? 'Delete user' : 'Hapus user'}
-                                  aria-label={`Hapus user ${u.username}`}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="6" className="text-center py-8 text-content-subtle text-xs">
-                              {language === 'en' ? 'No matching users found.' : 'Tidak ada data user yang sesuai.'}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* MODAL: ADD USER */}
-                {isAddUserOpen && (
-                  <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
-                    style={{
-                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
-                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
-                    }}
-                  >
-                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
-                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Plus className="w-4 h-4 text-accent" /> {language === 'en' ? 'Add New User' : 'Tambah User Baru'}
-                        </h4>
-                        <button onClick={() => setIsAddUserOpen(false)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <form onSubmit={handleCreateUser} className="space-y-3.5 text-xs sm:text-sm">
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">Username *</label>
-                          <input 
-                            type="text"
-                            required
-                            value={newUserForm.username}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                            placeholder="e.g. TRST-USER1"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
-                          <input
-                            type="text"
-                            value={newUserForm.full_name}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                            placeholder="e.g. Andi Wijaya"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">
-                            {language === 'en' ? 'Division' : 'Divisi'}
-                          </label>
-                          <select
-                            value={newUserForm.division_code || ''}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, division_code: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                          >
-                            <option value="">{language === 'en' ? '-- No Division (General / Cross-divisional) --' : '-- Tanpa Divisi (Umum / Lintas Divisi) --'}</option>
-                            {masterDivisions.map((d) => (
-                              <option key={d.code} value={d.code}>
-                                {d.code} - {d.name}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {language === 'en'
-                              ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
-                              : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">
-                            {t('admin.jobLevel')}
-                          </label>
-                          <select
-                            value={newUserForm.job_level || 'staff'}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, job_level: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                          >
-                            <option value="staff">{t('admin.levelStaff')} (Staff)</option>
-                            <option value="leader">{t('admin.levelLeader')}</option>
-                            <option value="manager">{t('admin.levelManager')}</option>
-                          </select>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {t('admin.jobLevelDesc')}
-                          </p>
-                        </div>
-
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="block text-xs font-semibold text-content-muted">
-                              {language === 'en' ? 'Temporary Password' : 'Password Sementara'} *
-                            </label>
-                            <button
-                              type="button"
-                              onClick={generateRandomPasswordForNewUser}
-                              className="text-[11px] text-accent hover:underline font-medium cursor-pointer"
-                            >
-                              {language === 'en' ? '🎲 Generate Random' : '🎲 Acak Password'}
-                            </button>
-                          </div>
-                          <div className="relative flex items-center">
-                            <input 
-                              type={newUserForm.showPassword ? 'text' : 'password'}
-                              required
-                              value={newUserForm.password}
-                              onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                              autoComplete="new-password"
-                              className="w-full pl-3.5 pr-10 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all font-mono"
-                              placeholder={language === 'en' ? 'Min 8 characters…' : 'Minimal 8 karakter…'}
-                              minLength={8}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setNewUserForm((p) => ({ ...p, showPassword: !p.showPassword }))}
-                              className="absolute right-2.5 p-1 text-content-subtle hover:text-content text-xs rounded transition-colors"
-                              title={newUserForm.showPassword ? 'Hide' : 'Show'}
-                            >
-                              {newUserForm.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {language === 'en'
-                              ? 'Provide this temporary password to the user to sign in.'
-                              : 'Berikan password sementara ini kepada user untuk proses login.'}
-                          </p>
-                        </div>
-
-                        <div className="p-3 bg-surface-sunken/70 border border-line rounded-xl space-y-1">
-                          <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={newUserForm.force_change_password}
-                              onChange={(e) => setNewUserForm({ ...newUserForm, force_change_password: e.target.checked })}
-                              className="mt-0.5 rounded text-accent focus:ring-accent/30 border-line"
-                            />
-                            <div className="text-xs">
-                              <span className="font-semibold text-content block">
-                                {language === 'en' ? 'Require password change on first login' : 'Wajibkan ganti password saat login pertama kali'}
-                              </span>
-                              <span className="text-[11px] text-content-muted leading-relaxed block mt-0.5">
-                                {language === 'en'
-                                  ? 'Status will show "Pending Reset" until the user sets their personal password.'
-                                  : 'Status akan bertuliskan "Pending Reset" hingga user mengatur password pribadinya.'}
-                              </span>
-                            </div>
-                          </label>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1.5">
-                            {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
-                          </label>
-                          <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
-                            {activeRoleOptions.map((opt) => {
-                              const currentRoles = newUserForm.roles || [newUserForm.role];
-                              const isSelected = currentRoles.includes(opt.value);
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => {
-                                    let updated;
-                                    if (isSelected) {
-                                      updated = currentRoles.filter((r) => r !== opt.value);
-                                      if (updated.length === 0) updated = ['user'];
-                                    } else {
-                                      updated = [...currentRoles, opt.value];
-                                    }
-                                    setNewUserForm({
-                                      ...newUserForm,
-                                      roles: updated,
-                                      role: updated[0] || 'user',
-                                    });
-                                  }}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
-                                    isSelected
-                                      ? getRoleBadgeStyle(opt.value) + ' shadow-xs ring-1 ring-accent/30'
-                                      : 'bg-surface border-line text-content-muted hover:border-line-hover hover:text-content'
-                                  }`}
-                                >
-                                  {isSelected && <Check className="w-3 h-3 shrink-0" />}
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {language === 'en'
-                              ? 'Users inherit combined permissions from all assigned roles.'
-                              : 'Pengguna mewarisi izin gabungan paling permisif dari seluruh peran terpilih.'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Personal Persona (Optional)' : 'Persona Pribadi (Opsional)'}</label>
-                          <textarea 
-                            rows="2"
-                            value={newUserForm.assistant_persona}
-                            onChange={(e) => setNewUserForm({ ...newUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none resize-none text-content transition-all"
-                            placeholder={language === 'en' ? 'Customization on top of organization persona for this user…' : 'Penyesuaian di atas persona organisasi, khusus user ini…'}
-                          />
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
-                          <button
-                            type="button"
-                            onClick={() => setIsAddUserOpen(false)}
-                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
-                          >
-                            {t('common.cancel')}
-                          </button>
-                          <button
-                            type="submit"
-                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 cursor-pointer active:scale-95 transition-all"
-                          >
-                            {language === 'en' ? 'Create Account' : 'Buat Akun'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODAL: EDIT USER */}
-                {editingUser && (
-                  <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 overflow-y-auto overscroll-contain bg-slate-950/70 backdrop-blur-xs"
-                    style={{
-                      paddingTop: 'calc(var(--sat, env(safe-area-inset-top, 0px)) + 1.25rem)',
-                      paddingBottom: 'calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 1.25rem)'
-                    }}
-                  >
-                    <div className="bg-surface-raised border border-line/80 rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4 animate-fadeIn modal-panel my-auto overflow-y-auto">
-                      <div className="flex items-center justify-between pb-3 border-b border-line/80">
-                        <h4 className="font-bold text-sm sm:text-base text-content flex items-center gap-2 font-display">
-                          <Edit3 className="w-4 h-4 text-accent" /> {language === 'en' ? `Edit User '${editingUser.username}'` : `Edit User '${editingUser.username}'`}
-                        </h4>
-                        <button onClick={() => setEditingUser(null)} className="text-content-muted hover:text-content p-1 rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <form onSubmit={(e) => handleUpdateUser(e, editingUser?.username)} className="space-y-3.5 text-xs sm:text-sm">
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Full Name' : 'Nama Lengkap'}</label>
-                          <input
-                            type="text"
-                            value={editUserForm.full_name}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, full_name: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                            placeholder="e.g. Andi Wijaya"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">
-                            {language === 'en' ? 'Division' : 'Divisi'}
-                          </label>
-                          <select
-                            value={editUserForm.division_code || ''}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, division_code: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                          >
-                            <option value="">{language === 'en' ? '-- No Division (General / Cross-divisional) --' : '-- Tanpa Divisi (Umum / Lintas Divisi) --'}</option>
-                            {masterDivisions.map((d) => (
-                              <option key={d.code} value={d.code}>
-                                {d.code} - {d.name}
-                              </option>
-                            ))}
-                          </select>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {language === 'en'
-                              ? 'Assigning a division applies its persona prompt and restricts document retrieval scope.'
-                              : 'Menghubungkan divisi menerapkan prompt persona divisi dan membatasi jangkauan dokumen.'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">
-                            {t('admin.jobLevel')}
-                          </label>
-                          <select
-                            value={editUserForm.job_level || 'staff'}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, job_level: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 focus:border-accent/40 outline-none text-content transition-all"
-                          >
-                            <option value="staff">{t('admin.levelStaff')} (Staff)</option>
-                            <option value="leader">{t('admin.levelLeader')}</option>
-                            <option value="manager">{t('admin.levelManager')}</option>
-                          </select>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {t('admin.jobLevelDesc')}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1.5">
-                            {language === 'en' ? 'Roles (Multi-Select)' : 'Peran / Roles (Dapat Dipilih Banyak)'} *
-                          </label>
-                          <div className="flex flex-wrap gap-1.5 p-2 bg-surface-sunken border border-line rounded-xl">
-                            {editRoleOptions.map((opt) => {
-                              const currentRoles = editUserForm.roles || [editUserForm.role];
-                              const isSelected = currentRoles.includes(opt.value);
-                              return (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => {
-                                    let updated;
-                                    if (isSelected) {
-                                      updated = currentRoles.filter((r) => r !== opt.value);
-                                      if (updated.length === 0) updated = ['user'];
-                                    } else {
-                                      updated = [...currentRoles, opt.value];
-                                    }
-                                    setEditUserForm({
-                                      ...editUserForm,
-                                      roles: updated,
-                                      role: updated[0] || 'user',
-                                    });
-                                  }}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer border ${
-                                    isSelected
-                                      ? getRoleBadgeStyle(opt.value) + ' shadow-xs ring-1 ring-accent/30'
-                                      : 'bg-surface border-line text-content-muted hover:border-line-hover hover:text-content'
-                                  }`}
-                                >
-                                  {isSelected && <Check className="w-3 h-3 shrink-0" />}
-                                  {opt.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-[10px] text-content-subtle mt-1">
-                            {language === 'en'
-                              ? 'Users inherit combined permissions from all assigned roles.'
-                              : 'Pengguna mewarisi izin gabungan paling permisif dari seluruh peran terpilih.'}
-                          </p>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">
-                            {language === 'en' ? 'Reset Password (leave empty to keep unchanged)' : 'Reset Password (kosongkan jika tidak ingin diubah)'}
-                          </label>
-                          <input 
-                            type="password"
-                            value={editUserForm.password}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, password: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none text-content transition-all"
-                            placeholder={language === 'en' ? 'New password (minimum 4 characters)…' : 'Password baru (minimal 4 karakter)…'}
-                            minLength={4}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-content-muted mb-1">{language === 'en' ? 'Personal Persona' : 'Persona Pribadi'}</label>
-                          <textarea 
-                            rows="3"
-                            value={editUserForm.assistant_persona}
-                            onChange={(e) => setEditUserForm({ ...editUserForm, assistant_persona: e.target.value })}
-                            className="w-full px-3.5 py-2 text-xs bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none resize-none text-content transition-all"
-                            placeholder={language === 'en' ? 'Leave empty so this user fully follows organization persona…' : 'Kosongkan agar user ini sepenuhnya mengikuti persona organisasi…'}
-                          />
-                        </div>
-
-                        <div className="flex justify-end gap-2 pt-3 border-t border-line/80">
-                          <button
-                            type="button"
-                            onClick={() => setEditingUser(null)}
-                            className="px-4 py-2 text-xs font-semibold text-content-muted hover:bg-surface-hover rounded-xl cursor-pointer transition-colors"
-                          >
-                            {t('common.cancel')}
-                          </button>
-                          <button
-                            type="submit"
-                            className="px-4 py-2 text-xs font-bold bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl shadow-sm shadow-indigo-500/25 cursor-pointer active:scale-95 transition-all"
-                          >
-                            {language === 'en' ? 'Save Changes' : 'Simpan Perubahan'}
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                  </div>
-                )}
-
-              </div>
-            )}
-
-            {/* TAB: MASTER DIVISIONS */}
-            {activeTab === 'divisions' && (
-              <AdminDivisions onRefreshDivisions={fetchMasterDivisions} />
-            )}
-
-            {/* TAB: MASTER ROLES */}
-            {activeTab === 'roles' && (
-              <AdminRoles onRefreshRoles={fetchMasterRoles} />
-            )}
-
 
             {/* TAB: CHAT MODES */}
             {activeTab === 'chat_modes' && (
@@ -3204,7 +2381,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
             )}
 
             {activeTab === 'audit' && (
-              <AdminChatAudit masterRoles={masterRoles} usersList={usersList} />
+              <AdminChatAudit masterRoles={masterRoles}  />
             )}
 
           </div>

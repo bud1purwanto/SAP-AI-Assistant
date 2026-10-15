@@ -34,7 +34,7 @@ const getUserRoleLabel = (role, isEn = false) => {
   return getRoleLabel(roleCode, isEn);
 };
 
-const THEME_ICON = { light: Sun, dark: Moon, system: Monitor };
+const THEME_ICON = { light: Sun, dark: Moon };
 
 const SUGGESTION_ICONS = {
   Layers,

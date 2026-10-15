@@ -61,15 +61,9 @@
           }
 
           var t = localStorage.getItem('sap_assistant_theme');
-          if (t !== 'light' && t !== 'dark') t = 'system';
-          if (t === 'system') {
-            root.removeAttribute('data-theme');
-          } else {
-            root.setAttribute('data-theme', t);
-          }
-          var dark = t === 'dark' ||
-            (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          root.classList.toggle('dark', dark);
+          if (t !== 'light' && t !== 'dark') t = 'light';
+          root.setAttribute('data-theme', t);
+          root.classList.toggle('dark', t === 'dark');
         } catch (e) {}
       })();
     </script>

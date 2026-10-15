@@ -64,6 +64,108 @@ const formatProviderLabel = (p) => {
   return p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Auto';
 };
 
+const resolveDynamicGatewayMode = (mode, gatewayState) => {
+  if (!mode || !mode.is_default) return mode;
+  const {
+    nineRouterEnabled,
+    nineRouterModel,
+    localLlmEnabled,
+    localLlmModel,
+    openrouterEnabled,
+    openrouterModel,
+    openrouterFallbackModel,
+    primaryAiProvider,
+  } = gatewayState || {};
+
+  const nineEnabled = Boolean(nineRouterEnabled);
+  const localEnabled = Boolean(localLlmEnabled);
+  const openEnabled = Boolean(openrouterEnabled);
+  const primaryChoice = (primaryAiProvider || 'nine_router').toLowerCase().trim();
+
+  const nineModel = nineRouterModel || 'ag/gemini-3.7-flash-medium';
+  const localModel = localLlmModel || 'qwen3.8:latest';
+  const openModel = openrouterModel || 'openrouter/auto';
+  const openFallback = openrouterFallbackModel || 'openrouter/free';
+
+  let p_prov = 'openrouter';
+  let p_mod = openModel;
+  let f_prov = 'openrouter';
+  let f_mod = openFallback;
+
+  if ((primaryChoice === 'local_llm' || primaryChoice === 'local' || primaryChoice === 'ollama') && localEnabled) {
+    p_prov = 'local_llm';
+    p_mod = localModel;
+    if (nineEnabled) {
+      f_prov = 'nine_router';
+      f_mod = nineModel;
+    } else {
+      f_prov = 'openrouter';
+      f_mod = openFallback;
+    }
+  } else if (primaryChoice === 'openrouter' && openEnabled) {
+    p_prov = 'openrouter';
+    p_mod = openModel;
+    if (nineEnabled) {
+      f_prov = 'nine_router';
+      f_mod = nineModel;
+    } else if (localEnabled) {
+      f_prov = 'local_llm';
+      f_mod = localModel;
+    } else {
+      f_prov = 'openrouter';
+      f_mod = openFallback;
+    }
+  } else if ((primaryChoice === 'nine_router' || primaryChoice === '9router') && nineEnabled) {
+    p_prov = 'nine_router';
+    p_mod = nineModel;
+    if (localEnabled) {
+      f_prov = 'local_llm';
+      f_mod = localModel;
+    } else {
+      f_prov = 'openrouter';
+      f_mod = openFallback;
+    }
+  } else if (nineEnabled) {
+    p_prov = 'nine_router';
+    p_mod = nineModel;
+    if (localEnabled) {
+      f_prov = 'local_llm';
+      f_mod = localModel;
+    } else {
+      f_prov = 'openrouter';
+      f_mod = openFallback;
+    }
+  } else if (localEnabled) {
+    p_prov = 'local_llm';
+    p_mod = localModel;
+    if (nineEnabled) {
+      f_prov = 'nine_router';
+      f_mod = nineModel;
+    } else {
+      f_prov = 'openrouter';
+      f_mod = openFallback;
+    }
+  } else if (openEnabled) {
+    p_prov = 'openrouter';
+    p_mod = openModel;
+    f_prov = 'openrouter';
+    f_mod = openFallback;
+  } else {
+    p_prov = 'openrouter';
+    p_mod = openModel;
+    f_prov = 'openrouter';
+    f_mod = openFallback;
+  }
+
+  return {
+    ...mode,
+    provider: p_prov,
+    model: p_mod,
+    fallback_provider: f_prov,
+    fallback_model: f_mod,
+  };
+};
+
 export default function AdminChatModes({
   onRefreshModes,
   setActionSuccess,
@@ -1165,7 +1267,17 @@ export default function AdminChatModes({
                   m.code?.toLowerCase().includes(search.toLowerCase()) ||
                   m.description?.toLowerCase().includes(search.toLowerCase())
               )
-              .map((mode) => {
+              .map((rawMode) => {
+                const mode = resolveDynamicGatewayMode(rawMode, {
+                  nineRouterEnabled,
+                  nineRouterModel,
+                  localLlmEnabled,
+                  localLlmModel,
+                  openrouterEnabled,
+                  openrouterModel,
+                  openrouterFallbackModel,
+                  primaryAiProvider,
+                });
                 const realIndex = modesList.findIndex((m) => m.id === mode.id);
                 return (
                 <div
@@ -1233,7 +1345,9 @@ export default function AdminChatModes({
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium border truncate max-w-[210px] ${
                             (mode.provider || '').toLowerCase().includes('nine') || (mode.provider || '').toLowerCase().includes('9')
                               ? 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25'
-                              : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
+                              : (mode.provider || '').toLowerCase().includes('local') || (mode.provider || '').toLowerCase().includes('ollama')
+                                ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'
+                                : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
                           }`}
                           title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}${mode.is_default ? (language === 'en' ? ' (Dynamic Gateway Sync)' : ' (Sinkronisasi Gateway Dinamis)') : ''}`}
                         >
@@ -2508,11 +2622,19 @@ export default function AdminChatModes({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1">Provider *</label>
+                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
+                    <span>Provider *</span>
+                    {editForm.is_default && (
+                      <span className="text-[10px] text-indigo-400 font-normal">
+                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
+                      </span>
+                    )}
+                  </label>
                   <select
                     value={editForm.provider}
+                    disabled={editForm.is_default}
                     onChange={(e) => setEditForm({ ...editForm, provider: e.target.value })}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
+                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
                     <option value="local_llm">LLM Local (Ollama/Qwen)</option>
@@ -2520,13 +2642,21 @@ export default function AdminChatModes({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1">Model *</label>
+                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
+                    <span>Model *</span>
+                    {editForm.is_default && (
+                      <span className="text-[10px] text-indigo-400 font-normal">
+                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="text"
                     required
+                    disabled={editForm.is_default}
                     value={editForm.model}
                     onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all"
+                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -2556,7 +2686,31 @@ export default function AdminChatModes({
                   <input
                     type="checkbox"
                     checked={editForm.is_default}
-                    onChange={(e) => setEditForm({ ...editForm, is_default: e.target.checked })}
+                    onChange={(e) => {
+                      const isDef = e.target.checked;
+                      if (isDef) {
+                        const resolved = resolveDynamicGatewayMode({ ...editForm, is_default: true }, {
+                          nineRouterEnabled,
+                          nineRouterModel,
+                          localLlmEnabled,
+                          localLlmModel,
+                          openrouterEnabled,
+                          openrouterModel,
+                          openrouterFallbackModel,
+                          primaryAiProvider,
+                        });
+                        setEditForm({
+                          ...editForm,
+                          is_default: true,
+                          provider: resolved.provider,
+                          model: resolved.model,
+                          fallback_provider: resolved.fallback_provider,
+                          fallback_model: resolved.fallback_model,
+                        });
+                      } else {
+                        setEditForm({ ...editForm, is_default: false });
+                      }
+                    }}
                     className="rounded border-line text-indigo-600 focus:ring-accent/30 cursor-pointer"
                   />
                   <span>{language === 'en' ? 'Set as Default' : 'Jadikan Default'}</span>

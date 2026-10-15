@@ -1016,7 +1016,6 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
                     "url": r.url,
                     "enabled": bool(r.enabled),
                     "display_order": r.display_order or 0,
-                    "auth_token": getattr(r, "auth_token", None) or "",
                 })
             return servers
     except Exception as e:
@@ -1045,8 +1044,6 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
                 "url": r.url,
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
-                "auth_token": getattr(r, "auth_token", None) or "",
-                "headers": getattr(r, "headers", None) or {},
             }
     except Exception as e:
         logger.error(f"Error get_mcp_server: {e}")
@@ -1081,7 +1078,7 @@ def save_mcp_server(sid: str, name: str, url: str, enabled: bool = True, auth_to
                     VALUES (:id, :name, :url, :enabled, :order, :token)
                 """), {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "order": order, "token": token_val})
             conn.commit()
-            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order, "auth_token": token_val or ""}
+            return {"id": sid, "name": name, "url": url, "enabled": bool(enabled), "display_order": order}
     except Exception as e:
         logger.error(f"Error save_mcp_server: {e}")
         return None
@@ -1138,7 +1135,7 @@ def update_mcp_server(server_id: str, name: Optional[str] = None, url: Optional[
                 WHERE LOWER(id) = LOWER(:id)
             """), {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "token": new_token})
             conn.commit()
-            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0, "auth_token": new_token or ""}
+            return {"id": sid, "name": new_name, "url": new_url, "enabled": new_enabled, "display_order": existing.display_order or 0}
     except Exception as e:
         logger.error(f"Error update_mcp_server: {e}")
         return None
@@ -3163,8 +3160,8 @@ def delete_skill(skill_id: int) -> bool:
 # --- CHAT MODES & ROLE ACCESS ---
 
 def resolve_dynamic_default_mode(mode_dict: dict, sys_cfg: Optional[dict] = None) -> dict:
-    """Jika mode_dict adalah mode default (is_default == True), selaraskan provider & model
-    secara dinamis dari AI Model Provider Gateways yang sedang aktif.
+    """Jika mode_dict adalah mode default (is_default == True), selaraskan provider, model,
+    serta fallback_provider & fallback_model secara dinamis dari AI Model Provider Gateways yang sedang aktif.
     Mode non-default (medium, expert, dll.) tetap menggunakan konfigurasi model khusus miliknya.
     """
     if not mode_dict or not mode_dict.get("is_default"):
@@ -3177,17 +3174,62 @@ def resolve_dynamic_default_mode(mode_dict: dict, sys_cfg: Optional[dict] = None
         except Exception:
             sys_cfg = {}
 
-    nine_enabled = sys_cfg.get("nine_router_enabled", True)
-    if nine_enabled:
-        res["provider"] = "nine_router"
-        res["model"] = sys_cfg.get("nine_router_model") or res.get("model") or "ag/gemini-3.7-flash-medium"
-        res["fallback_provider"] = "openrouter"
-        res["fallback_model"] = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+    nine_enabled = bool(sys_cfg.get("nine_router_enabled", True))
+    local_enabled = bool(sys_cfg.get("local_llm_enabled", False))
+    open_enabled = bool(sys_cfg.get("openrouter_enabled", False))
+    primary_choice = (sys_cfg.get("primary_ai_provider") or "nine_router").lower().strip()
+
+    nine_model = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
+    local_model = sys_cfg.get("local_llm_model") or "qwen3.8:latest"
+    open_model = sys_cfg.get("openrouter_model") or "openrouter/auto"
+    open_fallback = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+
+    p_prov, p_mod = "openrouter", open_model
+    f_prov, f_mod = "openrouter", open_fallback
+
+    if primary_choice in ("local_llm", "local", "ollama") and local_enabled:
+        p_prov, p_mod = "local_llm", local_model
+        if nine_enabled:
+            f_prov, f_mod = "nine_router", nine_model
+        else:
+            f_prov, f_mod = "openrouter", open_fallback
+    elif primary_choice in ("openrouter",) and open_enabled:
+        p_prov, p_mod = "openrouter", open_model
+        if nine_enabled:
+            f_prov, f_mod = "nine_router", nine_model
+        elif local_enabled:
+            f_prov, f_mod = "local_llm", local_model
+        else:
+            f_prov, f_mod = "openrouter", open_fallback
+    elif primary_choice in ("nine_router", "9router") and nine_enabled:
+        p_prov, p_mod = "nine_router", nine_model
+        if local_enabled:
+            f_prov, f_mod = "local_llm", local_model
+        else:
+            f_prov, f_mod = "openrouter", open_fallback
+    elif nine_enabled:
+        p_prov, p_mod = "nine_router", nine_model
+        if local_enabled:
+            f_prov, f_mod = "local_llm", local_model
+        else:
+            f_prov, f_mod = "openrouter", open_fallback
+    elif local_enabled:
+        p_prov, p_mod = "local_llm", local_model
+        if nine_enabled:
+            f_prov, f_mod = "nine_router", nine_model
+        else:
+            f_prov, f_mod = "openrouter", open_fallback
+    elif open_enabled:
+        p_prov, p_mod = "openrouter", open_model
+        f_prov, f_mod = "openrouter", open_fallback
     else:
-        res["provider"] = "openrouter"
-        res["model"] = sys_cfg.get("openrouter_model") or "openrouter/auto"
-        res["fallback_provider"] = "openrouter"
-        res["fallback_model"] = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+        p_prov, p_mod = "openrouter", open_model
+        f_prov, f_mod = "openrouter", open_fallback
+
+    res["provider"] = p_prov
+    res["model"] = p_mod
+    res["fallback_provider"] = f_prov
+    res["fallback_model"] = f_mod
 
     return res
 
@@ -3395,7 +3437,7 @@ def update_chat_mode(
             sql = f"UPDATE {DB_SCHEMA}.chat_modes SET {', '.join(fields)} WHERE id = :id RETURNING *"
             row = conn.execute(text(sql), params).fetchone()
             conn.commit()
-            return dict(row._mapping) if row else None
+            return resolve_dynamic_default_mode(dict(row._mapping)) if row else None
     except Exception as e:
         logger.error(f"Error update_chat_mode: {e}")
         raise

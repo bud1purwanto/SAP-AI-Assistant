@@ -578,6 +578,16 @@ class MCPManager:
                     srv["name"] = r.get("label") or r.get("name") or r.get("resource_key", "SQL")
                     sql_sub_servers.append(srv)
 
+            # Ambil nama resmi dari konfigurasi database Koneksi MCP
+            db_srv_map = {}
+            try:
+                from database import list_mcp_servers
+                for s in list_mcp_servers():
+                    if s.get("id"):
+                        db_srv_map[str(s["id"]).lower()] = s.get("name")
+            except Exception:
+                pass
+
             # 1. SAP Server status
             sap_dash = (dash_status.get("sap") or dash_status.get("mcp_sap") or {}) if isinstance(dash_status, dict) else {}
             sap_online = bool(sap_dash.get("online", bool(sap_sub_servers) or bool(sap_dash)))
@@ -585,7 +595,7 @@ class MCPManager:
             active_sap = sap_dash.get("active_server") or (sap_sub_servers[0]["name"] if sap_sub_servers else ("Default" if sap_online else "-"))
             sap_status = {
                 "id": "sap",
-                "name": sap_dash.get("name") or "SAP ERP Gateway",
+                "name": db_srv_map.get("sap") or sap_dash.get("name") or "SAP ERP Gateway",
                 "description": sap_dash.get("description") or "Live Data, Tabel & ABAP Code SAP",
                 "online": sap_online,
                 "status": sap_dash.get("status", "online" if sap_online else "offline"),
@@ -605,7 +615,7 @@ class MCPManager:
             rag_tool_count = rag_dash.get("tool_count") or rag_dash.get("tools_count") or (6 if rag_online else 0)
             rag_status = {
                 "id": "rag",
-                "name": rag_dash.get("name") or "RAG Knowledge Gateway",
+                "name": db_srv_map.get("rag") or rag_dash.get("name") or "RAG Knowledge Gateway",
                 "description": rag_dash.get("description") or "Vector DB, SOP & Tech Docs",
                 "online": rag_online,
                 "status": rag_dash.get("status", "online" if rag_online else "offline"),
@@ -620,12 +630,12 @@ class MCPManager:
 
             # 3. SQL Server status
             sql_dash = (dash_status.get("sql") or dash_status.get("mcp_sql") or {}) if isinstance(dash_status, dict) else {}
-            sql_online = bool(sql_dash.get("online", bool(sql_sub_servers) or bool(sql_dash)))
+            sql_online = bool(sql_dash.get("online", bool(sql_sub_servers) or bool(dash_status)))
             sql_tool_count = sql_dash.get("tool_count") or sql_dash.get("tools_count") or (7 if sql_online else 0)
             active_sql = sql_dash.get("active_server") or (sql_sub_servers[0]["name"] if sql_sub_servers else ("Default" if sql_online else "-"))
             sql_status = {
                 "id": "sql",
-                "name": sql_dash.get("name") or "SQL & Database Gateway",
+                "name": db_srv_map.get("sql") or sql_dash.get("name") or "SQL & Database Gateway",
                 "description": sql_dash.get("description") or "Relational SQL & Query Tools",
                 "online": sql_online,
                 "status": sql_dash.get("status", "online" if sql_online else "offline"),
@@ -645,7 +655,7 @@ class MCPManager:
             email_tool_count = email_dash.get("tool_count") or email_dash.get("tools_count") or (8 if email_online else 0)
             email_status = {
                 "id": "email",
-                "name": email_dash.get("name") or "Email Gateway",
+                "name": db_srv_map.get("email") or email_dash.get("name") or "Email Gateway",
                 "description": email_dash.get("description") or "Email, Calendar & Mail Archive Gateway",
                 "online": email_online,
                 "status": email_dash.get("status", "online" if email_online else "offline"),
