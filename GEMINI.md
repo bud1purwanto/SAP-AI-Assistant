@@ -2,12 +2,17 @@
 
 Aturan ini wajib dipatuhi oleh semua asisten AI (Antigravity/Gemini/Agents) dalam pengembangan proyek ini:
 
-## 1. Aturan Ketat Deployment & Lingkungan Kerja
-- **DILARANG AUTO DEPLOY KE PRODUCTION**: Jangan pernah melakukan auto deploy ke lingkungan production atau menyentuh direktori `/var/www/` kecuali ada instruksi/permintaan eksplisit dari pengguna.
-- **ISOLASI DIREKTORI KERJA**: Seluruh pekerjaan pengembangan, modifikasi kode, dan pengujian HANYA boleh dilakukan di dalam workspace:
+## 1. Aturan Ketat Deployment & Lingkungan Kerja (STRICT)
+- **DILARANG MENYENTUH / PUSH KE CONTAINER DOCKER (PRODUCTION)**:
+  - Container Docker (`enterprise-ai-backend`, `enterprise-ai-frontend`, dsb.) adalah lingkungan **PRODUCTION**.
+  - Dilarang keras menjalankan `docker cp`, `docker restart`, `docker exec`, `docker stop`, `docker compose`, atau memodifikasi/menyalin berkas apapun ke dalam container Docker tanpa instruksi/perintah eksplisit dari pengguna.
+- **DILARANG AUTO DEPLOY KE PRODUCTION & DILARANG MENYENTUH `/var/www/`**:
+  - Jangan pernah melakukan auto deploy ke lingkungan production atau menyentuh direktori `/var/www/` (`/var/www/Enterprise-AI-Assistant/` atau `/var/www/SAP-AI-Assistant/`).
+- **DILARANG KERAS COMMIT & PUSH KE GIT TANPA PERINTAH (AUTO DEPLOY KE PRD)**:
+  - Melakukan `git push` ke repository akan secara otomatis memicu **AUTO DEPLOY KE PRODUCTION (PRD)**.
+  - Jangan pernah mengeksekusi `git commit` maupun `git push` secara otomatis atau sepihak. Biarkan seluruh perubahan tetap berada di *working tree* lokal untuk direview oleh pengguna. Tunggu perintah/konfirmasi tertulis eksplisit dari pengguna sebelum melakukan push.
+- **ISOLASI DIREKTORI KERJA**: Seluruh pekerjaan pengembangan, modifikasi kode, dan pengujian HANYA boleh dilakukan di dalam workspace lokal:
   `/data/Projects/Enterprise AI Assistant/`
-  Jangan pernah menjalankan perintah yang mengakses atau memodifikasi `/var/www/Enterprise-AI-Assistant/` atau `/var/www/SAP-AI-Assistant/`.
-- **DILARANG COMMIT & PUSH OTOMATIS (STRICT)**: Jangan pernah melakukan `git commit` maupun `git push` ke repository secara otomatis atau sepihak. Biarkan seluruh perubahan tetap di *working tree* untuk direview oleh pengguna. Tunggu perintah/konfirmasi eksplisit dari pengguna sebelum melakukan commit atau push.
 
 ## 2. Keamanan Database & Integritas Data (STRICT / SANGAT KETAT)
 - **DILARANG DROP DATABASE ATAU SKEMA**: Jangan pernah menjalankan perintah `DROP DATABASE`, `DROP SCHEMA`, atau menghapus objek struktur database lainnya tanpa instruksi/permintaan tertulis yang eksplisit dari pengguna.

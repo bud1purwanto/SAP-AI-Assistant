@@ -764,6 +764,12 @@ async def auth_session(user: dict = Depends(get_current_user_optional)):
     if session_id:
         profile["session_id"] = session_id
 
+    if user.get("concurrent_login_warning"):
+        profile["concurrent_login_warning"] = True
+        profile["active_sessions_count"] = user.get("active_sessions_count", 1)
+        profile["active_devices"] = user.get("active_devices") or []
+        profile["concurrent_warning_message"] = user.get("concurrent_warning_message")
+
     return profile
 
 
@@ -802,6 +808,19 @@ async def auth_heartbeat(
             detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
         )
 
+    # Cek apakah ada sesi lain yang baru login di perangkat berbeda (dalam 25 detik terakhir)
+    other_sessions = get_active_sessions_by_username(username=user["username"], except_session_id=session_id)
+    new_login_session = None
+    now_utc = datetime.now(timezone.utc)
+    for s in other_sessions:
+        c_at = s.get("created_at")
+        if c_at:
+            if c_at.tzinfo is None:
+                c_at = c_at.replace(tzinfo=timezone.utc)
+            if (now_utc - c_at).total_seconds() < 25:
+                new_login_session = s
+                break
+
     # Perbarui sliding session cookie agar browser tidak pernah kehilangan sesi selama aktif
     session_exp_sec = int(getattr(settings, "session_expire_hours", 24) * 3600)
     user_copy = dict(user)
@@ -815,7 +834,14 @@ async def auth_heartbeat(
         max_age=session_exp_sec,
         path="/",
     )
-    return {"status": "ok", "is_active": True}
+
+    ret = {"status": "ok", "is_active": True}
+    if new_login_session:
+        ret["new_concurrent_login"] = True
+        ret["new_device_name"] = new_login_session.get("device_name") or "Perangkat Lain"
+        ret["other_sessions_count"] = len(other_sessions)
+        ret["new_session_id"] = str(new_login_session.get("id"))
+    return ret
 
 # --- PER-USER SAP CREDENTIALS ---
 

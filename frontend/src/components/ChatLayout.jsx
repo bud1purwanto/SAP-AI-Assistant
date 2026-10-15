@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Layers, LayoutDashboard, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
+  AlertTriangle, ArrowUpRight, Bell, BookOpen, Bot, Building2, Calendar, Check, ChevronDown, ChevronRight, Code, Cpu, Database, FileSpreadsheet, Globe, Laptop, Layers, LayoutDashboard, Loader2, Lock, LogIn, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, MoreVertical, Package, Pencil, Plus, RefreshCw, Search, Server, Settings, ShieldAlert, ShieldCheck, Sparkles, Sun, Trash2, TrendingUp, X, Zap,
 } from 'lucide-react';
 
 import AdminDashboard from './AdminDashboard';
@@ -198,6 +198,7 @@ const ChatLayout = () => {
   const [settingsTab, setSettingsTab] = useState('persona');
   const [sapCredentialIssue, setSapCredentialIssue] = useState(null);
   const [toast, setToast] = useState(null);
+  const lastNotifiedConcurrentSessionIdRef = useRef('');
 
   const openSettings = useCallback((tab = 'persona') => {
     setSettingsTab(tab === 'sap' ? 'sapCreds' : tab);
@@ -208,16 +209,22 @@ const ChatLayout = () => {
     setToast({
       message,
       type,
+      title: options?.title,
+      badge: options?.badge,
+      devices: options?.devices,
       action: options?.action,
+      position: options?.position || 'top-center',
+      duration: options?.duration || (type === 'warning' ? 9000 : 7000),
       id: Date.now(),
     });
   }, []);
 
   useEffect(() => {
     if (!toast) return;
+    const dur = toast.duration || (toast.type === 'warning' ? 9000 : 7000);
     const timer = setTimeout(() => {
       setToast(null);
-    }, 8000);
+    }, dur);
     return () => clearTimeout(timer);
   }, [toast]);
   const [isScheduledTasksOpen, setIsScheduledTasksOpen] = useState(false);
@@ -540,11 +547,32 @@ const ChatLayout = () => {
       else if (isiPanel) currentAction = 'Membaca Panel Dokumen / Kode';
 
       try {
-        await api.heartbeat({
+        const res = await api.heartbeat({
           current_action: currentAction,
           current_path: window.location.pathname || '/',
           is_idle: document.hidden,
         });
+        if (res?.new_concurrent_login && res?.new_session_id && res.new_session_id !== lastNotifiedConcurrentSessionIdRef.current) {
+          lastNotifiedConcurrentSessionIdRef.current = res.new_session_id;
+          const devName = res.new_device_name || (isEn ? 'Another Device' : 'Perangkat Lain');
+          showToast(
+            t('login.concurrentNoticeNewDevice', { device: devName }),
+            'warning',
+            {
+              title: t('login.concurrentNoticeTitle'),
+              badge: t('login.concurrentNoticeBadge'),
+              devices: [devName],
+              position: 'top-center',
+              duration: 9000,
+              action: (user?.role === 'superadmin' || (user?.roles || []).includes('superadmin')) ? {
+                label: t('login.concurrentReview'),
+                onClick: () => {
+                  setIsAdminOpen(true);
+                }
+              } : undefined
+            }
+          );
+        }
       } catch {
         // Jika 401 SESSION_KICKED, apiFetch sudah otomatis memanggil setUnauthorizedHandler
       }
@@ -2684,9 +2712,21 @@ const ChatLayout = () => {
           fetchModes();
           if (loggedInUser?.concurrent_login_warning) {
             showToast(
-              t('login.concurrentNotice', { count: loggedInUser.active_sessions_count || 1 }),
-              'info',
-              { duration: 6000 }
+              t('login.concurrentNoticeDesc', { count: loggedInUser.active_sessions_count || 1 }),
+              'warning',
+              {
+                title: t('login.concurrentNoticeTitle'),
+                badge: t('login.concurrentNoticeBadge'),
+                devices: loggedInUser.active_devices || [],
+                position: 'top-center',
+                duration: 9000,
+                action: (loggedInUser.role === 'superadmin' || (loggedInUser.roles || []).includes('superadmin')) ? {
+                  label: t('login.concurrentReview'),
+                  onClick: () => {
+                    setIsAdminOpen(true);
+                  }
+                } : undefined
+              }
             );
           }
         }}
@@ -2780,40 +2820,140 @@ const ChatLayout = () => {
       {toast && (
         <div
           role="alert"
-          className={`fixed bottom-5 right-5 z-50 max-w-md p-4 rounded-2xl shadow-xl border flex items-start gap-3 transition-all animate-fadeIn ${
-            toast.type === 'warning'
-              ? 'bg-amber-50 dark:bg-amber-950/90 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-              : toast.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-              : toast.type === 'error'
-              ? 'bg-rose-50 dark:bg-rose-950/90 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
-              : 'bg-surface border-line text-content shadow-lg'
+          className={`fixed z-50 transition-all duration-300 ease-out ${
+            toast.position === 'bottom-right'
+              ? 'bottom-5 right-5 max-w-md w-full p-4 animate-in fade-in slide-in-from-bottom-5'
+              : 'top-5 sm:top-7 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-xl animate-in fade-in slide-in-from-top-6'
           }`}
         >
-          <div className="flex-1 text-xs font-medium space-y-2">
-            <p className="leading-relaxed">{toast.message}</p>
-            {toast.action && (
+          <div
+            className={`relative overflow-hidden rounded-2xl shadow-2xl backdrop-blur-xl border p-4 sm:p-5 transition-all ${
+              toast.type === 'warning'
+                ? 'bg-surface/95 dark:bg-surface-raised/95 border-amber-500/40 text-content shadow-amber-500/10 ring-1 ring-amber-500/20'
+                : toast.type === 'success'
+                ? 'bg-surface/95 dark:bg-surface-raised/95 border-emerald-500/40 text-content shadow-emerald-500/10 ring-1 ring-emerald-500/20'
+                : toast.type === 'error'
+                ? 'bg-surface/95 dark:bg-surface-raised/95 border-rose-500/40 text-content shadow-rose-500/10 ring-1 ring-rose-500/20'
+                : 'bg-surface/95 dark:bg-surface-raised/95 border-line text-content shadow-xl'
+            }`}
+          >
+            {/* Elegant top ambient glow line */}
+            <div
+              className={`absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r ${
+                toast.type === 'warning'
+                  ? 'from-amber-500/0 via-amber-500 to-amber-500/0'
+                  : toast.type === 'success'
+                  ? 'from-emerald-500/0 via-emerald-500 to-emerald-500/0'
+                  : toast.type === 'error'
+                  ? 'from-rose-500/0 via-rose-500 to-rose-500/0'
+                  : 'from-accent/0 via-accent to-accent/0'
+              }`}
+            />
+
+            <div className="flex items-start gap-3.5">
+              {/* Icon badge with glowing background */}
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border shadow-2xs ${
+                  toast.type === 'warning'
+                    ? 'bg-amber-500/15 text-amber-500 dark:text-amber-400 border-amber-500/30'
+                    : toast.type === 'success'
+                    ? 'bg-emerald-500/15 text-emerald-500 dark:text-emerald-400 border-emerald-500/30'
+                    : toast.type === 'error'
+                    ? 'bg-rose-500/15 text-rose-500 dark:text-rose-400 border-rose-500/30'
+                    : 'bg-surface-sunken text-accent border-line'
+                }`}
+              >
+                {toast.type === 'warning' ? (
+                  <ShieldAlert className="w-5 h-5 animate-pulse" />
+                ) : toast.type === 'success' ? (
+                  <Check className="w-5 h-5" />
+                ) : toast.type === 'error' ? (
+                  <AlertTriangle className="w-5 h-5" />
+                ) : (
+                  <Bell className="w-5 h-5" />
+                )}
+              </div>
+
+              {/* Main Text Content */}
+              <div className="flex-1 min-w-0 pt-0.5 space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {toast.badge && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                        toast.type === 'warning'
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                          : 'bg-accent/15 text-accent border-accent/30'
+                      }`}
+                    >
+                      <Sparkles className="w-2.5 h-2.5" />
+                      <span>{toast.badge}</span>
+                    </span>
+                  )}
+                  {toast.title && (
+                    <h5 className="font-bold text-xs sm:text-sm text-content font-display tracking-tight">
+                      {toast.title}
+                    </h5>
+                  )}
+                </div>
+
+                <p className="text-xs text-content-muted leading-relaxed">
+                  {toast.message}
+                </p>
+
+                {/* Device Badges (if available) */}
+                {Array.isArray(toast.devices) && toast.devices.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    <span className="text-[10px] font-semibold text-content-subtle">
+                      {isEn ? 'Active on:' : 'Terdeteksi di:'}
+                    </span>
+                    {toast.devices.map((dev, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium bg-surface-sunken/80 border border-line text-content-secondary"
+                      >
+                        <Laptop className="w-3 h-3 text-amber-500 shrink-0" />
+                        <span className="truncate max-w-[200px]">{dev}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex items-center gap-2 pt-2">
+                  {toast.action && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cb = toast.action.onClick;
+                        setToast(null);
+                        cb?.();
+                      }}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-all cursor-pointer active:scale-95"
+                    >
+                      <span>{toast.action.label}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setToast(null)}
+                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl text-xs font-semibold text-content-muted hover:text-content hover:bg-surface-sunken transition-all cursor-pointer"
+                  >
+                    <span>{t('login.concurrentDismiss')}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Close Button */}
               <button
                 type="button"
-                onClick={() => {
-                  const cb = toast.action.onClick;
-                  setToast(null);
-                  cb?.();
-                }}
-                className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-colors cursor-pointer"
+                onClick={() => setToast(null)}
+                className="p-1.5 rounded-xl text-content-subtle hover:text-content hover:bg-surface-sunken transition-colors cursor-pointer shrink-0"
+                aria-label={t('common.close')}
               >
-                {toast.action.label}
+                <X className="w-4 h-4" />
               </button>
-            )}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setToast(null)}
-            className="p-1 text-content-muted hover:text-content cursor-pointer shrink-0"
-            aria-label={t('common.close')}
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
       )}
     </div>

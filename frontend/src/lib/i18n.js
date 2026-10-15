@@ -346,6 +346,12 @@ export const TRANSLATIONS = {
     'login.success': 'Login successful! Redirecting…',
     'login.clearUsername': 'Clear username',
     'login.concurrentNotice': 'Notice: This account is also currently active on {count} other device(s).',
+    'login.concurrentNoticeTitle': 'Active Session on Other Device',
+    'login.concurrentNoticeBadge': 'Security Notice',
+    'login.concurrentNoticeDesc': 'Your account is also currently active on {count} other device(s). Multiple simultaneous sessions remain active and secure.',
+    'login.concurrentNoticeNewDevice': 'Your account just logged in from another device: {device}. Multiple sessions remain supported.',
+    'login.concurrentDismiss': 'Got It',
+    'login.concurrentReview': 'Review Sessions',
 
     // Confirmation Modal
     'confirm.defaultTitle': 'Confirmation',
@@ -974,6 +980,12 @@ export const TRANSLATIONS = {
     'login.success': 'Login berhasil! Mengalihkan…',
     'login.clearUsername': 'Hapus username',
     'login.concurrentNotice': 'Perhatian: Akun ini juga sedang aktif di {count} perangkat lain.',
+    'login.concurrentNoticeTitle': 'Login Perangkat Lain Terdeteksi',
+    'login.concurrentNoticeBadge': 'Pemberitahuan Keamanan',
+    'login.concurrentNoticeDesc': 'Akun Anda juga sedang aktif di {count} perangkat lain. Sesi ini tetap aman dan aktif secara bersamaan.',
+    'login.concurrentNoticeNewDevice': 'Akun Anda baru saja login di perangkat lain: {device}. Sesi tetap aktif bersamaan.',
+    'login.concurrentDismiss': 'Mengerti',
+    'login.concurrentReview': 'Tinjau Sesi',
 
     // Confirmation Modal
     'confirm.defaultTitle': 'Konfirmasi',
