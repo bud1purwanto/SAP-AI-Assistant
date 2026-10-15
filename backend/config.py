@@ -71,6 +71,15 @@ class Settings(BaseSettings):
     nine_router_model: str = "ag/gemini-3.7-flash-medium"
     nine_router_api_key: str = ""
 
+    # LLM Local (Ollama / Private Gateway)
+    local_llm_enabled: bool = False
+    local_llm_base_url: str = "http://192.168.1.166:11434/v1"
+    local_llm_model: str = "qwen3.8:latest"
+    local_llm_api_key: str = ""
+
+    # Active Primary Provider ('nine_router' | 'local_llm' | 'openrouter')
+    primary_ai_provider: str = "nine_router"
+
     # OpenRouter (Fallback / Cloud Gateway)
     openrouter_enabled: bool = False
     openrouter_api_key: str = ""

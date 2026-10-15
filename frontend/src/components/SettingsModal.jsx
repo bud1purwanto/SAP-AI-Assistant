@@ -41,6 +41,11 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
     nine_router_base_url: 'http://192.168.88.83:20128/v1',
     nine_router_model: 'ag/gemini-3.7-flash-medium',
     nine_router_api_key: '',
+    local_llm_enabled: false,
+    local_llm_base_url: 'http://192.168.1.166:11434/v1',
+    local_llm_model: 'qwen3.8:latest',
+    local_llm_api_key: '',
+    primary_ai_provider: 'nine_router',
     openrouter_enabled: false,
     openrouter_model: 'openrouter/auto',
     openrouter_fallback_model: 'openrouter/free',
@@ -179,6 +184,11 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
               nine_router_base_url: data.nine_router_base_url || 'http://192.168.88.83:20128/v1',
               nine_router_model: data.nine_router_model || 'ag/gemini-3.7-flash-medium',
               nine_router_api_key: data.nine_router_api_key || '',
+              local_llm_enabled: data.local_llm_enabled ?? false,
+              local_llm_base_url: data.local_llm_base_url || 'http://192.168.1.166:11434/v1',
+              local_llm_model: data.local_llm_model || 'qwen3.8:latest',
+              local_llm_api_key: data.local_llm_api_key || '',
+              primary_ai_provider: data.primary_ai_provider || 'nine_router',
               openrouter_enabled: data.openrouter_enabled ?? false,
               openrouter_model: data.openrouter_model || 'openrouter/auto',
               openrouter_fallback_model: data.openrouter_fallback_model || 'openrouter/free',
@@ -1056,6 +1066,72 @@ const SettingsModal = ({ isOpen, onClose, user, initialTab = 'persona', sapCrede
                         value={config.nine_router_api_key}
                         onChange={e => setConfig({...config, nine_router_api_key: e.target.value})}
                         className="w-full bg-surface-raised border border-line rounded-xl px-3.5 py-2 text-xs font-mono text-content focus:outline-none focus:border-indigo-500"
+                        placeholder="Kosongkan jika tanpa auth"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* LLM Local (Ollama) Card */}
+              <div className={`p-4 rounded-2xl border transition-all ${
+                config.local_llm_enabled 
+                  ? 'bg-sky-500/10 border-sky-500/30' 
+                  : 'bg-surface-sunken border-line opacity-80'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-sky-600 text-white rounded-lg">
+                      <Cpu className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-content">LLM Local (Ollama / Qwen)</h4>
+                      <span className="text-[10px] text-content-muted">Server AI inferensi lokal mandiri</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setConfig({...config, local_llm_enabled: !config.local_llm_enabled})}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      config.local_llm_enabled
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-surface-sunken text-content-muted'
+                    }`}
+                  >
+                    {config.local_llm_enabled ? 'Aktif' : 'Nonaktif'}
+                  </button>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-content-secondary mb-1">Base URL</label>
+                    <input 
+                      type="text"
+                      value={config.local_llm_base_url}
+                      onChange={e => setConfig({...config, local_llm_base_url: e.target.value})}
+                      className="w-full bg-surface-raised border border-line rounded-xl px-3.5 py-2 text-xs font-mono text-content focus:outline-none focus:border-sky-500"
+                      placeholder="http://192.168.1.166:11434/v1"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">Model Name</label>
+                      <input 
+                        type="text"
+                        value={config.local_llm_model}
+                        onChange={e => setConfig({...config, local_llm_model: e.target.value})}
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3.5 py-2 text-xs font-mono text-content focus:outline-none focus:border-sky-500"
+                        placeholder="qwen3.8:latest"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-content-secondary mb-1">API Key (Opsional)</label>
+                      <input 
+                        type="password"
+                        value={config.local_llm_api_key}
+                        onChange={e => setConfig({...config, local_llm_api_key: e.target.value})}
+                        className="w-full bg-surface-raised border border-line rounded-xl px-3.5 py-2 text-xs font-mono text-content focus:outline-none focus:border-sky-500"
                         placeholder="Kosongkan jika tanpa auth"
                       />
                     </div>

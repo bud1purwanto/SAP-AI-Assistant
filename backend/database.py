@@ -376,6 +376,66 @@ def init_db():
                     VALUES ('nine_router_api_key', :val)
                 """), {"val": settings.nine_router_api_key or ""})
 
+            # Auto-migrasi cerdas jika 9Router sebelumnya diisi endpoint Ollama / LLM local (port 11434)
+            current_9r_url_row = conn.execute(text("SELECT value FROM {DB_SCHEMA}.system_config WHERE key = 'nine_router_base_url'")).fetchone()
+            current_9r_url = current_9r_url_row[0] if current_9r_url_row and current_9r_url_row[0] else ""
+            migrating_from_ollama = "11434" in current_9r_url or "192.168.1.166" in current_9r_url
+
+            # LLM Local (Ollama) Defaults
+            res_llm_en = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'local_llm_enabled'")).fetchone()
+            if not res_llm_en:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_enabled', :val)
+                """), {"val": "true" if migrating_from_ollama else str(settings.local_llm_enabled).lower()})
+
+            res_llm_url = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'local_llm_base_url'")).fetchone()
+            if not res_llm_url:
+                local_url_val = current_9r_url if migrating_from_ollama else (settings.local_llm_base_url or "http://192.168.1.166:11434/v1")
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_base_url', :val)
+                """), {"val": local_url_val})
+
+            res_llm_mod = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'local_llm_model'")).fetchone()
+            if not res_llm_mod:
+                current_9r_mod_row = conn.execute(text("SELECT value FROM {DB_SCHEMA}.system_config WHERE key = 'nine_router_model'")).fetchone()
+                current_9r_mod = current_9r_mod_row[0] if current_9r_mod_row and current_9r_mod_row[0] else ""
+                local_mod_val = current_9r_mod if migrating_from_ollama and current_9r_mod else (settings.local_llm_model or "qwen3.8:latest")
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_model', :val)
+                """), {"val": local_mod_val})
+
+            res_llm_key = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'local_llm_api_key'")).fetchone()
+            if not res_llm_key:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_api_key', :val)
+                """), {"val": settings.local_llm_api_key or ""})
+
+            # Primary Provider Choice
+            res_prim_choice = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'primary_ai_provider'")).fetchone()
+            if not res_prim_choice:
+                prim_val = "local_llm" if migrating_from_ollama else (settings.primary_ai_provider or "nine_router")
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('primary_ai_provider', :val)
+                """), {"val": prim_val})
+
+            # Jika bermigrasi dari Ollama yang menimpa 9Router, kembalikan 9Router ke setting aslinya
+            if migrating_from_ollama:
+                conn.execute(text("""
+                    UPDATE {DB_SCHEMA}.system_config
+                    SET value = 'http://192.168.88.83:20128/v1'
+                    WHERE key = 'nine_router_base_url'
+                """))
+                conn.execute(text("""
+                    UPDATE {DB_SCHEMA}.system_config
+                    SET value = 'ag/gemini-3.7-flash-medium'
+                    WHERE key = 'nine_router_model'
+                """))
+
             # OpenRouter Config Defaults
             res_or_en = conn.execute(text("SELECT key FROM {DB_SCHEMA}.system_config WHERE key = 'openrouter_enabled'")).fetchone()
             if not res_or_en:
@@ -636,6 +696,12 @@ def get_system_config():
     nine_router_model = settings.nine_router_model or "ag/gemini-3.7-flash-medium"
     nine_router_api_key = settings.nine_router_api_key or ""
 
+    local_llm_enabled = getattr(settings, "local_llm_enabled", False)
+    local_llm_base_url = getattr(settings, "local_llm_base_url", "http://192.168.1.166:11434/v1")
+    local_llm_model = getattr(settings, "local_llm_model", "qwen3.8:latest")
+    local_llm_api_key = getattr(settings, "local_llm_api_key", "")
+    primary_ai_provider = getattr(settings, "primary_ai_provider", "nine_router")
+
     openrouter_enabled = settings.openrouter_enabled
     model_primary = settings.openrouter_model or "openrouter/auto"
     model_fallback = settings.openrouter_fallback_model or "openrouter/free"
@@ -678,6 +744,16 @@ def get_system_config():
                     nine_router_model = r.value
                 elif r.key == 'nine_router_api_key' and r.value is not None:
                     nine_router_api_key = r.value
+                elif r.key == 'local_llm_enabled' and r.value is not None:
+                    local_llm_enabled = r.value.lower() in ('true', '1', 'yes')
+                elif r.key == 'local_llm_base_url' and r.value is not None:
+                    local_llm_base_url = r.value
+                elif r.key == 'local_llm_model' and r.value is not None:
+                    local_llm_model = r.value
+                elif r.key == 'local_llm_api_key' and r.value is not None:
+                    local_llm_api_key = r.value
+                elif r.key == 'primary_ai_provider' and r.value is not None:
+                    primary_ai_provider = r.value
                 elif r.key == 'openrouter_enabled' and r.value is not None:
                     openrouter_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'openrouter_model' and r.value is not None:
@@ -703,6 +779,11 @@ def get_system_config():
         "nine_router_base_url": nine_router_base_url,
         "nine_router_model": nine_router_model,
         "nine_router_api_key": nine_router_api_key,
+        "local_llm_enabled": local_llm_enabled,
+        "local_llm_base_url": local_llm_base_url,
+        "local_llm_model": local_llm_model,
+        "local_llm_api_key": local_llm_api_key,
+        "primary_ai_provider": primary_ai_provider,
         "openrouter_enabled": openrouter_enabled,
         "openrouter_model": model_primary,
         "openrouter_fallback_model": model_fallback,
@@ -720,11 +801,16 @@ def update_system_config(
     mcp_rag_json: str = None,
     mcp_sql_json: str = None,
     mcp_email_json: str = None,
-    nine_router_enabled: bool = None,
-    nine_router_base_url: str = None,
-    nine_router_model: str = None,
-    nine_router_api_key: str = None,
-    openrouter_enabled: bool = None,
+    nine_router_enabled: Optional[bool] = None,
+    nine_router_base_url: Optional[str] = None,
+    nine_router_model: Optional[str] = None,
+    nine_router_api_key: Optional[str] = None,
+    local_llm_enabled: Optional[bool] = None,
+    local_llm_base_url: Optional[str] = None,
+    local_llm_model: Optional[str] = None,
+    local_llm_api_key: Optional[str] = None,
+    primary_ai_provider: Optional[str] = None,
+    openrouter_enabled: Optional[bool] = None,
     openrouter_model: str = None,
     openrouter_fallback_model: str = None,
     openrouter_api_key: str = None,
@@ -828,6 +914,41 @@ def update_system_config(
                     VALUES ('nine_router_api_key', :val)
                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
                 """), {"val": nine_router_api_key})
+
+            if local_llm_enabled is not None:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_enabled', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": "true" if local_llm_enabled else "false"})
+
+            if local_llm_base_url is not None:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_base_url', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": local_llm_base_url})
+
+            if local_llm_model is not None:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_model', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": local_llm_model})
+
+            if local_llm_api_key is not None:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('local_llm_api_key', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": local_llm_api_key})
+
+            if primary_ai_provider is not None:
+                conn.execute(text("""
+                    INSERT INTO {DB_SCHEMA}.system_config (key, value)
+                    VALUES ('primary_ai_provider', :val)
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+                """), {"val": primary_ai_provider})
 
             if openrouter_enabled is not None:
                 conn.execute(text("""

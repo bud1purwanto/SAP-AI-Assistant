@@ -54,6 +54,26 @@ def test_save_providers_writes_config_without_type_error():
     assert any("openrouter_enabled" in sql and params["val"] == "true" for sql, params in connection.writes)
 
 
+def test_save_local_llm_and_primary_choice():
+    connection = FakeConnection()
+    with patch.object(database, "get_engine", return_value=FakeEngine(connection)), \
+         patch.object(main, "get_user_by_username", return_value={"username": "admin", "assistant_persona": ""}), \
+         patch.object(main, "update_system_config", side_effect=database.update_system_config):
+        result = asyncio.run(main.update_config(main.ConfigUpdate(
+            local_llm_enabled=True,
+            local_llm_base_url="http://192.168.1.166:11434/v1",
+            local_llm_model="qwen3.8:latest",
+            primary_ai_provider="local_llm",
+        ), user={"sub": "oidc-admin", "username": "admin", "roles": ["superadmin"]}))
+
+    assert result == {"status": "success"}
+    assert connection.committed
+    assert any("local_llm_enabled" in sql and params["val"] == "true" for sql, params in connection.writes)
+    assert any("local_llm_base_url" in sql and params["val"] == "http://192.168.1.166:11434/v1" for sql, params in connection.writes)
+    assert any("local_llm_model" in sql and params["val"] == "qwen3.8:latest" for sql, params in connection.writes)
+    assert any("primary_ai_provider" in sql and params["val"] == "local_llm" for sql, params in connection.writes)
+
+
 def test_save_providers_reports_database_failure():
     with patch.object(main, "get_user_by_username", return_value={"username": "admin", "assistant_persona": ""}), \
          patch.object(main, "update_system_config", return_value=False):

@@ -1012,6 +1012,11 @@ class ConfigUpdate(BaseModel):
     nine_router_base_url: str = None
     nine_router_model: str = None
     nine_router_api_key: str = None
+    local_llm_enabled: Optional[bool] = None
+    local_llm_base_url: Optional[str] = None
+    local_llm_model: Optional[str] = None
+    local_llm_api_key: Optional[str] = None
+    primary_ai_provider: Optional[str] = None
     openrouter_enabled: bool = None
     openrouter_model: str = None
     openrouter_fallback_model: str = None
@@ -1103,6 +1108,12 @@ async def get_config(user: dict = Depends(get_current_user)):
             "nine_router_enabled": sys_cfg.get("nine_router_enabled", True),
             "nine_router_base_url": sys_cfg.get("nine_router_base_url", ""),
             "nine_router_model": sys_cfg.get("nine_router_model", ""),
+            "local_llm_enabled": sys_cfg.get("local_llm_enabled", False),
+            "local_llm_base_url": sys_cfg.get("local_llm_base_url", ""),
+            "local_llm_model": sys_cfg.get("local_llm_model", ""),
+            "local_llm_api_key": _mask_secret(sys_cfg.get("local_llm_api_key", "")),
+            "local_llm_api_key_set": bool(sys_cfg.get("local_llm_api_key")),
+            "primary_ai_provider": sys_cfg.get("primary_ai_provider", "nine_router"),
             "openrouter_enabled": sys_cfg.get("openrouter_enabled", False),
             "openrouter_model": sys_cfg.get("openrouter_model", ""),
             "openrouter_fallback_model": sys_cfg.get("openrouter_fallback_model", ""),
@@ -1147,6 +1158,9 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
         nine_key = config.nine_router_api_key
         if nine_key and "••••" in nine_key:
             nine_key = None
+        local_key = config.local_llm_api_key
+        if local_key and "••••" in local_key:
+            local_key = None
         open_key = config.openrouter_api_key
         if open_key and "••••" in open_key:
             open_key = None
@@ -1160,6 +1174,11 @@ async def update_config(config: ConfigUpdate, user: dict = Depends(get_current_u
             nine_router_base_url=config.nine_router_base_url,
             nine_router_model=config.nine_router_model,
             nine_router_api_key=nine_key,
+            local_llm_enabled=config.local_llm_enabled,
+            local_llm_base_url=config.local_llm_base_url,
+            local_llm_model=config.local_llm_model,
+            local_llm_api_key=local_key,
+            primary_ai_provider=config.primary_ai_provider,
             openrouter_enabled=config.openrouter_enabled,
             openrouter_model=config.openrouter_model,
             openrouter_fallback_model=config.openrouter_fallback_model,

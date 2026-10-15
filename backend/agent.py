@@ -426,13 +426,24 @@ def _buat_llm(provider: str, model_name: str, sys_cfg: dict, max_tokens: int = 4
     if temperature is not None:
         extra_kwargs["temperature"] = temperature
 
-    if prov in ("nine_router", "9router", "local"):
+    if prov in ("nine_router", "9router"):
         nine_router_base_url = sys_cfg.get("nine_router_base_url") or settings.nine_router_base_url or "http://192.168.88.83:20128/v1"
-        nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "sk-9router-local"
+        nine_router_api_key = sys_cfg.get("nine_router_api_key") or settings.nine_router_api_key or "«redacted:sk-…»"
         return ChatOpenAI(
-            model=model_name or "ag/gemini-3.7-flash-medium",
+            model=model_name or sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium",
             openai_api_key=nine_router_api_key,
             openai_api_base=nine_router_base_url,
+            max_retries=1,
+            max_tokens=max_tokens,
+            **extra_kwargs,
+        )
+    elif prov in ("local_llm", "local", "ollama"):
+        local_base_url = sys_cfg.get("local_llm_base_url") or getattr(settings, "local_llm_base_url", "http://192.168.1.166:11434/v1")
+        local_api_key = sys_cfg.get("local_llm_api_key") or getattr(settings, "local_llm_api_key", "") or "ollama"
+        return ChatOpenAI(
+            model=model_name or sys_cfg.get("local_llm_model") or "qwen3.8:latest",
+            openai_api_key=local_api_key,
+            openai_api_base=local_base_url,
             max_retries=1,
             max_tokens=max_tokens,
             **extra_kwargs,
@@ -869,32 +880,59 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             except Exception as e:
                 logger.warning(f"Gagal mengirim progres mode_downgraded: {e}")
 
+    def _resolve_ai_endpoints(mode_dict=None):
+        nine_enabled = sys_cfg.get("nine_router_enabled", True)
+        local_enabled = sys_cfg.get("local_llm_enabled", False)
+        open_enabled = sys_cfg.get("openrouter_enabled", False)
+        primary_choice = (sys_cfg.get("primary_ai_provider") or "nine_router").lower().strip()
+
+        nine_model = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
+        local_model = sys_cfg.get("local_llm_model") or "qwen3.8:latest"
+        open_model = sys_cfg.get("openrouter_model") or "openrouter/auto"
+        open_fallback = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+
+        if mode_dict and not mode_dict.get("is_default"):
+            p_prov = (mode_dict.get("provider") or "nine_router").lower().strip()
+            p_mod = mode_dict.get("model") or (local_model if p_prov in ("local_llm", "local", "ollama") else (open_model if p_prov == "openrouter" else nine_model))
+            f_prov = (mode_dict.get("fallback_provider") or "openrouter").lower().strip()
+            f_mod = mode_dict.get("fallback_model") or (open_fallback if f_prov == "openrouter" else (local_model if f_prov in ("local_llm", "local", "ollama") else nine_model))
+            return p_prov, p_mod, f_prov, f_mod
+
+        if primary_choice in ("local_llm", "local", "ollama") and local_enabled:
+            p_prov, p_mod = "local_llm", local_model
+            if nine_enabled:
+                f_prov, f_mod = "nine_router", nine_model
+            else:
+                f_prov, f_mod = "openrouter", open_fallback
+        elif primary_choice in ("openrouter",) and open_enabled:
+            p_prov, p_mod = "openrouter", open_model
+            if nine_enabled:
+                f_prov, f_mod = "nine_router", nine_model
+            elif local_enabled:
+                f_prov, f_mod = "local_llm", local_model
+            else:
+                f_prov, f_mod = "openrouter", open_fallback
+        elif nine_enabled:
+            p_prov, p_mod = "nine_router", nine_model
+            if local_enabled:
+                f_prov, f_mod = "local_llm", local_model
+            else:
+                f_prov, f_mod = "openrouter", open_fallback
+        elif local_enabled:
+            p_prov, p_mod = "local_llm", local_model
+            f_prov, f_mod = "openrouter", open_fallback
+        else:
+            p_prov, p_mod = "openrouter", open_model
+            f_prov, f_mod = "openrouter", open_fallback
+
+        return p_prov, p_mod, f_prov, f_mod
+
     if active_mode:
         MAX_ITERATIONS = int(active_mode.get("max_iterations") or 15)
-        if active_mode.get("is_default"):
-            nine_enabled = sys_cfg.get("nine_router_enabled", True)
-            if nine_enabled:
-                primary_provider = "nine_router"
-                primary_model_name = sys_cfg.get("nine_router_model") or active_mode.get("model") or "ag/gemini-3.7-flash-medium"
-                fallback_provider = "openrouter"
-                fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
-            else:
-                primary_provider = "openrouter"
-                primary_model_name = sys_cfg.get("openrouter_model") or "openrouter/auto"
-                fallback_provider = "openrouter"
-                fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
-        else:
-            primary_provider = active_mode.get("provider") or "nine_router"
-            primary_model_name = active_mode.get("model") or "ag/gemini-3.7-flash-medium"
-            fallback_provider = active_mode.get("fallback_provider") or "openrouter"
-            fallback_model_name = active_mode.get("fallback_model") or sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+        primary_provider, primary_model_name, fallback_provider, fallback_model_name = _resolve_ai_endpoints(active_mode)
     else:
         MAX_ITERATIONS = 15
-        nine_router_enabled = sys_cfg.get("nine_router_enabled", True)
-        primary_provider = "nine_router" if nine_router_enabled else "openrouter"
-        primary_model_name = sys_cfg.get("nine_router_model") if nine_router_enabled else (sys_cfg.get("openrouter_model") or "openrouter/auto")
-        fallback_provider = "openrouter"
-        fallback_model_name = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
+        primary_provider, primary_model_name, fallback_provider, fallback_model_name = _resolve_ai_endpoints(None)
 
     is_en = getattr(chat_req, "language", "id") == "en"
 

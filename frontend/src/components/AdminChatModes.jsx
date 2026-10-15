@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Cpu,
   Edit3,
   Filter,
   Key,
@@ -57,8 +58,8 @@ const INITIAL_FORM = {
 const formatProviderLabel = (p) => {
   const clean = (p || '').toLowerCase().trim();
   if (clean === 'nine_router' || clean === '9router') return '9Router';
+  if (clean === 'local_llm' || clean === 'local' || clean === 'ollama') return 'LLM Local (Ollama)';
   if (clean === 'openrouter') return 'OpenRouter';
-  if (clean === 'ollama') return 'Ollama';
   if (clean === 'vllm') return 'vLLM';
   return p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Auto';
 };
@@ -90,10 +91,17 @@ export default function AdminChatModes({
   const [nineRouterModel, setNineRouterModel] = useState('');
   const [nineRouterApiKey, setNineRouterApiKey] = useState('');
 
+  const [localLlmEnabled, setLocalLlmEnabled] = useState(false);
+  const [localLlmBaseUrl, setLocalLlmBaseUrl] = useState('http://192.168.1.166:11434/v1');
+  const [localLlmModel, setLocalLlmModel] = useState('qwen3.8:latest');
+  const [localLlmApiKey, setLocalLlmApiKey] = useState('');
+
   const [openrouterEnabled, setOpenrouterEnabled] = useState(false);
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
   const [openrouterModel, setOpenrouterModel] = useState('');
   const [openrouterFallbackModel, setOpenrouterFallbackModel] = useState('');
+
+  const [primaryAiProvider, setPrimaryAiProvider] = useState('nine_router');
   const [savingProviders, setSavingProviders] = useState(false);
 
   const [newForm, setNewForm] = useState(INITIAL_FORM);
@@ -145,6 +153,11 @@ export default function AdminChatModes({
         setNineRouterBaseUrl(configRes.nine_router_base_url || 'http://192.168.88.83:20128/v1');
         setNineRouterModel(configRes.nine_router_model || 'ag/gemini-3.7-flash-medium');
         setNineRouterApiKey(configRes.nine_router_api_key || '');
+        setLocalLlmEnabled(configRes.local_llm_enabled !== undefined ? configRes.local_llm_enabled : false);
+        setLocalLlmBaseUrl(configRes.local_llm_base_url || 'http://192.168.1.166:11434/v1');
+        setLocalLlmModel(configRes.local_llm_model || 'qwen3.8:latest');
+        setLocalLlmApiKey(configRes.local_llm_api_key || '');
+        setPrimaryAiProvider(configRes.primary_ai_provider || 'nine_router');
         setOpenrouterEnabled(configRes.openrouter_enabled !== undefined ? configRes.openrouter_enabled : false);
         setOpenrouterApiKey(configRes.openrouter_api_key || '');
         setOpenrouterModel(configRes.openrouter_model || 'openrouter/auto');
@@ -294,6 +307,11 @@ export default function AdminChatModes({
         nine_router_base_url: nineRouterBaseUrl,
         nine_router_model: nineRouterModel,
         nine_router_api_key: nineRouterApiKey,
+        local_llm_enabled: localLlmEnabled,
+        local_llm_base_url: localLlmBaseUrl,
+        local_llm_model: localLlmModel,
+        local_llm_api_key: localLlmApiKey,
+        primary_ai_provider: primaryAiProvider,
         openrouter_enabled: openrouterEnabled,
         openrouter_api_key: openrouterApiKey,
         openrouter_model: openrouterModel,
@@ -668,7 +686,7 @@ export default function AdminChatModes({
         </div>
       )}
 
-      {/* AI Provider Gateway Settings (9Router & OpenRouter) */}
+      {/* AI Provider Gateway Settings (9Router, LLM Local, & OpenRouter) */}
       <div className="p-5 sm:p-6 rounded-2xl border border-line/80 bg-surface shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-line/80">
           <div>
@@ -678,8 +696,8 @@ export default function AdminChatModes({
             </h4>
             <p className="text-xs text-content-muted mt-0.5">
               {language === 'en'
-                ? 'Configure local 9Router cluster gateway or cloud OpenRouter failover provider.'
-                : 'Konfigurasi gateway kluster lokal 9Router dan failover cloud OpenRouter.'}
+                ? 'Configure local 9Router cluster, dedicated Local LLM (Ollama), or cloud OpenRouter failover.'
+                : 'Konfigurasi kluster 9Router, LLM Local (Ollama/Qwen), dan failover cloud OpenRouter secara mandiri.'}
             </p>
           </div>
           <button
@@ -693,7 +711,70 @@ export default function AdminChatModes({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
+        {/* Primary Gateway Selector Bar */}
+        <div className="p-3 bg-surface-sunken/70 rounded-xl border border-line/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-accent shrink-0" />
+            <span className="text-xs font-bold text-content">
+              {language === 'en' ? 'Active Primary Gateway:' : 'Gateway Utama Yang Aktif:'}
+            </span>
+            <span className="text-[11px] text-content-muted hidden md:inline">
+              {language === 'en' ? '(Used as default for all general chats)' : '(Digunakan otomatis untuk chat umum default)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                setPrimaryAiProvider('nine_router');
+                if (!nineRouterEnabled) setNineRouterEnabled(true);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                primaryAiProvider === 'nine_router'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-surface text-content-muted hover:text-content border border-line/70'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5" />
+              <span>9Router</span>
+              {primaryAiProvider === 'nine_router' && <Check className="w-3 h-3 ml-0.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrimaryAiProvider('local_llm');
+                if (!localLlmEnabled) setLocalLlmEnabled(true);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                primaryAiProvider === 'local_llm'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'bg-surface text-content-muted hover:text-content border border-line/70'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>LLM Local</span>
+              {primaryAiProvider === 'local_llm' && <Check className="w-3 h-3 ml-0.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPrimaryAiProvider('openrouter');
+                if (!openrouterEnabled) setOpenrouterEnabled(true);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                primaryAiProvider === 'openrouter'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-surface text-content-muted hover:text-content border border-line/70'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>OpenRouter</span>
+              {primaryAiProvider === 'openrouter' && <Check className="w-3 h-3 ml-0.5" />}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
           {/* Card 1: 9Router (Local Gateway) */}
           <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
             nineRouterEnabled 
@@ -706,11 +787,18 @@ export default function AdminChatModes({
                   <Server className="w-4 h-4" />
                 </div>
                 <div>
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-content">
-                    9Router (Local Gateway)
-                  </h5>
+                  <div className="flex items-center gap-1.5">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-content">
+                      9Router
+                    </h5>
+                    {primaryAiProvider === 'nine_router' && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                        {language === 'en' ? 'Primary' : 'Utama'}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[10px] text-indigo-400 font-medium">
-                    {language === 'en' ? 'Primary Priority / Internal Network' : 'Prioritas Utama / Internal Network'}
+                    {language === 'en' ? 'Local Cluster Gateway' : 'Cluster Gateway Lokal'}
                   </span>
                 </div>
               </div>
@@ -743,39 +831,123 @@ export default function AdminChatModes({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                    Model Name
-                  </label>
-                  <input 
-                    type="text"
-                    value={nineRouterModel}
-                    onChange={(e) => setNineRouterModel(e.target.value)}
-                    disabled={!nineRouterEnabled}
-                    className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                    placeholder="ag/gemini-3.7-flash-medium"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  Model Name
+                </label>
+                <input 
+                  type="text"
+                  value={nineRouterModel}
+                  onChange={(e) => setNineRouterModel(e.target.value)}
+                  disabled={!nineRouterEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
+                  placeholder="ag/gemini-3.7-flash-medium"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                    {language === 'en' ? 'API Key (Optional)' : 'API Key (Opsional)'}
-                  </label>
-                  <input 
-                    type="password"
-                    value={nineRouterApiKey}
-                    onChange={(e) => setNineRouterApiKey(e.target.value)}
-                    disabled={!nineRouterEnabled}
-                    className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none disabled:opacity-50 text-content transition-all"
-                    placeholder={language === 'en' ? 'Leave empty if unauthenticated' : 'Kosongkan jika tanpa auth'}
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  {language === 'en' ? 'API Key (Optional)' : 'API Key (Opsional)'}
+                </label>
+                <input 
+                  type="password"
+                  value={nineRouterApiKey}
+                  onChange={(e) => setNineRouterApiKey(e.target.value)}
+                  disabled={!nineRouterEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none disabled:opacity-50 text-content transition-all"
+                  placeholder={language === 'en' ? 'Leave empty if unauthenticated' : 'Kosongkan jika tanpa auth'}
+                />
               </div>
             </div>
           </div>
 
-          {/* Card 2: OpenRouter (Cloud Gateway) */}
+          {/* Card 2: LLM Local (Ollama / Qwen) */}
+          <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+            localLlmEnabled 
+              ? 'border-sky-500/40 bg-surface shadow-xs hover:border-sky-500/60' 
+              : 'border-line/70 bg-surface opacity-60'
+          } space-y-3.5`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-sky-500/15 text-sky-400 border border-sky-500/25 flex items-center justify-center font-bold shadow-2xs">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-content">
+                      LLM Local
+                    </h5>
+                    {primaryAiProvider === 'local_llm' && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-500/20 text-sky-400 border border-sky-500/30">
+                        {language === 'en' ? 'Primary' : 'Utama'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-sky-400 font-medium">
+                    {language === 'en' ? 'Ollama / Local Inference' : 'Ollama / Private Server'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLocalLlmEnabled(!localLlmEnabled)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition-all cursor-pointer ${
+                  localLlmEnabled ? 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-xs shadow-sky-500/30' : 'bg-line'
+                }`}
+                aria-label={t('common.toggle', { name: 'LLM Local' })}
+              >
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                  localLlmEnabled ? 'left-5.5' : 'left-0.5'
+                }`} />
+              </button>
+            </div>
+
+            <div className="space-y-3 pt-1">
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  Base URL
+                </label>
+                <input 
+                  type="text"
+                  value={localLlmBaseUrl}
+                  onChange={(e) => setLocalLlmBaseUrl(e.target.value)}
+                  disabled={!localLlmEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
+                  placeholder="http://192.168.1.166:11434/v1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  Model Name
+                </label>
+                <input 
+                  type="text"
+                  value={localLlmModel}
+                  onChange={(e) => setLocalLlmModel(e.target.value)}
+                  disabled={!localLlmEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
+                  placeholder="qwen3.8:latest"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  {language === 'en' ? 'API Key (Optional)' : 'API Key (Opsional)'}
+                </label>
+                <input 
+                  type="password"
+                  value={localLlmApiKey}
+                  onChange={(e) => setLocalLlmApiKey(e.target.value)}
+                  disabled={!localLlmEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 outline-none disabled:opacity-50 text-content transition-all"
+                  placeholder={language === 'en' ? 'Leave empty for Ollama' : 'Kosongkan jika tanpa auth (Ollama)'}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: OpenRouter (Cloud Gateway) */}
           <div className={`p-4 sm:p-5 rounded-2xl border transition-all ${
             openrouterEnabled 
               ? 'border-emerald-500/40 bg-surface shadow-xs hover:border-emerald-500/60' 
@@ -787,9 +959,16 @@ export default function AdminChatModes({
                   <Key className="w-4 h-4" />
                 </div>
                 <div>
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-content">
-                    OpenRouter (Cloud AI)
-                  </h5>
+                  <div className="flex items-center gap-1.5">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-content">
+                      OpenRouter
+                    </h5>
+                    {primaryAiProvider === 'openrouter' && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        {language === 'en' ? 'Primary' : 'Utama'}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-[10px] text-emerald-400 font-medium">
                     {language === 'en' ? 'Cloud Failover / Alternative' : 'Cloud Failover / Alternatif'}
                   </span>
@@ -824,34 +1003,32 @@ export default function AdminChatModes({
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                    Primary Model
-                  </label>
-                  <input 
-                    type="text"
-                    value={openrouterModel}
-                    onChange={(e) => setOpenrouterModel(e.target.value)}
-                    disabled={!openrouterEnabled}
-                    className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                    placeholder="openrouter/auto"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  Primary Model
+                </label>
+                <input 
+                  type="text"
+                  value={openrouterModel}
+                  onChange={(e) => setOpenrouterModel(e.target.value)}
+                  disabled={!openrouterEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
+                  placeholder="openrouter/auto"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                    Fallback Model
-                  </label>
-                  <input 
-                    type="text"
-                    value={openrouterFallbackModel}
-                    onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
-                    disabled={!openrouterEnabled}
-                    className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                    placeholder="openrouter/free"
-                  />
-                </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-content-muted mb-1">
+                  Fallback Model
+                </label>
+                <input 
+                  type="text"
+                  value={openrouterFallbackModel}
+                  onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
+                  disabled={!openrouterEnabled}
+                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
+                  placeholder="openrouter/free"
+                />
               </div>
             </div>
           </div>
@@ -2144,6 +2321,7 @@ export default function AdminChatModes({
                     className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
+                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
                     <option value="openrouter">OpenRouter (Cloud)</option>
                   </select>
                 </div>
@@ -2337,6 +2515,7 @@ export default function AdminChatModes({
                     className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
+                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
                     <option value="openrouter">OpenRouter (Cloud)</option>
                   </select>
                 </div>
