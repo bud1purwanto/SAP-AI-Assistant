@@ -38,6 +38,7 @@ from database import (
     create_new_user,
     create_user_session,
     invalidate_existing_user_sessions,
+    get_active_sessions_by_username,
     get_user_session,
     get_user_by_username,
     update_session_heartbeat,
@@ -479,7 +480,12 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
                 session = r.json()
                 principal = _map_dashboard_user(session["user"], session["accessToken"])
                 access_token = session["accessToken"]
-                refresh_token = r.cookies.get("refresh_token")
+                refresh_token = (
+                    r.cookies.get("refresh_token")
+                    or r.cookies.get("refreshToken")
+                    or session.get("refreshToken")
+                    or session.get("refresh_token")
+                )
                 if refresh_token:
                     principal["refresh_token"] = refresh_token
                 principal["oidc_expires_in"] = int(session.get("expiresIn") or 900)
@@ -535,24 +541,25 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
     # PostgreSQL FK bersifat case-sensitive, sedangkan pencarian user lokal tidak.
     principal["username"] = local_user["username"]
 
-    # Single-session enforcement & daftarkan sesi baru
+    # Multiple-sessions support: Jangan menonaktifkan sesi lama.
+    # Cek apakah akun ini juga sedang aktif di perangkat/sesi lain untuk audit & info log.
     session_id = str(uuid.uuid4())
-    kicked = invalidate_existing_user_sessions(
-        username=principal["username"],
-        reason=f"Akun Anda telah login di perangkat lain ({dev_name} - {client_ip}). Sesi di perangkat ini dinonaktifkan.",
-    )
-    for old_s in kicked:
-        record_auth_audit_log(
-            event_type="SESSION_KICKED_NEW_LOGIN",
-            username=principal["username"],
-            ip_address=client_ip,
-            device_name=dev_name,
-            device_type=dev_type,
-            browser=dev_browser,
-            os=dev_os,
-            status="WARNING",
-            details=f"Sesi lama ({old_s.get('device_name')} - {old_s.get('ip_address')}) diputuskan otomatis karena login baru dari {dev_name} ({client_ip}).",
-        )
+    existing_sessions = get_active_sessions_by_username(username=principal["username"])
+    has_concurrent_sessions = len(existing_sessions) > 0
+
+    if has_concurrent_sessions:
+        for old_s in existing_sessions:
+            record_auth_audit_log(
+                event_type="CONCURRENT_LOGIN_DETECTED",
+                username=principal["username"],
+                ip_address=client_ip,
+                device_name=dev_name,
+                device_type=dev_type,
+                browser=dev_browser,
+                os=dev_os,
+                status="INFO",
+                details=f"Login bersamaan aktif di perangkat {dev_name} ({client_ip}). Sesi lain tetap aktif di {old_s.get('device_name')} ({old_s.get('ip_address')}).",
+            )
 
     sess_expires_at = datetime.now(timezone.utc) + timedelta(seconds=session_exp_sec)
 
@@ -582,8 +589,18 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
         details="Login berhasil.",
     )
 
+    active_devices = [s.get("device_name") for s in existing_sessions if s.get("device_name")]
+    concurrent_warning_msg = (
+        f"Akun Anda juga sedang aktif di {len(existing_sessions)} perangkat lain."
+        if has_concurrent_sessions else None
+    )
+
     principal["session_id"] = session_id
     principal["session_expire_seconds"] = session_exp_sec
+    principal["concurrent_login_warning"] = has_concurrent_sessions
+    principal["active_sessions_count"] = len(existing_sessions)
+    principal["active_devices"] = active_devices
+    principal["concurrent_warning_message"] = concurrent_warning_msg
 
     response.set_cookie(
         key=settings.session_cookie_name,
@@ -600,6 +617,10 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
         "token_type": "bearer",
         "session_id": session_id,
         "device_name": dev_name,
+        "concurrent_login_warning": has_concurrent_sessions,
+        "active_sessions_count": len(existing_sessions),
+        "active_devices": active_devices,
+        "warning_message": concurrent_warning_msg,
         "user": {**principal, "authenticated": True},
     }
 
@@ -760,8 +781,12 @@ class HeartbeatRequest(BaseModel):
 
 
 @app.post("/api/auth/heartbeat")
-async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current_user)):
-    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & mengecek status keaktifan sesi."""
+async def auth_heartbeat(
+    req: HeartbeatRequest,
+    response: Response,
+    user: dict = Depends(get_current_user),
+):
+    """Heartbeat berkala dari frontend untuk memperbarui aktivitas & memperpanjang masa aktif sesi (sliding session)."""
     session_id = user.get("session_id")
     if not session_id:
         return {"status": "ok", "is_active": True}
@@ -776,6 +801,20 @@ async def auth_heartbeat(req: HeartbeatRequest, user: dict = Depends(get_current
             status_code=401,
             detail={"code": "SESSION_KICKED", "reason": reason or "Sesi Anda telah dihentikan."},
         )
+
+    # Perbarui sliding session cookie agar browser tidak pernah kehilangan sesi selama aktif
+    session_exp_sec = int(getattr(settings, "session_expire_hours", 24) * 3600)
+    user_copy = dict(user)
+    user_copy["session_expire_seconds"] = session_exp_sec
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=create_session_cookie(user_copy),
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        max_age=session_exp_sec,
+        path="/",
+    )
     return {"status": "ok", "is_active": True}
 
 # --- PER-USER SAP CREDENTIALS ---

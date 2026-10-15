@@ -105,13 +105,23 @@ def _try_refresh_dashboard_token(session_id: str, refresh_token: str) -> Optiona
     base = settings.dashboard_oidc_issuer.rstrip("/")
     try:
         import httpx
-        with httpx.Client(timeout=5.0) as client:
-            res = client.post(f"{base}/v1/auth/refresh", cookies={"refresh_token": refresh_token})
+        with httpx.Client(timeout=10.0) as client:
+            res = client.post(
+                f"{base}/v1/auth/refresh",
+                json={"refreshToken": refresh_token, "refresh_token": refresh_token},
+                cookies={"refresh_token": refresh_token, "refreshToken": refresh_token},
+            )
             if res.status_code == 200:
                 data = res.json()
-                new_access = data.get("accessToken")
-                new_refresh = res.cookies.get("refresh_token") or refresh_token
-                expires_in = int(data.get("expiresIn") or 900)
+                new_access = data.get("accessToken") or data.get("access_token")
+                new_refresh = (
+                    res.cookies.get("refresh_token")
+                    or res.cookies.get("refreshToken")
+                    or data.get("refreshToken")
+                    or data.get("refresh_token")
+                    or refresh_token
+                )
+                expires_in = int(data.get("expiresIn") or data.get("expires_in") or 900)
                 now = datetime.now(timezone.utc)
                 new_exp = now + timedelta(seconds=expires_in)
                 _dashboard_tokens[session_id] = (new_access, new_exp, new_refresh)
@@ -198,8 +208,7 @@ def _session_dashboard_token(session_id: Optional[str]) -> Optional[str]:
         raise
     except Exception as exc:
         logger.exception("Gagal memulihkan token OIDC dari sesi aktif")
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Sesi belum dapat diverifikasi. Coba lagi.") from exc
+        return None
 
 
 def decode_session_cookie(token: str) -> Optional[dict]:

@@ -4816,6 +4816,32 @@ def invalidate_existing_user_sessions(
     return kicked_list
 
 
+def get_active_sessions_by_username(
+    username: str,
+    except_session_id: Optional[str] = None,
+) -> list[dict]:
+    """Mengambil daftar sesi aktif milik pengguna tertentu tanpa menonaktifkannya."""
+    if not username:
+        return []
+    engine = get_engine()
+    with engine.connect() as conn:
+        now = datetime.now(timezone.utc)
+        query = """
+            SELECT id, device_name, device_type, ip_address, browser, os, created_at, last_active_at
+            FROM {DB_SCHEMA}.user_sessions
+            WHERE LOWER(username) = LOWER(:u)
+              AND is_active = TRUE
+              AND (expires_at IS NULL OR expires_at > :now)
+        """
+        params = {"u": username.strip(), "now": now}
+        if except_session_id:
+            query += " AND id != :except_id"
+            params["except_id"] = except_session_id
+        query += " ORDER BY last_active_at DESC"
+        rows = conn.execute(text(query), params).fetchall()
+        return [dict(r._mapping) for r in rows]
+
+
 def get_user_session(session_id: str) -> Optional[dict]:
     """Mengambil detail satu sesi berdasarkan ID."""
     if not session_id:
@@ -4839,7 +4865,7 @@ def update_session_heartbeat(
     current_path: Optional[str] = None,
     is_idle: bool = False,
 ) -> tuple[bool, Optional[str]]:
-    """Perbarui waktu aktif sesi. Kembalikan (is_active, kick_reason)."""
+    """Perbarui waktu aktif sesi dan perpanjang masa berlaku (sliding session). Kembalikan (is_active, kick_reason)."""
     if not session_id:
         return False, "Sesi tidak ditemukan"
     engine = get_engine()
@@ -4854,9 +4880,11 @@ def update_session_heartbeat(
         if not row.is_active:
             return False, row.kick_reason or "Sesi telah dihentikan"
 
+        # Perpanjang expires_at secara bergulir (sliding window 24 jam) selama pengguna aktif
         conn.execute(text("""
             UPDATE {DB_SCHEMA}.user_sessions
             SET last_active_at = CURRENT_TIMESTAMP,
+                expires_at = CURRENT_TIMESTAMP + INTERVAL '24 hours',
                 current_action = COALESCE(:action, current_action),
                 current_path = COALESCE(:path, current_path),
                 is_idle = :idle

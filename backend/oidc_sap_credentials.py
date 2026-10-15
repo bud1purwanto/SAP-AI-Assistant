@@ -10,7 +10,10 @@ from mcp_registry import mcp_control_plane_base
 
 
 def _token(user: dict) -> str:
-    token = (user or {}).get("dashboard_token") or (user or {}).get("access_token")
+    from auth import get_dashboard_access_token, _resolve_dashboard_token
+    token = (user or {}).get("dashboard_token") or (user or {}).get("access_token") or get_dashboard_access_token()
+    if not token and user and user.get("session_id"):
+        token = _resolve_dashboard_token(user.get("session_id"))
     if not token:
         raise HTTPException(status_code=401, detail="Sesi OIDC perlu diperbarui. Silakan login kembali.")
     return token

@@ -345,6 +345,7 @@ export const TRANSLATIONS = {
     'login.badge': 'Enterprise Security Portal',
     'login.success': 'Login successful! Redirecting…',
     'login.clearUsername': 'Clear username',
+    'login.concurrentNotice': 'Notice: This account is also currently active on {count} other device(s).',
 
     // Confirmation Modal
     'confirm.defaultTitle': 'Confirmation',
@@ -972,6 +973,7 @@ export const TRANSLATIONS = {
     'login.badge': 'Portal Keamanan Enterprise',
     'login.success': 'Login berhasil! Mengalihkan…',
     'login.clearUsername': 'Hapus username',
+    'login.concurrentNotice': 'Perhatian: Akun ini juga sedang aktif di {count} perangkat lain.',
 
     // Confirmation Modal
     'confirm.defaultTitle': 'Konfirmasi',

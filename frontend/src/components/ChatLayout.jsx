@@ -2682,6 +2682,13 @@ const ChatLayout = () => {
           setCustomLoginMsg('');
           fetchServers();
           fetchModes();
+          if (loggedInUser?.concurrent_login_warning) {
+            showToast(
+              t('login.concurrentNotice', { count: loggedInUser.active_sessions_count || 1 }),
+              'info',
+              { duration: 6000 }
+            );
+          }
         }}
       />
 

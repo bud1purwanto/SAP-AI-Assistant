@@ -74,6 +74,12 @@ export default function AdminSecurityLogs() {
           label: isEn ? 'Login Blocked (Brute-force)' : 'Diblokir (Brute-force)',
           color: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
         };
+      case 'CONCURRENT_LOGIN_DETECTED':
+        return {
+          icon: Monitor,
+          label: isEn ? 'Concurrent Login' : 'Login Bersamaan (Multi-Perangkat)',
+          color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
+        };
       case 'SESSION_KICKED_NEW_LOGIN':
         return {
           icon: PowerOff,
@@ -137,6 +143,7 @@ export default function AdminSecurityLogs() {
           >
             <option value="">{t('securityLogs.filterEventAll')}</option>
             <option value="LOGIN_SUCCESS">{isEn ? 'Login Success' : 'Login Sukses'}</option>
+            <option value="CONCURRENT_LOGIN_DETECTED">{isEn ? 'Concurrent Login' : 'Login Bersamaan'}</option>
             <option value="LOGIN_FAILED">{isEn ? 'Login Failed' : 'Login Gagal'}</option>
             <option value="LOGIN_BLOCKED">{isEn ? 'Login Blocked' : 'Login Diblokir'}</option>
             <option value="SESSION_KICKED_NEW_LOGIN">{isEn ? 'Kicked (New Login)' : 'Diputus (Login Baru)'}</option>
