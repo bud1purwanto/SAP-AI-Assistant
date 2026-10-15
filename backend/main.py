@@ -2473,6 +2473,190 @@ async def reorder_modes_endpoint(req: AdminReorderModesRequest, admin: dict = De
     return {"status": "success", "message": "Urutan mode berhasil diperbarui.", "modes": get_chat_modes()}
 
 
+@app.get("/api/admin/models/available")
+async def get_admin_available_models_endpoint(
+    provider: Optional[str] = None,
+    admin: dict = Depends(require_superadmin),
+):
+    """Mendapatkan daftar model AI yang tersedia/terdeteksi per provider gateway secara dinamis."""
+    import httpx
+    cfg = get_system_config()
+
+    results = {}
+    target_providers = [provider.lower().strip()] if provider else ["9router", "local_llm", "openrouter"]
+
+    # 1. 9Router
+    if any(p in target_providers for p in ("9router", "nine_router")):
+        b_url = (cfg.get("nine_router_base_url") or "http://192.168.88.83:20128/v1").rstrip("/")
+        api_key = (cfg.get("nine_router_api_key") or "").strip()
+        models = []
+        online = False
+        msg = ""
+
+        fallback_models = [
+            "ag/gemini-3.7-flash-medium",
+            "ag/gemini-2.5-pro",
+            "ag/claude-3-5-sonnet",
+            "ag/gpt-4o",
+            "ag/deepseek-r1",
+        ]
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            target_url = f"{b_url}/models"
+            async with httpx.AsyncClient(timeout=3.5) as client:
+                resp = await client.get(target_url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("data") if isinstance(data, dict) and "data" in data else (data.get("models") if isinstance(data, dict) else [])
+                    if isinstance(raw_items, list):
+                        for item in raw_items:
+                            m_id = item.get("id") if isinstance(item, dict) else str(item)
+                            if m_id and m_id not in models:
+                                models.append(m_id)
+                    online = True
+                    msg = f"Connected ({len(models)} models available)"
+        except Exception as e:
+            logger.warning(f"Gagal mendeteksi model 9Router ({b_url}): {e}")
+            msg = f"Offline / Fallback presets ({str(e)})"
+
+        if not models:
+            models = fallback_models
+
+        results["9router"] = {
+            "provider": "9router",
+            "online": online,
+            "models": models,
+            "message": msg,
+        }
+        results["nine_router"] = results["9router"]
+
+    # 2. LLM Local (Ollama)
+    if any(p in target_providers for p in ("local_llm", "local", "ollama")):
+        b_url = (cfg.get("local_llm_base_url") or "http://192.168.1.166:11434/v1").rstrip("/")
+        api_key = (cfg.get("local_llm_api_key") or "").strip()
+        models = []
+        online = False
+        msg = ""
+
+        fallback_models = [
+            "qwen3.8:latest",
+            "qwen2.5:7b",
+            "deepseek-r1:8b",
+            "llama3.1:latest",
+            "mistral:latest",
+        ]
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            target_url = f"{b_url}/models"
+            async with httpx.AsyncClient(timeout=3.5) as client:
+                resp = await client.get(target_url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("data") if isinstance(data, dict) and "data" in data else []
+                    if isinstance(raw_items, list):
+                        for item in raw_items:
+                            m_id = item.get("id") if isinstance(item, dict) else str(item)
+                            if m_id and m_id not in models:
+                                models.append(m_id)
+
+                if not models:
+                    root_url = re.sub(r"/v1/?$", "", b_url)
+                    tags_resp = await client.get(f"{root_url}/api/tags", headers=headers)
+                    if tags_resp.status_code == 200:
+                        tdata = tags_resp.json()
+                        raw_models = tdata.get("models") if isinstance(tdata, dict) else []
+                        if isinstance(raw_models, list):
+                            for rm in raw_models:
+                                m_name = rm.get("name") if isinstance(rm, dict) else str(rm)
+                                if m_name and m_name not in models:
+                                    models.append(m_name)
+
+            if models:
+                online = True
+                msg = f"Connected ({len(models)} local models in Ollama)"
+        except Exception as e:
+            logger.warning(f"Gagal mendeteksi model LLM Local ({b_url}): {e}")
+            msg = f"Offline / Fallback presets ({str(e)})"
+
+        if not models:
+            models = fallback_models
+
+        results["local_llm"] = {
+            "provider": "local_llm",
+            "online": online,
+            "models": models,
+            "message": msg,
+        }
+
+    # 3. OpenRouter
+    if any(p in target_providers for p in ("openrouter",)):
+        api_key = (cfg.get("openrouter_api_key") or "").strip()
+        models = []
+        online = False
+        msg = ""
+
+        curated_openrouter = [
+            "openrouter/auto",
+            "openrouter/free",
+            "anthropic/claude-3.5-sonnet",
+            "google/gemini-2.0-flash-exp:free",
+            "google/gemini-flash-1.5",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-r1",
+            "openai/gpt-4o-mini",
+            "openai/gpt-4o",
+            "qwen/qwen-2.5-72b-instruct",
+            "mistralai/mistral-large-2407",
+        ]
+
+        try:
+            headers = {}
+            if api_key:
+                headers["Authorization"] = f"Bearer {api_key}"
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.get("https://openrouter.ai/api/v1/models", headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("data") if isinstance(data, dict) and "data" in data else []
+                    live_ids = []
+                    if isinstance(raw_items, list):
+                        for item in raw_items:
+                            m_id = item.get("id") if isinstance(item, dict) else str(item)
+                            if m_id:
+                                live_ids.append(m_id)
+                    if live_ids:
+                        online = True
+                        msg = f"Connected ({len(live_ids)} models available)"
+                        ordered = [m for m in curated_openrouter if m in live_ids]
+                        remainder = [m for m in live_ids if m not in ordered]
+                        models = ordered + remainder
+        except Exception as e:
+            logger.warning(f"Gagal mengambil model dari OpenRouter API: {e}")
+            msg = f"Offline / Fallback presets ({str(e)})"
+
+        if not models:
+            models = curated_openrouter
+
+        results["openrouter"] = {
+            "provider": "openrouter",
+            "online": online,
+            "models": models,
+            "message": msg,
+        }
+
+    return {"status": "success", "providers": results}
+
+
+
 class AdminUserModeOverrideItem(BaseModel):
     mode_code: str
     state: Optional[str] = None  # "inherit" | "allow" | "deny"

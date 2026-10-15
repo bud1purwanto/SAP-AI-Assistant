@@ -275,6 +275,8 @@ export const api = {
 
   getModes: () => apiFetch('/api/modes', { auth: false }),
   adminModes: () => apiFetch('/api/admin/modes'),
+  adminAvailableModels: (provider = '') =>
+    apiFetch(`/api/admin/models/available${provider ? `?provider=${encodeURIComponent(provider)}` : ''}`),
   adminCreateMode: (payload) => apiFetch('/api/admin/modes', { method: 'POST', body: payload }),
   adminUpdateMode: (id, payload) => apiFetch(`/api/admin/modes/${id}`, { method: 'PUT', body: payload }),
   adminDeleteMode: (id) => apiFetch(`/api/admin/modes/${id}`, { method: 'DELETE' }),

@@ -64,7 +64,7 @@ const formatProviderLabel = (p) => {
   return p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Auto';
 };
 
-const resolveDynamicGatewayMode = (mode, gatewayState) => {
+const resolveDynamicGatewayMode = (mode, gatewayState, availableModels) => {
   if (!mode || !mode.is_default) return mode;
   const {
     nineRouterEnabled,
@@ -82,9 +82,9 @@ const resolveDynamicGatewayMode = (mode, gatewayState) => {
   const openEnabled = Boolean(openrouterEnabled);
   const primaryChoice = (primaryAiProvider || 'nine_router').toLowerCase().trim();
 
-  const nineModel = nineRouterModel || 'ag/gemini-3.7-flash-medium';
-  const localModel = localLlmModel || 'qwen3.8:latest';
-  const openModel = openrouterModel || 'openrouter/auto';
+  const nineModel = nineRouterModel || availableModels?.['9router']?.[0] || 'ag/gemini-3.7-flash-medium';
+  const localModel = localLlmModel || availableModels?.['local_llm']?.[0] || 'qwen3.8:latest';
+  const openModel = openrouterModel || availableModels?.['openrouter']?.[0] || 'openrouter/auto';
   const openFallback = openrouterFallbackModel || 'openrouter/free';
 
   let p_prov = 'openrouter';
@@ -206,6 +206,44 @@ export default function AdminChatModes({
   const [primaryAiProvider, setPrimaryAiProvider] = useState('nine_router');
   const [savingProviders, setSavingProviders] = useState(false);
 
+  // Dynamic Available Models per Provider State
+  const [availableModels, setAvailableModels] = useState({
+    '9router': [
+      'ag/gemini-3.7-flash-medium',
+      'ag/gemini-2.5-pro',
+      'ag/claude-3-5-sonnet',
+      'ag/gpt-4o',
+      'ag/deepseek-r1',
+    ],
+    'local_llm': [
+      'qwen3.8:latest',
+      'qwen2.5:7b',
+      'deepseek-r1:8b',
+      'llama3.1:latest',
+      'mistral:latest',
+    ],
+    'openrouter': [
+      'openrouter/auto',
+      'openrouter/free',
+      'anthropic/claude-3.5-sonnet',
+      'google/gemini-2.0-flash-exp:free',
+      'google/gemini-flash-1.5',
+      'meta-llama/llama-3.3-70b-instruct',
+      'deepseek/deepseek-chat',
+      'deepseek/deepseek-r1',
+      'openai/gpt-4o-mini',
+      'openai/gpt-4o',
+      'qwen/qwen-2.5-72b-instruct',
+      'mistralai/mistral-large-2407',
+    ],
+  });
+  const [providerStatus, setProviderStatus] = useState({});
+  const [syncingModels, setSyncingModels] = useState(false);
+  const [newCustomModelActive, setNewCustomModelActive] = useState(false);
+  const [editCustomModelActive, setEditCustomModelActive] = useState(false);
+  const [newCustomFallbackActive, setNewCustomFallbackActive] = useState(false);
+  const [editCustomFallbackActive, setEditCustomFallbackActive] = useState(false);
+
   const [newForm, setNewForm] = useState(INITIAL_FORM);
   const [editForm, setEditForm] = useState(INITIAL_FORM);
 
@@ -231,14 +269,35 @@ export default function AdminChatModes({
     return { bg: c.bg, text: c.text, border: c.border };
   };
 
+  const fetchAvailableModels = async () => {
+    setSyncingModels(true);
+    try {
+      const res = await api.adminAvailableModels();
+      if (res && res.providers) {
+        setProviderStatus(res.providers);
+        setAvailableModels((prev) => ({
+          ...prev,
+          '9router': res.providers['9router']?.models?.length ? res.providers['9router'].models : prev['9router'],
+          'local_llm': res.providers['local_llm']?.models?.length ? res.providers['local_llm'].models : prev['local_llm'],
+          'openrouter': res.providers['openrouter']?.models?.length ? res.providers['openrouter'].models : prev['openrouter'],
+        }));
+      }
+    } catch (err) {
+      console.warn('Gagal fetch available models:', err);
+    } finally {
+      setSyncingModels(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [modesRes, rolesRes, configRes, usersRes] = await Promise.all([
+      const [modesRes, rolesRes, configRes, usersRes, modelsRes] = await Promise.all([
         api.adminModes(),
         api.adminRoleModes(),
         api.getConfig(),
         api.adminModesUsersList().catch(() => []),
+        api.adminAvailableModels().catch(() => null),
       ]);
       setModesList(modesRes?.modes || []);
       setMasterEnabled(Boolean(modesRes?.chat_modes_enabled));
@@ -248,6 +307,16 @@ export default function AdminChatModes({
       setModeUsersList(uList);
       if (uList.length > 0) {
         setSelectedUser((prev) => prev || uList[0].username);
+      }
+
+      if (modelsRes?.providers) {
+        setProviderStatus(modelsRes.providers);
+        setAvailableModels((prev) => ({
+          ...prev,
+          '9router': modelsRes.providers['9router']?.models?.length ? modelsRes.providers['9router'].models : prev['9router'],
+          'local_llm': modelsRes.providers['local_llm']?.models?.length ? modelsRes.providers['local_llm'].models : prev['local_llm'],
+          'openrouter': modelsRes.providers['openrouter']?.models?.length ? modelsRes.providers['openrouter'].models : prev['openrouter'],
+        }));
       }
 
       if (configRes) {
@@ -802,15 +871,27 @@ export default function AdminChatModes({
                 : 'Konfigurasi kluster 9Router, LLM Local (Ollama/Qwen), dan failover cloud OpenRouter secara mandiri.'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleSaveProviders}
-            disabled={savingProviders}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span>{savingProviders ? (language === 'en' ? 'Saving...' : 'Menyimpan...') : (language === 'en' ? 'Save Providers' : 'Simpan Provider')}</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={fetchAvailableModels}
+              disabled={syncingModels}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-surface-sunken hover:bg-surface-hover text-content border border-line rounded-xl text-xs font-semibold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+              title={language === 'en' ? 'Detect models from AI gateways' : 'Deteksi ketersediaan model dari gateway'}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-accent ${syncingModels ? 'animate-spin' : ''}`} />
+              <span>{syncingModels ? (language === 'en' ? 'Detecting...' : 'Mendeteksi...') : (language === 'en' ? 'Sync Models' : 'Deteksi Model')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveProviders}
+              disabled={savingProviders}
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-xl text-xs font-bold shadow-sm shadow-indigo-500/25 transition-all disabled:opacity-50 cursor-pointer shrink-0 active:scale-95"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{savingProviders ? (language === 'en' ? 'Saving...' : 'Menyimpan...') : (language === 'en' ? 'Save Providers' : 'Simpan Gateway')}</span>
+            </button>
+          </div>
         </div>
 
         {/* Primary Gateway Selector Bar */}
@@ -933,18 +1014,27 @@ export default function AdminChatModes({
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                  Model Name
-                </label>
-                <input 
-                  type="text"
-                  value={nineRouterModel}
-                  onChange={(e) => setNineRouterModel(e.target.value)}
-                  disabled={!nineRouterEnabled}
-                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                  placeholder="ag/gemini-3.7-flash-medium"
-                />
+              {/* Detected Models Indicator */}
+              <div className="p-2.5 rounded-xl bg-surface-sunken/80 border border-line text-[11px] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-content-muted font-medium">{language === 'en' ? 'Available Models:' : 'Model Terhubung:'}</span>
+                  <span className={`font-mono font-semibold text-[10px] flex items-center gap-1.5 ${providerStatus['9router']?.online ? 'text-indigo-400' : 'text-content-subtle'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${providerStatus['9router']?.online ? 'bg-indigo-400 animate-pulse' : 'bg-content-subtle'}`} />
+                    {(availableModels['9router'] || []).length} {language === 'en' ? 'models ready' : 'model aktif'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                  {(availableModels['9router'] || []).slice(0, 2).map((m, idx) => (
+                    <span key={idx} className="px-1.5 py-0.5 rounded bg-surface border border-line/60 font-mono text-[9px] text-content-muted truncate max-w-[160px]">
+                      {m}
+                    </span>
+                  ))}
+                  {(availableModels['9router'] || []).length > 2 && (
+                    <span className="text-[9px] text-indigo-400 font-mono font-bold">
+                      +{(availableModels['9router'] || []).length - 2}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1019,18 +1109,27 @@ export default function AdminChatModes({
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                  Model Name
-                </label>
-                <input 
-                  type="text"
-                  value={localLlmModel}
-                  onChange={(e) => setLocalLlmModel(e.target.value)}
-                  disabled={!localLlmEnabled}
-                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-sky-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                  placeholder="qwen3.8:latest"
-                />
+              {/* Detected Models Indicator */}
+              <div className="p-2.5 rounded-xl bg-surface-sunken/80 border border-line text-[11px] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-content-muted font-medium">{language === 'en' ? 'Ollama Models:' : 'Model Ollama:'}</span>
+                  <span className={`font-mono font-semibold text-[10px] flex items-center gap-1.5 ${providerStatus['local_llm']?.online ? 'text-sky-400' : 'text-content-subtle'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${providerStatus['local_llm']?.online ? 'bg-sky-400 animate-pulse' : 'bg-content-subtle'}`} />
+                    {(availableModels['local_llm'] || []).length} {language === 'en' ? 'models ready' : 'model aktif'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                  {(availableModels['local_llm'] || []).slice(0, 2).map((m, idx) => (
+                    <span key={idx} className="px-1.5 py-0.5 rounded bg-surface border border-line/60 font-mono text-[9px] text-content-muted truncate max-w-[160px]">
+                      {m}
+                    </span>
+                  ))}
+                  {(availableModels['local_llm'] || []).length > 2 && (
+                    <span className="text-[9px] text-sky-400 font-mono font-bold">
+                      +{(availableModels['local_llm'] || []).length - 2}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1105,32 +1204,27 @@ export default function AdminChatModes({
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                  Primary Model
-                </label>
-                <input 
-                  type="text"
-                  value={openrouterModel}
-                  onChange={(e) => setOpenrouterModel(e.target.value)}
-                  disabled={!openrouterEnabled}
-                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                  placeholder="openrouter/auto"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-content-muted mb-1">
-                  Fallback Model
-                </label>
-                <input 
-                  type="text"
-                  value={openrouterFallbackModel}
-                  onChange={(e) => setOpenrouterFallbackModel(e.target.value)}
-                  disabled={!openrouterEnabled}
-                  className="w-full text-xs px-3 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-emerald-500/30 outline-none disabled:opacity-50 text-content font-mono transition-all"
-                  placeholder="openrouter/free"
-                />
+              {/* Detected Models Indicator */}
+              <div className="p-2.5 rounded-xl bg-surface-sunken/80 border border-line text-[11px] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-content-muted font-medium">{language === 'en' ? 'Cloud Catalog:' : 'Katalog Cloud:'}</span>
+                  <span className={`font-mono font-semibold text-[10px] flex items-center gap-1.5 ${providerStatus['openrouter']?.online ? 'text-emerald-400' : 'text-content-subtle'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${providerStatus['openrouter']?.online ? 'bg-emerald-400 animate-pulse' : 'bg-content-subtle'}`} />
+                    {(availableModels['openrouter'] || []).length} {language === 'en' ? 'models cataloged' : 'model terdaftar'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                  {(availableModels['openrouter'] || []).slice(0, 2).map((m, idx) => (
+                    <span key={idx} className="px-1.5 py-0.5 rounded bg-surface border border-line/60 font-mono text-[9px] text-content-muted truncate max-w-[160px]">
+                      {m}
+                    </span>
+                  ))}
+                  {(availableModels['openrouter'] || []).length > 2 && (
+                    <span className="text-[9px] text-emerald-400 font-mono font-bold">
+                      +{(availableModels['openrouter'] || []).length - 2}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1277,7 +1371,7 @@ export default function AdminChatModes({
                   openrouterModel,
                   openrouterFallbackModel,
                   primaryAiProvider,
-                });
+                }, availableModels);
                 const realIndex = modesList.findIndex((m) => m.id === mode.id);
                 return (
                 <div
@@ -2431,7 +2525,14 @@ export default function AdminChatModes({
                   <label className="block text-xs font-semibold text-content-muted mb-1">Provider *</label>
                   <select
                     value={newForm.provider}
-                    onChange={(e) => setNewForm({ ...newForm, provider: e.target.value })}
+                    onChange={(e) => {
+                      const newProv = e.target.value;
+                      const provKey = newProv === 'nine_router' ? '9router' : newProv;
+                      const provModels = availableModels[provKey] || availableModels[newProv] || [];
+                      const defaultMod = provModels[0] || (newProv === 'local_llm' ? 'qwen3.8:latest' : newProv === 'openrouter' ? 'openrouter/auto' : 'ag/gemini-3.7-flash-medium');
+                      setNewCustomModelActive(false);
+                      setNewForm({ ...newForm, provider: newProv, model: defaultMod });
+                    }}
                     className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
@@ -2440,14 +2541,118 @@ export default function AdminChatModes({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1">Model *</label>
-                  <input
-                    type="text"
-                    required
-                    value={newForm.model}
-                    onChange={(e) => setNewForm({ ...newForm, model: e.target.value })}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all"
-                  />
+                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
+                    <span>Model *</span>
+                    <span className="text-[10px] text-content-subtle font-normal">
+                      {providerStatus[newForm.provider]?.online ? '● Live' : '○ Presets'}
+                    </span>
+                  </label>
+                  {(() => {
+                    const provKey = newForm.provider === 'nine_router' ? '9router' : newForm.provider;
+                    const modelsList = availableModels[provKey] || availableModels[newForm.provider] || [];
+                    const isCustom = newCustomModelActive || (newForm.model && !modelsList.includes(newForm.model));
+                    return (
+                      <div className="space-y-1.5">
+                        <select
+                          value={isCustom ? '__custom__' : newForm.model}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setNewCustomModelActive(true);
+                            } else {
+                              setNewCustomModelActive(false);
+                              setNewForm({ ...newForm, model: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono"
+                        >
+                          {modelsList.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">
+                            {language === 'en' ? '+ Custom / Manual Model...' : '+ Ketik Nama Model Lain...'}
+                          </option>
+                        </select>
+                        {isCustom && (
+                          <input
+                            type="text"
+                            required
+                            value={newForm.model}
+                            onChange={(e) => setNewForm({ ...newForm, model: e.target.value })}
+                            placeholder={language === 'en' ? 'Type model identifier...' : 'Ketik nama/ID model...'}
+                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Fallback Provider & Fallback Model */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                <div>
+                  <label className="block text-xs font-semibold text-content-muted mb-1">
+                    {language === 'en' ? 'Fallback Provider' : 'Provider Cadangan'}
+                  </label>
+                  <select
+                    value={newForm.fallback_provider}
+                    onChange={(e) => {
+                      const newFbProv = e.target.value;
+                      const fbKey = newFbProv === 'nine_router' ? '9router' : newFbProv;
+                      const fbModels = availableModels[fbKey] || availableModels[newFbProv] || [];
+                      const defaultFbMod = fbModels[0] || (newFbProv === 'openrouter' ? 'openrouter/free' : 'ag/gemini-3.7-flash-medium');
+                      setNewCustomFallbackActive(false);
+                      setNewForm({ ...newForm, fallback_provider: newFbProv, fallback_model: defaultFbMod });
+                    }}
+                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
+                  >
+                    <option value="openrouter">OpenRouter (Cloud)</option>
+                    <option value="9router">9Router (Local Gateway)</option>
+                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-content-muted mb-1">
+                    {language === 'en' ? 'Fallback Model' : 'Model Cadangan'}
+                  </label>
+                  {(() => {
+                    const fbKey = newForm.fallback_provider === 'nine_router' ? '9router' : newForm.fallback_provider;
+                    const fbModelsList = availableModels[fbKey] || availableModels[newForm.fallback_provider] || [];
+                    const isCustomFb = newCustomFallbackActive || (newForm.fallback_model && !fbModelsList.includes(newForm.fallback_model));
+                    return (
+                      <div className="space-y-1.5">
+                        <select
+                          value={isCustomFb ? '__custom__' : newForm.fallback_model}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setNewCustomFallbackActive(true);
+                            } else {
+                              setNewCustomFallbackActive(false);
+                              setNewForm({ ...newForm, fallback_model: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono"
+                        >
+                          {fbModelsList.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">
+                            {language === 'en' ? '+ Custom Fallback Model...' : '+ Ketik Model Cadangan Lain...'}
+                          </option>
+                        </select>
+                        {isCustomFb && (
+                          <input
+                            type="text"
+                            required
+                            value={newForm.fallback_model}
+                            onChange={(e) => setNewForm({ ...newForm, fallback_model: e.target.value })}
+                            placeholder="e.g. openrouter/free"
+                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -2633,7 +2838,14 @@ export default function AdminChatModes({
                   <select
                     value={editForm.provider}
                     disabled={editForm.is_default}
-                    onChange={(e) => setEditForm({ ...editForm, provider: e.target.value })}
+                    onChange={(e) => {
+                      const newProv = e.target.value;
+                      const provKey = newProv === 'nine_router' ? '9router' : newProv;
+                      const provModels = availableModels[provKey] || availableModels[newProv] || [];
+                      const defaultMod = provModels[0] || (newProv === 'local_llm' ? 'qwen3.8:latest' : newProv === 'openrouter' ? 'openrouter/auto' : 'ag/gemini-3.7-flash-medium');
+                      setEditCustomModelActive(false);
+                      setEditForm({ ...editForm, provider: newProv, model: defaultMod });
+                    }}
                     className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
@@ -2644,20 +2856,135 @@ export default function AdminChatModes({
                 <div>
                   <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
                     <span>Model *</span>
+                    {editForm.is_default ? (
+                      <span className="text-[10px] text-indigo-400 font-normal">
+                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-content-subtle font-normal">
+                        {providerStatus[editForm.provider]?.online ? '● Live' : '○ Presets'}
+                      </span>
+                    )}
+                  </label>
+                  {(() => {
+                    const provKey = editForm.provider === 'nine_router' ? '9router' : editForm.provider;
+                    const modelsList = availableModels[provKey] || availableModels[editForm.provider] || [];
+                    const isCustom = editCustomModelActive || (editForm.model && !modelsList.includes(editForm.model));
+                    return (
+                      <div className="space-y-1.5">
+                        <select
+                          value={isCustom ? '__custom__' : editForm.model}
+                          disabled={editForm.is_default}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setEditCustomModelActive(true);
+                            } else {
+                              setEditCustomModelActive(false);
+                              setEditForm({ ...editForm, model: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono disabled:opacity-75 disabled:cursor-not-allowed"
+                        >
+                          {modelsList.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">
+                            {language === 'en' ? '+ Custom / Manual Model...' : '+ Ketik Nama Model Lain...'}
+                          </option>
+                        </select>
+                        {isCustom && !editForm.is_default && (
+                          <input
+                            type="text"
+                            required
+                            value={editForm.model}
+                            onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
+                            placeholder={language === 'en' ? 'Type model identifier...' : 'Ketik nama/ID model...'}
+                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Fallback Provider & Fallback Model */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
+                <div>
+                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
+                    <span>{language === 'en' ? 'Fallback Provider' : 'Provider Cadangan'}</span>
                     {editForm.is_default && (
                       <span className="text-[10px] text-indigo-400 font-normal">
                         {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
                       </span>
                     )}
                   </label>
-                  <input
-                    type="text"
-                    required
+                  <select
+                    value={editForm.fallback_provider}
                     disabled={editForm.is_default}
-                    value={editForm.model}
-                    onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                  />
+                    onChange={(e) => {
+                      const newFbProv = e.target.value;
+                      const fbKey = newFbProv === 'nine_router' ? '9router' : newFbProv;
+                      const fbModels = availableModels[fbKey] || availableModels[newFbProv] || [];
+                      const defaultFbMod = fbModels[0] || (newFbProv === 'openrouter' ? 'openrouter/free' : 'ag/gemini-3.7-flash-medium');
+                      setEditCustomFallbackActive(false);
+                      setEditForm({ ...editForm, fallback_provider: newFbProv, fallback_model: defaultFbMod });
+                    }}
+                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                  >
+                    <option value="openrouter">OpenRouter (Cloud)</option>
+                    <option value="9router">9Router (Local Gateway)</option>
+                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
+                    <span>{language === 'en' ? 'Fallback Model' : 'Model Cadangan'}</span>
+                    {editForm.is_default && (
+                      <span className="text-[10px] text-indigo-400 font-normal">
+                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
+                      </span>
+                    )}
+                  </label>
+                  {(() => {
+                    const fbKey = editForm.fallback_provider === 'nine_router' ? '9router' : editForm.fallback_provider;
+                    const fbModelsList = availableModels[fbKey] || availableModels[editForm.fallback_provider] || [];
+                    const isCustomFb = editCustomFallbackActive || (editForm.fallback_model && !fbModelsList.includes(editForm.fallback_model));
+                    return (
+                      <div className="space-y-1.5">
+                        <select
+                          value={isCustomFb ? '__custom__' : editForm.fallback_model}
+                          disabled={editForm.is_default}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setEditCustomFallbackActive(true);
+                            } else {
+                              setEditCustomFallbackActive(false);
+                              setEditForm({ ...editForm, fallback_model: e.target.value });
+                            }
+                          }}
+                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono disabled:opacity-75 disabled:cursor-not-allowed"
+                        >
+                          {fbModelsList.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          <option value="__custom__">
+                            {language === 'en' ? '+ Custom Fallback Model...' : '+ Ketik Model Cadangan Lain...'}
+                          </option>
+                        </select>
+                        {isCustomFb && !editForm.is_default && (
+                          <input
+                            type="text"
+                            required
+                            value={editForm.fallback_model}
+                            onChange={(e) => setEditForm({ ...editForm, fallback_model: e.target.value })}
+                            placeholder="e.g. openrouter/free"
+                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -2698,7 +3025,7 @@ export default function AdminChatModes({
                           openrouterModel,
                           openrouterFallbackModel,
                           primaryAiProvider,
-                        });
+                        }, availableModels);
                         setEditForm({
                           ...editForm,
                           is_default: true,
