@@ -15,7 +15,7 @@ def _token(user: dict) -> str:
     if not token and user and user.get("session_id"):
         token = _resolve_dashboard_token(user.get("session_id"))
     if not token:
-        raise HTTPException(status_code=401, detail="Sesi OIDC perlu diperbarui. Silakan login kembali.")
+        raise HTTPException(status_code=503, detail="Token OIDC sedang diperbarui. Silakan muat ulang atau coba lagi sesaat lagi.")
     return token
 
 

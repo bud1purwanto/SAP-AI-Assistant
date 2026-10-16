@@ -43,8 +43,8 @@ const INITIAL_FORM = {
   icon: 'zap',
   provider: '9router',
   model: 'ag/gemini-3.7-flash-medium',
-  fallback_provider: 'openrouter',
-  fallback_model: 'openrouter/free',
+  fallback_provider: '',
+  fallback_model: '',
   max_iterations: 15,
   enabled: true,
   is_default: false,
@@ -64,107 +64,7 @@ const formatProviderLabel = (p) => {
   return p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Auto';
 };
 
-const resolveDynamicGatewayMode = (mode, gatewayState, availableModels) => {
-  if (!mode || !mode.is_default) return mode;
-  const {
-    nineRouterEnabled,
-    nineRouterModel,
-    localLlmEnabled,
-    localLlmModel,
-    openrouterEnabled,
-    openrouterModel,
-    openrouterFallbackModel,
-    primaryAiProvider,
-  } = gatewayState || {};
-
-  const nineEnabled = Boolean(nineRouterEnabled);
-  const localEnabled = Boolean(localLlmEnabled);
-  const openEnabled = Boolean(openrouterEnabled);
-  const primaryChoice = (primaryAiProvider || 'nine_router').toLowerCase().trim();
-
-  const nineModel = nineRouterModel || availableModels?.['9router']?.[0] || 'ag/gemini-3.7-flash-medium';
-  const localModel = localLlmModel || availableModels?.['local_llm']?.[0] || 'qwen3.8:latest';
-  const openModel = openrouterModel || availableModels?.['openrouter']?.[0] || 'openrouter/auto';
-  const openFallback = openrouterFallbackModel || 'openrouter/free';
-
-  let p_prov = 'openrouter';
-  let p_mod = openModel;
-  let f_prov = 'openrouter';
-  let f_mod = openFallback;
-
-  if ((primaryChoice === 'local_llm' || primaryChoice === 'local' || primaryChoice === 'ollama') && localEnabled) {
-    p_prov = 'local_llm';
-    p_mod = localModel;
-    if (nineEnabled) {
-      f_prov = 'nine_router';
-      f_mod = nineModel;
-    } else {
-      f_prov = 'openrouter';
-      f_mod = openFallback;
-    }
-  } else if (primaryChoice === 'openrouter' && openEnabled) {
-    p_prov = 'openrouter';
-    p_mod = openModel;
-    if (nineEnabled) {
-      f_prov = 'nine_router';
-      f_mod = nineModel;
-    } else if (localEnabled) {
-      f_prov = 'local_llm';
-      f_mod = localModel;
-    } else {
-      f_prov = 'openrouter';
-      f_mod = openFallback;
-    }
-  } else if ((primaryChoice === 'nine_router' || primaryChoice === '9router') && nineEnabled) {
-    p_prov = 'nine_router';
-    p_mod = nineModel;
-    if (localEnabled) {
-      f_prov = 'local_llm';
-      f_mod = localModel;
-    } else {
-      f_prov = 'openrouter';
-      f_mod = openFallback;
-    }
-  } else if (nineEnabled) {
-    p_prov = 'nine_router';
-    p_mod = nineModel;
-    if (localEnabled) {
-      f_prov = 'local_llm';
-      f_mod = localModel;
-    } else {
-      f_prov = 'openrouter';
-      f_mod = openFallback;
-    }
-  } else if (localEnabled) {
-    p_prov = 'local_llm';
-    p_mod = localModel;
-    if (nineEnabled) {
-      f_prov = 'nine_router';
-      f_mod = nineModel;
-    } else {
-      f_prov = 'openrouter';
-      f_mod = openFallback;
-    }
-  } else if (openEnabled) {
-    p_prov = 'openrouter';
-    p_mod = openModel;
-    f_prov = 'openrouter';
-    f_mod = openFallback;
-  } else {
-    p_prov = 'openrouter';
-    p_mod = openModel;
-    f_prov = 'openrouter';
-    f_mod = openFallback;
-  }
-
-  return {
-    ...mode,
-    provider: p_prov,
-    model: p_mod,
-    fallback_provider: f_prov,
-    fallback_model: f_mod,
-  };
-};
+const resolveDynamicGatewayMode = (mode) => mode;
 
 export default function AdminChatModes({
   onRefreshModes,
@@ -1361,17 +1261,7 @@ export default function AdminChatModes({
                   m.code?.toLowerCase().includes(search.toLowerCase()) ||
                   m.description?.toLowerCase().includes(search.toLowerCase())
               )
-              .map((rawMode) => {
-                const mode = resolveDynamicGatewayMode(rawMode, {
-                  nineRouterEnabled,
-                  nineRouterModel,
-                  localLlmEnabled,
-                  localLlmModel,
-                  openrouterEnabled,
-                  openrouterModel,
-                  openrouterFallbackModel,
-                  primaryAiProvider,
-                }, availableModels);
+              .map((mode) => {
                 const realIndex = modesList.findIndex((m) => m.id === mode.id);
                 return (
                 <div
@@ -1443,7 +1333,7 @@ export default function AdminChatModes({
                                 ? 'bg-sky-500/15 text-sky-400 border-sky-500/25'
                                 : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
                           }`}
-                          title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}${mode.is_default ? (language === 'en' ? ' (Dynamic Gateway Sync)' : ' (Sinkronisasi Gateway Dinamis)') : ''}`}
+                          title={`${formatProviderLabel(mode.provider)}: ${mode.model || 'auto'}`}
                         >
                           <Server className="w-3 h-3 shrink-0" />
                           <span className="font-bold">{formatProviderLabel(mode.provider)}</span>
@@ -1452,32 +1342,7 @@ export default function AdminChatModes({
                             {mode.model || 'auto'}
                           </span>
                         </span>
-
-                        {mode.is_default && (
-                          <span
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
-                            title={language === 'en' ? 'Dynamically inherits provider & model from Gateway Settings above' : 'Secara dinamis mewarisi provider & model dari Pengaturan Gateway di atas'}
-                          >
-                            <Sparkles className="w-2.5 h-2.5 text-indigo-400" />
-                            <span>{language === 'en' ? 'Gateway Sync' : 'Sync Gateway'}</span>
-                          </span>
-                        )}
                       </div>
-
-                      {/* Fallback info if configured */}
-                      {mode.fallback_model && (
-                        <div
-                          className="flex items-center gap-1 text-[10px] text-content-subtle truncate max-w-full"
-                          title={`Fallback: ${formatProviderLabel(mode.fallback_provider)} • ${mode.fallback_model}`}
-                        >
-                          <span className="opacity-70 font-sans">↳ Fallback:</span>
-                          <span className="font-semibold text-content-secondary">{formatProviderLabel(mode.fallback_provider)}</span>
-                          <span className="opacity-40">•</span>
-                          <span className="font-mono truncate max-w-[140px]">
-                            {mode.fallback_model}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   </div>
 
@@ -1537,8 +1402,8 @@ export default function AdminChatModes({
                             icon: mode.icon || 'zap',
                             provider: mode.provider || '9router',
                             model: mode.model || 'ag/gemini-3.7-flash-medium',
-                            fallback_provider: mode.fallback_provider || 'openrouter',
-                            fallback_model: mode.fallback_model || 'openrouter/free',
+                            fallback_provider: '',
+                            fallback_model: '',
                             max_iterations: mode.max_iterations || 15,
                             enabled: Boolean(mode.enabled),
                             is_default: Boolean(mode.is_default),
@@ -2588,85 +2453,6 @@ export default function AdminChatModes({
                 </div>
               </div>
 
-              {/* Fallback Provider & Fallback Model */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
-                <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1">
-                    {language === 'en' ? 'Fallback Provider' : 'Provider Cadangan'}
-                  </label>
-                  <select
-                    value={newForm.fallback_provider}
-                    onChange={(e) => {
-                      const newFbProv = e.target.value;
-                      const fbKey = newFbProv === 'nine_router' ? '9router' : newFbProv;
-                      const fbModels = availableModels[fbKey] || availableModels[newFbProv] || [];
-                      const defaultFbMod = fbModels[0] || (newFbProv === 'openrouter' ? 'openrouter/free' : 'ag/gemini-3.7-flash-medium');
-                      setNewCustomFallbackActive(false);
-                      setNewForm({ ...newForm, fallback_provider: newFbProv, fallback_model: defaultFbMod });
-                    }}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
-                  >
-                    <option value="openrouter">OpenRouter (Cloud)</option>
-                    <option value="9router">9Router (Local Gateway)</option>
-                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1">
-                    {language === 'en' ? 'Fallback Model' : 'Model Cadangan'}
-                  </label>
-                  {(() => {
-                    const fbKey = newForm.fallback_provider === 'nine_router' ? '9router' : newForm.fallback_provider;
-                    const fbModelsList = availableModels[fbKey] || availableModels[newForm.fallback_provider] || [];
-                    const isCustomFb = newCustomFallbackActive || (newForm.fallback_model && !fbModelsList.includes(newForm.fallback_model));
-                    return (
-                      <div className="space-y-1.5">
-                        <select
-                          value={isCustomFb ? '__custom__' : newForm.fallback_model}
-                          onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setNewCustomFallbackActive(true);
-                            } else {
-                              setNewCustomFallbackActive(false);
-                              setNewForm({ ...newForm, fallback_model: e.target.value });
-                            }
-                          }}
-                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono"
-                        >
-                          {fbModelsList.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                          <option value="__custom__">
-                            {language === 'en' ? '+ Custom Fallback Model...' : '+ Ketik Model Cadangan Lain...'}
-                          </option>
-                        </select>
-                        {isCustomFb && (
-                          <input
-                            type="text"
-                            required
-                            value={newForm.fallback_model}
-                            onChange={(e) => setNewForm({ ...newForm, fallback_model: e.target.value })}
-                            placeholder="e.g. openrouter/free"
-                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {newForm.is_default && (
-                <div className="px-3.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center gap-2 text-[11px] text-indigo-400">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
-                  <span>
-                    {language === 'en'
-                      ? 'As the Default mode, model & provider are dynamically resolved from AI Model Provider Gateways.'
-                      : 'Sebagai mode Default, model & provider secara dinamis mewarisi konfigurasi dari Gateway Provider AI.'}
-                  </span>
-                </div>
-              )}
-
               <div className="flex items-center gap-4 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-content">
                   <input
@@ -2829,15 +2615,9 @@ export default function AdminChatModes({
                 <div>
                   <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
                     <span>Provider *</span>
-                    {editForm.is_default && (
-                      <span className="text-[10px] text-indigo-400 font-normal">
-                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
-                      </span>
-                    )}
                   </label>
                   <select
                     value={editForm.provider}
-                    disabled={editForm.is_default}
                     onChange={(e) => {
                       const newProv = e.target.value;
                       const provKey = newProv === 'nine_router' ? '9router' : newProv;
@@ -2846,7 +2626,7 @@ export default function AdminChatModes({
                       setEditCustomModelActive(false);
                       setEditForm({ ...editForm, provider: newProv, model: defaultMod });
                     }}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
+                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all"
                   >
                     <option value="9router">9Router (Local Gateway)</option>
                     <option value="local_llm">LLM Local (Ollama/Qwen)</option>
@@ -2856,15 +2636,9 @@ export default function AdminChatModes({
                 <div>
                   <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
                     <span>Model *</span>
-                    {editForm.is_default ? (
-                      <span className="text-[10px] text-indigo-400 font-normal">
-                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-content-subtle font-normal">
-                        {providerStatus[editForm.provider]?.online ? '● Live' : '○ Presets'}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-content-subtle font-normal">
+                      {providerStatus[editForm.provider]?.online ? '● Live' : '○ Presets'}
+                    </span>
                   </label>
                   {(() => {
                     const provKey = editForm.provider === 'nine_router' ? '9router' : editForm.provider;
@@ -2874,7 +2648,6 @@ export default function AdminChatModes({
                       <div className="space-y-1.5">
                         <select
                           value={isCustom ? '__custom__' : editForm.model}
-                          disabled={editForm.is_default}
                           onChange={(e) => {
                             if (e.target.value === '__custom__') {
                               setEditCustomModelActive(true);
@@ -2883,7 +2656,7 @@ export default function AdminChatModes({
                               setEditForm({ ...editForm, model: e.target.value });
                             }
                           }}
-                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono disabled:opacity-75 disabled:cursor-not-allowed"
+                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono"
                         >
                           {modelsList.map((m) => (
                             <option key={m} value={m}>{m}</option>
@@ -2892,7 +2665,7 @@ export default function AdminChatModes({
                             {language === 'en' ? '+ Custom / Manual Model...' : '+ Ketik Nama Model Lain...'}
                           </option>
                         </select>
-                        {isCustom && !editForm.is_default && (
+                        {isCustom && (
                           <input
                             type="text"
                             required
@@ -2907,97 +2680,6 @@ export default function AdminChatModes({
                   })()}
                 </div>
               </div>
-
-              {/* Fallback Provider & Fallback Model */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
-                <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
-                    <span>{language === 'en' ? 'Fallback Provider' : 'Provider Cadangan'}</span>
-                    {editForm.is_default && (
-                      <span className="text-[10px] text-indigo-400 font-normal">
-                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
-                      </span>
-                    )}
-                  </label>
-                  <select
-                    value={editForm.fallback_provider}
-                    disabled={editForm.is_default}
-                    onChange={(e) => {
-                      const newFbProv = e.target.value;
-                      const fbKey = newFbProv === 'nine_router' ? '9router' : newFbProv;
-                      const fbModels = availableModels[fbKey] || availableModels[newFbProv] || [];
-                      const defaultFbMod = fbModels[0] || (newFbProv === 'openrouter' ? 'openrouter/free' : 'ag/gemini-3.7-flash-medium');
-                      setEditCustomFallbackActive(false);
-                      setEditForm({ ...editForm, fallback_provider: newFbProv, fallback_model: defaultFbMod });
-                    }}
-                    className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all disabled:opacity-75 disabled:cursor-not-allowed"
-                  >
-                    <option value="openrouter">OpenRouter (Cloud)</option>
-                    <option value="9router">9Router (Local Gateway)</option>
-                    <option value="local_llm">LLM Local (Ollama/Qwen)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-content-muted mb-1 flex items-center justify-between">
-                    <span>{language === 'en' ? 'Fallback Model' : 'Model Cadangan'}</span>
-                    {editForm.is_default && (
-                      <span className="text-[10px] text-indigo-400 font-normal">
-                        {language === 'en' ? '(Auto from Gateway)' : '(Otomatis dari Gateway)'}
-                      </span>
-                    )}
-                  </label>
-                  {(() => {
-                    const fbKey = editForm.fallback_provider === 'nine_router' ? '9router' : editForm.fallback_provider;
-                    const fbModelsList = availableModels[fbKey] || availableModels[editForm.fallback_provider] || [];
-                    const isCustomFb = editCustomFallbackActive || (editForm.fallback_model && !fbModelsList.includes(editForm.fallback_model));
-                    return (
-                      <div className="space-y-1.5">
-                        <select
-                          value={isCustomFb ? '__custom__' : editForm.fallback_model}
-                          disabled={editForm.is_default}
-                          onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setEditCustomFallbackActive(true);
-                            } else {
-                              setEditCustomFallbackActive(false);
-                              setEditForm({ ...editForm, fallback_model: e.target.value });
-                            }
-                          }}
-                          className="w-full text-xs px-3.5 py-2 bg-surface-sunken border border-line rounded-xl focus:ring-2 focus:ring-accent/30 outline-none cursor-pointer text-content transition-all font-mono disabled:opacity-75 disabled:cursor-not-allowed"
-                        >
-                          {fbModelsList.map((m) => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                          <option value="__custom__">
-                            {language === 'en' ? '+ Custom Fallback Model...' : '+ Ketik Model Cadangan Lain...'}
-                          </option>
-                        </select>
-                        {isCustomFb && !editForm.is_default && (
-                          <input
-                            type="text"
-                            required
-                            value={editForm.fallback_model}
-                            onChange={(e) => setEditForm({ ...editForm, fallback_model: e.target.value })}
-                            placeholder="e.g. openrouter/free"
-                            className="w-full text-xs px-3.5 py-1.5 bg-surface-sunken border border-accent/40 rounded-xl focus:ring-2 focus:ring-accent/30 outline-none font-mono text-content transition-all animate-fadeIn"
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {editForm.is_default && (
-                <div className="px-3.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/25 flex items-center gap-2 text-[11px] text-indigo-400">
-                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
-                  <span>
-                    {language === 'en'
-                      ? 'As the Default mode, model & provider are dynamically resolved from AI Model Provider Gateways.'
-                      : 'Sebagai mode Default, model & provider secara dinamis mewarisi konfigurasi dari Gateway Provider AI.'}
-                  </span>
-                </div>
-              )}
 
               <div className="flex items-center gap-4 pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-content">
@@ -3014,29 +2696,7 @@ export default function AdminChatModes({
                     type="checkbox"
                     checked={editForm.is_default}
                     onChange={(e) => {
-                      const isDef = e.target.checked;
-                      if (isDef) {
-                        const resolved = resolveDynamicGatewayMode({ ...editForm, is_default: true }, {
-                          nineRouterEnabled,
-                          nineRouterModel,
-                          localLlmEnabled,
-                          localLlmModel,
-                          openrouterEnabled,
-                          openrouterModel,
-                          openrouterFallbackModel,
-                          primaryAiProvider,
-                        }, availableModels);
-                        setEditForm({
-                          ...editForm,
-                          is_default: true,
-                          provider: resolved.provider,
-                          model: resolved.model,
-                          fallback_provider: resolved.fallback_provider,
-                          fallback_model: resolved.fallback_model,
-                        });
-                      } else {
-                        setEditForm({ ...editForm, is_default: false });
-                      }
+                      setEditForm({ ...editForm, is_default: e.target.checked });
                     }}
                     className="rounded border-line text-indigo-600 focus:ring-accent/30 cursor-pointer"
                   />

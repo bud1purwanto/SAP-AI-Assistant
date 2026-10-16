@@ -3160,78 +3160,10 @@ def delete_skill(skill_id: int) -> bool:
 # --- CHAT MODES & ROLE ACCESS ---
 
 def resolve_dynamic_default_mode(mode_dict: dict, sys_cfg: Optional[dict] = None) -> dict:
-    """Jika mode_dict adalah mode default (is_default == True), selaraskan provider, model,
-    serta fallback_provider & fallback_model secara dinamis dari AI Model Provider Gateways yang sedang aktif.
-    Mode non-default (medium, expert, dll.) tetap menggunakan konfigurasi model khusus miliknya.
+    """Mengembalikan konfigurasi mode apa adanya tanpa penimpaan dinamis dari AI Gateway.
+    Setiap mode (termasuk mode default) menggunakan provider & model yang dipilih secara eksplisit.
     """
-    if not mode_dict or not mode_dict.get("is_default"):
-        return mode_dict
-
-    res = dict(mode_dict)
-    if sys_cfg is None:
-        try:
-            sys_cfg = get_system_config()
-        except Exception:
-            sys_cfg = {}
-
-    nine_enabled = bool(sys_cfg.get("nine_router_enabled", True))
-    local_enabled = bool(sys_cfg.get("local_llm_enabled", False))
-    open_enabled = bool(sys_cfg.get("openrouter_enabled", False))
-    primary_choice = (sys_cfg.get("primary_ai_provider") or "nine_router").lower().strip()
-
-    nine_model = sys_cfg.get("nine_router_model") or "ag/gemini-3.7-flash-medium"
-    local_model = sys_cfg.get("local_llm_model") or "qwen3.8:latest"
-    open_model = sys_cfg.get("openrouter_model") or "openrouter/auto"
-    open_fallback = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
-
-    p_prov, p_mod = "openrouter", open_model
-    f_prov, f_mod = "openrouter", open_fallback
-
-    if primary_choice in ("local_llm", "local", "ollama") and local_enabled:
-        p_prov, p_mod = "local_llm", local_model
-        if nine_enabled:
-            f_prov, f_mod = "nine_router", nine_model
-        else:
-            f_prov, f_mod = "openrouter", open_fallback
-    elif primary_choice in ("openrouter",) and open_enabled:
-        p_prov, p_mod = "openrouter", open_model
-        if nine_enabled:
-            f_prov, f_mod = "nine_router", nine_model
-        elif local_enabled:
-            f_prov, f_mod = "local_llm", local_model
-        else:
-            f_prov, f_mod = "openrouter", open_fallback
-    elif primary_choice in ("nine_router", "9router") and nine_enabled:
-        p_prov, p_mod = "nine_router", nine_model
-        if local_enabled:
-            f_prov, f_mod = "local_llm", local_model
-        else:
-            f_prov, f_mod = "openrouter", open_fallback
-    elif nine_enabled:
-        p_prov, p_mod = "nine_router", nine_model
-        if local_enabled:
-            f_prov, f_mod = "local_llm", local_model
-        else:
-            f_prov, f_mod = "openrouter", open_fallback
-    elif local_enabled:
-        p_prov, p_mod = "local_llm", local_model
-        if nine_enabled:
-            f_prov, f_mod = "nine_router", nine_model
-        else:
-            f_prov, f_mod = "openrouter", open_fallback
-    elif open_enabled:
-        p_prov, p_mod = "openrouter", open_model
-        f_prov, f_mod = "openrouter", open_fallback
-    else:
-        p_prov, p_mod = "openrouter", open_model
-        f_prov, f_mod = "openrouter", open_fallback
-
-    res["provider"] = p_prov
-    res["model"] = p_mod
-    res["fallback_provider"] = f_prov
-    res["fallback_model"] = f_mod
-
-    return res
+    return mode_dict
 
 
 def get_chat_modes(enabled_only: bool = False) -> list[dict]:
@@ -3308,8 +3240,8 @@ def create_chat_mode(
     icon: str = "zap",
     provider: str = "nine_router",
     model: str = "ag/gemini-3.7-flash-medium",
-    fallback_provider: str = "openrouter",
-    fallback_model: str = "openrouter/free",
+    fallback_provider: Optional[str] = None,
+    fallback_model: Optional[str] = None,
     max_iterations: int = 15,
     enabled: bool = True,
     is_default: bool = False,
@@ -4715,6 +4647,14 @@ def save_dashboard_session_token(
     """Simpan token OIDC (dan refresh token bila ada) terenkripsi pada sesi login."""
     if not session_id or not access_token:
         return False
+    # Pertahankan refresh_token yang sudah ada jika parameter refresh_token bernilai None
+    if not refresh_token:
+        try:
+            old_data = get_dashboard_session_data(session_id)
+            if old_data and old_data.get("refresh_token"):
+                refresh_token = old_data["refresh_token"]
+        except Exception:
+            pass
     data = {
         "access_token": str(access_token),
         "refresh_token": str(refresh_token) if refresh_token else None,
@@ -4722,12 +4662,36 @@ def save_dashboard_session_token(
     }
     payload_str = json.dumps(data)
     with get_engine().begin() as conn:
-        result = conn.execute(text("""
+        result = conn.execute(text(f"""
             UPDATE {DB_SCHEMA}.user_sessions
             SET dashboard_token_encrypted = :token
             WHERE id = :id AND is_active = TRUE
         """), {"id": session_id, "token": encrypt_fernet(payload_str)})
         return result.rowcount == 1
+
+
+def deactivate_sessions_by_ids(
+    session_ids: list[str],
+    reason: str = "Digantikan oleh sesi login baru di perangkat yang sama",
+    status: str = "replaced",
+) -> int:
+    """Nonaktifkan sejumlah sesi spesifik berdasarkan ID untuk mencegah penumpukan sesi dobel."""
+    if not session_ids:
+        return 0
+    clean_ids = [str(s).strip() for s in session_ids if s]
+    if not clean_ids:
+        return 0
+    engine = get_engine()
+    with engine.begin() as conn:
+        res = conn.execute(text(f"""
+            UPDATE {DB_SCHEMA}.user_sessions
+            SET is_active = FALSE,
+                status = :st,
+                kick_reason = :rs,
+                kicked_at = CURRENT_TIMESTAMP
+            WHERE id = ANY(:sids) AND is_active = TRUE
+        """), {"sids": clean_ids, "st": status, "rs": reason})
+        return res.rowcount or 0
 
 
 def get_dashboard_session_data(session_id: str) -> Optional[dict]:

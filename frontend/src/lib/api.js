@@ -116,9 +116,13 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     const kickReason = detailObj?.reason || (typeof detailObj === 'string' ? detailObj : null);
 
     if (auth && path !== '/api/auth/login') {
-      clearSession();
-      onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
-      throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401, detailObj);
+      const isCoreSessionPath = path.startsWith('/api/auth/') || path.startsWith('/api/chat') || path === '/api/me';
+      if (isKicked || isCoreSessionPath) {
+        clearSession();
+        onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
+        throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401, detailObj);
+      }
+      throw new ApiError(kickReason || (isEn ? 'Request unauthorized.' : 'Permintaan tidak diizinkan.'), 401, detailObj);
     }
     return null;
   }

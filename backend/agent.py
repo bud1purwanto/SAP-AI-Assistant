@@ -891,11 +891,11 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         open_model = sys_cfg.get("openrouter_model") or "openrouter/auto"
         open_fallback = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
 
-        if mode_dict and not mode_dict.get("is_default"):
+        if mode_dict and mode_dict.get("provider") and mode_dict.get("model"):
             p_prov = (mode_dict.get("provider") or "nine_router").lower().strip()
-            p_mod = mode_dict.get("model") or (local_model if p_prov in ("local_llm", "local", "ollama") else (open_model if p_prov == "openrouter" else nine_model))
-            f_prov = (mode_dict.get("fallback_provider") or "openrouter").lower().strip()
-            f_mod = mode_dict.get("fallback_model") or (open_fallback if f_prov == "openrouter" else (local_model if f_prov in ("local_llm", "local", "ollama") else nine_model))
+            p_mod = mode_dict.get("model")
+            f_prov = (mode_dict.get("fallback_provider") or p_prov).lower().strip()
+            f_mod = mode_dict.get("fallback_model") or p_mod
             return p_prov, p_mod, f_prov, f_mod
 
         if primary_choice in ("local_llm", "local", "ollama") and local_enabled:

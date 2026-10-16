@@ -541,14 +541,46 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
     # PostgreSQL FK bersifat case-sensitive, sedangkan pencarian user lokal tidak.
     principal["username"] = local_user["username"]
 
-    # Multiple-sessions support: Jangan menonaktifkan sesi lama.
-    # Cek apakah akun ini juga sedang aktif di perangkat/sesi lain untuk audit & info log.
+    # Multiple-sessions support:
+    # 1. Cek sesi aktif milik pengguna.
+    # 2. Sesi lama dari PERANGKAT/BROWSER YANG SAMA dinonaktifkan (status='replaced') agar tidak menumpuk/dobel.
+    # 3. Peringatan login bersamaan (concurrent_warning) HANYA dimunculkan jika ada sesi di PERANGKAT LAIN yang benar-benar berbeda.
     session_id = str(uuid.uuid4())
     existing_sessions = get_active_sessions_by_username(username=principal["username"])
-    has_concurrent_sessions = len(existing_sessions) > 0
+
+    def _is_same_device(s: dict) -> bool:
+        s_browser = (s.get("browser") or "").strip().lower()
+        s_os = (s.get("os") or "").strip().lower()
+        s_ip = (s.get("ip_address") or "").strip()
+        s_dev = (s.get("device_name") or "").strip().lower()
+        cur_browser = (dev_browser or "").strip().lower()
+        cur_os = (dev_os or "").strip().lower()
+        cur_ip = (client_ip or "").strip()
+        cur_dev = (dev_name or "").strip().lower()
+
+        if s_browser and cur_browser and s_os and cur_os:
+            if s_browser == cur_browser and s_os == cur_os:
+                if s_ip == cur_ip or s_dev == cur_dev or not s_ip or s_ip in ("127.0.0.1", "localhost", "::1"):
+                    return True
+        if s_dev and cur_dev and s_dev == cur_dev:
+            return True
+        return False
+
+    same_device_sessions = [s for s in existing_sessions if _is_same_device(s)]
+    other_device_sessions = [s for s in existing_sessions if not _is_same_device(s)]
+
+    if same_device_sessions:
+        from database import deactivate_sessions_by_ids
+        deactivate_sessions_by_ids(
+            [s["id"] for s in same_device_sessions],
+            reason="Digantikan oleh sesi login baru di perangkat yang sama",
+            status="replaced",
+        )
+
+    has_concurrent_sessions = len(other_device_sessions) > 0
 
     if has_concurrent_sessions:
-        for old_s in existing_sessions:
+        for old_s in other_device_sessions:
             record_auth_audit_log(
                 event_type="CONCURRENT_LOGIN_DETECTED",
                 username=principal["username"],
@@ -589,16 +621,19 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
         details="Login berhasil.",
     )
 
-    active_devices = [s.get("device_name") for s in existing_sessions if s.get("device_name")]
+    active_devices = [s.get("device_name") for s in other_device_sessions if s.get("device_name")]
     concurrent_warning_msg = (
-        f"Akun Anda juga sedang aktif di {len(existing_sessions)} perangkat lain."
+        f"Akun Anda juga sedang aktif di {len(other_device_sessions)} perangkat lain."
         if has_concurrent_sessions else None
     )
 
     principal["session_id"] = session_id
     principal["session_expire_seconds"] = session_exp_sec
+    principal["browser"] = dev_browser
+    principal["os"] = dev_os
+    principal["ip_address"] = client_ip
     principal["concurrent_login_warning"] = has_concurrent_sessions
-    principal["active_sessions_count"] = len(existing_sessions)
+    principal["active_sessions_count"] = len(other_device_sessions)
     principal["active_devices"] = active_devices
     principal["concurrent_warning_message"] = concurrent_warning_msg
 
@@ -618,7 +653,7 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
         "session_id": session_id,
         "device_name": dev_name,
         "concurrent_login_warning": has_concurrent_sessions,
-        "active_sessions_count": len(existing_sessions),
+        "active_sessions_count": len(other_device_sessions),
         "active_devices": active_devices,
         "warning_message": concurrent_warning_msg,
         "user": {**principal, "authenticated": True},
@@ -812,7 +847,19 @@ async def auth_heartbeat(
     other_sessions = get_active_sessions_by_username(username=user["username"], except_session_id=session_id)
     new_login_session = None
     now_utc = datetime.now(timezone.utc)
+    u_browser = (user.get("browser") or "").strip().lower()
+    u_os = (user.get("os") or "").strip().lower()
+
+    filtered_other = []
     for s in other_sessions:
+        s_browser = (s.get("browser") or "").strip().lower()
+        s_os = (s.get("os") or "").strip().lower()
+        # Jika browser dan OS sama persis dengan sesi ini, anggap browser/perangkat yang sama
+        if u_browser and s_browser and u_os and s_os and u_browser == s_browser and u_os == s_os:
+            continue
+        filtered_other.append(s)
+
+    for s in filtered_other:
         c_at = s.get("created_at")
         if c_at:
             if c_at.tzinfo is None:
@@ -839,7 +886,7 @@ async def auth_heartbeat(
     if new_login_session:
         ret["new_concurrent_login"] = True
         ret["new_device_name"] = new_login_session.get("device_name") or "Perangkat Lain"
-        ret["other_sessions_count"] = len(other_sessions)
+        ret["other_sessions_count"] = len(filtered_other)
         ret["new_session_id"] = str(new_login_session.get("id"))
     return ret
 
@@ -2202,8 +2249,8 @@ class AdminCreateModeRequest(BaseModel):
     icon: str = "zap"
     provider: str = "nine_router"
     model: str = "ag/gemini-3.7-flash-medium"
-    fallback_provider: str = "openrouter"
-    fallback_model: str = "openrouter/free"
+    fallback_provider: Optional[str] = None
+    fallback_model: Optional[str] = None
     max_iterations: int = 15
     enabled: bool = True
     is_default: bool = False
@@ -2321,8 +2368,8 @@ async def create_mode_endpoint(req: AdminCreateModeRequest, admin: dict = Depend
             icon=req.icon.strip() if req.icon else "zap",
             provider=req.provider.strip(),
             model=req.model.strip(),
-            fallback_provider=req.fallback_provider.strip() if req.fallback_provider else "openrouter",
-            fallback_model=req.fallback_model.strip() if req.fallback_model else "openrouter/free",
+            fallback_provider=req.fallback_provider.strip() if req.fallback_provider else None,
+            fallback_model=req.fallback_model.strip() if req.fallback_model else None,
             max_iterations=req.max_iterations or 15,
             enabled=req.enabled,
             is_default=req.is_default,

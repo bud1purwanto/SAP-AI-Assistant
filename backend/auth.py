@@ -87,11 +87,19 @@ def create_session_cookie(principal: dict) -> str:
     if access_token:
         session_id = str(principal.get("session_id") or secrets.token_urlsafe(32))
         refresh_token = principal.get("refresh_token")
+        if not refresh_token:
+            cached = _dashboard_tokens.get(session_id)
+            if cached and len(cached) > 2 and cached[2]:
+                refresh_token = cached[2]
+            else:
+                from database import get_dashboard_session_data
+                data = get_dashboard_session_data(session_id)
+                if data and data.get("refresh_token"):
+                    refresh_token = data.get("refresh_token")
         oidc_exp_sec = int(principal.get("oidc_expires_in") or 900)
         oidc_exp = now + timedelta(seconds=oidc_exp_sec)
         from database import save_dashboard_session_token
-        if not save_dashboard_session_token(session_id, str(access_token), refresh_token=refresh_token, expires_at=oidc_exp):
-            raise RuntimeError("Token OIDC gagal disimpan pada sesi login.")
+        save_dashboard_session_token(session_id, str(access_token), refresh_token=refresh_token, expires_at=oidc_exp)
         _dashboard_tokens[session_id] = (str(access_token), oidc_exp, refresh_token)
         payload["session_id"] = session_id
 
@@ -154,7 +162,8 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
             refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
             if refreshed:
                 return refreshed
-        if exp > now:
+        # Jika refresh gagal tapi token ada, gunakan token yang ada sebagai fallback selama sesi BFF aktif
+        if token:
             return token
 
     from database import get_dashboard_session_data
@@ -170,7 +179,8 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
             refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
             if refreshed:
                 return refreshed
-        if token and (not exp or exp > now):
+        if token:
+            _dashboard_tokens[session_id] = (token, exp or (now + timedelta(hours=1)), refresh_token)
             return token
 
     return None
@@ -266,6 +276,9 @@ def get_current_principal(request: Request) -> dict:
     username = payload["username"]
     user_role = payload.get("role") or payload["roles"][0]
     user_roles = payload["roles"]
+    entry = _dashboard_tokens.get(session_id)
+    cached_refresh = entry[2] if entry and len(entry) > 2 else None
+
     return {
         "sub": payload["sub"],
         "username": username,
@@ -282,7 +295,11 @@ def get_current_principal(request: Request) -> dict:
         "org_units": payload.get("org_units", []),
         "dashboard_token": resolved_token,
         "access_token": resolved_token,
+        "refresh_token": cached_refresh,
         "session_id": session_id,
+        "browser": payload.get("browser"),
+        "os": payload.get("os"),
+        "ip_address": payload.get("ip_address"),
         "is_guest": False,
     }
 
