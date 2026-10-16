@@ -2569,8 +2569,8 @@ async def get_admin_available_models_endpoint(
 
     # 1. 9Router
     if any(p in target_providers for p in ("9router", "nine_router")):
-        b_url = (cfg.get("nine_router_base_url") or "http://192.168.88.83:20128/v1").rstrip("/")
-        api_key = (cfg.get("nine_router_api_key") or "").strip()
+        b_url = (cfg.get("nine_router_base_url") or getattr(settings, "nine_router_base_url", None) or "http://192.168.88.83:20128/v1").rstrip("/")
+        api_key = (cfg.get("nine_router_api_key") or getattr(settings, "nine_router_api_key", "") or "").strip()
         models = []
         online = False
         msg = ""
@@ -2618,8 +2618,8 @@ async def get_admin_available_models_endpoint(
 
     # 2. LLM Local (Ollama)
     if any(p in target_providers for p in ("local_llm", "local", "ollama")):
-        b_url = (cfg.get("local_llm_base_url") or "http://192.168.1.166:11434/v1").rstrip("/")
-        api_key = (cfg.get("local_llm_api_key") or "").strip()
+        b_url = (cfg.get("local_llm_base_url") or getattr(settings, "local_llm_base_url", None) or "http://192.168.1.166:11434/v1").rstrip("/")
+        api_key = (cfg.get("local_llm_api_key") or getattr(settings, "local_llm_api_key", "") or "").strip()
         models = []
         online = False
         msg = ""
@@ -2680,7 +2680,7 @@ async def get_admin_available_models_endpoint(
 
     # 3. OpenRouter
     if any(p in target_providers for p in ("openrouter",)):
-        api_key = (cfg.get("openrouter_api_key") or "").strip()
+        api_key = (cfg.get("openrouter_api_key") or getattr(settings, "openrouter_api_key", "") or "").strip()
         models = []
         online = False
         msg = ""

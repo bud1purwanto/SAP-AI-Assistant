@@ -373,8 +373,8 @@ def init_db():
             if not res_9r_key:
                 conn.execute(text("""
                     INSERT INTO {DB_SCHEMA}.system_config (key, value)
-                    VALUES ('nine_router_api_key', :val)
-                """), {"val": settings.nine_router_api_key or ""})
+                    VALUES ('nine_router_api_key', '')
+                """))
 
             # Auto-migrasi cerdas jika 9Router sebelumnya diisi endpoint Ollama / LLM local (port 11434)
             current_9r_url_row = conn.execute(text("SELECT value FROM {DB_SCHEMA}.system_config WHERE key = 'nine_router_base_url'")).fetchone()
@@ -743,7 +743,7 @@ def get_system_config():
                 elif r.key == 'nine_router_model' and r.value is not None:
                     nine_router_model = r.value
                 elif r.key == 'nine_router_api_key' and r.value is not None:
-                    nine_router_api_key = r.value
+                    nine_router_api_key = str(r.value).strip() if str(r.value).strip() else (settings.nine_router_api_key or "")
                 elif r.key == 'local_llm_enabled' and r.value is not None:
                     local_llm_enabled = r.value.lower() in ('true', '1', 'yes')
                 elif r.key == 'local_llm_base_url' and r.value is not None:
@@ -751,7 +751,7 @@ def get_system_config():
                 elif r.key == 'local_llm_model' and r.value is not None:
                     local_llm_model = r.value
                 elif r.key == 'local_llm_api_key' and r.value is not None:
-                    local_llm_api_key = r.value
+                    local_llm_api_key = str(r.value).strip() if str(r.value).strip() else (getattr(settings, "local_llm_api_key", "") or "")
                 elif r.key == 'primary_ai_provider' and r.value is not None:
                     primary_ai_provider = r.value
                 elif r.key == 'openrouter_enabled' and r.value is not None:
@@ -761,7 +761,7 @@ def get_system_config():
                 elif r.key == 'openrouter_fallback_model' and r.value is not None:
                     model_fallback = r.value
                 elif r.key == 'openrouter_api_key' and r.value is not None:
-                    api_key = r.value
+                    api_key = str(r.value).strip() if str(r.value).strip() else (settings.openrouter_api_key or "")
                 # Kuncinya harus 'global_assistant_persona': itulah baris yang
                 # ditulis update_system_config(). Membacanya sebagai
                 # 'assistant_persona' membuat persona organisasi tidak pernah
