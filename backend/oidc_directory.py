@@ -1,10 +1,13 @@
 """Read-only directory from Dashboard OIDC for the admin UI."""
+import logging
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
 
 from config import settings
+
+logger = logging.getLogger(__name__)
 
 
 DIRECTORY_PATHS = {
@@ -86,83 +89,60 @@ def normalize_directory(kind: str, payload: Any) -> list[dict]:
     return rows
 
 
-def _local_fallback(kind: str) -> list[dict]:
-    """Fallback ke data lokal jika OIDC tidak tersedia atau token kedaluwarsa."""
-    try:
-        if kind == "roles":
-            from database import get_roles
-            roles = get_roles(enabled_only=False)
-            return [{
-                "code": str(r.get("code") or "").lower(),
-                "label": r.get("label") or r.get("name") or r.get("code") or "",
-                "description": r.get("description") or "",
-                "enabled": r.get("enabled", True),
-            } for r in roles]
-        if kind in ("divisions", "departments"):
-            from database import get_divisions
-            divs = get_divisions(enabled_only=False)
-            return [{
-                "code": str(d.get("code") or ""),
-                "name": d.get("name") or d.get("code") or "",
-                "description": d.get("description") or "",
-                "enabled": d.get("enabled", True),
-                "department_id": None,
-            } for d in divs]
-        if kind == "users":
-            from database import get_all_users_for_admin
-            try:
-                users = get_all_users_for_admin()
-            except Exception:
-                users = []
-            return [{
-                "id": u.get("id"),
-                "username": u.get("username") or "",
-                "full_name": u.get("full_name") or u.get("username") or "",
-                "role": u.get("role") or "",
-                "roles": u.get("roles") or ([u.get("role")] if u.get("role") else []),
-                "division_code": u.get("division_code") or "",
-                "division_name": u.get("division_name") or "",
-                "department_code": "",
-                "department_name": "",
-                "position_code": "",
-                "position_name": "",
-                "job_level": u.get("job_level") or "staff",
-                "enabled": True,
-            } for u in users]
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("Fallback directory %s gagal: %s", kind, exc)
-    return []
-
-
-async def fetch_directory(kind: str, token: str | None) -> list[dict]:
-    """Fetch a directory using the signed-in user's OIDC token with local fallback."""
+async def fetch_directory(kind: str, token: str | None, session_id: str | None = None) -> list[dict]:
+    """Ambil data direktori murni dari OIDC tanpa fallback lokal."""
     if kind not in DIRECTORY_PATHS:
         raise ValueError(f"Unknown OIDC directory: {kind}")
-    if not token:
-        fallback = _local_fallback(kind)
-        return fallback if fallback else []
+
+    active_session_id = session_id
+    if not active_session_id:
+        try:
+            from auth import get_dashboard_session_id
+            active_session_id = get_dashboard_session_id()
+        except Exception:
+            pass
+
+    current_token = token
+    if not current_token and active_session_id:
+        try:
+            from auth import _resolve_dashboard_token
+            current_token = _resolve_dashboard_token(active_session_id)
+        except Exception:
+            pass
+
+    if not current_token:
+        logger.warning("Token OIDC kosong saat fetch directory '%s'. Tidak ada fallback lokal.", kind)
+        return []
+
     url = settings.dashboard_oidc_issuer.rstrip("/") + DIRECTORY_PATHS[kind]
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
-    except httpx.HTTPError:
-        fallback = _local_fallback(kind)
-        if fallback:
-            return fallback
+            response = await client.get(url, headers={"Authorization": f"Bearer {current_token}"})
+
+            # Jika 401 dan session_id tersedia, coba refresh token lalu retry 1x
+            if response.status_code == 401 and active_session_id:
+                logger.info("Directory OIDC 401 Unauthorized untuk '%s'. Mencoba auto-refresh sesi %s...", kind, active_session_id[:8])
+                try:
+                    from database import get_dashboard_session_data
+                    sess_data = get_dashboard_session_data(active_session_id)
+                    ref_tok = sess_data.get("refresh_token") if sess_data else None
+                    if ref_tok:
+                        from auth import _try_refresh_dashboard_token
+                        new_token = _try_refresh_dashboard_token(active_session_id, ref_tok)
+                        if new_token:
+                            response = await client.get(url, headers={"Authorization": f"Bearer {new_token}"})
+                except Exception as ref_exc:
+                    logger.warning("Auto-refresh pada fetch_directory gagal: %s", ref_exc)
+
+    except httpx.HTTPError as exc:
+        logger.error("Directory OIDC tidak merespons (%s): %s", kind, exc)
         raise HTTPException(status_code=502, detail="Directory OIDC tidak merespons.")
+
     if response.status_code == 401:
-        # Jangan lempar 401 keras agar sesi utama AI Assistant pengguna tidak ter-kick
-        fallback = _local_fallback(kind)
-        return fallback if fallback else []
+        logger.warning("Directory OIDC 401 Unauthorized untuk '%s'. Sesi OIDC kedaluwarsa.", kind)
+        return []
     if response.status_code == 403:
-        fallback = _local_fallback(kind)
-        if fallback:
-            return fallback
         raise HTTPException(status_code=403, detail="Akun ini tidak diizinkan membaca directory OIDC.")
     if response.status_code != 200:
-        fallback = _local_fallback(kind)
-        if fallback:
-            return fallback
         raise HTTPException(status_code=502, detail=f"Directory OIDC gagal (HTTP {response.status_code}).")
     return normalize_directory(kind, response.json())

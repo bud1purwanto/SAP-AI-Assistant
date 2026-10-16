@@ -323,11 +323,13 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         };
       });
       Object.entries(data.user_limits || {}).forEach(([oidcSub, configured]) => {
-        if (!draft[oidcSub]) {
+        if (!draft[oidcSub] && configured?.username && configured.username !== oidcSub) {
           draft[oidcSub] = {
-            oidc_sub: oidcSub,
+            username: configured.username,
+            full_name: configured.full_name || '',
             configured: true,
-            ...configured,
+            daily_token_limit: configured.daily_token_limit ?? defaultDaily,
+            per_minute_limit: configured.per_minute_limit ?? defaultBurst,
           };
         }
       });
@@ -706,9 +708,11 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
 
   return (
     <>
+      {/* Backdrop pelindung solid penuh agar elemen background tidak pernah tembus di mobile */}
+      <div className="fixed inset-0 z-[69] bg-surface-raised dark:bg-slate-950 pointer-events-none" aria-hidden="true" />
+
       <div
-        className="fixed inset-0 z-50 flex flex-col bg-surface-raised w-screen overflow-hidden text-content animate-fadeIn"
-        style={{ height: 'var(--app-height, 100dvh)' }}
+        className="fixed inset-0 z-[70] flex flex-col bg-surface-raised dark:bg-slate-950 w-full h-[100dvh] max-h-[100dvh] overflow-hidden text-content animate-fadeIn"
       >
       {/* Top glowing hairline accent */}
       <div className="absolute top-0 inset-x-0 h-[2.5px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-80 z-50 pointer-events-none" />
@@ -889,7 +893,7 @@ export default function AdminDashboard({ isOpen, onClose, user, onRefreshMcpServ
         </div>
 
         {/* Tab Content Panel */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-surface-raised pb-[max(2rem,env(safe-area-inset-bottom))]">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-surface-raised dark:bg-slate-950 pb-[max(2rem,env(safe-area-inset-bottom))] overscroll-contain">
           {/* Top Loading Progress Bar for Large Data */}
           {isCurrentTabLoading && (
             <div className="relative w-full h-1 bg-accent/15 overflow-hidden rounded-full -mt-1 mb-4 shadow-xs">

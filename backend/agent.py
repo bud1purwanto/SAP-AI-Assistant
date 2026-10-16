@@ -847,21 +847,24 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     )
     sys_cfg = get_system_config()
 
+    current_username = username
     chat_modes_enabled = sys_cfg.get("chat_modes_enabled", True)
     active_mode = None
     mode_downgraded = False
     if chat_modes_enabled and chat_req.mode:
         target = get_chat_mode_by_code(chat_req.mode)
         if target and target.get("enabled"):
-            # Union seluruh role yang dimiliki user: mode tersedia bila SALAH SATU
-            # role mengizinkannya (sama seperti resolusi yang dipakai endpoint /api/modes).
+            # Periksa ketersediaan mode untuk user (superadmin selalu diizinkan, user overrides, dan role template)
             roles_for_mode = [user_role] if isinstance(user_role, str) else (user_role or ["user"])
-            mode_available = False
-            for r in roles_for_mode:
-                r_modes = get_modes_for_role(r)
-                if any(m["code"] == target["code"] and m.get("available") for m in r_modes):
-                    mode_available = True
-                    break
+            is_superadmin = any(str(r).lower() in ("superadmin", "admin") for r in roles_for_mode)
+            if is_superadmin:
+                mode_available = True
+            elif username and str(username).lower() != "guest":
+                user_modes = get_modes_for_user(username, roles_for_mode)
+                mode_available = any(m["code"] == target["code"] and m.get("available") for m in user_modes)
+            else:
+                mode_available = any(m["code"] == target["code"] and m.get("available") for r in roles_for_mode for m in get_modes_for_role(r))
+
             if mode_available:
                 active_mode = target
             else:
@@ -891,39 +894,54 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         open_model = sys_cfg.get("openrouter_model") or "openrouter/auto"
         open_fallback = sys_cfg.get("openrouter_fallback_model") or "openrouter/free"
 
-        if mode_dict and mode_dict.get("provider") and mode_dict.get("model"):
-            p_prov = (mode_dict.get("provider") or "nine_router").lower().strip()
-            p_mod = mode_dict.get("model")
-            f_prov = (mode_dict.get("fallback_provider") or p_prov).lower().strip()
-            f_mod = mode_dict.get("fallback_model") or p_mod
+        if mode_dict:
+            # Gunakan provider & model yang dipilih secara spesifik pada mode chat
+            raw_prov = (mode_dict.get("provider") or "").strip().lower()
+            if raw_prov in ("9router", "nine_router"):
+                p_prov = "nine_router"
+                p_mod = mode_dict.get("model") or nine_model
+            elif raw_prov in ("local_llm", "local", "ollama"):
+                p_prov = "local_llm"
+                p_mod = mode_dict.get("model") or local_model
+            elif raw_prov in ("openrouter",):
+                p_prov = "openrouter"
+                p_mod = mode_dict.get("model") or open_model
+            elif raw_prov:
+                p_prov = raw_prov
+                p_mod = mode_dict.get("model") or ""
+            else:
+                p_prov = primary_choice
+                p_mod = mode_dict.get("model") or (local_model if p_prov == "local_llm" else (open_model if p_prov == "openrouter" else nine_model))
+
+            # Tanpa fallback lintas provider jika tidak ditentukan secara eksplisit pada mode
+            raw_f_prov = (mode_dict.get("fallback_provider") or "").strip().lower()
+            if raw_f_prov in ("9router", "nine_router"):
+                f_prov = "nine_router"
+                f_mod = mode_dict.get("fallback_model") or p_mod
+            elif raw_f_prov in ("local_llm", "local", "ollama"):
+                f_prov = "local_llm"
+                f_mod = mode_dict.get("fallback_model") or p_mod
+            elif raw_f_prov in ("openrouter",):
+                f_prov = "openrouter"
+                f_mod = mode_dict.get("fallback_model") or p_mod
+            elif raw_f_prov:
+                f_prov = raw_f_prov
+                f_mod = mode_dict.get("fallback_model") or p_mod
+            else:
+                f_prov = p_prov
+                f_mod = p_mod
+
             return p_prov, p_mod, f_prov, f_mod
 
         if primary_choice in ("local_llm", "local", "ollama") and local_enabled:
             p_prov, p_mod = "local_llm", local_model
-            if nine_enabled:
-                f_prov, f_mod = "nine_router", nine_model
-            else:
-                f_prov, f_mod = "openrouter", open_fallback
+            f_prov, f_mod = "local_llm", local_model
         elif primary_choice in ("openrouter",) and open_enabled:
             p_prov, p_mod = "openrouter", open_model
-            if nine_enabled:
-                f_prov, f_mod = "nine_router", nine_model
-            elif local_enabled:
-                f_prov, f_mod = "local_llm", local_model
-            else:
-                f_prov, f_mod = "openrouter", open_fallback
-        elif nine_enabled:
-            p_prov, p_mod = "nine_router", nine_model
-            if local_enabled:
-                f_prov, f_mod = "local_llm", local_model
-            else:
-                f_prov, f_mod = "openrouter", open_fallback
-        elif local_enabled:
-            p_prov, p_mod = "local_llm", local_model
             f_prov, f_mod = "openrouter", open_fallback
         else:
-            p_prov, p_mod = "openrouter", open_model
-            f_prov, f_mod = "openrouter", open_fallback
+            p_prov, p_mod = "nine_router", nine_model
+            f_prov, f_mod = "nine_router", nine_model
 
         return p_prov, p_mod, f_prov, f_mod
 
@@ -933,6 +951,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     else:
         MAX_ITERATIONS = 15
         primary_provider, primary_model_name, fallback_provider, fallback_model_name = _resolve_ai_endpoints(None)
+
+    logger.info(
+        f"Mode chat aktif: '{active_mode.get('code') if active_mode else 'default'}' -> "
+        f"Primary: provider={primary_provider}, model={primary_model_name} | "
+        f"Fallback: provider={fallback_provider}, model={fallback_model_name}"
+    )
 
     is_en = getattr(chat_req, "language", "id") == "en"
 

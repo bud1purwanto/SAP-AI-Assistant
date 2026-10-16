@@ -67,6 +67,7 @@ from database import (
     get_role_limits,
     get_user_token_limit,
     get_user_token_limits,
+    delete_user_token_limit,
     get_token_usage,
     hitung_permintaan_semenit,
     catat_permintaan,
@@ -480,12 +481,31 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
                 session = r.json()
                 principal = _map_dashboard_user(session["user"], session["accessToken"])
                 access_token = session["accessToken"]
-                refresh_token = (
-                    r.cookies.get("refresh_token")
-                    or r.cookies.get("refreshToken")
-                    or session.get("refreshToken")
-                    or session.get("refresh_token")
-                )
+                
+                # Ekstraksi refresh_token dari header Set-Cookie, r.cookies, atau body
+                refresh_token = None
+                from http.cookies import SimpleCookie
+                for hdr in r.headers.get_list("set-cookie"):
+                    c = SimpleCookie()
+                    try:
+                        c.load(hdr)
+                        for k in ("refresh_token", "refreshToken"):
+                            if k in c and c[k].value:
+                                refresh_token = c[k].value.strip()
+                                break
+                    except Exception:
+                        pass
+                    if refresh_token:
+                        break
+
+                if not refresh_token:
+                    refresh_token = (
+                        r.cookies.get("refresh_token")
+                        or r.cookies.get("refreshToken")
+                        or session.get("refreshToken")
+                        or session.get("refresh_token")
+                    )
+
                 if refresh_token:
                     principal["refresh_token"] = refresh_token
                 principal["oidc_expires_in"] = int(session.get("expiresIn") or 900)
@@ -1622,13 +1642,28 @@ async def quota_admin_endpoint(
     cfg = get_system_config()
     usage = ringkasan_pemakaian_harian(tanggal)
     directory_users = await fetch_directory("users", admin.get("dashboard_token"))
-    labels_by_sub = {str(item.get("id") or "").strip(): item for item in directory_users}
+    labels_by_sub = {str(item.get("id") or "").strip(): item for item in directory_users if item.get("id")}
     for row in usage:
         directory_user = labels_by_sub.get(str(row.get("oidc_sub") or ""), {})
         row["username"] = directory_user.get("username") or row["oidc_sub"]
         row["full_name"] = directory_user.get("full_name") or ""
         row["role"] = directory_user.get("role") or "-"
     user_limits = get_user_token_limits()
+
+    # Bersihkan limit pengguna lokal yang sudah dihapus / tidak ada di OIDC directory
+    if directory_users:
+        active_subs = set(labels_by_sub.keys())
+        for sub in list(user_limits.keys()):
+            if sub not in active_subs:
+                delete_user_token_limit(sub)
+                user_limits.pop(sub, None)
+
+    # Sematkan username & full_name resmi dari OIDC pada setiap limit terkonfigurasi
+    for sub, lim in user_limits.items():
+        dir_u = labels_by_sub.get(sub, {})
+        lim["username"] = dir_u.get("username") or sub
+        lim["full_name"] = dir_u.get("full_name") or ""
+
     pending_limit_users = [
         {
             "id": str(directory_user.get("id") or "").strip(),

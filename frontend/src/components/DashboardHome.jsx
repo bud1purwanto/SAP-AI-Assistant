@@ -35,6 +35,7 @@ export default function DashboardHome({
   mcpAccessTargets = [],
   onRequestAccess,
   onLoadSession,
+  isSidebarOpen = false,
 }) {
   const { t, language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
@@ -819,7 +820,9 @@ export default function DashboardHome({
 
       {/* Floating Action Button untuk Mobile: Start Chat Assistant 💬 */}
       <div 
-        className="lg:hidden fixed inset-x-3 sm:inset-x-6 z-40 pointer-events-none"
+        className={`lg:hidden fixed inset-x-3 sm:inset-x-6 z-20 pointer-events-none transition-all duration-200 ${
+          isSidebarOpen ? 'opacity-0 pointer-events-none hidden' : 'opacity-100'
+        }`}
         style={{ bottom: 'max(0.75rem, env(safe-area-inset-bottom, 0px))' }}
       >
         <button

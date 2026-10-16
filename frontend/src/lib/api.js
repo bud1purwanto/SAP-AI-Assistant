@@ -116,13 +116,9 @@ export async function apiFetch(path, { method = 'GET', body, auth = true, signal
     const kickReason = detailObj?.reason || (typeof detailObj === 'string' ? detailObj : null);
 
     if (auth && path !== '/api/auth/login') {
-      const isCoreSessionPath = path.startsWith('/api/auth/') || path.startsWith('/api/chat') || path === '/api/me';
-      if (isKicked || isCoreSessionPath) {
-        clearSession();
-        onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
-        throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401, detailObj);
-      }
-      throw new ApiError(kickReason || (isEn ? 'Request unauthorized.' : 'Permintaan tidak diizinkan.'), 401, detailObj);
+      clearSession();
+      onUnauthorized(kickReason, isKicked ? 'SESSION_KICKED' : null);
+      throw new ApiError(kickReason || (isEn ? 'Your session has expired. Please sign in again.' : 'Sesi Anda telah berakhir. Silakan login kembali.'), 401, detailObj);
     }
     return null;
   }
@@ -277,7 +273,7 @@ export const api = {
   adminUpdateSkill: (id, payload) => apiFetch(`/api/admin/skills/${id}`, { method: 'PUT', body: payload }),
   adminDeleteSkill: (id) => apiFetch(`/api/admin/skills/${id}`, { method: 'DELETE' }),
 
-  getModes: () => apiFetch('/api/modes', { auth: false }),
+  getModes: () => apiFetch('/api/modes'),
   adminModes: () => apiFetch('/api/admin/modes'),
   adminAvailableModels: (provider = '') =>
     apiFetch(`/api/admin/models/available${provider ? `?provider=${encodeURIComponent(provider)}` : ''}`),

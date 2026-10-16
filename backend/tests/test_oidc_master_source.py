@@ -53,11 +53,11 @@ def test_oidc_directory_error_is_not_replaced_with_local_master_data():
 
 
 def test_mode_user_matrix_uses_oidc_subject_and_roles():
-    directory = [{"id": "stable-sub", "username": "renamed-user", "roles": ["analyst"]}]
+    directory = [{"id": "stable-sub", "username": "renamed-user", "full_name": "Renamed User", "roles": ["analyst"]}]
     with patch.object(main, "fetch_directory", new_callable=AsyncMock, return_value=directory), \
          patch.object(main, "get_user_modes_matrix", return_value={"modes": []}) as matrix:
         result = asyncio.run(main.get_admin_user_modes_matrix_endpoint(
             "renamed-user", admin={"dashboard_token": "token"}
         ))
-    assert result == {"modes": []}
-    matrix.assert_called_once_with("stable-sub", oidc_roles=["analyst"])
+    assert result == {"modes": [], "username": "renamed-user", "full_name": "Renamed User"}
+    matrix.assert_called_once_with("renamed-user", oidc_roles=["analyst"])

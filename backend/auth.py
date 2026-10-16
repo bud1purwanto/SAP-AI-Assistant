@@ -22,6 +22,7 @@ GUEST_ROLE = "guest"
 
 _dashboard_tokens: dict[str, tuple[str, datetime]] = {}
 _dashboard_access_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_access_token", default=None)
+_dashboard_session_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_session_id", default=None)
 
 
 # --- Password Hashing (bcrypt) ---
@@ -49,6 +50,14 @@ def set_dashboard_access_token(token: Optional[str]) -> None:
 
 def get_dashboard_access_token() -> Optional[str]:
     return _dashboard_access_token.get()
+
+
+def set_dashboard_session_id(session_id: Optional[str]) -> None:
+    _dashboard_session_id.set(session_id.strip() if isinstance(session_id, str) and session_id.strip() else None)
+
+
+def get_dashboard_session_id() -> Optional[str]:
+    return _dashboard_session_id.get()
 
 
 def create_session_cookie(principal: dict) -> str:
@@ -113,22 +122,35 @@ def _try_refresh_dashboard_token(session_id: str, refresh_token: str) -> Optiona
     base = settings.dashboard_oidc_issuer.rstrip("/")
     try:
         import httpx
+        from http.cookies import SimpleCookie
         with httpx.Client(timeout=10.0) as client:
             res = client.post(
                 f"{base}/v1/auth/refresh",
                 json={"refreshToken": refresh_token, "refresh_token": refresh_token},
                 cookies={"refresh_token": refresh_token, "refreshToken": refresh_token},
+                headers={"Cookie": f"refresh_token={refresh_token}"},
             )
             if res.status_code == 200:
                 data = res.json()
                 new_access = data.get("accessToken") or data.get("access_token")
-                new_refresh = (
-                    res.cookies.get("refresh_token")
-                    or res.cookies.get("refreshToken")
-                    or data.get("refreshToken")
-                    or data.get("refresh_token")
-                    or refresh_token
-                )
+                new_refresh = refresh_token
+                for hdr in res.headers.get_list("set-cookie"):
+                    c = SimpleCookie()
+                    try:
+                        c.load(hdr)
+                        for k in ("refresh_token", "refreshToken"):
+                            if k in c and c[k].value:
+                                new_refresh = c[k].value.strip()
+                    except Exception:
+                        pass
+                if not new_refresh or new_refresh == refresh_token:
+                    new_refresh = (
+                        res.cookies.get("refresh_token")
+                        or res.cookies.get("refreshToken")
+                        or data.get("refreshToken")
+                        or data.get("refresh_token")
+                        or refresh_token
+                    )
                 expires_in = int(data.get("expiresIn") or data.get("expires_in") or 900)
                 now = datetime.now(timezone.utc)
                 new_exp = now + timedelta(seconds=expires_in)
@@ -155,16 +177,17 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
         exp = entry[1]
         refresh_token = entry[2] if len(entry) > 2 else None
         # Jika token masih aktif lebih dari 60 detik, gunakan langsung
-        if exp > now + timedelta(seconds=60):
+        if exp and exp > now + timedelta(seconds=60):
             return token
         # Token kedaluwarsa atau mendekati kedaluwarsa (<60 detik), coba refresh jika punya refresh token
         if refresh_token:
             refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
             if refreshed:
                 return refreshed
-        # Jika refresh gagal tapi token ada, gunakan token yang ada sebagai fallback selama sesi BFF aktif
-        if token:
+        # Jika refresh gagal atau tidak ada refresh token, tapi token belum lewat waktu kedaluwarsa
+        if token and exp and exp > now:
             return token
+        return None
 
     from database import get_dashboard_session_data
     data = get_dashboard_session_data(session_id)
@@ -172,15 +195,15 @@ def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
         token = data.get("access_token")
         refresh_token = data.get("refresh_token")
         exp = data.get("exp")
-        if token and (not exp or exp > now + timedelta(seconds=60)):
-            _dashboard_tokens[session_id] = (token, exp or (now + timedelta(hours=1)), refresh_token)
+        if token and exp and exp > now + timedelta(seconds=60):
+            _dashboard_tokens[session_id] = (token, exp, refresh_token)
             return token
         if refresh_token:
             refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
             if refreshed:
                 return refreshed
-        if token:
-            _dashboard_tokens[session_id] = (token, exp or (now + timedelta(hours=1)), refresh_token)
+        if token and exp and exp > now:
+            _dashboard_tokens[session_id] = (token, exp, refresh_token)
             return token
 
     return None
@@ -271,6 +294,7 @@ def get_current_principal(request: Request) -> dict:
         raise _credentials_exception("Sesi tidak valid atau telah kedaluwarsa. Silakan login kembali.")
 
     session_id = payload.get("session_id")
+    set_dashboard_session_id(session_id)
     resolved_token = _session_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
     username = payload["username"]

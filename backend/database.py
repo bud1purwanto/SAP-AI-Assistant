@@ -1671,6 +1671,23 @@ def set_user_token_limit(oidc_sub: str, daily_token_limit: int, per_minute_limit
         return False
 
 
+def delete_user_token_limit(oidc_sub: str) -> bool:
+    """Hapus limit token untuk user tertentu (misal akun yang sudah dihapus di OIDC)."""
+    if not oidc_sub:
+        return False
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text(f"""
+                DELETE FROM {DB_SCHEMA}.user_token_limits WHERE oidc_sub = :sub
+            """), {"sub": str(oidc_sub).strip()})
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error delete_user_token_limit: {e}")
+        return False
+
+
 def get_token_usage(oidc_sub: str, tanggal: str = None) -> dict:
     """Pemakaian token subjek OIDC pada satu hari."""
     tanggal = tanggal or tanggal_kuota()
@@ -3507,7 +3524,8 @@ def get_modes_for_role(role: Union[str, list, tuple, set]) -> list[dict]:
                 mode_dict = resolve_dynamic_default_mode(dict(m._mapping), cfg)
                 is_def = mode_dict["is_default"]
                 is_mode_enabled = mode_dict["enabled"]
-                is_role_allowed = (role_map.get(mode_dict["code"], True if str(role).lower() == "superadmin" else False)) if role_is_enabled else False
+                is_admin_role = str(role).lower() in ("superadmin", "admin")
+                is_role_allowed = (True if is_admin_role else role_map.get(mode_dict["code"], False)) if role_is_enabled else False
 
                 # Mode tersedia jika master switch aktif (atau ini mode default saat master switch mati),
                 # dan mode diaktifkan di level sistem, serta role memiliki izin.
@@ -3610,20 +3628,14 @@ def set_user_mode_override(username: str, mode_code: str, state: Any) -> bool:
 def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None) -> dict:
     """Mengambil matriks lengkap perizinan mode chat untuk pengguna tertentu,
     menampilkan status bawaan peran (role_allowed), override (tri-state), dan hasil efektif (effective_allowed).
+    Data peran murni bersumber dari direktori OIDC (tanpa fallback database user lokal).
     """
     clean_u = (username or "").strip()
     if not clean_u:
         return {"username": "", "modes": []}
 
     try:
-        user_row = {"username": clean_u, "full_name": ""}
-        if oidc_roles is None:
-            user_row = get_user_by_username(clean_u)
-            if not user_row:
-                return {"username": clean_u, "error": "User not found", "modes": []}
-            roles_list = user_row.get("roles") or ([user_row.get("role")] if user_row.get("role") else [])
-        else:
-            roles_list = oidc_roles
+        roles_list = oidc_roles if oidc_roles is not None else []
 
         engine = get_engine()
         with engine.connect() as conn:
@@ -3677,8 +3689,8 @@ def get_user_modes_matrix(username: str, oidc_roles: Optional[list[str]] = None)
                 modes_res.append(mode_entry)
 
             return {
-                "username": user_row.get("username", clean_u),
-                "full_name": user_row.get("full_name") or "",
+                "username": clean_u,
+                "full_name": "",
                 "roles": roles_list,
                 "modes": modes_res,
             }

@@ -286,6 +286,13 @@ const ChatLayout = () => {
     };
   }, [isUserMenuOpen]);
 
+  // Tutup sidebar mobile otomatis saat admin panel dibuka
+  useEffect(() => {
+    if (isAdminOpen) {
+      setIsSidebarOpen(false);
+    }
+  }, [isAdminOpen]);
+
   // Touch gesture listener untuk swipe buka/tutup sidebar di HP (mobile)
   useEffect(() => {
     let startX = 0;
@@ -294,8 +301,8 @@ const ChatLayout = () => {
 
     const handleTouchStart = (e) => {
       if (e.touches.length !== 1) return;
-      // Jangan ganggu input/textarea atau blok kode horizontal
-      if (e.target.closest('input, textarea, pre, code, table')) {
+      // Jangan ganggu input/textarea, blok kode horizontal, atau modal dialog
+      if (e.target.closest('input, textarea, pre, code, table, [role="dialog"], .modal-panel')) {
         startX = 0;
         return;
       }
@@ -324,8 +331,15 @@ const ChatLayout = () => {
           setIsSidebarOpen(false);
         }
       } else {
-        // Saat sidebar tertutup: swipe dari kiri/kanan di HP untuk memunculkan sidebar
-        if (deltaX > 45 || deltaX < -50) {
+        // Saat sidebar tertutup:
+        // PENTING: Dilarang swipe untuk membuka sidebar jika:
+        // 1. Sedang berada di tab Dashboard (activeTab === 'dashboard')
+        // 2. Ada modal terbuka (Admin, Settings, Tasks, Login, Access Request, dll)
+        if (activeTab === 'dashboard') return;
+        if (isAdminOpen || isSettingsOpen || isScheduledTasksOpen || isLoginModalOpen || accessRequestModal?.isOpen) return;
+
+        // Hanya swipe ke kanan (deltaX > 45) dari mode chat yang boleh memunculkan sidebar
+        if (deltaX > 45) {
           setIsSidebarOpen(true);
         }
       }
@@ -338,7 +352,7 @@ const ChatLayout = () => {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [isSidebarOpen]);
+  }, [isSidebarOpen, activeTab, isAdminOpen, isSettingsOpen, isScheduledTasksOpen, isLoginModalOpen, accessRequestModal?.isOpen]);
 
   const { theme, cycleTheme } = useTheme();
   // Ponsel dalam posisi landscape: lebarnya lolos breakpoint `md`, tetapi
@@ -621,11 +635,12 @@ const ChatLayout = () => {
         }
       })
       .catch(() => {
-        /* Bila gagal atau unauthenticated, tampilkan login modal */
-        const stored = getStoredUser();
-        if (!stored || stored.role === 'guest' || stored.is_guest) {
-          setIsLoginModalOpen(true);
-        }
+        /* Bila gagal atau unauthenticated dari backend, bersihkan sesi lokal dan tampilkan login modal */
+        if (!active) return;
+        clearSession();
+        setUser(GUEST_USER);
+        setActiveTab('dashboard');
+        setIsLoginModalOpen(true);
       });
     return () => { active = false; };
   }, []);
@@ -1520,7 +1535,7 @@ const ChatLayout = () => {
     <div className="app-shell fixed inset-0 h-full w-full flex bg-surface text-content overflow-hidden font-sans overscroll-none">
 
       {/* Latar gelap untuk drawer sidebar di layar sempit */}
-      {isSidebarOpen && (
+      {!isAdminOpen && isSidebarOpen && (
         <div
           className={`fixed inset-0 bg-black/50 z-30 ${compactLandscape ? '' : 'md:hidden'}`}
           onClick={() => setIsSidebarOpen(false)}
@@ -1533,6 +1548,7 @@ const ChatLayout = () => {
         className={`fixed inset-y-0 left-0 w-72 max-w-[85vw] bg-surface-raised/95 backdrop-blur-xl border-r border-line
           flex flex-col z-40 shrink-0 transition-transform duration-200 pt-safe overflow-y-auto
           ${compactLandscape ? '' : 'md:static'}
+          ${isAdminOpen ? 'hidden md:hidden pointer-events-none' : ''}
           ${isSidebarOpen
             ? 'translate-x-0 shadow-2xl'
             : `-translate-x-full ${compactLandscape ? '' : 'md:translate-x-0'}`}`}
@@ -1795,7 +1811,10 @@ const ChatLayout = () => {
 
           {user.role === 'superadmin' && (
             <button
-              onClick={() => setIsAdminOpen(true)}
+              onClick={() => {
+                setIsSidebarOpen(false);
+                setIsAdminOpen(true);
+              }}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-amber-500/5 border border-amber-500/40 text-amber-800 dark:text-amber-300 hover:from-amber-500/25 hover:border-amber-500/60 hover:text-amber-950 dark:hover:text-amber-200 transition-all shadow-xs shadow-amber-500/10 cursor-pointer group"
             >
               <span className="flex items-center gap-2.5">
@@ -2582,6 +2601,7 @@ const ChatLayout = () => {
         {activeTab === 'dashboard' ? (
           <DashboardHome
             user={user}
+            isSidebarOpen={isSidebarOpen}
             onOpenSidebar={() => setIsSidebarOpen(true)}
             onStartChat={(prompt) => {
               setActiveTab('chat');
