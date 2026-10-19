@@ -7,7 +7,9 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#0F172A" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <meta name="theme-color" id="meta-theme-color" content="#f8fafc" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Enterprise AI" />
@@ -64,6 +66,11 @@
           if (t !== 'light' && t !== 'dark') t = 'light';
           root.setAttribute('data-theme', t);
           root.classList.toggle('dark', t === 'dark');
+          root.style.colorScheme = t === 'dark' ? 'dark' : 'only light';
+          var metaTheme = document.getElementById('meta-theme-color');
+          if (metaTheme) {
+            metaTheme.setAttribute('content', t === 'dark' ? '#09090b' : '#f8fafc');
+          }
         } catch (e) {}
       })();
     </script>

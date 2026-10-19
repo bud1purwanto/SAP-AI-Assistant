@@ -945,12 +945,28 @@ async def get_my_sap_credentials(user: dict = Depends(get_current_user)):
 async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_user)):
     """Mengambil target SAP OIDC dan status kredensial pengguna."""
     _sap_subject(user)
-    from oidc_sap_credentials import _connection_id, _target_names, list_sap_resources, list_status, saved_credentials
+    from oidc_sap_credentials import (
+        _connection_id,
+        _target_names,
+        list_sap_resources,
+        list_status,
+        list_available_targets,
+        saved_credentials,
+    )
     sap_subs = await list_sap_resources()
     oidc_rows = await list_status(user)
+    available_targets = await list_available_targets(user)
     user_creds = saved_credentials(oidc_rows)
     saved_ids = {c["connection_id"] for c in user_creds}
     saved_targets = {c["target"].lower().strip() for c in user_creds}
+
+    # Map nama target OIDC ke connection_id
+    target_conn_map = {}
+    for t in available_targets:
+        cid = _connection_id(t)
+        if cid:
+            for name in _target_names(t):
+                target_conn_map[name] = cid
 
     servers = []
     for srv in sap_subs:
@@ -962,9 +978,18 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
         aliases = srv.get("aliases") or []
         resource_key = str(srv.get("resource_key") or "")
         primary_alias = aliases[0] if aliases else (resource_key.removeprefix("sap:") or name.lower().replace(" ", "-"))
-        matching_row = next((row for row in oidc_rows if
-                             {primary_alias.lower(), name.lower(), resource_key.lower(), *(a.lower() for a in aliases)} & _target_names(row)), None)
+        all_names = {primary_alias.lower(), name.lower(), resource_key.lower(), *(a.lower() for a in aliases)}
+        matching_row = next((row for row in oidc_rows if all_names & _target_names(row)), None)
         has_credential = bool(matching_row and _connection_id(matching_row) in saved_ids)
+
+        # Resolusi connection_id: ambil dari matching_row jika ada, fallback ke target_conn_map dari available_targets
+        conn_id = _connection_id(matching_row or {})
+        if not conn_id:
+            for n in all_names:
+                if n in target_conn_map:
+                    conn_id = target_conn_map[n]
+                    break
+
         servers.append({
             "name": name,
             "alias": primary_alias,
@@ -975,7 +1000,7 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
             "production_warning": prod_warn,
             "is_allowed": True,
             "has_credential": has_credential,
-            "connection_id": _connection_id(matching_row or {}),
+            "connection_id": conn_id,
             "resource_key": resource_key,
         })
         
@@ -988,7 +1013,7 @@ async def get_available_sap_servers_endpoint(user: dict = Depends(get_current_us
 @app.post("/api/me/sap-credentials")
 async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
     """Simpan kredensial SAP di Dashboard OIDC untuk target pengguna."""
-    from oidc_sap_credentials import list_status, resolve_connection_id, save, saved_credentials
+    from oidc_sap_credentials import list_status, list_available_targets, resolve_connection_id, save, saved_credentials
     _sap_subject(user)
     target = (req.target or "").strip()
     sap_user = (req.sap_user or "").strip()
@@ -996,7 +1021,8 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi.")
         
     rows = await list_status(user)
-    connection_id = resolve_connection_id(rows, target, req.connection_id or "")
+    available_targets = await list_available_targets(user)
+    connection_id = resolve_connection_id(rows, target, req.connection_id or "", available_targets=available_targets)
     existing = next((item for item in saved_credentials(rows) if item["connection_id"] == connection_id), None)
     if existing and not req.is_update:
         # Jika bukan update, jangan izinkan duplikasi
@@ -1016,41 +1042,50 @@ async def save_my_sap_credential(req: UserSapCredentialRequest, user: dict = Dep
 @app.post("/api/me/sap-credentials/test")
 async def test_my_sap_credential(req: UserSapCredentialRequest, user: dict = Depends(get_current_user)):
     """Uji konektivitas live ke server SAP menggunakan endpoint test OIDC."""
-    from oidc_sap_credentials import list_status, resolve_connection_id, test_credential
+    from oidc_sap_credentials import list_status, list_available_targets, resolve_connection_id, test_credential
     _sap_subject(user)
     target = (req.target or "").strip()
     sap_user = (req.sap_user or "").strip()
+    password = (req.sap_password or "").strip()
     if not target or not sap_user:
         raise HTTPException(status_code=400, detail="Target SAP dan Username SAP wajib diisi untuk pengujian.")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password SAP wajib diisi untuk menguji kredensial ke server SAP.")
 
     rows = await list_status(user)
-    connection_id = resolve_connection_id(rows, target, req.connection_id or "")
+    available_targets = await list_available_targets(user)
+    connection_id = resolve_connection_id(rows, target, req.connection_id or "", available_targets=available_targets)
 
-    password = (req.sap_password or "").strip()
     try:
-        result = await test_credential(user, connection_id, sap_user, password or None)
+        result = await test_credential(user, connection_id, sap_user, password)
+        if isinstance(result, dict) and (result.get("ok") is False or result.get("success") is False):
+            msg = result.get("message") or result.get("error") or "Kredensial SAP salah atau koneksi gagal."
+            raise HTTPException(status_code=400, detail=msg)
         return {
             "success": True,
-            "message": f"Kredensial SAP untuk '{target}' valid dan berhasil terhubung!",
+            "message": (result.get("message") if isinstance(result, dict) and result.get("message") else None)
+                       or f"Kredensial SAP untuk '{target}' valid dan berhasil terhubung!",
             "result": result,
         }
-    except HTTPException as exc:
-        raise exc
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Gagal menguji koneksi SAP ke '{target}': {exc}")
-        return {"success": False, "message": f"Koneksi ke SAP gagal: {str(exc)}"}
+        raise HTTPException(status_code=502, detail=f"Koneksi ke SAP gagal: {str(exc)}")
 
 
 @app.delete("/api/me/sap-credentials/{target}")
 async def delete_my_sap_credential(target: str, user: dict = Depends(get_current_user)):
     """Hapus kredensial SAP pribadi di Dashboard OIDC."""
-    from oidc_sap_credentials import delete, list_status, resolve_connection_id
+    from oidc_sap_credentials import delete, list_status, list_available_targets, resolve_connection_id
     from database import delete_user_sap_token
     subject = _sap_subject(user)
     target_clean = (target or "").strip()
     if not target_clean:
         raise HTTPException(status_code=400, detail="Target tidak valid.")
-    connection_id = resolve_connection_id(await list_status(user), target_clean)
+    rows = await list_status(user)
+    available_targets = await list_available_targets(user)
+    connection_id = resolve_connection_id(rows, target_clean, available_targets=available_targets)
     await delete(user, connection_id)
     delete_user_sap_token(subject, connection_id)
     return {"success": True, "message": f"Kredensial untuk '{target_clean}' telah dihapus."}

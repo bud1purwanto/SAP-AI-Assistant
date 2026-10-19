@@ -51,13 +51,15 @@
 
 /* --- Tema terang (default - Ref 1 Soft Sky Blue & Minimalist) --- */
 :root,
-[data-theme="light"] {
-  color-scheme: light;
+[data-theme="light"],
+:root:not(.dark) {
+  color-scheme: only light;
+  forced-color-adjust: none;
 
-  --surface:           #f4f7fc;
+  --surface:           #f8fafc;
   --surface-raised:    #ffffff;
-  --surface-sunken:    #eaf1fb;
-  --surface-hover:     #e2ecf9;
+  --surface-sunken:    #f1f5f9;
+  --surface-hover:     #e2e8f0;
 
   --line:              #e2e8f0;
   --line-strong:       #cbd5e1;
@@ -85,8 +87,10 @@
 }
 
 /* --- Tema gelap --- */
-[data-theme="dark"] {
+[data-theme="dark"],
+:root.dark {
   color-scheme: dark;
+  forced-color-adjust: none;
 
   --surface:           #09090b;
   --surface-raised:    #18181b;
@@ -209,6 +213,9 @@ html, body {
   -webkit-overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
   -webkit-touch-callout: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  forced-color-adjust: none;
   position: fixed;
   inset: 0;
   touch-action: pan-y;
@@ -225,6 +232,7 @@ html, body {
   overflow-y: hidden;
   overscroll-behavior: none;
   -webkit-overscroll-behavior: none;
+  forced-color-adjust: none;
   position: relative;
 }
 
@@ -232,6 +240,13 @@ body {
   background-color: var(--surface);
   color: var(--content);
   overflow-x: hidden;
+  forced-color-adjust: none;
+}
+
+.app-shell {
+  background-color: var(--surface);
+  color: var(--content);
+  forced-color-adjust: none;
 }
 
 /* Kunci semua teks agar tidak menyebabkan horizontal overflow di mobile */

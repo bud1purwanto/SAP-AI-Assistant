@@ -46,18 +46,37 @@ def _target_names(row: dict) -> set[str]:
     return names
 
 
-def resolve_connection_id(rows: list[dict], target: str, explicit_id: str = "") -> str:
+def resolve_connection_id(
+    rows: list[dict],
+    target: str,
+    explicit_id: str = "",
+    available_targets: list[dict] | None = None,
+) -> str:
     wanted = str(target or "").strip().lower()
+    targets = list(available_targets or [])
+    all_sources = list(rows) + targets
+
     if explicit_id:
         connection_id = str(explicit_id).strip()
-        if any(_connection_id(row) == connection_id and wanted in _target_names(row) for row in rows):
+        if any(_connection_id(item) == connection_id for item in all_sources):
             return connection_id
+        if len(connection_id) == 36 and "-" in connection_id:
+            return connection_id
+
     for row in rows:
         if wanted == _connection_id(row).lower() or wanted in _target_names(row):
             connection_id = _connection_id(row)
             if connection_id:
                 return connection_id
+
+    for t in targets:
+        if wanted == _connection_id(t).lower() or wanted in _target_names(t):
+            connection_id = _connection_id(t)
+            if connection_id:
+                return connection_id
+
     raise HTTPException(status_code=404, detail="Target SAP tidak ditemukan di Dashboard OIDC.")
+
 
 
 def saved_credentials(rows: list[dict]) -> list[dict]:
@@ -137,8 +156,13 @@ async def _request(method: str, path: str, user: dict, body: dict | None = None)
     try:
         data = response.json()
         if isinstance(data, dict):
-            # Cek jika payload mengembalikan status failure eksplisit
-            if data.get("success") is False or data.get("valid") is False or data.get("status") == "error":
+            # Cek jika payload mengembalikan status failure eksplisit (termasuk ok: false dari MCP controller)
+            if (
+                data.get("ok") is False
+                or data.get("success") is False
+                or data.get("valid") is False
+                or data.get("status") == "error"
+            ):
                 reason = data.get("message") or data.get("error") or data.get("reason") or "Kredensial SAP salah atau tidak dapat terhubung."
                 raise HTTPException(status_code=400, detail=reason)
         return data
@@ -194,6 +218,18 @@ async def list_sap_resources() -> list[dict]:
     return [item for item in resources if isinstance(item, dict) and item.get("kind") == "sap"]
 
 
+async def list_available_targets(user: dict) -> list[dict]:
+    """Mengambil target SAP yang tersedia dari katalog hak akses OIDC."""
+    try:
+        targets = _rows(await _request("GET", "/v1/access-requests/available", user))
+        return [
+            t for t in targets
+            if isinstance(t, dict) and (t.get("serverType") == "sap" or str(t.get("resourceKey", "")).startswith("sap:"))
+        ]
+    except Exception:
+        return []
+
+
 async def save(user: dict, connection_id: str, username: str, password: str | None):
     payload = {"username": username}
     if password:
@@ -205,8 +241,13 @@ async def test_credential(user: dict, connection_id: str, username: str, passwor
     payload = {"username": username}
     if password:
         payload["password"] = password
-    return await _request("POST", f"/v1/mcp/sap-credentials/{quote(connection_id, safe='')}/test", user, payload)
+    res = await _request("POST", f"/v1/mcp/sap-credentials/{quote(connection_id, safe='')}/test", user, payload)
+    if isinstance(res, dict) and (res.get("ok") is False or res.get("success") is False or res.get("valid") is False):
+        reason = res.get("message") or res.get("error") or res.get("reason") or "Kredensial SAP salah atau tidak dapat terhubung."
+        raise HTTPException(status_code=400, detail=reason)
+    return res
 
 
 async def delete(user: dict, connection_id: str):
     return await _request("DELETE", f"/v1/mcp/sap-credentials/{quote(connection_id, safe='')}", user)
+

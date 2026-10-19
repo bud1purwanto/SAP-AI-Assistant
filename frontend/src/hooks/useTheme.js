@@ -29,6 +29,14 @@ export function applyTheme(theme) {
   const target = resolveTheme(theme);
   root.setAttribute('data-theme', target);
   root.classList.toggle('dark', target === 'dark');
+  root.style.colorScheme = target === 'dark' ? 'dark' : 'only light';
+
+  try {
+    const metaTheme = document.getElementById('meta-theme-color') || document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', target === 'dark' ? '#09090b' : '#f8fafc');
+    }
+  } catch {}
 }
 
 /**
