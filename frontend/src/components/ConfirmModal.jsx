@@ -20,6 +20,7 @@ const ConfirmModal = ({
   cancelText,
   variant = 'danger', // 'danger' | 'warning' | 'logout' | 'reset' | 'info'
   isLoading = false,
+  zIndex = 'z-[150]',
 }) => {
   const { t } = useLanguage();
 
@@ -87,7 +88,7 @@ const ConfirmModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-md animate-modal-backdrop"
+      className={`fixed inset-0 ${zIndex} flex items-center justify-center p-3 sm:p-4 overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-md animate-modal-backdrop`}
       onClick={() => {
         if (!isLoading) onClose();
       }}

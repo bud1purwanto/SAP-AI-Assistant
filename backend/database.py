@@ -1796,10 +1796,25 @@ def reset_token_usage(oidc_sub: str = None, tanggal: str = None) -> int:
         engine = get_engine()
         with engine.connect() as conn:
             if oidc_sub:
+                clean = str(oidc_sub).strip()
+                candidate_subs = {clean}
+                try:
+                    sess_rows = conn.execute(text("""
+                        SELECT id, username FROM {DB_SCHEMA}.user_sessions
+                        WHERE username = :s OR id::text = :s
+                    """), {"s": clean}).fetchall()
+                    for r in sess_rows:
+                        if getattr(r, "username", None):
+                            candidate_subs.add(r.username)
+                        if getattr(r, "id", None):
+                            candidate_subs.add(str(r.id))
+                except Exception:
+                    pass
+
                 res = conn.execute(text("""
                     DELETE FROM {DB_SCHEMA}.token_usage
-                    WHERE oidc_sub = :sub AND usage_date = :d
-                """), {"sub": str(oidc_sub).strip(), "d": tanggal})
+                    WHERE oidc_sub = ANY(:subs) AND usage_date = :d
+                """), {"subs": list(candidate_subs), "d": tanggal})
             else:
                 res = conn.execute(
                     text("DELETE FROM {DB_SCHEMA}.token_usage WHERE usage_date = :d"),
