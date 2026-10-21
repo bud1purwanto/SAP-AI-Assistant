@@ -123,14 +123,10 @@ async def fetch_directory(kind: str, token: str | None, session_id: str | None =
             if response.status_code == 401 and active_session_id:
                 logger.info("Directory OIDC 401 Unauthorized untuk '%s'. Mencoba auto-refresh sesi %s...", kind, active_session_id[:8])
                 try:
-                    from database import get_dashboard_session_data
-                    sess_data = get_dashboard_session_data(active_session_id)
-                    ref_tok = sess_data.get("refresh_token") if sess_data else None
-                    if ref_tok:
-                        from auth import _try_refresh_dashboard_token
-                        new_token = _try_refresh_dashboard_token(active_session_id, ref_tok)
-                        if new_token:
-                            response = await client.get(url, headers={"Authorization": f"Bearer {new_token}"})
+                    from auth import refresh_dashboard_session
+                    new_token = refresh_dashboard_session(active_session_id, rejected_token=current_token)
+                    if new_token:
+                        response = await client.get(url, headers={"Authorization": f"Bearer {new_token}"})
                 except Exception as ref_exc:
                     logger.warning("Auto-refresh pada fetch_directory gagal: %s", ref_exc)
 

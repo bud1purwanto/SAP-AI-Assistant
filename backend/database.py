@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import json
+from contextlib import contextmanager
 import logging
 import re
 import time
@@ -4663,6 +4664,33 @@ def record_auth_audit_log(
     except Exception as e:
         logger.error(f"Gagal mencatat auth_audit_log: {e}")
         return False
+
+
+@contextmanager
+def dashboard_refresh_lock(session_id: str):
+    """Kunci lintas worker (PostgreSQL advisory lock) agar refresh token OIDC satu sesi
+    tidak dijalankan bersamaan; Central Dashboard merotasi refresh token sekali pakai."""
+    key = f"oidc-refresh:{session_id}"
+    conn = None
+    try:
+        conn = get_engine().connect()
+        conn.execute(text("SELECT pg_advisory_lock(hashtext(:k))"), {"k": key})
+    except Exception as e:
+        logger.warning(f"Advisory lock refresh OIDC gagal, lanjut tanpa lock: {e}")
+        if conn is not None:
+            conn.close()
+            conn = None
+    try:
+        yield
+    finally:
+        if conn is not None:
+            try:
+                conn.execute(text("SELECT pg_advisory_unlock(hashtext(:k))"), {"k": key})
+                conn.commit()
+            except Exception as e:
+                logger.warning(f"Gagal melepas advisory lock refresh OIDC: {e}")
+            finally:
+                conn.close()
 
 
 def save_dashboard_session_token(

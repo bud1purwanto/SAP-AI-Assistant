@@ -6,6 +6,7 @@ berbasis identitas dari dashboard-mcp.
 import contextvars
 import logging
 import secrets
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -170,46 +171,63 @@ def _try_refresh_dashboard_token(session_id: str, refresh_token: str) -> Optiona
     return None
 
 
+_refresh_locks: Dict[str, threading.Lock] = {}
+_refresh_locks_guard = threading.Lock()
+
+
+def refresh_dashboard_session(session_id: str, rejected_token: Optional[str] = None) -> Optional[str]:
+    """Refresh token OIDC satu sesi secara berurutan (antar-thread dan antar-worker).
+
+    Central Dashboard merotasi refresh token: sekali dipakai, token lama dicabut. Karena itu
+    DB adalah sumber kebenaran; di dalam lock, baca ulang DB dan pakai token yang sudah
+    di-refresh worker/request lain bila masih berlaku, alih-alih me-refresh dengan token basi.
+    `rejected_token` = access token yang baru saja ditolak OIDC (401), jangan dipakai ulang.
+    """
+    if not session_id:
+        return None
+    with _refresh_locks_guard:
+        lock = _refresh_locks.setdefault(session_id, threading.Lock())
+    from database import dashboard_refresh_lock, get_dashboard_session_data
+    with lock, dashboard_refresh_lock(session_id):
+        data = get_dashboard_session_data(session_id)
+        if not data:
+            return None
+        token, exp, refresh_token = data.get("access_token"), data.get("exp"), data.get("refresh_token")
+        now = datetime.now(timezone.utc)
+        if token and token != rejected_token and exp and exp > now + timedelta(seconds=60):
+            _dashboard_tokens[session_id] = (token, exp, refresh_token)
+            return token
+        if not refresh_token:
+            return None
+        return _try_refresh_dashboard_token(session_id, refresh_token)
+
+
 def _resolve_dashboard_token(session_id: Optional[str]) -> Optional[str]:
     """Selesaikan token akses OIDC aktif, melakukan auto-refresh jika hampir kedaluwarsa."""
     if not isinstance(session_id, str) or not session_id:
         return None
     now = datetime.now(timezone.utc)
     entry = _dashboard_tokens.get(session_id)
-    if entry:
-        token = entry[0]
-        exp = entry[1]
-        refresh_token = entry[2] if len(entry) > 2 else None
-        # Jika token masih aktif lebih dari 60 detik, gunakan langsung
-        if exp and exp > now + timedelta(seconds=60):
-            return token
-        # Token kedaluwarsa atau mendekati kedaluwarsa (<60 detik), coba refresh jika punya refresh token
-        if refresh_token:
-            refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
-            if refreshed:
-                return refreshed
-        # Jika refresh gagal atau tidak ada refresh token, tapi token belum lewat waktu kedaluwarsa
-        if token and exp and exp > now:
-            return token
-        return None
+    if entry and entry[0] and entry[1] and entry[1] > now + timedelta(seconds=60):
+        return entry[0]
 
+    # Cache proses ini kosong/basi; worker lain mungkin sudah me-refresh, jadi baca DB dulu.
     from database import get_dashboard_session_data
     data = get_dashboard_session_data(session_id)
     if data:
-        token = data.get("access_token")
-        refresh_token = data.get("refresh_token")
-        exp = data.get("exp")
+        token, exp = data.get("access_token"), data.get("exp")
         if token and exp and exp > now + timedelta(seconds=60):
-            _dashboard_tokens[session_id] = (token, exp, refresh_token)
-            return token
-        if refresh_token:
-            refreshed = _try_refresh_dashboard_token(session_id, refresh_token)
-            if refreshed:
-                return refreshed
-        if token and exp and exp > now:
-            _dashboard_tokens[session_id] = (token, exp, refresh_token)
+            _dashboard_tokens[session_id] = (token, exp, data.get("refresh_token"))
             return token
 
+    refreshed = refresh_dashboard_session(session_id)
+    if refreshed:
+        return refreshed
+
+    # Refresh gagal: pakai token yang belum benar-benar lewat waktu kedaluwarsa bila ada.
+    for candidate in (data and (data.get("access_token"), data.get("exp")), entry and (entry[0], entry[1])):
+        if candidate and candidate[0] and candidate[1] and candidate[1] > now:
+            return candidate[0]
     return None
 
 

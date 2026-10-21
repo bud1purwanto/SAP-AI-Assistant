@@ -98,3 +98,58 @@ def test_resigning_cookie_does_not_extend_oidc_token_expiry(monkeypatch):
     payload = auth.decode_session_cookie(encoded)
     assert payload["session_id"] == "session-hb"
     assert "dashboard_token" not in payload
+
+
+class _NoLock:
+    def __init__(self, *_a, **_kw):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def test_stale_worker_cache_uses_token_refreshed_by_another_worker(monkeypatch):
+    """Central Dashboard merotasi refresh token (sekali pakai). Worker dengan cache basi
+    harus memakai token yang sudah di-refresh worker lain, bukan me-refresh dengan token yang dicabut."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setitem(auth._dashboard_tokens, "sess-multi", ("old-access", now - timedelta(minutes=1), "revoked-refresh"))
+    monkeypatch.setattr("database.get_dashboard_session_data", lambda _sid: {
+        "access_token": "new-access", "refresh_token": "new-refresh", "exp": now + timedelta(minutes=14),
+    })
+    monkeypatch.setattr("database.dashboard_refresh_lock", _NoLock)
+    calls = []
+    monkeypatch.setattr(auth, "_try_refresh_dashboard_token", lambda sid, rt: calls.append(rt) or "x")
+
+    assert auth._resolve_dashboard_token("sess-multi") == "new-access"
+    assert calls == []
+    assert auth._dashboard_tokens["sess-multi"][2] == "new-refresh"
+
+
+def test_refresh_uses_latest_refresh_token_from_database(monkeypatch):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setitem(auth._dashboard_tokens, "sess-exp", ("old-access", now - timedelta(minutes=1), "revoked-refresh"))
+    monkeypatch.setattr("database.get_dashboard_session_data", lambda _sid: {
+        "access_token": "old-access-2", "refresh_token": "latest-refresh", "exp": now - timedelta(seconds=5),
+    })
+    monkeypatch.setattr("database.dashboard_refresh_lock", _NoLock)
+    calls = []
+    monkeypatch.setattr(auth, "_try_refresh_dashboard_token", lambda sid, rt: calls.append(rt) or "fresh-access")
+
+    assert auth._resolve_dashboard_token("sess-exp") == "fresh-access"
+    assert calls == ["latest-refresh"]
+
+
+def test_forced_refresh_after_rejection_does_not_reuse_rejected_token(monkeypatch):
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr("database.get_dashboard_session_data", lambda _sid: {
+        "access_token": "rejected-access", "refresh_token": "rt-1", "exp": now + timedelta(minutes=10),
+    })
+    monkeypatch.setattr("database.dashboard_refresh_lock", _NoLock)
+    calls = []
+    monkeypatch.setattr(auth, "_try_refresh_dashboard_token", lambda sid, rt: calls.append(rt) or "fresh-access")
+
+    assert auth.refresh_dashboard_session("sess-401", rejected_token="rejected-access") == "fresh-access"
+    assert calls == ["rt-1"]

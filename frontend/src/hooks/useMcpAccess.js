@@ -10,9 +10,9 @@ export const useMcpAccessRequests = (enabled = true) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchTargets = useCallback(async () => {
+  const fetchTargets = useCallback(async ({ silent = false } = {}) => {
     if (!enabled) return [];
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     setError(null);
     try {
       const data = await api.mcpAccessTargets();
@@ -27,13 +27,35 @@ export const useMcpAccessRequests = (enabled = true) => {
       setError(e.message || 'Failed to load access targets');
       return [];
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [enabled]);
 
   useEffect(() => {
     if (enabled) fetchTargets();
   }, [enabled, fetchTargets]);
+
+  // Muat ulang saat tab kembali aktif, agar daftar akses MCP tidak tertahan "locked"
+  // setelah token OIDC sempat kedaluwarsa lalu diperbarui backend.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onVisible = () => {
+      if (!document.hidden) fetchTargets({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [enabled, fetchTargets]);
+
+  // Coba lagi otomatis selama pemuatan terakhir gagal.
+  useEffect(() => {
+    if (!enabled || !error) return undefined;
+    const timer = setTimeout(() => fetchTargets({ silent: true }), 30000);
+    return () => clearTimeout(timer);
+  }, [enabled, error, fetchTargets]);
 
   const byResourceKey = useMemo(() => {
     const map = {};
