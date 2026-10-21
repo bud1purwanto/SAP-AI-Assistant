@@ -62,14 +62,24 @@
             window.visualViewport.addEventListener('resize', setAppHeight);
           }
 
-          var t = localStorage.getItem('sap_assistant_theme');
-          if (t !== 'light' && t !== 'dark') t = 'light';
+          // Sama dengan readStoredTheme() di useTheme.js: 'light' lama tanpa penanda
+          // eksplisit bukan pilihan pengguna, jadi ikuti preferensi sistem/browser.
+          var t = null;
+          try {
+            var saved = localStorage.getItem('sap_assistant_theme');
+            if (saved === 'dark' || (saved === 'light' && localStorage.getItem('sap_assistant_theme_explicit') === '1')) t = saved;
+          } catch (e) {}
+          if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
           root.setAttribute('data-theme', t);
           root.classList.toggle('dark', t === 'dark');
           root.style.colorScheme = t === 'dark' ? 'dark' : 'only light';
           var metaTheme = document.getElementById('meta-theme-color');
           if (metaTheme) {
             metaTheme.setAttribute('content', t === 'dark' ? '#09090b' : '#f8fafc');
+          }
+          var metaScheme = document.querySelector('meta[name="color-scheme"]');
+          if (metaScheme) {
+            metaScheme.setAttribute('content', t === 'dark' ? 'dark' : 'only light');
           }
         } catch (e) {}
       })();
