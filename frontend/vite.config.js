@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: `http://127.0.0.1:${backendPort}`,
           changeOrigin: true,
+          xfwd: true, // teruskan IP asli klien (X-Forwarded-For) agar sesi tiap perangkat tercatat benar
         },
       },
       headers: {
@@ -27,6 +28,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: `http://127.0.0.1:${backendPort}`,
           changeOrigin: true,
+          xfwd: true, // teruskan IP asli klien (X-Forwarded-For) agar sesi tiap perangkat tercatat benar
         },
       },
       headers: {

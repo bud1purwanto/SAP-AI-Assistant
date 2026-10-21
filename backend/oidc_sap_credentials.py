@@ -132,8 +132,9 @@ async def _request(method: str, path: str, user: dict, body: dict | None = None)
                 err_msg = ", ".join(err_msg)
         except Exception:
             err_msg = response.text
+        # 401 dari OIDC diteruskan sebagai 403 agar frontend tidak menganggap sesi aplikasi berakhir.
         raise HTTPException(
-            status_code=response.status_code,
+            status_code=403,
             detail=err_msg or "Akses kredensial SAP ditolak OIDC atau kredensial SAP tidak valid."
         )
     if response.status_code == 404:

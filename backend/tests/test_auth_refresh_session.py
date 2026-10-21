@@ -71,3 +71,30 @@ def test_session_cookie_does_not_expose_oidc_refresh_token(monkeypatch):
     payload = auth.decode_session_cookie(encoded)
     assert "access_token" not in payload
     assert "refresh_token" not in payload
+
+
+def test_resigning_cookie_does_not_extend_oidc_token_expiry(monkeypatch):
+    """Heartbeat menandatangani ulang cookie tanpa oidc_expires_in; masa berlaku
+    token OIDC yang tersimpan tidak boleh ikut diperpanjang, agar auto-refresh
+    tetap berjalan sebelum token kedaluwarsa di sisi OIDC."""
+    saved = []
+    monkeypatch.setattr("database.save_dashboard_session_token", lambda *a, **kw: saved.append((a, kw)) or True)
+    real_exp = datetime.now(timezone.utc) + timedelta(seconds=30)
+    monkeypatch.setitem(auth._dashboard_tokens, "session-hb", ("access-secret", real_exp, "refresh-secret"))
+
+    encoded = auth.create_session_cookie({
+        "sub": "oidc-user-123",
+        "username": "alice",
+        "role": "admin",
+        "roles": ["admin"],
+        "session_id": "session-hb",
+        "access_token": "access-secret",
+        "dashboard_token": "access-secret",
+        "refresh_token": "refresh-secret",
+    })
+
+    assert saved == []
+    assert auth._dashboard_tokens["session-hb"][1] == real_exp
+    payload = auth.decode_session_cookie(encoded)
+    assert payload["session_id"] == "session-hb"
+    assert "dashboard_token" not in payload

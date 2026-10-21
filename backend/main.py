@@ -563,7 +563,9 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
 
     # Multiple-sessions support:
     # 1. Cek sesi aktif milik pengguna.
-    # 2. Sesi lama dari PERANGKAT/BROWSER YANG SAMA dinonaktifkan (status='replaced') agar tidak menumpuk/dobel.
+    # 2. Hanya sesi lama milik BROWSER INI (dikenali dari cookie sesinya) yang dinonaktifkan (status='replaced').
+    #    Kemiripan browser/OS/IP tidak dipakai untuk memutus sesi, karena PC lain dengan browser yang sama
+    #    (mis. di balik NAT/proxy) akan ikut ter-logout.
     # 3. Peringatan login bersamaan (concurrent_warning) HANYA dimunculkan jika ada sesi di PERANGKAT LAIN yang benar-benar berbeda.
     session_id = str(uuid.uuid4())
     existing_sessions = get_active_sessions_by_username(username=principal["username"])
@@ -586,13 +588,15 @@ async def auth_login(req: LoginRequest, request: Request, response: Response):
             return True
         return False
 
-    same_device_sessions = [s for s in existing_sessions if _is_same_device(s)]
-    other_device_sessions = [s for s in existing_sessions if not _is_same_device(s)]
+    from auth import previous_session_id_from_request
+    previous_session_id = previous_session_id_from_request(request, principal["username"])
+    replaced_sessions = [s for s in existing_sessions if previous_session_id and str(s.get("id")) == previous_session_id]
+    other_device_sessions = [s for s in existing_sessions if s not in replaced_sessions and not _is_same_device(s)]
 
-    if same_device_sessions:
+    if replaced_sessions:
         from database import deactivate_sessions_by_ids
         deactivate_sessions_by_ids(
-            [s["id"] for s in same_device_sessions],
+            [s["id"] for s in replaced_sessions],
             reason="Digantikan oleh sesi login baru di perangkat yang sama",
             status="replaced",
         )
@@ -1097,6 +1101,21 @@ async def bind_sap_token(req: BindSapTokenRequest, user: dict = Depends(get_curr
     raise HTTPException(status_code=410, detail="Gunakan SAP Login yang tersambung ke Dashboard OIDC.")
 
 
+def _oidc_session_unavailable() -> HTTPException:
+    # 403, bukan 401: sesi aplikasi masih sah; 401 membuat frontend me-logout pengguna.
+    return HTTPException(
+        status_code=403,
+        detail="Sesi OIDC Central Dashboard tidak tersedia atau telah berakhir. Silakan login ulang untuk memakai fitur ini.",
+    )
+
+
+def _dashboard_upstream_error(r: httpx.Response) -> HTTPException:
+    """Teruskan error dashboard-mcp tanpa meneruskan 401 (token OIDC) sebagai 401 sesi aplikasi."""
+    if r.status_code == 401:
+        return _oidc_session_unavailable()
+    return HTTPException(status_code=r.status_code, detail=r.text)
+
+
 class RequestMcpAccessPayload(BaseModel):
     connectionId: str
     reason: Optional[str] = None
@@ -1108,7 +1127,7 @@ async def get_available_mcp_access_requests(user: dict = Depends(get_current_use
     from auth import get_dashboard_access_token
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
-        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+        raise _oidc_session_unavailable()
     base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -1120,7 +1139,7 @@ async def get_available_mcp_access_requests(user: dict = Depends(get_current_use
         logger.error(f"dashboard-mcp unreachable for access requests available: {e}")
         raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
     if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text)
+        raise _dashboard_upstream_error(r)
     return r.json()
 
 
@@ -1130,7 +1149,7 @@ async def submit_mcp_access_request(req: RequestMcpAccessPayload, user: dict = D
     from auth import get_dashboard_access_token
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
-        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+        raise _oidc_session_unavailable()
     base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -1143,7 +1162,7 @@ async def submit_mcp_access_request(req: RequestMcpAccessPayload, user: dict = D
         logger.error(f"dashboard-mcp unreachable for submitting access request: {e}")
         raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
     if r.status_code != 201 and r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text)
+        raise _dashboard_upstream_error(r)
     return r.json()
 
 
@@ -1153,7 +1172,7 @@ async def get_my_mcp_access_requests(user: dict = Depends(get_current_user)):
     from auth import get_dashboard_access_token
     access_token = (user or {}).get("access_token") or (user or {}).get("dashboard_token") or get_dashboard_access_token()
     if not access_token:
-        raise HTTPException(status_code=401, detail="Sesi dashboard-mcp tidak tersedia.")
+        raise _oidc_session_unavailable()
     base = mcp_control_plane_base("sap")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -1165,7 +1184,7 @@ async def get_my_mcp_access_requests(user: dict = Depends(get_current_user)):
         logger.error(f"dashboard-mcp unreachable for access requests history: {e}")
         raise HTTPException(status_code=502, detail="Layanan otorisasi MCP tidak merespons.")
     if r.status_code != 200:
-        raise HTTPException(status_code=r.status_code, detail=r.text)
+        raise _dashboard_upstream_error(r)
     return r.json()
 
 # --- KONFIGURASI ---

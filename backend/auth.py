@@ -89,11 +89,15 @@ def create_session_cookie(principal: dict) -> str:
         "exp": now + timedelta(seconds=expire_seconds),
     }
     for k, v in principal.items():
-        if k not in payload and k not in ("access_token", "refresh_token"):
+        if k not in payload and k not in ("access_token", "refresh_token", "dashboard_token"):
             payload[k] = v
 
     access_token = principal.get("access_token")
-    if access_token:
+    # Token OIDC hanya disimpan saat baru diterbitkan OIDC (login), yang selalu
+    # membawa oidc_expires_in. Penandatanganan ulang cookie (heartbeat) tidak boleh
+    # menimpa masa berlaku token, karena itu menunda auto-refresh hingga token
+    # benar-benar kedaluwarsa di OIDC dan memicu 401 yang membuat pengguna logout.
+    if access_token and principal.get("oidc_expires_in") is not None:
         session_id = str(principal.get("session_id") or secrets.token_urlsafe(32))
         refresh_token = principal.get("refresh_token")
         if not refresh_token:
@@ -256,6 +260,21 @@ def decode_session_cookie(token: str) -> Optional[dict]:
     except jwt.InvalidTokenError as e:
         logger.debug(f"Session cookie tidak valid: {e}")
         return None
+def previous_session_id_from_request(request: Request, username: str) -> Optional[str]:
+    """ID sesi lama milik browser ini (dari cookie, walau sudah kedaluwarsa) untuk user yang sama."""
+    token = request.cookies.get(settings.session_cookie_name)
+    if not token or not username:
+        return None
+    try:
+        payload = jwt.decode(token, settings.session_secret, algorithms=["HS256"], options={"verify_exp": False})
+    except jwt.InvalidTokenError:
+        return None
+    if str(payload.get("username") or "").lower() != username.lower():
+        return None
+    session_id = payload.get("session_id")
+    return str(session_id) if session_id else None
+
+
 # --- FastAPI Dependencies ---
 
 def _credentials_exception(detail: str = "Diperlukan autentikasi. Silakan login terlebih dahulu.") -> HTTPException:

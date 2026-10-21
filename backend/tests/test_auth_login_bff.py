@@ -1,5 +1,6 @@
 import asyncio
 import json
+import jwt
 import httpx
 import pytest
 import respx
@@ -197,3 +198,49 @@ def test_change_oidc_password_rejects_wrong_temporary_password(client):
     })
     assert r.status_code == 401
     assert not change.called
+
+
+def _login_with_existing_sessions(existing_sessions, cookie_header=None):
+    import main
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(
+        200, json={"accessToken": "tok-new", "expiresIn": 900, "user": DASH_USER_OK}
+    ))
+    headers = [(b"user-agent", b"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36")]
+    if cookie_header:
+        headers.append((b"cookie", cookie_header.encode()))
+    request = Request({"type": "http", "method": "POST", "path": "/api/auth/login",
+                       "headers": headers, "client": ("127.0.0.1", 5000)})
+    with patch("main.httpx.AsyncClient", side_effect=lambda **kwargs: real_async_client(transport=transport)), \
+         patch("main.ensure_user_exists", return_value={"username": "alice"}), \
+         patch("main.get_active_sessions_by_username", return_value=existing_sessions), \
+         patch("database.deactivate_sessions_by_ids") as deactivate, \
+         patch("main.create_user_session"), \
+         patch("main.record_auth_audit_log"), \
+         patch("main.create_session_cookie", return_value="signed-session"):
+        asyncio.run(main.auth_login(main.LoginRequest(username="alice", password="pw"), request, Response()))
+    return deactivate
+
+
+def test_login_does_not_kick_other_device_with_same_browser_and_os():
+    """PC lain dengan Chrome/Windows di balik IP yang sama tidak boleh ikut diputus."""
+    other_pc = {"id": "sess-other-pc", "browser": "Chrome", "os": "Windows",
+                "ip_address": "127.0.0.1", "device_name": "PC (Chrome - Windows)"}
+    deactivate = _login_with_existing_sessions([other_pc])
+    deactivate.assert_not_called()
+
+
+def test_login_replaces_only_the_session_of_this_browser():
+    import auth
+    old_cookie = jwt.encode({"sub": "u-123", "username": "alice", "roles": ["admin"], "session_id": "sess-this-browser"},
+                            settings.session_secret, algorithm="HS256")
+    sessions = [
+        {"id": "sess-this-browser", "browser": "Chrome", "os": "Windows", "ip_address": "127.0.0.1"},
+        {"id": "sess-other-pc", "browser": "Chrome", "os": "Windows", "ip_address": "127.0.0.1"},
+    ]
+    deactivate = _login_with_existing_sessions(sessions, f"{settings.session_cookie_name}={old_cookie}")
+    deactivate.assert_called_once()
+    assert deactivate.call_args.args[0] == ["sess-this-browser"]

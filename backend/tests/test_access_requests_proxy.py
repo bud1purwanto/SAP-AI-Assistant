@@ -75,10 +75,10 @@ def test_my_access_requests_proxy():
         assert res == [{"id": "req-1", "status": "pending"}]
 
 
-def test_access_requests_no_session_raises_401():
+def test_access_requests_no_session_raises_403_without_logging_out():
     with patch("auth.get_dashboard_access_token", return_value=None):
         with pytest.raises(HTTPException) as exc:
             asyncio.run(
                 get_available_mcp_access_requests(user={"username": "guest", "access_token": None, "dashboard_token": None})
             )
-        assert exc.value.status_code == 401
+        assert exc.value.status_code == 403
