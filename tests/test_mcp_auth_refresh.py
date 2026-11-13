@@ -161,3 +161,56 @@ def test_sap_target_without_tools_does_not_answer_from_model(monkeypatch):
     response = _sap_chat(monkeypatch, "error")
     assert "tidak dapat mengakses sap" in response.reply.lower()
     assert "login ulang" not in response.reply.lower()
+
+
+def _general_chat(monkeypatch, failures, model=None):
+    async def failing_tools(server_filter="all", allowed_connectors=None, errors=None):
+        if errors is not None:
+            errors.update(failures)
+        return []
+
+    def unexpected_model(*args, **kwargs):
+        raise AssertionError("Model tidak boleh dipanggil saat sesi ditolak gateway")
+
+    monkeypatch.setattr(agent.mcp_manager, "get_all_tools", failing_tools)
+    monkeypatch.setattr(agent, "_buat_llm", model or unexpected_model)
+    return asyncio.run(agent.process_chat(ChatRequest(
+        message="cari email terbaru tentang invoice",
+        active_server="general",
+        enabled_connectors=["rag", "email"],
+        language="id",
+    ), oidc_sub="user-1"))
+
+
+def test_rag_and_email_rejected_session_asks_relogin(monkeypatch):
+    response = _general_chat(monkeypatch, {"rag": "auth", "email": "auth"})
+    assert "login ulang" in response.reply.lower()
+    assert "RAG Knowledge" in response.reply and "Email" in response.reply
+    assert response.sources == []
+
+
+def test_unavailable_connector_is_disclosed_to_model(monkeypatch):
+    captured = {}
+
+    class Reply:
+        content = "Email sedang tidak dapat diakses."
+        tool_calls = []
+        additional_kwargs = {}
+        response_metadata = {}
+        usage_metadata = None
+
+    class FakeModel:
+        def bind_tools(self, *args, **kwargs):
+            return self
+
+        async def ainvoke(self, messages, *args, **kwargs):
+            captured["prompt"] = "\n".join(str(getattr(m, "content", m)) for m in messages)
+            return Reply()
+
+        def invoke(self, messages, *args, **kwargs):
+            captured["prompt"] = "\n".join(str(getattr(m, "content", m)) for m in messages)
+            return Reply()
+
+    _general_chat(monkeypatch, {"email": "error"}, model=lambda *a, **k: FakeModel())
+    assert "TIDAK DAPAT DIAKSES" in captured["prompt"]
+    assert "Email" in captured["prompt"]

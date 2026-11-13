@@ -29,6 +29,8 @@ from config import settings
 from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
+MCP_CONNECTOR_LABELS = {"sap": "SAP", "rag": "RAG Knowledge", "sql": "SQL Database", "email": "Email"}
+
 
 def _raise_if_sap_credential_rejected(server_name: str, result) -> None:
     if server_name != "sap":
@@ -1257,33 +1259,48 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     has_rag = any(item["server"] == "rag" for item in all_mcp_tools)
     has_sql = any(item["server"] in ("sql", "database") for item in all_mcp_tools)
     has_email = any(item["server"] == "email" for item in all_mcp_tools)
+    available_servers = {item["server"] for item in all_mcp_tools}
+    # Gateway menolak token sesi (401) dan refresh tidak berhasil: semua konektor inti
+    # memakai token yang sama, jadi jawaban tanpa tool hanya akan menyesatkan.
+    session_rejected = [
+        name for name in ("sap", "rag", "sql", "email")
+        if tool_errors.get(name) == "auth" and name not in available_servers
+    ]
+    if session_rejected:
+        labels = ", ".join(MCP_CONNECTOR_LABELS[name] for name in session_rejected)
+        logger.warning("Gateway MCP menolak sesi pengguna untuk konektor: %s; permintaan dihentikan.", labels)
+        await report("done", "Completed" if is_en else "Selesai")
+        return ChatResponse(reply=(
+            f"I couldn't access {labels} because the MCP gateway rejected your login session. "
+            "Please log out and log in again, then retry. No data from these sources was read for this answer."
+            if is_en else
+            f"Saya tidak dapat mengakses {labels} karena sesi login Anda ditolak oleh gateway MCP. "
+            "Silakan logout lalu login ulang, kemudian coba lagi. Belum ada data dari sumber tersebut yang dibaca untuk jawaban ini."
+        ), sources=[])
+
     sap_requested = bool(sap_target) and (allowed_connectors is None or "sap" in allowed_connectors)
     if sap_requested and not has_sap:
         # Tanpa tool SAP, model akan mengarang "hasil SAP". Hentikan di sini dan
         # beri tahu penyebabnya secara jujur.
-        auth_rejected = tool_errors.get("sap") == "auth"
         logger.warning(
             "Tool SAP tidak tersedia untuk target '%s' (penyebab: %s); permintaan dihentikan.",
             sap_target, tool_errors.get("sap") or "katalog kosong",
         )
         await report("done", "Completed" if is_en else "Selesai")
-        if auth_rejected:
-            reply = (
-                f"I couldn't access SAP ({sap_target}) because the MCP gateway rejected your login session. "
-                "Please log out and log in again, then retry. No SAP data was read for this answer."
-                if is_en else
-                f"Saya tidak dapat mengakses SAP ({sap_target}) karena sesi login Anda ditolak oleh gateway MCP. "
-                "Silakan logout lalu login ulang, kemudian coba lagi. Belum ada data SAP yang dibaca untuk jawaban ini."
-            )
-        else:
-            reply = (
-                f"I couldn't access SAP ({sap_target}) right now because the SAP MCP tools are unavailable. "
-                "Please try again shortly. No SAP data was read for this answer."
-                if is_en else
-                f"Saya tidak dapat mengakses SAP ({sap_target}) saat ini karena tool MCP SAP tidak tersedia. "
-                "Silakan coba lagi sebentar lagi. Belum ada data SAP yang dibaca untuk jawaban ini."
-            )
-        return ChatResponse(reply=reply, sources=[])
+        return ChatResponse(reply=(
+            f"I couldn't access SAP ({sap_target}) right now because the SAP MCP tools are unavailable. "
+            "Please try again shortly. No SAP data was read for this answer."
+            if is_en else
+            f"Saya tidak dapat mengakses SAP ({sap_target}) saat ini karena tool MCP SAP tidak tersedia. "
+            "Silakan coba lagi sebentar lagi. Belum ada data SAP yang dibaca untuk jawaban ini."
+        ), sources=[])
+
+    # Konektor yang gagal karena sebab lain: percakapan tetap jalan, tetapi model
+    # wajib tahu sumber mana yang tidak bisa dicek agar tidak mengaku telah mengeceknya.
+    unavailable_labels = [
+        MCP_CONNECTOR_LABELS[name] for name in ("sap", "rag", "sql", "email")
+        if tool_errors.get(name) and name not in available_servers
+    ]
     if m_sop and not has_rag:
         await report("done", "Completed" if is_en else "Selesai")
         return ChatResponse(reply=(
@@ -1755,6 +1772,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
         "- Hak akses & otorisasi operasi: Dikelola langsung oleh MCP Gateway / target sistem backend. Anda diizinkan mengeksekusi operasi baca maupun tulis yang diminta pengguna sesuai ketersediaan tool MCP. Bila sistem target menolak karena batasan hak akses, teruskan penjelasan respon teknis dari sistem tersebut secara transparan.\n",
         f"- Sumber data yang tersedia: {inventory_line}\n",
     ]
+    if unavailable_labels:
+        konteks.append(
+            f"- Sumber yang SAAT INI TIDAK DAPAT DIAKSES (gangguan koneksi gateway): {', '.join(unavailable_labels)}. "
+            "Jangan pernah mengaku telah mengecek sumber ini atau menampilkan hasil seolah-olah dari sumber ini. "
+            "Bila pengguna meminta data dari sumber tersebut, katakan terus terang bahwa sumbernya sedang tidak dapat diakses.\n"
+        )
     if target_srv.startswith("sql:"):
         konteks.append(
             f"- Target Sistem Aktif yang Dipilih Pengguna: **SQL DATABASE**\n"
