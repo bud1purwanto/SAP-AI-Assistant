@@ -1236,9 +1236,10 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
                                    "message": "Kredensial SAP belum tersedia di OIDC untuk target ini."})
             )
 
+    tool_errors: dict = {}
     try:
         all_mcp_tools = await mcp_manager.get_all_tools(
-            server_filter=target_srv, allowed_connectors=allowed_connectors
+            server_filter=target_srv, allowed_connectors=allowed_connectors, errors=tool_errors
         )
     except TypeError:
         all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
@@ -1256,6 +1257,33 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     has_rag = any(item["server"] == "rag" for item in all_mcp_tools)
     has_sql = any(item["server"] in ("sql", "database") for item in all_mcp_tools)
     has_email = any(item["server"] == "email" for item in all_mcp_tools)
+    sap_requested = bool(sap_target) and (allowed_connectors is None or "sap" in allowed_connectors)
+    if sap_requested and not has_sap:
+        # Tanpa tool SAP, model akan mengarang "hasil SAP". Hentikan di sini dan
+        # beri tahu penyebabnya secara jujur.
+        auth_rejected = tool_errors.get("sap") == "auth"
+        logger.warning(
+            "Tool SAP tidak tersedia untuk target '%s' (penyebab: %s); permintaan dihentikan.",
+            sap_target, tool_errors.get("sap") or "katalog kosong",
+        )
+        await report("done", "Completed" if is_en else "Selesai")
+        if auth_rejected:
+            reply = (
+                f"I couldn't access SAP ({sap_target}) because the MCP gateway rejected your login session. "
+                "Please log out and log in again, then retry. No SAP data was read for this answer."
+                if is_en else
+                f"Saya tidak dapat mengakses SAP ({sap_target}) karena sesi login Anda ditolak oleh gateway MCP. "
+                "Silakan logout lalu login ulang, kemudian coba lagi. Belum ada data SAP yang dibaca untuk jawaban ini."
+            )
+        else:
+            reply = (
+                f"I couldn't access SAP ({sap_target}) right now because the SAP MCP tools are unavailable. "
+                "Please try again shortly. No SAP data was read for this answer."
+                if is_en else
+                f"Saya tidak dapat mengakses SAP ({sap_target}) saat ini karena tool MCP SAP tidak tersedia. "
+                "Silakan coba lagi sebentar lagi. Belum ada data SAP yang dibaca untuk jawaban ini."
+            )
+        return ChatResponse(reply=reply, sources=[])
     if m_sop and not has_rag:
         await report("done", "Completed" if is_en else "Selesai")
         return ChatResponse(reply=(

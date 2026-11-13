@@ -14,6 +14,27 @@ class SapCredentialRejected(Exception):
     """SAP RFC rejected the user's saved credentials for the selected target."""
 
 
+class MCPAuthError(httpx.HTTPStatusError):
+    """Gateway MCP menolak token akses OIDC pengguna (HTTP 401).
+
+    Token bisa dicabut di Central Dashboard (mis. sesi diganti dari browser lain)
+    walau masa berlaku lokalnya belum habis, jadi 401 harus ditangani eksplisit.
+    """
+
+    def __init__(self, message: str = "MCP gateway menolak token akses", *, request=None, response=None):
+        super().__init__(message, request=request, response=response)
+
+
+def _raise_for_status(res: httpx.Response) -> None:
+    if res.status_code == 401:
+        raise MCPAuthError(
+            f"MCP gateway menolak token akses (401): {res.text[:200]}",
+            request=res.request,
+            response=res,
+        )
+    res.raise_for_status()
+
+
 def sap_error_text(error: Exception) -> str:
     response = getattr(error, "response", None)
     return f"{error} {getattr(response, 'text', '')}"
@@ -64,7 +85,7 @@ class MCPCallResult:
         return self.is_error
 
 class StreamableHttpClient:
-    def __init__(self, name: str, url: str, headers: dict):
+    def __init__(self, name: str, url: str, headers: dict, token_refresher=None):
         self.name = name
         self.url = url
         self.headers = dict(headers or {})
@@ -74,6 +95,30 @@ class StreamableHttpClient:
         self._initialized = False
         self._tools_cache: list[MCPTool] = None
         self._tools_cache_time: float = 0.0
+        # async (rejected_token) -> Optional[str]: token baru setelah gateway membalas 401.
+        self._token_refresher = token_refresher
+
+    def _bearer_token(self) -> Optional[str]:
+        value = self.headers.get("Authorization") or ""
+        return value[7:] if value.startswith("Bearer ") else None
+
+    async def _with_auth_retry(self, operation):
+        """Jalankan operasi; bila gateway membalas 401, refresh token sekali lalu ulangi."""
+        try:
+            return await operation()
+        except MCPAuthError:
+            if self._token_refresher is None:
+                raise
+            rejected = self._bearer_token()
+            new_token = await self._token_refresher(rejected)
+            if not new_token or new_token == rejected:
+                raise
+            logger.info("[%s] Token OIDC ditolak gateway; mengulang dengan token hasil refresh.", self.name)
+            self.headers["Authorization"] = f"Bearer {new_token}"
+            # Sesi MCP terikat pada token lama; handshake ulang dengan token baru.
+            self._initialized = False
+            self.session_id = None
+            return await operation()
 
     async def initialize(self, client: httpx.AsyncClient):
         if self._initialized:
@@ -90,7 +135,7 @@ class StreamableHttpClient:
             }
         }
         res = await client.post(self.url, headers=self.headers, json=init_payload, timeout=10.0)
-        res.raise_for_status()
+        _raise_for_status(res)
         self.session_id = res.headers.get("mcp-session-id")
         
         headers_with_session = dict(self.headers)
@@ -116,7 +161,9 @@ class StreamableHttpClient:
             and now - self._tools_cache_time < MCP_TOOLS_CACHE_TTL_SECONDS
         ):
             return self._tools_cache
+        return await self._with_auth_retry(lambda: self._list_tools_once(client, now))
 
+    async def _list_tools_once(self, client: httpx.AsyncClient, now: float) -> list[MCPTool]:
         await self.initialize(client)
         headers = dict(self.headers)
         if self.session_id:
@@ -129,7 +176,7 @@ class StreamableHttpClient:
             "params": {}
         }
         res = await client.post(self.url, headers=headers, json=payload, timeout=15.0)
-        res.raise_for_status()
+        _raise_for_status(res)
         data = res.json()
         
         tools_list = []
@@ -150,6 +197,17 @@ class StreamableHttpClient:
         self._tools_cache_time = 0.0
 
     async def call_tool(
+        self,
+        client: httpx.AsyncClient,
+        tool_name: str,
+        arguments: dict,
+        extra_headers: Optional[dict] = None,
+    ) -> MCPCallResult:
+        return await self._with_auth_retry(
+            lambda: self._call_tool_once(client, tool_name, arguments, extra_headers)
+        )
+
+    async def _call_tool_once(
         self,
         client: httpx.AsyncClient,
         tool_name: str,
@@ -200,7 +258,7 @@ class StreamableHttpClient:
             )
         try:
             res = await client.post(self.url, headers=headers, json=payload, timeout=45.0)
-            res.raise_for_status()
+            _raise_for_status(res)
         except Exception:
             self._initialized = False
             raise
@@ -429,8 +487,32 @@ class MCPManager:
             raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
         cache_key = (name, dedicated_token or access_token)
         if cache_key not in self.clients or self.clients[cache_key].url != url:
-            self.clients[cache_key] = StreamableHttpClient(name=name, url=url, headers=gw_headers)
+            refresher = None if dedicated_token else self._session_token_refresher()
+            self.clients[cache_key] = StreamableHttpClient(
+                name=name, url=url, headers=gw_headers, token_refresher=refresher
+            )
         return self.clients[cache_key]
+
+    @staticmethod
+    def _session_token_refresher():
+        """Refresher token OIDC untuk sesi aktif; dipanggil saat gateway membalas 401."""
+        from auth import get_dashboard_session_id
+        session_id = get_dashboard_session_id()
+        if not session_id:
+            return None
+
+        async def refresher(rejected_token: Optional[str]) -> Optional[str]:
+            from auth import refresh_dashboard_session, set_dashboard_access_token
+            try:
+                new_token = await asyncio.to_thread(refresh_dashboard_session, session_id, rejected_token)
+            except Exception as exc:
+                logger.warning("Refresh token OIDC setelah 401 gateway gagal: %s", exc)
+                return None
+            if new_token:
+                set_dashboard_access_token(new_token)
+            return new_token
+
+        return refresher
 
     def remove_client(self, name: str):
         """Hapus instance client yang di-cache saat konfigurasi server berubah atau dihapus."""
@@ -869,8 +951,19 @@ class MCPManager:
             async with httpx.AsyncClient() as http_client:
                 await self._set_active_sap_server_unlocked(http_client, target_sap)
 
-    async def get_all_tools(self, server_filter: str = "all", allowed_connectors: Optional[set] = None) -> list[dict]:
+    async def get_all_tools(
+        self,
+        server_filter: str = "all",
+        allowed_connectors: Optional[set] = None,
+        errors: Optional[dict] = None,
+    ) -> list[dict]:
+        """Kumpulkan katalog tool. Bila `errors` diberikan, kegagalan per konektor
+        dicatat sebagai {"sap": "auth" | "error"} agar pemanggil tidak menebak."""
         tools = []
+
+        def note_failure(server_name: str, exc: Exception) -> None:
+            if errors is not None:
+                errors[server_name] = "auth" if isinstance(exc, (MCPAuthError, PermissionError)) else "error"
         # Mode multi-konektor independen dari pemilihan pengguna. Bila user memberikan
         # allowed_connectors secara eksplisit, aktifkan HANYA konektor yang dipilih secara
         # independen satu sama lain — TIDAK lagi saling meniadakan. Ini memungkinkan SAP
@@ -929,6 +1022,7 @@ class MCPManager:
                             tools.append({"server": "sap", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching SAP tools: {e}")
+                    note_failure("sap", e)
 
             # RAG Tools — langsung dari client "rag" tanpa email
             if is_rag:
@@ -946,6 +1040,7 @@ class MCPManager:
                         tools.append({"server": "rag", "tool": t})
                 except Exception as e:
                     logger.error(f"Error fetching RAG tools: {e}")
+                    note_failure("rag", e)
 
             # Email Tools — client "email" tersendiri (bukan menumpang RAG)
             if is_email:
@@ -958,6 +1053,7 @@ class MCPManager:
                             tools.append({"server": "email", "tool": t})
                 except Exception as e:
                     logger.warning(f"Error fetching Email tools (MCP Email offline or unavailable): {e}")
+                    note_failure("email", e)
 
             # SQL Tools — terima tool bernamespace gateway (mcp-sql__*) maupun legacy (sql_*)
             if is_sql:
@@ -974,6 +1070,7 @@ class MCPManager:
                         tools.append({"server": "sql", "tool": t})
                 except Exception as e:
                     logger.warning(f"Error fetching SQL tools (MCP SQL offline or unavailable): {e}")
+                    note_failure("sql", e)
 
             # Custom Dynamic MCP Servers Tools
             try:
