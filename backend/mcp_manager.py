@@ -969,12 +969,10 @@ class MCPManager:
         # independen satu sama lain — TIDAK lagi saling meniadakan. Ini memungkinkan SAP
         # + SQL + RAG secara simultan dalam satu sesi chat bila dicentang user.
         if allowed_connectors is not None:
-            # SAP gateway tools cannot run without a specific target. In
-            # general chat, omit them unless a SAP target was explicitly
-            # selected; other enabled connectors remain available.
-            is_sap = "sap" in allowed_connectors and bool(
-                server_filter.startswith("sap:")
-            )
+            # When allowed_connectors is explicitly provided, respect it directly.
+            # The server_filter prefix check is only needed in fallback mode (when
+            # allowed_connectors is None) for backward compatibility.
+            is_sap = "sap" in allowed_connectors
             is_sql = "sql" in allowed_connectors
             is_rag = "rag" in allowed_connectors
             is_email = "email" in allowed_connectors
