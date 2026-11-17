@@ -494,7 +494,6 @@ class MCPManager:
         if name in ("sap", "sql", "rag", "email"):
             if not access_token:
                 raise PermissionError(f"Sesi OIDC pengguna tidak tersedia untuk MCP {name.upper()}.")
-            # Seluruh gateway inti memeriksa izin dari JWT pengguna yang sedang login.
             gw_headers["Authorization"] = f"Bearer {access_token}"
         elif dedicated_token:
             gw_headers["Authorization"] = f"Bearer {dedicated_token}"

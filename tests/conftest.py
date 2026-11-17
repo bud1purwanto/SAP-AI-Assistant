@@ -28,6 +28,7 @@ os.environ.setdefault("SESSION_COOKIE_SECURE", "false")
 
 ADMIN_USER = "TRSTDEV"
 ADMIN_SUB = "trstdev-dashboard-sub"
+ADMIN_PASSWORD = "Password123!"
 os.environ.setdefault("GUEST_DAILY_LIMIT", "2")
 
 

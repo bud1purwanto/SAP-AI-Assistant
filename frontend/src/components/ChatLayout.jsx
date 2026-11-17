@@ -26,6 +26,7 @@ import {
   api, ApiError, chatWithProgress, clearSession, getStoredUser, saveSession, setUnauthorizedHandler,
 } from '../lib/api';
 import { formatRoleLabel, getRoleBadgeStyle, getRoleLabel, getUserInitials } from '../lib/roles';
+import { keepaliveManager } from '../lib/backgroundKeepalive';
 
 const GUEST_USER = { username: 'Guest', role: 'guest' };
 
@@ -855,6 +856,10 @@ const ChatLayout = () => {
               setSessionErrorMap((prev) => ({ ...prev, [sessionId]: null }));
               resetStream(sessionId);
               fetchSessions(true, true);
+              keepaliveManager.notifyWhenHidden({
+                title: 'Enterprise AI Assistant',
+                body: language === 'en' ? 'AI response is ready.' : 'Jawaban AI telah selesai.',
+              });
               return true;
             }
           }
@@ -1190,6 +1195,10 @@ const ChatLayout = () => {
     isStreamActiveRef.current[targetKey] = true;
     lastStreamActivityRef.current[targetKey] = Date.now();
 
+    // Aktifkan Keep-Alive (WakeLock layar + Silent Web Audio di mobile) & siapkan izin notifikasi
+    keepaliveManager.requestNotificationPermission().catch(() => {});
+    keepaliveManager.startKeepalive().catch(() => {});
+
     let finalSessionId = null;
     const requestedSapTarget = connectorConfig.sapTarget || (activeServer.startsWith('sap:') ? activeServer.slice(4) : '');
     try {
@@ -1342,6 +1351,12 @@ const ChatLayout = () => {
       }
       if (data.quota) setKuota(data.quota);
       if (!isGuest) fetchSessions(true, true);
+
+      // Notifikasi saat jawaban selesai jika tab sedang di-minimize/background
+      keepaliveManager.notifyWhenHidden({
+        title: 'Enterprise AI Assistant',
+        body: language === 'en' ? 'AI response is ready.' : 'Jawaban AI telah selesai diproses.',
+      });
     } catch (err) {
       if (err.name === 'AbortError') {
         setMessagesMap((prev) => ({
@@ -1398,6 +1413,7 @@ const ChatLayout = () => {
         [targetKey]: { message: err.message, retry: () => { setMessagesMap((p) => ({ ...p, [targetKey]: prevMessages })); handleSendMessage(text, attachments, prevMessages); } },
       }));
     } finally {
+      keepaliveManager.stopKeepalive().catch(() => {});
       delete isStreamActiveRef.current[targetKey];
       delete lastStreamActivityRef.current[targetKey];
       delete abortControllersRef.current[targetKey];
