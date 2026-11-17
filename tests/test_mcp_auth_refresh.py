@@ -101,6 +101,30 @@ def test_401_without_successful_refresh_raises_auth_error():
     assert len(calls) == 1  # tidak mengulang bila refresh gagal
 
 
+def test_401_falls_back_to_dedicated_token():
+    transport, calls = _transport(_accept_only("dedicated-secret"))
+
+    async def failing_refresher(old):
+        return None
+
+    client = mm.StreamableHttpClient(
+        "rag", "http://gw/v1/gateway/mcp-rag",
+        {"Authorization": "Bearer user-session-token"},
+        token_refresher=failing_refresher,
+        fallback_token="dedicated-secret",
+    )
+
+    async def run():
+        async with httpx.AsyncClient(transport=transport) as http:
+            return await client.list_tools(http)
+
+    tools = asyncio.run(run())
+    assert [t.name for t in tools] == ["read_table"]
+    assert client.headers["Authorization"] == "Bearer dedicated-secret"
+    assert calls[0] == ("Bearer user-session-token", "initialize")
+    assert all(auth == "Bearer dedicated-secret" for auth, _ in calls[1:])
+
+
 def test_get_all_tools_reports_auth_failure(monkeypatch):
     class Rejecting:
         async def list_tools(self, http_client, force_refresh=False):

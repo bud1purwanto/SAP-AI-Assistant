@@ -389,6 +389,7 @@ def get_current_user_optional(request: Request) -> dict:
             return guest_user
 
         session_id = payload.get("session_id")
+        set_dashboard_session_id(session_id)
         resolved_token = _session_dashboard_token(session_id)
         set_dashboard_access_token(resolved_token)
         username = payload["username"]

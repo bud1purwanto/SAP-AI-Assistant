@@ -85,7 +85,7 @@ class MCPCallResult:
         return self.is_error
 
 class StreamableHttpClient:
-    def __init__(self, name: str, url: str, headers: dict, token_refresher=None):
+    def __init__(self, name: str, url: str, headers: dict, token_refresher=None, fallback_token=None):
         self.name = name
         self.url = url
         self.headers = dict(headers or {})
@@ -97,6 +97,7 @@ class StreamableHttpClient:
         self._tools_cache_time: float = 0.0
         # async (rejected_token) -> Optional[str]: token baru setelah gateway membalas 401.
         self._token_refresher = token_refresher
+        self._fallback_token = fallback_token
 
     def _bearer_token(self) -> Optional[str]:
         value = self.headers.get("Authorization") or ""
@@ -107,18 +108,34 @@ class StreamableHttpClient:
         try:
             return await operation()
         except MCPAuthError:
-            if self._token_refresher is None:
-                raise
             rejected = self._bearer_token()
-            new_token = await self._token_refresher(rejected)
-            if not new_token or new_token == rejected:
-                raise
-            logger.info("[%s] Token OIDC ditolak gateway; mengulang dengan token hasil refresh.", self.name)
-            self.headers["Authorization"] = f"Bearer {new_token}"
-            # Sesi MCP terikat pada token lama; handshake ulang dengan token baru.
-            self._initialized = False
-            self.session_id = None
-            return await operation()
+            new_token = None
+            if self._token_refresher is not None:
+                try:
+                    new_token = await self._token_refresher(rejected)
+                except Exception as e:
+                    logger.warning("[%s] Token refresher OIDC gagal: %s", self.name, e)
+
+            if new_token and new_token != rejected:
+                logger.info("[%s] Token OIDC ditolak gateway; mengulang dengan token hasil refresh.", self.name)
+                self.headers["Authorization"] = f"Bearer {new_token}"
+                # Sesi MCP terikat pada token lama; handshake ulang dengan token baru.
+                self._initialized = False
+                self.session_id = None
+                try:
+                    return await operation()
+                except MCPAuthError:
+                    pass
+
+            # Bila token refresh tidak berhasil atau tetap ditolak (401), coba fallback ke dedicated token server bila ada.
+            if self._fallback_token and self._fallback_token != rejected:
+                logger.info("[%s] Sesi OIDC ditolak gateway; beralih ke token autentikasi server yang terkonfigurasi.", self.name)
+                self.headers["Authorization"] = f"Bearer {self._fallback_token}"
+                self._initialized = False
+                self.session_id = None
+                return await operation()
+
+            raise
 
     async def initialize(self, client: httpx.AsyncClient):
         if self._initialized:
@@ -473,23 +490,23 @@ class MCPManager:
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
         dedicated_token = gw_headers.pop("auth_token", None)
+
         if name in ("sap", "sql", "rag", "email"):
             if not access_token:
                 raise PermissionError(f"Sesi OIDC pengguna tidak tersedia untuk MCP {name.upper()}.")
             # Seluruh gateway inti memeriksa izin dari JWT pengguna yang sedang login.
             gw_headers["Authorization"] = f"Bearer {access_token}"
-            dedicated_token = None
         elif dedicated_token:
             gw_headers["Authorization"] = f"Bearer {dedicated_token}"
         elif access_token:
             gw_headers["Authorization"] = f"Bearer {access_token}"
         else:
             raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
-        cache_key = (name, dedicated_token or access_token)
+        cache_key = (name, access_token or dedicated_token)
         if cache_key not in self.clients or self.clients[cache_key].url != url:
-            refresher = None if dedicated_token else self._session_token_refresher()
+            refresher = self._session_token_refresher()
             self.clients[cache_key] = StreamableHttpClient(
-                name=name, url=url, headers=gw_headers, token_refresher=refresher
+                name=name, url=url, headers=gw_headers, token_refresher=refresher, fallback_token=dedicated_token
             )
         return self.clients[cache_key]
 

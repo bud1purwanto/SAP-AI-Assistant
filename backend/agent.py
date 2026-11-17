@@ -1177,8 +1177,13 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             # pilihan server SAP pada setiap percakapan.
             target_srv = "all"
     # Daftar konektor yang dipilih user (multi-select independen). Default chat
-    # tidak mengasumsikan SAP aktif karena SAP membutuhkan target khusus.
-    allowed_connectors = set(chat_req.enabled_connectors) if chat_req.enabled_connectors is not None else {"sql", "rag", "email"}
+    # menyertakan SAP hanya bila target SAP ditentukan pengguna.
+    if chat_req.enabled_connectors is not None:
+        allowed_connectors = set(chat_req.enabled_connectors)
+    else:
+        allowed_connectors = {"sql", "rag", "email"}
+        if target_srv.startswith("sap") or chat_req.sap_target:
+            allowed_connectors.add("sap")
     # Pilihan target tidak boleh mengaktifkan kembali konektor yang dimatikan.
     if allowed_connectors is not None:
         if target_srv.startswith("sql") and "sql" not in allowed_connectors:
@@ -1244,7 +1249,12 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             server_filter=target_srv, allowed_connectors=allowed_connectors, errors=tool_errors
         )
     except TypeError:
-        all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
+        try:
+            all_mcp_tools = await mcp_manager.get_all_tools(
+                server_filter=target_srv, allowed_connectors=allowed_connectors
+            )
+        except TypeError:
+            all_mcp_tools = await mcp_manager.get_all_tools(server_filter=target_srv)
     if not all_mcp_tools:
         # Ketiadaan gateway tidak boleh mematikan percakapan umum. Model tetap
         # menjawab tanpa tool; prompt di bawah memberitahukan bahwa tidak ada
@@ -1265,8 +1275,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     session_rejected = [
         name for name in ("sap", "rag", "sql", "email")
         if tool_errors.get(name) == "auth" and name not in available_servers
+        and (allowed_connectors is None or name in allowed_connectors)
     ]
-    if session_rejected:
+    if session_rejected and (not available_servers or (sap_requested and "sap" in session_rejected)):
         labels = ", ".join(MCP_CONNECTOR_LABELS[name] for name in session_rejected)
         logger.warning("Gateway MCP menolak sesi pengguna untuk konektor: %s; permintaan dihentikan.", labels)
         await report("done", "Completed" if is_en else "Selesai")
