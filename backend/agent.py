@@ -1270,8 +1270,9 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
     has_sql = any(item["server"] in ("sql", "database") for item in all_mcp_tools)
     has_email = any(item["server"] == "email" for item in all_mcp_tools)
     available_servers = {item["server"] for item in all_mcp_tools}
-    # Gateway menolak token sesi (401) dan refresh tidak berhasil: semua konektor inti
-    # memakai token yang sama, jadi jawaban tanpa tool hanya akan menyesatkan.
+    sap_requested = bool(sap_target) and (allowed_connectors is None or "sap" in allowed_connectors)
+    # Gateway menolak token sesi (401) dan refresh tidak berhasil:
+    # Hanya batalkan jika semua server yang diminta ditolak, atau SAP yang diminta ditolak auth-nya.
     session_rejected = [
         name for name in ("sap", "rag", "sql", "email")
         if tool_errors.get(name) == "auth" and name not in available_servers
@@ -1289,7 +1290,6 @@ async def process_chat(chat_req: ChatRequest, user_role: Union[str, list, None] 
             "Silakan logout lalu login ulang, kemudian coba lagi. Belum ada data dari sumber tersebut yang dibaca untuk jawaban ini."
         ), sources=[])
 
-    sap_requested = bool(sap_target) and (allowed_connectors is None or "sap" in allowed_connectors)
     if sap_requested and not has_sap:
         # Tanpa tool SAP, model akan mengarang "hasil SAP". Hentikan di sini dan
         # beri tahu penyebabnya secara jujur.

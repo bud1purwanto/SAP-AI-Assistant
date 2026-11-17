@@ -463,7 +463,7 @@ class MCPManager:
     def _get_client_config(self, name: str) -> tuple[str, dict]:
         """Resolve the enabled MCP server URL from the local registry."""
         from database import get_mcp_server, list_mcp_servers
-        srv = get_mcp_server(name)
+        srv = get_mcp_server(name, include_auth=True)
         if srv:
             if not srv.get("enabled"):
                 raise RuntimeError(f"MCP server '{name}' dinonaktifkan di registry.")
@@ -476,7 +476,7 @@ class MCPManager:
         servers = list_mcp_servers(enabled_only=True)
         for s in servers:
             if s["id"] == name or s["name"] == name:
-                srv_detail = get_mcp_server(s["id"])
+                srv_detail = get_mcp_server(s["id"], include_auth=True)
                 headers = dict((srv_detail or {}).get("headers") or {})
                 if srv_detail and srv_detail.get("auth_token"):
                     headers["auth_token"] = srv_detail["auth_token"]

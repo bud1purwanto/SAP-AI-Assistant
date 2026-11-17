@@ -1024,7 +1024,7 @@ def list_mcp_servers(enabled_only: bool = False) -> list[dict]:
         return []
 
 
-def get_mcp_server(server_id: str) -> Optional[dict]:
+def get_mcp_server(server_id: str, include_auth: bool = False) -> Optional[dict]:
     """Mengambil detail satu server MCP berdasarkan ID/Key."""
     sid = (server_id or "").strip().lower()
     if not sid:
@@ -1039,13 +1039,18 @@ def get_mcp_server(server_id: str) -> Optional[dict]:
             """), {"id": sid}).fetchone()
             if not r:
                 return None
-            return {
+            res = {
                 "id": r.id,
                 "name": r.name,
                 "url": r.url,
                 "enabled": bool(r.enabled),
                 "display_order": r.display_order or 0,
             }
+            if include_auth:
+                res["auth_token"] = r.auth_token or ""
+                raw_hdrs = getattr(r, "headers", None)
+                res["headers"] = raw_hdrs if isinstance(raw_hdrs, dict) else {}
+            return res
     except Exception as e:
         logger.error(f"Error get_mcp_server: {e}")
         return None

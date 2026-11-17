@@ -2968,7 +2968,7 @@ async def test_admin_mcp_connection_endpoint(req: TestMcpConnectionRequest, admi
     # Cari konfigurasi dari database jika server_id diberikan
     if req.server_id:
         from database import get_mcp_server
-        srv = get_mcp_server(req.server_id)
+        srv = get_mcp_server(req.server_id, include_auth=True)
         if srv:
             if not url:
                 url = srv.get("url")
