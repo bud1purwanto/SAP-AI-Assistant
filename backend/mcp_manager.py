@@ -445,6 +445,54 @@ RAG_INTERNAL_EXCLUDED_TOOLS = {
     "document_get",  # Duplikat fungsional dari rag_get_document
 }
 
+_user_token_cache: dict[tuple[str, str], tuple[str, float]] = {}
+
+
+def resolve_user_mcp_token(user_id: Optional[str], server_name: str) -> Optional[str]:
+    """Cari personal API client token milik user dari config_dashboard_db untuk layanan terkait."""
+    if not user_id or not server_name:
+        return None
+    clean = server_name.lower().replace("mcp-", "").replace("mcp_", "")
+    cache_key = (user_id, clean)
+    now = time.time()
+    if cache_key in _user_token_cache:
+        tok, exp = _user_token_cache[cache_key]
+        if exp > now:
+            return tok
+
+    db_url = getattr(settings, "dashboard_db_url", None) or "postgresql://admin_rag:Trias123@192.168.1.162:5432/config_dashboard_db"
+    enc_key_hex = getattr(settings, "dashboard_encryption_key", None) or "1442ec5757b7c89a9acee7720add806caebea8457266c8364f232ad282996bf6"
+
+    try:
+        import psycopg
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        conn_params = db_url.replace("postgresql+psycopg://", "postgresql://")
+        with psycopg.connect(conn_params, connect_timeout=5) as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT token_ciphertext, token_iv, token_auth_tag
+                    FROM api_clients
+                    WHERE owner_user_id = %s
+                      AND (LOWER(name) LIKE %s OR LOWER(name) LIKE %s)
+                      AND revoked_at IS NULL
+                      AND (expires_at IS NULL OR expires_at > (now() AT TIME ZONE 'utc'))
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (user_id, f"mcp-{clean}%", f"{clean}%"))
+                row = cur.fetchone()
+                if not row or not row[0] or not row[1] or not row[2]:
+                    return None
+                ciphertext = bytes.fromhex(row[0]) if isinstance(row[0], str) else bytes(row[0])
+                iv = bytes.fromhex(row[1]) if isinstance(row[1], str) else bytes(row[1])
+                tag = bytes.fromhex(row[2]) if isinstance(row[2], str) else bytes(row[2])
+                aesgcm = AESGCM(bytes.fromhex(enc_key_hex))
+                token = aesgcm.decrypt(iv, ciphertext + tag, None).decode("utf-8")
+                _user_token_cache[cache_key] = (token, now + 300)
+                return token
+    except Exception as exc:
+        logger.warning("Gagal menyelesaikan token personal MCP untuk user %s di %s: %s", user_id, server_name, exc)
+        return None
+
 
 class MCPManager:
     def __init__(self):
@@ -484,24 +532,33 @@ class MCPManager:
         raise RuntimeError(f"MCP server '{name}' tidak ditemukan di registry.")
 
     def get_client(self, name: str) -> StreamableHttpClient:
-        """Per-user MCP client authenticated with user's OIDC Bearer token or dedicated auth_token."""
-        from auth import get_dashboard_access_token
+        """Per-user MCP client authenticated with user's personal MCP token, OIDC Bearer token, or dedicated auth_token."""
+        from auth import get_dashboard_access_token, get_dashboard_user_id
         access_token = get_dashboard_access_token()
+        user_id = get_dashboard_user_id()
         url, headers = self._get_client_config(name)
         gw_headers = dict(headers or {})
         dedicated_token = gw_headers.pop("auth_token", None)
 
+        user_mcp_token = None
+        if user_id:
+            user_mcp_token = resolve_user_mcp_token(user_id, name)
+
         if name in ("sap", "sql", "rag", "email"):
-            if not access_token:
+            if not user_mcp_token and not access_token:
                 raise PermissionError(f"Sesi OIDC pengguna tidak tersedia untuk MCP {name.upper()}.")
-            gw_headers["Authorization"] = f"Bearer {access_token}"
+            effective_token = user_mcp_token or access_token
+            gw_headers["Authorization"] = f"Bearer {effective_token}"
+        elif user_mcp_token:
+            gw_headers["Authorization"] = f"Bearer {user_mcp_token}"
         elif dedicated_token:
             gw_headers["Authorization"] = f"Bearer {dedicated_token}"
         elif access_token:
             gw_headers["Authorization"] = f"Bearer {access_token}"
         else:
             raise PermissionError("Sesi dashboard-mcp tidak ditemukan atau telah kedaluwarsa.")
-        cache_key = (name, access_token or dedicated_token)
+
+        cache_key = (name, user_id, gw_headers.get("Authorization"))
         if cache_key not in self.clients or self.clients[cache_key].url != url:
             refresher = self._session_token_refresher()
             self.clients[cache_key] = StreamableHttpClient(

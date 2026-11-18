@@ -24,6 +24,8 @@ GUEST_ROLE = "guest"
 _dashboard_tokens: dict[str, tuple[str, datetime]] = {}
 _dashboard_access_token: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_access_token", default=None)
 _dashboard_session_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_session_id", default=None)
+_dashboard_user_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_user_id", default=None)
+_dashboard_username: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("dashboard_username", default=None)
 
 
 # --- Password Hashing (bcrypt) ---
@@ -59,6 +61,22 @@ def set_dashboard_session_id(session_id: Optional[str]) -> None:
 
 def get_dashboard_session_id() -> Optional[str]:
     return _dashboard_session_id.get()
+
+
+def set_dashboard_user_id(user_id: Optional[str]) -> None:
+    _dashboard_user_id.set(str(user_id).strip() if user_id and str(user_id).strip() else None)
+
+
+def get_dashboard_user_id() -> Optional[str]:
+    return _dashboard_user_id.get()
+
+
+def set_dashboard_username(username: Optional[str]) -> None:
+    _dashboard_username.set(str(username).strip() if username and str(username).strip() else None)
+
+
+def get_dashboard_username() -> Optional[str]:
+    return _dashboard_username.get()
 
 
 def create_session_cookie(principal: dict) -> str:
@@ -334,7 +352,10 @@ def get_current_principal(request: Request) -> dict:
     set_dashboard_session_id(session_id)
     resolved_token = _session_dashboard_token(session_id)
     set_dashboard_access_token(resolved_token)
+    user_id = str(payload.get("sub") or "")
+    set_dashboard_user_id(user_id)
     username = payload["username"]
+    set_dashboard_username(username)
     user_role = payload.get("role") or payload["roles"][0]
     user_roles = payload["roles"]
     entry = _dashboard_tokens.get(session_id)
@@ -380,19 +401,25 @@ def get_current_user_optional(request: Request) -> dict:
     token = _extract_token_from_request(request)
     if not token:
         set_dashboard_access_token(None)
+        set_dashboard_user_id(None)
+        set_dashboard_username(None)
         return guest_user
 
     try:
         payload = decode_session_cookie(token)
         if not payload or not payload.get("sub") or not payload.get("username") or not payload.get("roles") or payload.get("is_guest"):
             set_dashboard_access_token(None)
+            set_dashboard_user_id(None)
+            set_dashboard_username(None)
             return guest_user
 
         session_id = payload.get("session_id")
         set_dashboard_session_id(session_id)
         resolved_token = _session_dashboard_token(session_id)
         set_dashboard_access_token(resolved_token)
+        set_dashboard_user_id(str(payload.get("sub") or ""))
         username = payload["username"]
+        set_dashboard_username(username)
         user_role = payload.get("role") or payload["roles"][0]
         user_roles = payload["roles"]
         return {

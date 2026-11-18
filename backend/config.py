@@ -97,6 +97,8 @@ class Settings(BaseSettings):
     dashboard_mcp_url: str = "http://127.0.0.1:3000"
     # ponytail: vestigial — static MCP token no longer used at runtime; remove when env vars cleaned up
     dashboard_mcp_api_token: str = ""  # vestigial
+    dashboard_db_url: str = "postgresql://admin_rag:Trias123@192.168.1.162:5432/config_dashboard_db"
+    dashboard_encryption_key: str = "1442ec5757b7c89a9acee7720add806caebea8457266c8364f232ad282996bf6"
     model_config = SettingsConfigDict(
         env_file=ENV_PATH,
         env_file_encoding="utf-8",
